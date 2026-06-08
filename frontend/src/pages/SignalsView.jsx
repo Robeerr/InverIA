@@ -391,38 +391,39 @@ export default function SignalsView({ setSymbol }) {
 
       {/* ── DESKTOP TABLE ── */}
       {!loading && entries.length > 0 && (
-        <div className="hidden lg:block rounded-xl border border-neutral-200 dark:border-neutral-700 overflow-x-auto">
+        <div className="hidden lg:block rounded-xl border border-neutral-200 dark:border-neutral-700 overflow-x-auto shadow-sm">
           <table className="w-full text-sm border-collapse">
             <thead>
-              <tr className="bg-neutral-50 dark:bg-neutral-800/80 text-left">
-                <th className="px-3 py-2.5 font-semibold text-neutral-600 dark:text-neutral-300 text-xs whitespace-nowrap w-10">⚡</th>
-                <th className="px-3 py-2.5 font-semibold text-neutral-600 dark:text-neutral-300 text-xs whitespace-nowrap">Acción</th>
-                <th className="px-3 py-2.5 font-semibold text-neutral-600 dark:text-neutral-300 text-xs whitespace-nowrap">Mdo.</th>
-                <th className="px-3 py-2.5 font-semibold text-neutral-600 dark:text-neutral-300 text-xs whitespace-nowrap text-right">Precio actual</th>
-                {/* Deseado */}
-                <th className="px-3 py-2.5 text-xs whitespace-nowrap text-right bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-semibold">
-                  <div className="flex items-center justify-end gap-1">Nivel Deseado<span className="text-[9px] text-neutral-400">/ Venta</span></div>
+              <tr className="text-left border-b-2 border-neutral-200 dark:border-neutral-700">
+                <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap w-10 bg-neutral-100 dark:bg-neutral-800">⚡</th>
+                <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Acción</th>
+                <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Mdo.</th>
+                <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Precio actual</th>
+                <th className="px-3 py-3 text-xs whitespace-nowrap text-right bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 font-bold border-l border-blue-200 dark:border-blue-800">
+                  🎯 Deseado / Venta
                 </th>
-                {/* Niveles 1-5 */}
                 {[1,2,3,4,5].map((n) => (
-                  <th key={n} className="px-3 py-2.5 text-xs whitespace-nowrap text-right bg-green-50 dark:bg-green-900/10 text-green-700 dark:text-green-400 font-semibold">
-                    Nivel {n}{n === 5 ? " Extra" : ""}
+                  <th key={n} className="px-3 py-3 text-xs whitespace-nowrap text-right bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 font-bold border-l border-green-200 dark:border-green-800">
+                    Nivel {n}{n === 5 ? " ⭐" : ""}
                   </th>
                 ))}
-                <th className="px-3 py-2.5 font-semibold text-neutral-600 dark:text-neutral-300 text-xs whitespace-nowrap">Riesgo</th>
-                <th className="px-3 py-2.5 font-semibold text-neutral-600 dark:text-neutral-300 text-xs whitespace-nowrap">Sector</th>
-                <th className="px-3 py-2.5 font-semibold text-neutral-600 dark:text-neutral-300 text-xs whitespace-nowrap text-right">Posibles Ganancias</th>
-                <th className="px-3 py-2.5 w-8"></th>
+                <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800 border-l border-neutral-200">Riesgo</th>
+                <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Sector</th>
+                <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">📈 Ganancia</th>
+                <th className="px-3 py-3 w-8 bg-neutral-100 dark:bg-neutral-800"></th>
               </tr>
             </thead>
             <tbody>
               {entries.map((e, idx) => (
                 <tr
                   key={e.id}
-                  className={`border-t border-neutral-100 dark:border-neutral-800 transition-colors ${!e.active ? "opacity-40" : ""} ${idx % 2 === 0 ? "bg-white dark:bg-neutral-900" : "bg-neutral-50/50 dark:bg-neutral-800/30"} hover:bg-blue-50/40 dark:hover:bg-neutral-800/60`}
+                  className={`border-t border-neutral-100 dark:border-neutral-800 transition-colors group
+                    ${!e.active ? "opacity-40" : ""}
+                    ${idx % 2 === 0 ? "bg-white dark:bg-neutral-900" : "bg-neutral-50 dark:bg-neutral-800/40"}
+                    hover:bg-amber-50/60 dark:hover:bg-neutral-700/40`}
                 >
                   {/* Toggle activo */}
-                  <td className="px-3 py-2 text-center">
+                  <td className="px-3 py-2.5 text-center">
                     <input
                       type="checkbox"
                       checked={e.active}
@@ -433,38 +434,40 @@ export default function SignalsView({ setSymbol }) {
                   </td>
 
                   {/* Acción */}
-                  <td className="px-3 py-2 whitespace-nowrap">
+                  <td className="px-3 py-2.5 whitespace-nowrap">
                     <div className="flex items-center gap-1.5">
                       <span
-                        className="font-bold text-[#1a3a32] dark:text-blue-400 cursor-pointer hover:underline text-sm"
+                        className="font-bold text-[#1a3a32] dark:text-emerald-400 cursor-pointer hover:underline text-sm"
                         onClick={() => setSymbol && setSymbol(e.symbol)}
                       >
                         {e.symbol}
                       </span>
                       {saving[e.id] && <span className="text-[10px] text-neutral-400 animate-pulse">·</span>}
                     </div>
-                    <p className="text-[11px] text-neutral-400 truncate max-w-[120px]">{e.name}</p>
+                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate max-w-[130px] font-medium">{e.name}</p>
                   </td>
 
                   {/* Mercado */}
-                  <td className="px-3 py-2">
-                    <span className="text-[11px] font-mono bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded text-neutral-600 dark:text-neutral-400">
+                  <td className="px-3 py-2.5">
+                    <span className="text-[11px] font-mono font-semibold bg-neutral-200 dark:bg-neutral-700 px-2 py-0.5 rounded text-neutral-700 dark:text-neutral-300">
                       {e.mercado || "—"}
                     </span>
                   </td>
 
                   {/* Precio actual */}
-                  <td className="px-3 py-2 text-right font-mono font-bold text-[#0e1f1a] dark:text-neutral-100 whitespace-nowrap">
-                    {fmtP(e.last_price)}
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                    <span className="font-mono font-bold text-neutral-900 dark:text-white text-sm">
+                      {fmtP(e.last_price)}
+                    </span>
                   </td>
 
                   {/* Deseado */}
-                  <td className="px-3 py-2 bg-blue-50/60 dark:bg-blue-900/10">
+                  <td className="px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 border-l border-blue-100 dark:border-blue-900">
                     <div className="flex items-center justify-end gap-1">
                       <EditableCell
                         value={e.deseado}
                         onChange={(v) => updateField(e.id, "deseado", v)}
-                        className="font-mono text-sm font-semibold text-blue-700 dark:text-blue-300"
+                        className="font-mono text-sm font-bold text-blue-800 dark:text-blue-200"
                       />
                       <BellToggle
                         active={e.alert_deseado !== false}
@@ -479,12 +482,12 @@ export default function SignalsView({ setSymbol }) {
                     const alertKey = `alert_nivel${n}`;
                     const alertOn = e[alertKey] !== false;
                     return (
-                      <td key={n} className="px-3 py-2 bg-green-50/40 dark:bg-green-900/5">
+                      <td key={n} className="px-3 py-2.5 bg-green-50 dark:bg-green-900/10 border-l border-green-100 dark:border-green-900">
                         <div className="flex items-center justify-end gap-1">
                           <EditableCell
                             value={val}
                             onChange={(v) => updateField(e.id, `nivel${n}`, v)}
-                            className="font-mono text-sm text-green-800 dark:text-green-400"
+                            className="font-mono text-sm font-semibold text-green-900 dark:text-green-300"
                           />
                           <BellToggle
                             active={alertOn}
@@ -496,27 +499,29 @@ export default function SignalsView({ setSymbol }) {
                   })}
 
                   {/* Riesgo */}
-                  <td className="px-3 py-2 whitespace-nowrap">
+                  <td className="px-3 py-2.5 whitespace-nowrap border-l border-neutral-100 dark:border-neutral-800">
                     <RiesgoBadge value={e.riesgo} />
                   </td>
 
                   {/* Sector */}
-                  <td className="px-3 py-2 text-xs text-neutral-600 dark:text-neutral-400 whitespace-nowrap max-w-[140px] truncate">
-                    {e.sector || "—"}
+                  <td className="px-3 py-2.5 whitespace-nowrap max-w-[150px] truncate">
+                    <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                      {e.sector || "—"}
+                    </span>
                   </td>
 
                   {/* Posibles ganancias */}
-                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap">
                     {e.posibles_ganancias != null ? (
-                      <span className="font-bold text-green-600 dark:text-green-400 font-mono text-sm">
-                        {fmtPct(e.posibles_ganancias)}
+                      <span className="inline-block font-bold text-white bg-green-600 dark:bg-green-700 font-mono text-xs px-2 py-0.5 rounded-full">
+                        +{fmtPct(e.posibles_ganancias)}
                       </span>
                     ) : <span className="text-neutral-400">—</span>}
                   </td>
 
                   {/* Delete */}
-                  <td className="px-3 py-2 text-center">
-                    <button onClick={() => deleteEntry(e.id)} className="text-neutral-300 hover:text-red-500 transition-colors p-1" title="Eliminar">
+                  <td className="px-3 py-2.5 text-center">
+                    <button onClick={() => deleteEntry(e.id)} className="text-neutral-300 hover:text-red-500 transition-colors p-1 opacity-0 group-hover:opacity-100" title="Eliminar">
                       <Trash size={14} />
                     </button>
                   </td>

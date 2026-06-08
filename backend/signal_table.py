@@ -197,11 +197,11 @@ async def signal_worker_loop(db, interval: int = 60):
                     for level_key, target in buy_levels.items():
                         if target is None:
                             continue
-                        # Comprobar toggle individual
                         if not entry.get(f"alert_{level_key}", True):
                             continue
-                        tolerance = target * 0.005  # ±0.5%
-                        if abs(price - target) > tolerance:
+                        # Alerta cuando el precio baja hasta el nivel (±1.5% o ya lo ha cruzado por abajo hasta un 3%)
+                        # Rango: desde 1.5% por encima hasta 3% por debajo del objetivo
+                        if not (target * 0.97 <= price <= target * 1.015):
                             continue
                         cd_key = f"{symbol}_{level_key}"
                         now_ts = datetime.now(timezone.utc).timestamp()
@@ -217,8 +217,8 @@ async def signal_worker_loop(db, interval: int = 60):
                             continue
                         if not entry.get(f"alert_{level_key}", True):
                             continue
-                        tolerance = target * 0.005
-                        if abs(price - target) > tolerance:
+                        # Alerta cuando el precio sube hasta el objetivo (±1.5% o ya lo ha cruzado por arriba hasta un 3%)
+                        if not (target * 0.985 <= price <= target * 1.03):
                             continue
                         cd_key = f"{symbol}_{level_key}"
                         now_ts = datetime.now(timezone.utc).timestamp()
