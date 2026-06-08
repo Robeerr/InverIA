@@ -745,6 +745,11 @@ async def hot_signals(limit: int = 5):
 # ---------- Mount ----------
 app.include_router(api_router)
 
+# Ruta raíz para el health check de Render (evita 404 en /)
+@app.get("/")
+async def app_root():
+    return {"app": "InverIA", "status": "ok"}
+
 _cors_origins = os.environ.get("CORS_ORIGINS", "*")
 _origins_list = [o.strip().rstrip("/") for o in _cors_origins.split(",") if o.strip()]
 
