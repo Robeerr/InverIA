@@ -6,6 +6,26 @@ export const API = `${BACKEND_URL}/api`;
 
 const client = axios.create({ baseURL: API, timeout: 60000 });
 
+// Attach JWT token to every request automatically
+client.interceptors.request.use((config) => {
+  const token = localStorage.getItem("inveria_token");
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+// If 401 → clear token so app redirects to login
+client.interceptors.response.use(
+  (r) => r,
+  (err) => {
+    if (err?.response?.status === 401) {
+      localStorage.removeItem("inveria_token");
+      localStorage.removeItem("inveria_user");
+      window.location.href = "/";
+    }
+    return Promise.reject(err);
+  }
+);
+
 export const api = {
   models: () => client.get(`/models`).then((r) => r.data),
   quote: (symbol) => client.get(`/quote/${symbol}`).then((r) => r.data),

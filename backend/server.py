@@ -1,6 +1,7 @@
 """FastAPI server for the InverIA stock analysis app."""
-from fastapi import FastAPI, APIRouter, HTTPException, Request, UploadFile, File
+from fastapi import FastAPI, APIRouter, HTTPException, Request, UploadFile, File, Depends
 from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordRequestForm
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -11,7 +12,7 @@ import certifi
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import asyncio
 import market_data
@@ -23,6 +24,7 @@ import opportunities
 import portfolio
 import degiro_parser
 import signal_table
+import auth
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -172,6 +174,20 @@ async def health():
     """Lightweight endpoint used by external cron pings (cron-job.org / GitHub Actions)
     to keep the Render free tier instance warm so the alerts worker keeps running."""
     return {"status": "ok", "ts": datetime.now(timezone.utc).isoformat()}
+
+
+# ---------- Auth ----------
+@api_router.post("/auth/login", response_model=auth.Token)
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    if not auth.authenticate_user(form_data.username, form_data.password):
+        raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
+    token = auth.create_access_token({"sub": form_data.username})
+    return {"access_token": token, "token_type": "bearer", "username": form_data.username}
+
+
+@api_router.get("/auth/me")
+async def me(current_user: str = Depends(auth.get_current_user)):
+    return {"username": current_user, "authenticated": True}
 
 
 @api_router.get("/models")

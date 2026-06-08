@@ -1,11 +1,12 @@
 import React from "react";
-import { ChartLineUp, MagnifyingGlass, House, Briefcase, CalendarBlank, ClockCounterClockwise, Lightning, Moon, Sun, TelegramLogo, Crosshair, List, X, Bell } from "@phosphor-icons/react";
+import { ChartLineUp, MagnifyingGlass, House, Briefcase, CalendarBlank, Lightning, Moon, Sun, TelegramLogo, Crosshair, List, X, Bell, SignOut, User } from "@phosphor-icons/react";
 import { Input } from "../components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Button } from "../components/ui/button";
 import { Link, useLocation } from "react-router-dom";
 import { api } from "../lib/api";
 import { toast } from "sonner";
+import { useAuth } from "../context/AuthContext";
 
 const DEFAULT_MODELS = [
   { value: "gpt-oss-120b", label: "Rápido · Gratuito (recomendado)", available: true },
@@ -19,10 +20,10 @@ const NAV = [
   { to: "/calendario", label: "Calendario", icon: CalendarBlank, testId: "nav-calendar" },
   { to: "/signals", label: "Señales", icon: Crosshair, testId: "nav-signals" },
   { to: "/alertas", label: "Alertas", icon: Bell, testId: "nav-alerts" },
-  { to: "/historial", label: "Historial", icon: ClockCounterClockwise, testId: "nav-history" },
 ];
 
 export default function Header({ symbol, setSymbol, onSearch, model, setModel, showSearch = true, darkMode, setDarkMode }) {
+  const { user, logout } = useAuth();
   const [query, setQuery] = React.useState(symbol || "");
   const [models, setModels] = React.useState(DEFAULT_MODELS);
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -175,6 +176,14 @@ export default function Header({ symbol, setSymbol, onSearch, model, setModel, s
             </SelectContent>
           </Select>
           )}
+          {/* User + logout */}
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-[#e5e0d8] bg-white text-xs font-mono text-[#5c6b66]">
+            <User size={13} />
+            <span className="hidden md:inline">{user}</span>
+            <button onClick={logout} title="Cerrar sesión" className="ml-1 hover:text-red-500 transition-colors">
+              <SignOut size={13} />
+            </button>
+          </div>
           {/* Hamburger */}
           <Button
             onClick={() => setMenuOpen(!menuOpen)}
