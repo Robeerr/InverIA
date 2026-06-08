@@ -236,27 +236,52 @@ async def signal_worker_loop(db, interval: int = 60):
 
 
 def _fire_alert(entry, symbol, level_label, target, price, diff_pct, action):
-    """Dispara alerta por Telegram y email."""
-    emoji = "🟢" if action == "COMPRA" else "🎯"
-    name = entry.get("name", "")
+    """Dispara alerta por Telegram."""
+    name = entry.get("name", "") or symbol
     sector = entry.get("sector", "")
     riesgo = entry.get("riesgo", "")
+    mercado = entry.get("mercado", "")
+    posibles = entry.get("posibles_ganancias")
 
     logger.info("SIGNAL HIT: %s %s @ %.2f (target %.2f, %s)", symbol, level_label, price, target, action)
 
-    tg_msg = (
-        f"{emoji} *Señal InverIA · {telegram_notifier._esc_md(symbol)}*\n\n"
-        f"*{telegram_notifier._esc_md(level_label)}* alcanzado: "
-        f"*${telegram_notifier._esc_md(f'{target:.2f}')}*\n"
-        f"Precio actual: *${telegram_notifier._esc_md(f'{price:.2f}')}* "
-        f"\\({telegram_notifier._esc_md(f'{diff_pct:+.2f}')}%\\)\n"
-        f"Acción: *{telegram_notifier._esc_md(action)}*\n"
-    )
-    if name:
-        tg_msg += f"{telegram_notifier._esc_md(name)}"
+    e = telegram_notifier._esc_md
+
+    if action == "COMPRA":
+        header = "🟢🟢🟢 *ALERTA DE COMPRA* 🟢🟢🟢"
+        price_emoji = "💰"
+        target_emoji = "🎯"
+        extra = f"📈 Posible ganancia: *\\+{e(f'{posibles:.2f}')}%*\n" if posibles else ""
+    else:
+        header = "🔴🔴🔴 *ALERTA DE VENTA* 🔴🔴🔴"
+        price_emoji = "💸"
+        target_emoji = "🏁"
+        extra = f"📈 Ganancia realizada: *\\+{e(f'{posibles:.2f}')}%*\n" if posibles else ""
+
+    info_line = f"🏛️ {e(mercado)}" if mercado else ""
     if sector:
-        tg_msg += f" · {telegram_notifier._esc_md(sector)}"
+        info_line += f" · {e(sector)}"
     if riesgo:
-        tg_msg += f" · Riesgo: {telegram_notifier._esc_md(riesgo)}"
+        info_line += f" · Riesgo {e(riesgo)}"
+
+    tg_msg = (
+        f"{header}\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📌 *{e(name)} \\({e(symbol)}\\)*\n"
+    )
+    if info_line:
+        tg_msg += f"{info_line}\n"
+    tg_msg += (
+        f"\n"
+        f"{price_emoji} *Precio actual: \\${e(f'{price:.2f}')}*\n"
+        f"{target_emoji} *{e(level_label)}: \\${e(f'{target:.2f}')}*\n\n"
+        f"📊 Diferencia: *{e(f'{diff_pct:+.2f}')}%*\n"
+    )
+    if extra:
+        tg_msg += extra
+    tg_msg += (
+        f"\n━━━━━━━━━━━━━━━━━━━━\n"
+        f"⚡ _InverIA · Alerta automática_"
+    )
 
     asyncio.create_task(telegram_notifier.send_message(tg_msg))
