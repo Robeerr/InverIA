@@ -1,0 +1,100 @@
+{
+  "theme": "light",
+  "archetype": "1 (Organic & Earthy)",
+  "emotional_tone": "Trust, precision, grounded, professional",
+  "design_context": "dashboard",
+  "colors": {
+    "background": "#F5F3EF",
+    "surface": "#FFFFFF",
+    "primary": "#1A3A32",
+    "secondary": "#E5E0D8",
+    "accent_buy": "#4A7C59",
+    "accent_sell": "#D85C41",
+    "text_main": "#0E1F1A",
+    "text_muted": "#5C6B66",
+    "border": "#E5E0D8"
+  },
+  "typography": {
+    "headings": {
+      "family": "Manrope, sans-serif",
+      "weights": ["600", "800"],
+      "tracking": "tracking-tight"
+    },
+    "body": {
+      "family": "'IBM Plex Sans', sans-serif",
+      "weights": ["400", "500"]
+    },
+    "mono": {
+      "family": "'IBM Plex Mono', monospace",
+      "usage": "Ticker symbols, numerical data, real-time prices"
+    },
+    "sizes": {
+      "h1": "text-2xl md:text-3xl",
+      "h2": "text-xl md:text-2xl",
+      "h3": "text-lg md:text-xl",
+      "body": "text-sm",
+      "labels": "text-xs uppercase tracking-[0.2em]"
+    }
+  },
+  "layout": {
+    "spacing_system": "Generous spacing inside components but tight grids. p-4 to p-6 for card internals.",
+    "grid_strategy": "Control Room Grid (MODE B) - Base grid-cols-1 md:grid-cols-3 lg:grid-cols-4. gap-4 or gap-6. Every pixel utilized, no jagged bottoms.",
+    "alignment": "Left-align dense content and metrics. Optical alignment for icons."
+  },
+  "surface_strategy": {
+    "cards": "Flat solid surfaces. 1px subtle border (border-[#E5E0D8]), rounded-md. No heavy drop shadows. Hover states: -translate-y-[2px], subtle shadow-lg.",
+    "header": "Solid background with hard bottom border to separate from scrollable areas. Z-index 50."
+  },
+  "components": {
+    "shadcn": ["card", "button", "input", "dropdown-menu", "tabs", "badge", "dialog", "select", "table", "scroll-area"],
+    "charts": "Recharts for standard lines/bars. Use area charts for prices. For candlesticks, compose using custom SVG/Recharts or a dedicated lightweight library.",
+    "customizations": "Remove default vercel-look. Apply sharp borders, organic color palette, and 'IBM Plex Sans' text to UI primitives. Ensure high contrast."
+  },
+  "motion": {
+    "hover": "Subtle color darkening and slight lift (-translate-y-[2px]) for actionable cards. transition-all duration-200 ease-in-out.",
+    "entrance": "Staggered fade-up for bento grid widgets.",
+    "real_time_updates": "Subtle background flash (green/red) on price tick updates for 500ms before returning to normal."
+  },
+  "icons": {
+    "library": "@phosphor-icons/react",
+    "style": "Duotone or bold weight for primary metrics, regular for lists."
+  },
+  "media": {
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1607746882042-944635dfe10e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTJ8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBjb3Jwb3JhdGUlMjBwb3J0cmFpdCUyMHByb2ZpbGV8ZW58MHx8fHwxNzgwNTk1NDgyfDA&ixlib=rb-4.1.0&q=85",
+        "category": "user_avatar",
+        "description": "User profile picture for the header nav."
+      }
+    ],
+    "placeholders_forbidden": true
+  },
+  "features": [
+    "Buscador de acciones (Stock search bar for tickers like AAPL, TSLA)",
+    "Ticker de precios en vivo (Live price ticker)",
+    "Gráfico interactivo de velas (Interactive candlestick chart with RSI, MACD, Bollinger, Fibonacci, MA)",
+    "Panel de recomendación IA (AI buy/sell recommendation with confidence score)",
+    "Niveles de soporte y resistencia (Key buy/sell levels visualization)",
+    "Zonas sugeridas de Stop-loss y Take-profit",
+    "Panel de indicadores técnicos",
+    "Fundamentales de la empresa (Market cap, P/E, dividend, etc.)",
+    "Selector de modelo LLM (GPT-5.2, Claude Sonnet 4.5, Gemini 3 Flash)",
+    "Lista de seguimiento personal (Watchlist)",
+    "Alertas de precio (Price alerts)",
+    "Feed de noticias de la acción",
+    "Selector de temporalidad (1D, 1W, 1M, 3M, 1Y, 5Y)"
+  ],
+  "accessibility": {
+    "contrast": "Ensure minimum 4.5:1 ratio. Green/Red cues must have secondary visual indicators (like arrows or icons) for colorblindness.",
+    "testing": "All interactive and key informational elements MUST include data-testid attribute in kebab-case (e.g. data-testid='buy-recommendation-button')."
+  },
+  "instructions_to_main_agent": [
+    "Use standard pure HTML/Tailwind for structural layout (Control Room Grid). Do not use Shadcn 'Card' for structural layout containers, use them for actual widgets.",
+    "Build the dashboard emphasizing the 'Top-left north star metric' pattern. The AI Buy/Sell recommendation and confidence score should be highly visible.",
+    "The app MUST be in SPANISH.",
+    "Install and use '@phosphor-icons/react' for icons.",
+    "Ensure 'IBM Plex Mono' or a monospace font is used for all numerical data and tickers.",
+    "Design an explicit toggle/dropdown for the LLM Model Selector (GPT-5.2, Claude, Gemini) in the header or AI panel.",
+    "DO NOT use Inter font. Follow the Organic & Earthy color palette strictly (no teal, no purple). Use Moss Green and Terracotta for financial indicators."
+  ]
+}

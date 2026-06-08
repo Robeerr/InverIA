@@ -1,0 +1,31 @@
+{
+  "summary": "First testing iteration on InverIA stock analysis app. Tested all backend APIs (21 pytest tests) and frontend flows. All backend endpoints pass: quote/chart/indicators/news/popular/watchlist CRUD/alerts CRUD/analyze for all 3 LLM models (gpt-5.2, claude-sonnet-4.5, gemini-3-flash). Frontend renders correctly with AAPL by default, search works (TSLA loaded), timeframe selector, model selector dropdown shows all 3 models, AI analysis generates recommendation (MANTENER w/ 62% confidence rendered), watchlist/alerts/popular sidebar tabs and all indicator panel tabs (Momentum/Tendencia/Niveles/Patrones) function.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "PriceChart", "issue": "Price level labels (R:, S:, SL:, TP1, TP2) overlap visually on the right edge of the chart - text becomes unreadable when multiple levels are close together", "selector": ".recharts-reference-line", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "PriceChart", "issues": ["Recharts width(-1) height(-1) console warning on initial render due to ResponsiveContainer mounting before layout settles; cosmetic only, chart renders fine after"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Optional: improve chart reference-line label positioning to avoid overlap (offset labels vertically or use a legend)",
+    "Optional: set explicit minHeight on chart container to silence Recharts width(-1) warning on first paint"
+  ],
+  "critical_code_review_comments": [
+    "server.py uses deprecated @app.on_event('shutdown'); consider FastAPI lifespan handlers",
+    "Watchlist POST returns 200 instead of 201 (Created) - minor REST convention",
+    "ai_analysis.py json.loads fallback may still raise on malformed responses; consider wrapping with explicit error",
+    "No rate limiting on /api/analyze - could be abused given LLM cost"
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "100% core flows"},
+  "test_credentials": "N/A (no auth)",
+  "seed_data_creation": "Test watchlist for NVDA and test alert for AAPL@999 created and cleaned up within tests",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression suite at /app/backend/tests/backend_test.py covers all endpoints incl. all 3 LLM models. Frontend tested via Playwright; all key data-testids implicitly available via text/role selectors. Default symbol on load is AAPL. Watchlist returns 409 on duplicate as expected."
+}

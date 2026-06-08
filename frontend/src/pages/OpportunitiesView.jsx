@@ -1,0 +1,225 @@
+import React from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Lightning, TrendDown, TrendUp, Sparkle, Pulse, Sun, ArrowRight, ArrowClockwise } from "@phosphor-icons/react";
+import { Button } from "../components/ui/button";
+import { api } from "../lib/api";
+import { fmtPrice, fmtPct } from "../lib/format";
+
+const CATEGORY_META = {
+  OVERSOLD: { label: "Sobrevendidas (RSI<30)", icon: TrendDown, color: "#4a7c59", desc: "RSI muy bajo, posible rebote técnico" },
+  DIP: { label: "Caídas Fuertes (Compra el dip)", icon: TrendDown, color: "#d85c41", desc: "Cayendo hoy, oportunidad si fundamentales son sólidos" },
+  VALUE: { label: "Cerca de Mínimos 52sem", icon: Sun, color: "#c9a14a", desc: "Cerca de mínimos anuales, valor potencial" },
+  MOMENTUM: { label: "Momentum Alcista", icon: TrendUp, color: "#4a7c59", desc: "Tendencia alcista sana en marcha" },
+  BREAKOUT: { label: "Breakout / Máximos 52sem", icon: Sparkle, color: "#1a3a32", desc: "Rompiendo máximos, fuerza relativa alta" },
+  GENERAL: { label: "Señales Mixtas", icon: Pulse, color: "#5c6b66", desc: "Combinación de señales positivas" },
+};
+
+function OpportunityCard({ op, onPick }) {
+  const meta = CATEGORY_META[op.category] || CATEGORY_META.GENERAL;
+  const up = (op.change_percent ?? 0) >= 0;
+  return (
+    <div
+      data-testid={`opportunity-${op.symbol}`}
+      className="card-flat p-4 hover:shadow-md transition-all cursor-pointer card-hover"
+      onClick={() => onPick(op.symbol)}
+    >
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-10 h-10 rounded-md bg-[#1a3a32] text-[#f5f3ef] flex items-center justify-center font-mono font-bold text-xs shrink-0">
+            {op.symbol.slice(0, 3)}
+          </div>
+          <div className="min-w-0">
+            <p className="font-mono font-bold text-sm text-[#0e1f1a]">{op.symbol}</p>
+            <p className="text-[10px] text-[#5c6b66] truncate max-w-[140px]">{op.name}</p>
+          </div>
+        </div>
+        <span
+          className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider"
+          style={{ background: `${meta.color}15`, color: meta.color, border: `1px solid ${meta.color}40` }}
+        >
+          Score {op.score}
+        </span>
+      </div>
+
+      <div className="flex items-baseline justify-between mb-2">
+        <p className="font-mono font-bold text-lg text-[#0e1f1a]">${fmtPrice(op.price)}</p>
+        <p className={`font-mono text-xs ${up ? "text-[#4a7c59]" : "text-[#d85c41]"}`}>
+          {fmtPct(op.change_percent)}
+        </p>
+      </div>
+
+      <div className="space-y-1 mb-3">
+        {op.signals.slice(0, 3).map((s, i) => (
+          <p key={i} className="text-[11px] text-[#0e1f1a] flex items-start gap-1">
+            <span className="text-[#1a3a32] mt-0.5">·</span>
+            {s}
+          </p>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-3 gap-1 text-center mb-3 text-[10px] font-mono">
+        <div className="bg-[#f5f3ef] border border-[#e5e0d8] rounded px-1 py-1">
+          <p className="text-[#5c6b66] uppercase text-[9px]">RSI</p>
+          <p className="text-[#0e1f1a] font-semibold">{op.rsi ?? "—"}</p>
+        </div>
+        <div className="bg-[#4a7c59]/10 border border-[#4a7c59]/30 rounded px-1 py-1">
+          <p className="text-[#5c6b66] uppercase text-[9px]">Soporte</p>
+          <p className="text-[#4a7c59] font-semibold">${fmtPrice(op.nearest_support) || "—"}</p>
+        </div>
+        <div className="bg-[#d85c41]/10 border border-[#d85c41]/30 rounded px-1 py-1">
+          <p className="text-[#5c6b66] uppercase text-[9px]">Resist.</p>
+          <p className="text-[#d85c41] font-semibold">${fmtPrice(op.nearest_resistance) || "—"}</p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between text-[10px] text-[#5c6b66]">
+        <span>{op.analyst_consensus ? `${op.analyst_consensus}` : "—"}</span>
+        <span className="flex items-center gap-1 text-[#1a3a32] font-mono">
+          Analizar <ArrowRight size={10} weight="bold" />
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export default function OpportunitiesView({ setSymbol }) {
+  const navigate = useNavigate();
+  const [data, setData] = React.useState(null);
+  const [loading, setLoading] = React.useState(false);
+  const [filter, setFilter] = React.useState("ALL");
+
+  const load = React.useCallback(async (refresh = false) => {
+    setLoading(true);
+    try {
+      const d = await api.opportunities(refresh);
+      setData(d);
+      // If backend is still warming the scan, retry shortly until data is ready
+      if (d?.status === "warming") {
+        setTimeout(() => load(false), 8000);
+      }
+    } catch (e) {
+      // noop
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    load();
+  }, [load]);
+
+  const handlePick = (sym) => {
+    setSymbol(sym);
+    navigate("/");
+  };
+
+  const filtered = React.useMemo(() => {
+    if (!data) return [];
+    if (filter === "ALL") return data.top || [];
+    return (data.by_category?.[filter] || []);
+  }, [data, filter]);
+
+  return (
+    <div data-testid="opportunities-view" className="space-y-6">
+      <section className="card-flat p-6">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Lightning size={20} weight="fill" className="text-[#c9a14a]" />
+              <h2 className="font-heading font-bold text-2xl text-[#0e1f1a]">Oportunidades del Día</h2>
+            </div>
+            <p className="text-sm text-[#5c6b66]">
+              Escaneo diario de {data?.universe_size || 50} acciones populares · Detecta sobrecompras, caídas fuertes, momentum y breakouts.
+            </p>
+          </div>
+          <Button
+            data-testid="refresh-opportunities"
+            onClick={() => load(true)}
+            disabled={loading}
+            variant="outline"
+            className="border-[#e5e0d8] font-mono text-xs"
+          >
+            <ArrowClockwise size={14} weight="bold" className="mr-1" />
+            {loading ? "Escaneando..." : "Refrescar"}
+          </Button>
+        </div>
+        {data?.generated_at && (
+          <p className="text-[10px] text-[#5c6b66] mt-2 font-mono">
+            Último escaneo: {new Date(data.generated_at).toLocaleString("es-ES")} · {data.opportunities_found} oportunidades detectadas
+          </p>
+        )}
+      </section>
+
+      {/* Category filter */}
+      {data && (
+        <div className="flex gap-2 flex-wrap" data-testid="category-filter">
+          <button
+            onClick={() => setFilter("ALL")}
+            className={`px-3 py-1.5 rounded-full text-xs font-mono border transition-all ${
+              filter === "ALL"
+                ? "bg-[#1a3a32] text-[#f5f3ef] border-[#1a3a32]"
+                : "bg-white text-[#5c6b66] border-[#e5e0d8] hover:border-[#1a3a32]"
+            }`}
+          >
+            Top 15 ({data.top?.length || 0})
+          </button>
+          {Object.entries(CATEGORY_META).map(([key, meta]) => {
+            const count = data.by_category?.[key]?.length || 0;
+            if (count === 0) return null;
+            return (
+              <button
+                key={key}
+                data-testid={`filter-${key}`}
+                onClick={() => setFilter(key)}
+                className={`px-3 py-1.5 rounded-full text-xs font-mono border transition-all ${
+                  filter === key
+                    ? "text-[#f5f3ef] border-transparent"
+                    : "bg-white text-[#5c6b66] border-[#e5e0d8] hover:border-current"
+                }`}
+                style={filter === key ? { backgroundColor: meta.color, borderColor: meta.color } : { color: meta.color }}
+              >
+                {meta.label} ({count})
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Active category info */}
+      {filter !== "ALL" && CATEGORY_META[filter] && (
+        <div className="bg-[#f5f3ef] border-l-4 px-4 py-2 rounded text-sm" style={{ borderColor: CATEGORY_META[filter].color }}>
+          <p className="text-[#0e1f1a] font-medium">{CATEGORY_META[filter].label}</p>
+          <p className="text-xs text-[#5c6b66] mt-0.5">{CATEGORY_META[filter].desc}</p>
+        </div>
+      )}
+
+      {loading && (
+        <div className="card-flat p-12 text-center">
+          <p className="text-sm text-[#5c6b66]">Escaneando el mercado... Esto puede tardar 10-20 segundos.</p>
+        </div>
+      )}
+
+      {!loading && data?.status === "warming" && (
+        <div className="card-flat p-12 text-center" data-testid="opportunities-warming">
+          <p className="text-sm text-[#5c6b66]">
+            Calentando el escáner de oportunidades... Se actualizará automáticamente en unos segundos.
+          </p>
+        </div>
+      )}
+
+      {!loading && data && data.status !== "warming" && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map((op) => (
+            <OpportunityCard key={op.symbol} op={op} onPick={handlePick} />
+          ))}
+        </div>
+      )}
+
+      {!loading && data && data.status !== "warming" && filtered.length === 0 && (
+        <div className="card-flat p-12 text-center">
+          <p className="text-sm text-[#5c6b66]">Sin oportunidades en esta categoría hoy.</p>
+        </div>
+      )}
+    </div>
+  );
+}

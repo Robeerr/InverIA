@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 2 testing for InverIA stock analysis app. All 30 backend pytest cases PASS including new endpoints: /analyst/{symbol} (Finnhub consensus + breakdown + score + price_target — price_target is None for AAPL because Finnhub free tier returns 403 on /stock/price-target, gracefully handled), /sentiment/{symbol} (Alpha Vantage daily cap exceeded → empty items, no 500), /backtest (returns total_trades/wins/losses/win_rate/total_return_pct/trades), /compare (3 tickers each with quote/indicators/candles), /history (15 saved analyses) + /history/{symbol}, /alerts/test-email (Resend → ok), and /analyze response now includes analyst_consensus, price_target, sentiment_score fields for all 3 LLM models. Alerts worker confirmed running ('Alerts worker arrancado' in logs). Frontend tested via Playwright: Dashboard renders new prominent Trading Levels section with big recommendation pill (MANTENER), 4 level cards (entry $303-306, SL $287.40, TP1 $316.94, TP2 $319.08), supports/resistances, AnalystConsensus card (COMPRAR, 72.7 score, breakdown bars for 55 analysts), Backtest panel executes and shows wins/losses/win_rate/avg days (1 trade, 100% win, +4.6%). Navigation tabs Dashboard/Comparar/Historial all work; Compare adds MSFT ticker and shows 3 comparison rows; History page lists 15 items with expandable details showing tendencia/horizonte/R-R/entrada/SL/TP1/TP2/confianza + AI technical analysis text. Test email button shows 'Email de prueba enviado' toast.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/analyst/{symbol}", "issue": "price_target is null for AAPL because Finnhub free tier returns 403 on /stock/price-target endpoint. Handled gracefully (returns null), but the 'analyst price target band' feature requested in problem statement will not render until a paid Finnhub plan is used."},
+      {"endpoint": "/api/sentiment/{symbol}", "issue": "Alpha Vantage daily 25/day cap hit; returns empty items + null average_score + null label (graceful, no 500)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "PriceChart", "issues": ["Recharts width(-1) height(-1) warning still present on initial render (carried over from iteration 1, cosmetic only)"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Consider upgrading Finnhub plan or hiding the 'Price Target' UI band gracefully when null (currently the TradingLevels component already conditionally renders price-target only when data exists, so this is fine)",
+    "Alpha Vantage daily cap (25/day) is consumed quickly during dev; consider caching sentiment responses for ~6h or showing 'datos no disponibles hoy' label in UI",
+    "Optional: minor PriceChart ResponsiveContainer warning suppression"
+  ],
+  "critical_code_review_comments": [
+    "server.py still uses deprecated @app.on_event('startup'/'shutdown'); migrate to FastAPI lifespan handlers (especially since startup now spawns alerts_worker_loop background task)",
+    "GET /api/history is a catch-all that comes AFTER /api/history/{symbol} in the router — order is fine but be careful if more routes are added",
+    "alerts_worker.py traceback was observed in logs once (line 57 in send_alert_email); not reproduced but worth a defensive try/except review",
+    "No deduplication or rate-limit on /api/analyze; combined with auto-persistence to db.analyses, history can grow indefinitely (15 entries in just one test run)",
+    "/api/compare slices to 6 symbols silently — should return a 400 if more than 6 are submitted",
+    "Backtest endpoint does not validate that entry_min < entry_max or stop_loss is on correct side of entry — could produce nonsensical results"
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (30/30)", "frontend": "100% core flows (Dashboard + Compare + History + test-email)"},
+  "test_credentials": "N/A (no auth)",
+  "seed_data_creation": "Multiple /api/analyze runs during tests (3 LLM models × AAPL) auto-persisted analyses to db.analyses; cleaned watchlist NVDA test entry; alert AAPL@999 created and cleaned within tests.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression suite at /app/backend/tests/backend_test.py covers all 30 endpoints incl. new analyst/sentiment/backtest/compare/history/test-email. Finnhub free tier does NOT include /stock/price-target (403) — test is now lenient for this. Alpha Vantage 25/day rate limit may cause sentiment to return empty (handled). Resend test email recipient must remain erroberperxas@gmail.com (verified in Resend testing mode). History API works fine; if a Playwright test gets empty list after nav, wait ≥4s for fetch.",
+  "rca of the issue": "N/A — no functional bugs. The only API gap (price_target null) is a Finnhub free-tier permission issue, not a code defect."
+}

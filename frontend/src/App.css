@@ -1,0 +1,32 @@
+/* App-level styles */
+.App {
+    min-height: 100vh;
+    background-color: #f5f3ef;
+}
+
+.card-flat {
+    background: #ffffff;
+    border: 1px solid #e5e0d8;
+    border-radius: 6px;
+}
+
+.card-hover {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px -12px rgba(14, 31, 26, 0.15);
+}
+
+.label-small {
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    font-size: 0.65rem;
+    color: #5c6b66;
+    font-weight: 500;
+}
+
+.divider-soft {
+    height: 1px;
+    background: #e5e0d8;
+}
