@@ -1,580 +1,466 @@
-import React from "react";
-import { useNavigate } from "react-router-dom";
-import { Briefcase, Upload, Plus, Trash, TrendUp, TrendDown, ChartPieSlice, X, ArrowRight, Wallet } from "@phosphor-icons/react";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
-import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip as ReTooltip } from "recharts";
+import React, { useState, useEffect, useCallback } from "react";
+import {
+  Briefcase, UploadSimple, TrendUp, TrendDown, CurrencyEur,
+  Receipt, ChartPie, ArrowClockwise, Trash, WarningCircle,
+  CheckCircle, Coins, ArrowRight
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
-import { api } from "../lib/api";
-import { fmtPrice, fmtPct, fmtDate } from "../lib/format";
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from "recharts";
 
-const SECTOR_COLORS = ["#1a3a32", "#4a7c59", "#d85c41", "#c9a14a", "#7a4e8c", "#5c6b66", "#6fb381", "#a85d3c"];
+const API = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
 
-function StatCard({ label, value, sub, tone, testId }) {
-  const toneClass = tone === "buy" ? "text-[#4a7c59]" : tone === "sell" ? "text-[#d85c41]" : "text-[#0e1f1a]";
+const PIE_COLORS = ["#1a3a32","#4a7c59","#c9a14a","#d85c41","#7a4e8c","#5c6b66","#6fb381","#a85d3c","#3a6b8a","#8a6b3a"];
+
+function fmt(n, dec = 2) {
+  if (n == null || isNaN(n)) return "—";
+  return Number(n).toLocaleString("es-ES", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+function fmtEur(n) { return n != null ? `${fmt(n)} €` : "—"; }
+function fmtPct(n) { return n != null ? `${n > 0 ? "+" : ""}${fmt(n)}%` : "—"; }
+
+function PnlBadge({ value, pct }) {
+  const pos = value >= 0;
   return (
-    <div data-testid={testId} className="card-flat p-4">
-      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#5c6b66]">{label}</p>
-      <p className={`font-mono font-bold text-2xl mt-1 ${toneClass}`}>{value}</p>
-      {sub && <p className={`font-mono text-xs mt-1 ${toneClass}`}>{sub}</p>}
+    <span className={`inline-flex items-center gap-1 font-mono font-semibold ${pos ? "text-green-600" : "text-red-500"}`}>
+      {pos ? <TrendUp size={13} weight="bold" /> : <TrendDown size={13} weight="bold" />}
+      {fmtEur(value)} {pct != null && <span className="text-xs opacity-80">({fmtPct(pct)})</span>}
+    </span>
+  );
+}
+
+function StatCard({ icon, label, value, sub, color = "text-[#0e1f1a]", testId }) {
+  const Icon = icon;
+  return (
+    <div data-testid={testId} className="card-flat p-4 sm:p-5">
+      <div className="flex items-center gap-2 mb-2">
+        <Icon size={16} className="text-[#5c6b66]" />
+        <p className="text-xs font-mono uppercase tracking-wider text-[#5c6b66]">{label}</p>
+      </div>
+      <p className={`font-heading font-bold text-2xl ${color}`}>{value}</p>
+      {sub && <p className="text-xs text-[#5c6b66] mt-1 font-mono">{sub}</p>}
     </div>
   );
 }
 
-function ManualTransactionForm({ onAdd }) {
-  const [form, setForm] = React.useState({
-    date: new Date().toISOString().slice(0, 10),
-    symbol: "",
-    action: "BUY",
-    shares: "",
-    price: "",
-    currency: "USD",
-    fees: "0",
-    broker: "DEGIRO",
-  });
+// ── Upload Section ────────────────────────────────────────────────────────────
+function UploadSection({ onUploaded }) {
+  const [txFile, setTxFile] = useState(null);
+  const [accFile, setAccFile] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!form.symbol || !form.shares || !form.price) {
-      toast.error("Completa símbolo, acciones y precio");
-      return;
-    }
-    try {
-      const tx = {
-        ...form,
-        symbol: form.symbol.toUpperCase(),
-        shares: parseFloat(form.shares),
-        price: parseFloat(form.price),
-        fees: parseFloat(form.fees) || 0,
-      };
-      await api.portfolio.addTransactions([tx]);
-      toast.success("Transacción añadida");
-      setForm({ ...form, symbol: "", shares: "", price: "", fees: "0" });
-      onAdd?.();
-    } catch (e) {
-      toast.error("Error al añadir");
-    }
-  };
-
-  return (
-    <form onSubmit={submit} className="space-y-3" data-testid="manual-tx-form">
-      <div className="grid grid-cols-2 gap-2">
-        <Input data-testid="tx-symbol" placeholder="Ticker (AAPL)" value={form.symbol} onChange={(e) => setForm({ ...form, symbol: e.target.value.toUpperCase() })} className="font-mono" />
-        <Select value={form.action} onValueChange={(v) => setForm({ ...form, action: v })}>
-          <SelectTrigger data-testid="tx-action"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="BUY">Compra</SelectItem>
-            <SelectItem value="SELL">Venta</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <Input data-testid="tx-shares" type="number" step="0.0001" placeholder="Nº acciones" value={form.shares} onChange={(e) => setForm({ ...form, shares: e.target.value })} className="font-mono" />
-        <Input data-testid="tx-price" type="number" step="0.0001" placeholder="Precio/acción" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} className="font-mono" />
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        <Input data-testid="tx-date" type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="font-mono text-xs" />
-        <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v })}>
-          <SelectTrigger data-testid="tx-currency"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="USD">USD</SelectItem>
-            <SelectItem value="EUR">EUR</SelectItem>
-            <SelectItem value="GBP">GBP</SelectItem>
-          </SelectContent>
-        </Select>
-        <Input data-testid="tx-fees" type="number" step="0.01" placeholder="Comisión" value={form.fees} onChange={(e) => setForm({ ...form, fees: e.target.value })} className="font-mono text-xs" />
-      </div>
-      <Button data-testid="tx-submit" type="submit" className="w-full bg-[#1a3a32] hover:bg-[#0e1f1a] text-[#f5f3ef] font-mono">
-        <Plus size={14} weight="bold" className="mr-1" /> Añadir transacción
-      </Button>
-    </form>
-  );
-}
-
-function PdfUploader({ onAdd }) {
-  const [parsing, setParsing] = React.useState(false);
-  const [parsed, setParsed] = React.useState(null);
-
-  const handleFile = async (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-    setParsing(true);
-    setParsed(null);
-    const allTx = [];
-    const allCash = [];
-    let processed = 0;
-    let failed = 0;
-    for (const file of files) {
-      try {
-        const res = await api.portfolio.uploadPdf(file);
-        if (res.transactions) allTx.push(...res.transactions);
-        if (res.cash_events) allCash.push(...res.cash_events);
-        processed++;
-        const txCount = res.transactions?.length || 0;
-        const evCount = res.cash_events?.length || 0;
-        if (txCount === 0 && evCount === 0 && res.warning) {
-          toast.warning(`${file.name}: ${res.warning}`, { duration: 10000 });
-        } else {
-          toast.success(`${file.name}: ${txCount} ops + ${evCount} movimientos`);
-        }
-      } catch (err) {
-        failed++;
-        toast.error(`Error en ${file.name}: ${err?.response?.data?.detail?.slice(0, 120) || "error"}`);
-      }
-    }
-    if (allTx.length === 0 && allCash.length === 0) {
-      toast.error(`No se encontró nada en ${processed} PDF(s)`);
-      setParsing(false);
-      return;
-    }
-    setParsed({ transactions: allTx, cash_events: allCash });
-    toast.success(`Total: ${allTx.length} operaciones + ${allCash.length} movimientos de ${processed} PDF(s)${failed ? ` (${failed} fallaron)` : ""}`);
-    setParsing(false);
-    // Reset input so re-uploading same files works
-    e.target.value = "";
-  };
-  const updateRow = (i, field, val) => {
-    const next = [...parsed.transactions];
-    next[i] = { ...next[i], [field]: val };
-    setParsed({ ...parsed, transactions: next });
-  };
-
-  const removeRow = (i) => setParsed({ ...parsed, transactions: parsed.transactions.filter((_, j) => j !== i) });
-
-  const confirmAll = async () => {
-    try {
-      const txs = parsed.transactions.map((t) => ({
-        ...t,
-        shares: parseFloat(t.shares),
-        price: parseFloat(t.price),
-        fees: parseFloat(t.fees || 0),
-        symbol: (t.symbol || "").toUpperCase(),
-        action: (t.action || "BUY").toUpperCase(),
-      })).filter((t) => t.symbol && t.shares && t.price);
-      const promises = [];
-      if (txs.length > 0) promises.push(api.portfolio.addTransactions(txs));
-      if (parsed.cash_events && parsed.cash_events.length > 0) {
-        promises.push(api.portfolio.addCashEvents(parsed.cash_events));
-      }
-      const results = await Promise.all(promises);
-      const txCount = results[0]?.inserted || 0;
-      const cashCount = txs.length > 0 ? (results[1]?.inserted || 0) : (results[0]?.inserted || 0);
-      toast.success(`${txCount} operaciones y ${cashCount} movimientos guardados`);
-      setParsed(null);
-      onAdd?.();
-    } catch (e) {
-      toast.error("Error guardando");
-    }
-  };
-
-  return (
-    <div className="space-y-3">
-      <details className="border border-[#e5e0d8] rounded-md p-3 bg-[#f5f3ef]" data-testid="degiro-guide">
-        <summary className="cursor-pointer font-mono text-xs font-semibold text-[#1a3a32] uppercase tracking-wider">
-          📋 ¿Qué archivo subir desde DEGIRO?
-        </summary>
-        <div className="mt-3 space-y-2 text-xs text-[#0e1f1a] leading-relaxed">
-          <p className="font-semibold">Recomendado: "Informe de Transacciones" (Transactions Report)</p>
-          <ol className="list-decimal list-inside space-y-1 ml-1">
-            <li>Entra a tu cuenta DEGIRO en <span className="font-mono">trader.degiro.nl</span></li>
-            <li>Menú lateral → <strong>"Estado"</strong> → <strong>"Informes"</strong> (o <em>"Activity"</em> → <em>"Reports"</em>)</li>
-            <li>Selecciona <strong>"Informe de transacciones"</strong> (Transactions report)</li>
-            <li>Elige el rango de fechas (ej: desde tu primera operación hasta hoy)</li>
-            <li>Descarga en formato <strong>PDF</strong> y súbelo aquí</li>
-          </ol>
-          <p className="mt-2 font-semibold">También funciona:</p>
-          <ul className="list-disc list-inside space-y-0.5 ml-1">
-            <li><strong>"Informe Anual"</strong> (Annual report) — útil al final de año</li>
-            <li><strong>"Estado de cuenta"</strong> (Account statement) — incluye también dividendos (la IA los filtra)</li>
-            <li>Cualquier PDF de Trade Republic, IBKR, Revolut, etc. también funciona</li>
-          </ul>
-          <p className="mt-2 text-[#5c6b66] italic">
-            💡 La IA detecta solo COMPRAS y VENTAS de acciones/ETFs. Ignora depósitos, dividendos y comisiones de inactividad.
-          </p>
-        </div>
-      </details>
-      <label className="block">
-        <span className="text-xs text-[#5c6b66]">
-          Sube uno o varios PDFs a la vez (ej: extracto 2024 + extracto 2025) — la IA extraerá todo y lo combinará
-        </span>
-        <input
-          data-testid="pdf-upload"
-          type="file"
-          accept="application/pdf"
-          multiple
-          onChange={handleFile}
-          disabled={parsing}
-          className="mt-2 block w-full text-sm text-[#5c6b66] file:mr-3 file:py-2 file:px-4 file:rounded file:border-0 file:bg-[#1a3a32] file:text-[#f5f3ef] file:font-mono file:text-xs file:cursor-pointer hover:file:bg-[#0e1f1a]"
-        />
-      </label>
-      {parsing && (
-        <p className="text-sm text-[#5c6b66] flex items-center gap-2">
-          <span className="inline-block w-3 h-3 border-2 border-[#1a3a32] border-t-transparent rounded-full animate-spin" />
-          Analizando PDFs con IA, puede tardar 10-30s por archivo...
-        </p>
-      )}
-      {parsed && (parsed.transactions.length > 0 || parsed.cash_events.length > 0) && (
-        <div className="border border-[#e5e0d8] rounded-md p-3" data-testid="pdf-parsed-table">
-          {parsed.transactions.length > 0 && (
-            <>
-              <p className="text-xs font-mono uppercase tracking-wider text-[#5c6b66] mb-2">
-                {parsed.transactions.length} operaciones COMPRA/VENTA detectadas (edita si necesario):
-              </p>
-              <div className="max-h-[260px] overflow-y-auto space-y-2">
-                {parsed.transactions.map((tx, i) => (
-                  <div key={i} className="grid grid-cols-[1fr_60px_70px_80px_80px_30px] gap-1 items-center text-xs">
-                    <Input className="h-8 font-mono text-xs" value={tx.symbol || ""} onChange={(e) => updateRow(i, "symbol", e.target.value.toUpperCase())} />
-                    <Select value={tx.action || "BUY"} onValueChange={(v) => updateRow(i, "action", v)}>
-                      <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="BUY">BUY</SelectItem>
-                        <SelectItem value="SELL">SELL</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Input className="h-8 font-mono text-xs" type="number" step="0.0001" value={tx.shares || ""} onChange={(e) => updateRow(i, "shares", e.target.value)} />
-                    <Input className="h-8 font-mono text-xs" type="number" step="0.0001" value={tx.price || ""} onChange={(e) => updateRow(i, "price", e.target.value)} />
-                    <Input className="h-8 font-mono text-xs" type="date" value={tx.date || ""} onChange={(e) => updateRow(i, "date", e.target.value)} />
-                    <button onClick={() => removeRow(i)} className="text-[#d85c41]"><X size={14} /></button>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-          {parsed.cash_events.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-[#e5e0d8]">
-              <p className="text-xs font-mono uppercase tracking-wider text-[#5c6b66] mb-2">
-                + {parsed.cash_events.length} movimientos detectados (dividendos, comisiones, etc.):
-              </p>
-              <div className="max-h-[140px] overflow-y-auto text-xs font-mono space-y-1">
-                {parsed.cash_events.slice(0, 8).map((ev, i) => (
-                  <div key={i} className="flex justify-between text-[#5c6b66]">
-                    <span>{ev.date} · {ev.type}</span>
-                    <span className={ev.amount >= 0 ? "text-[#4a7c59]" : "text-[#d85c41]"}>
-                      {ev.amount >= 0 ? "+" : ""}{ev.amount} {ev.currency}
-                    </span>
-                  </div>
-                ))}
-                {parsed.cash_events.length > 8 && <p className="text-[10px] italic">... y {parsed.cash_events.length - 8} más</p>}
-              </div>
-            </div>
-          )}
-          <Button onClick={confirmAll} className="w-full mt-3 bg-[#1a3a32] hover:bg-[#0e1f1a] text-[#f5f3ef] font-mono text-xs" data-testid="confirm-pdf-tx">
-            Guardar todo
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export default function PortfolioView({ setSymbol }) {
-  const navigate = useNavigate();
-  const [data, setData] = React.useState(null);
-  const [cashData, setCashData] = React.useState(null);
-  const [loading, setLoading] = React.useState(false);
-  const [showAdd, setShowAdd] = React.useState(false);
-
-  const load = React.useCallback(async () => {
+  const upload = async () => {
+    if (!txFile || !accFile) { toast.error("Selecciona ambos archivos CSV"); return; }
     setLoading(true);
     try {
-      const [d, ce] = await Promise.all([
-        api.portfolio.get(),
-        api.portfolio.cashEvents().catch(() => null),
-      ]);
-      setData(d);
-      setCashData(ce);
+      const token = localStorage.getItem("inveria_token");
+      const fd = new FormData();
+      fd.append("transactions_file", txFile);
+      fd.append("account_file", accFile);
+      const res = await fetch(`${API}/api/portfolio/upload-degiro`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Error al procesar");
+      }
+      const data = await res.json();
+      toast.success(`✅ ${data.trades_parsed} operaciones · ${data.events_parsed} movimientos importados`);
+      onUploaded();
     } catch (e) {
-      toast.error("Error cargando cartera");
+      toast.error(e.message);
     } finally {
       setLoading(false);
     }
-  }, []);
-
-  React.useEffect(() => { load(); }, [load]);
-
-  const handlePickSymbol = (s) => {
-    setSymbol(s);
-    navigate("/");
   };
-
-  const removeAll = async () => {
-    if (!window.confirm("¿Eliminar TODAS las transacciones? Esta acción no se puede deshacer.")) return;
-    try {
-      await api.portfolio.clearAll();
-      toast.success("Cartera vaciada");
-      load();
-    } catch (e) { toast.error("Error"); }
-  };
-
-  const sectorData = React.useMemo(() => {
-    if (!data?.positions) return [];
-    const m = {};
-    data.positions.forEach((p) => {
-      const s = p.sector || "Otros";
-      m[s] = (m[s] || 0) + p.market_value;
-    });
-    return Object.entries(m).map(([name, value]) => ({ name, value: parseFloat(value.toFixed(2)) }));
-  }, [data]);
-
-  if (loading && !data) {
-    return <div className="card-flat p-8 text-center text-[#5c6b66]">Cargando cartera...</div>;
-  }
-
-  const s = data?.summary || {};
-  const empty = (data?.transactions_count || 0) === 0;
 
   return (
-    <div data-testid="portfolio-view" className="space-y-6">
-      <section className="card-flat p-6 flex items-center justify-between flex-wrap gap-3">
+    <div className="card-flat p-6 border-2 border-dashed border-[#e5e0d8]">
+      <div className="flex items-center gap-3 mb-5">
+        <UploadSimple size={20} className="text-[#1a3a32]" weight="bold" />
         <div>
-          <div className="flex items-center gap-2">
-            <Briefcase size={20} weight="bold" className="text-[#1a3a32]" />
-            <h2 className="font-heading font-bold text-2xl text-[#0e1f1a]">Mi Cartera</h2>
+          <h3 className="font-heading font-semibold text-[#0e1f1a]">Importar desde DEGIRO</h3>
+          <p className="text-xs text-[#5c6b66] mt-0.5">Sube los 2 CSVs de DEGIRO — se procesan al instante sin IA</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+        <div>
+          <label className="block text-xs font-mono text-[#5c6b66] uppercase tracking-wider mb-2">
+            1. Transactions.csv
+          </label>
+          <label className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${txFile ? "border-green-400 bg-green-50" : "border-[#e5e0d8] hover:bg-[#f5f3ef]"}`}>
+            <UploadSimple size={16} className={txFile ? "text-green-600" : "text-[#5c6b66]"} />
+            <span className={`text-sm font-mono truncate ${txFile ? "text-green-700" : "text-[#5c6b66]"}`}>
+              {txFile ? txFile.name : "Seleccionar archivo..."}
+            </span>
+            <input type="file" accept=".csv" className="hidden" onChange={e => setTxFile(e.target.files[0])} />
+          </label>
+        </div>
+        <div>
+          <label className="block text-xs font-mono text-[#5c6b66] uppercase tracking-wider mb-2">
+            2. Account.csv
+          </label>
+          <label className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${accFile ? "border-green-400 bg-green-50" : "border-[#e5e0d8] hover:bg-[#f5f3ef]"}`}>
+            <UploadSimple size={16} className={accFile ? "text-green-600" : "text-[#5c6b66]"} />
+            <span className={`text-sm font-mono truncate ${accFile ? "text-green-700" : "text-[#5c6b66]"}`}>
+              {accFile ? accFile.name : "Seleccionar archivo..."}
+            </span>
+            <input type="file" accept=".csv" className="hidden" onChange={e => setAccFile(e.target.files[0])} />
+          </label>
+        </div>
+      </div>
+
+      <div className="flex items-start gap-2 p-3 rounded-lg bg-[#f5f3ef] border border-[#e5e0d8] mb-4">
+        <WarningCircle size={15} className="text-[#c9a14a] mt-0.5 flex-shrink-0" />
+        <p className="text-xs text-[#5c6b66] font-mono">
+          En DEGIRO web → <b>Actividad → Transacciones</b> → Exportar CSV &nbsp;|&nbsp;
+          <b>Actividad → Cuenta</b> → Exportar CSV. Selecciona desde el inicio de tu cuenta.
+        </p>
+      </div>
+
+      <button
+        onClick={upload}
+        disabled={loading || !txFile || !accFile}
+        className="w-full h-11 bg-[#1a3a32] hover:bg-[#0e1f1a] text-[#f5f3ef] font-mono font-semibold text-sm rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+      >
+        {loading ? <><ArrowClockwise size={16} className="animate-spin" /> Procesando...</> : <><UploadSimple size={16} /> Importar cartera</>}
+      </button>
+    </div>
+  );
+}
+
+// ── Main View ─────────────────────────────────────────────────────────────────
+export default function PortfolioView({ setSymbol }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState("open"); // open | closed | fees | dividends
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem("inveria_token");
+      const res = await fetch(`${API}/api/portfolio/degiro`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json();
+      setData(json);
+    } catch { setData(null); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const deletePortfolio = async () => {
+    if (!window.confirm("¿Borrar toda la cartera importada?")) return;
+    const token = localStorage.getItem("inveria_token");
+    await fetch(`${API}/api/portfolio/degiro`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+    setData(null);
+    toast.success("Cartera borrada");
+  };
+
+  if (loading) return <div className="card-flat p-12 text-center text-[#5c6b66] font-mono">Cargando cartera...</div>;
+
+  if (!data) return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-lg bg-[#1a3a32] flex items-center justify-center">
+          <Briefcase size={20} className="text-[#f5f3ef]" weight="bold" />
+        </div>
+        <div>
+          <h2 className="font-heading font-bold text-xl text-[#0e1f1a]">Mi Cartera DEGIRO</h2>
+          <p className="text-xs text-[#5c6b66]">Importa tus CSVs para ver tu portfolio completo</p>
+        </div>
+      </div>
+      <UploadSection onUploaded={load} />
+    </div>
+  );
+
+  const s = data.summary || {};
+  const stats = data.stats || {};
+  const openPos = data.open_positions || [];
+  const closedTrades = data.closed_trades || [];
+  const dividends = data.dividends_detail || [];
+
+  const totalUnrealized = openPos.reduce((acc, p) => acc + (p.unrealized_pnl_eur || 0), 0);
+  const totalCurrentValue = openPos.reduce((acc, p) => acc + (p.current_value_eur || p.total_cost_eur), 0);
+  const totalPnl = s.total_realized_pnl + totalUnrealized;
+
+  // Pie chart data
+  const pieData = openPos.slice(0, 10).map((p, i) => ({
+    name: p.ticker, value: Math.max(p.current_value_eur || p.total_cost_eur, 0)
+  }));
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-[#1a3a32] flex items-center justify-center">
+            <Briefcase size={20} className="text-[#f5f3ef]" weight="bold" />
           </div>
-          <p className="text-sm text-[#5c6b66] mt-1">
-            {empty ? "Sube tu PDF de DEGIRO o añade operaciones manualmente." : `${data.transactions_count} transacciones · ${s.open_positions_count} posiciones abiertas`}
-          </p>
+          <div>
+            <h2 className="font-heading font-bold text-xl text-[#0e1f1a]">Mi Cartera DEGIRO</h2>
+            <p className="text-xs text-[#5c6b66]">
+              Actualizado: {data.updated_at ? new Date(data.updated_at).toLocaleString("es-ES") : "—"} ·
+              {s.total_trades} operaciones totales
+            </p>
+          </div>
         </div>
         <div className="flex gap-2">
-          <Dialog open={showAdd} onOpenChange={setShowAdd}>
-            <DialogTrigger asChild>
-              <Button data-testid="open-add-tx" className="bg-[#1a3a32] hover:bg-[#0e1f1a] text-[#f5f3ef] font-mono">
-                <Plus size={14} weight="bold" className="mr-1" /> Añadir operaciones
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader><DialogTitle>Añadir operaciones</DialogTitle></DialogHeader>
-              <Tabs defaultValue="pdf">
-                <TabsList className="grid grid-cols-2">
-                  <TabsTrigger value="pdf" data-testid="tab-pdf"><Upload size={14} className="mr-1" /> Subir PDF (Auto-IA)</TabsTrigger>
-                  <TabsTrigger value="manual" data-testid="tab-manual"><Plus size={14} className="mr-1" /> Manual</TabsTrigger>
-                </TabsList>
-                <TabsContent value="pdf" className="mt-4">
-                  <PdfUploader onAdd={() => { load(); setShowAdd(false); }} />
-                </TabsContent>
-                <TabsContent value="manual" className="mt-4">
-                  <ManualTransactionForm onAdd={() => { load(); }} />
-                </TabsContent>
-              </Tabs>
-            </DialogContent>
-          </Dialog>
-          {!empty && (
-            <Button onClick={removeAll} variant="outline" className="border-[#d85c41] text-[#d85c41] font-mono">
-              <Trash size={14} weight="bold" className="mr-1" /> Vaciar
-            </Button>
-          )}
+          <button onClick={load} className="flex items-center gap-1.5 px-3 py-2 rounded-md border border-[#e5e0d8] bg-white text-xs font-mono hover:bg-[#f5f3ef] transition-colors">
+            <ArrowClockwise size={14} /> Actualizar precios
+          </button>
+          <button onClick={deletePortfolio} className="flex items-center gap-1.5 px-3 py-2 rounded-md border border-red-200 bg-white text-xs font-mono text-red-600 hover:bg-red-50 transition-colors">
+            <Trash size={14} /> Borrar
+          </button>
         </div>
-      </section>
+      </div>
 
-      {empty ? (
-        <section className="card-flat p-12 text-center">
-          <Wallet size={48} weight="duotone" className="text-[#1a3a32] mx-auto opacity-50" />
-          <h3 className="font-heading font-bold text-xl mt-4 text-[#0e1f1a]">Tu cartera está vacía</h3>
-          <p className="text-sm text-[#5c6b66] mt-2 max-w-md mx-auto">
-            Sube el PDF de extracto de DEGIRO (o cualquier broker) y la IA extraerá todas tus operaciones automáticamente.
-          </p>
-          <Button onClick={() => setShowAdd(true)} className="mt-4 bg-[#1a3a32] hover:bg-[#0e1f1a] text-[#f5f3ef] font-mono">
-            <Upload size={14} weight="bold" className="mr-1" /> Empezar
-          </Button>
-        </section>
-      ) : (
-        <>
-          {/* Summary KPIs */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <StatCard testId="kpi-value" label="Valor Total" value={`$${fmtPrice(s.total_market_value)}`} sub={`Coste: $${fmtPrice(s.total_cost_basis)}`} />
-            <StatCard testId="kpi-pnl-total" label="P&L Total" value={`${s.total_pnl >= 0 ? "+" : ""}$${fmtPrice(s.total_pnl)}`} tone={s.total_pnl >= 0 ? "buy" : "sell"} sub="Realizado + No realizado" />
-            <StatCard testId="kpi-pnl-realized" label="P&L Realizado" value={`${s.realized_pnl >= 0 ? "+" : ""}$${fmtPrice(s.realized_pnl)}`} tone={s.realized_pnl >= 0 ? "buy" : "sell"} sub="Operaciones cerradas" />
-            <StatCard testId="kpi-pnl-unrealized" label="P&L No Realizado" value={`${s.unrealized_pnl >= 0 ? "+" : ""}$${fmtPrice(s.unrealized_pnl)}`} tone={s.unrealized_pnl >= 0 ? "buy" : "sell"} sub={`${fmtPct(s.unrealized_pnl_pct)} sobre coste`} />
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <StatCard icon={Briefcase} label="Valor cartera" value={fmtEur(totalCurrentValue)} sub="posiciones abiertas" />
+        <StatCard icon={CurrencyEur} label="Invertido" value={fmtEur(s.total_invested_eur)} sub={`${s.open_positions_count} posiciones`} />
+        <StatCard
+          icon={totalPnl >= 0 ? TrendUp : TrendDown}
+          label="P&L Total"
+          value={fmtEur(totalPnl)}
+          color={totalPnl >= 0 ? "text-green-600" : "text-red-500"}
+          sub={`Realiz. ${fmtEur(s.total_realized_pnl)}`}
+        />
+        <StatCard icon={CheckCircle} label="Win Rate" value={`${s.win_rate}%`}
+          sub={`${s.winning_trades}W / ${s.losing_trades}L`}
+          color={s.win_rate >= 50 ? "text-green-600" : "text-red-500"} />
+        <StatCard icon={Receipt} label="Comisiones" value={fmtEur(s.total_fees)} sub="total pagado" color="text-red-500" />
+        <StatCard icon={Coins} label="Dividendos" value={fmtEur(s.total_dividends)} sub={`Saldo: ${fmtEur(stats.cash_balance)}`} color="text-green-600" />
+      </div>
+
+      {/* Open positions + pie */}
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_280px] gap-6">
+        {/* Tabs */}
+        <div className="card-flat">
+          <div className="flex border-b border-[#e5e0d8] overflow-x-auto">
+            {[
+              { id: "open", label: `Posiciones abiertas (${openPos.length})` },
+              { id: "closed", label: `Operaciones cerradas (${closedTrades.length})` },
+              { id: "fees", label: "Comisiones" },
+              { id: "dividends", label: `Dividendos (${dividends.length})` },
+            ].map(t => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`px-4 py-3 text-xs font-mono whitespace-nowrap border-b-2 transition-colors ${tab === t.id ? "border-[#1a3a32] text-[#0e1f1a] font-semibold" : "border-transparent text-[#5c6b66] hover:text-[#0e1f1a]"}`}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
 
-          {/* Day change */}
-          <div className="card-flat p-4 flex items-center justify-between">
-            <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#5c6b66]">Variación hoy</span>
-            <span className={`font-mono font-bold text-lg ${s.day_change_value >= 0 ? "text-[#4a7c59]" : "text-[#d85c41]"}`}>
-              {s.day_change_value >= 0 ? "+" : ""}${fmtPrice(s.day_change_value)}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Positions table */}
-            <section className="card-flat p-6 lg:col-span-2" data-testid="positions-table">
-              <h3 className="font-heading font-semibold text-lg text-[#0e1f1a] mb-4">Posiciones Abiertas</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-[#5c6b66] font-mono text-[10px] uppercase tracking-[0.15em] border-b border-[#e5e0d8]">
-                      <th className="py-2">Ticker</th>
-                      <th className="py-2 text-right">Acciones</th>
-                      <th className="py-2 text-right">Coste medio</th>
-                      <th className="py-2 text-right">Actual</th>
-                      <th className="py-2 text-right">Valor</th>
-                      <th className="py-2 text-right">P&L</th>
+          <div className="overflow-x-auto">
+            {/* Open positions */}
+            {tab === "open" && (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-[#5c6b66] text-xs font-mono border-b border-[#e5e0d8]">
+                    <th className="px-4 py-3 text-left">Acción</th>
+                    <th className="px-4 py-3 text-right">Acciones</th>
+                    <th className="px-4 py-3 text-right">Coste medio</th>
+                    <th className="px-4 py-3 text-right">Precio actual</th>
+                    <th className="px-4 py-3 text-right">Valor actual</th>
+                    <th className="px-4 py-3 text-right">P&L no realiz.</th>
+                    <th className="px-4 py-3 text-right">Invertido</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {openPos.map((p) => (
+                    <tr key={p.ticker} className="border-b border-[#f0ece4] hover:bg-[#f9f7f3] cursor-pointer" onClick={() => setSymbol?.(p.ticker)}>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-[#1a3a32]">{p.ticker}</span>
+                          <ArrowRight size={11} className="text-[#c5bfb4]" />
+                          <span className="text-xs text-[#5c6b66] truncate max-w-[120px]">{p.product}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono">{fmt(p.shares, 4)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-[#5c6b66]">{fmtEur(p.avg_cost_eur)}</td>
+                      <td className="px-4 py-3 text-right font-mono">
+                        {p.current_price ? `$${fmt(p.current_price)}` : <span className="text-[#c5bfb4]">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono font-semibold">{fmtEur(p.current_value_eur || p.total_cost_eur)}</td>
+                      <td className="px-4 py-3 text-right">
+                        {p.unrealized_pnl_eur != null
+                          ? <PnlBadge value={p.unrealized_pnl_eur} pct={p.unrealized_pnl_pct} />
+                          : <span className="text-[#c5bfb4] font-mono text-xs">cargando...</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-[#5c6b66]">{fmtEur(p.total_cost_eur)}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {data.positions.map((p) => (
-                      <tr key={p.symbol} data-testid={`pos-${p.symbol}`} className="border-b border-[#f0ebe1] hover:bg-[#f5f3ef] cursor-pointer" onClick={() => handlePickSymbol(p.symbol)}>
-                        <td className="py-3">
-                          <p className="font-mono font-semibold text-[#0e1f1a]">{p.symbol}</p>
-                          <p className="text-[10px] text-[#5c6b66] truncate max-w-[140px]">{p.name}</p>
-                        </td>
-                        <td className="py-3 text-right font-mono">{p.shares}</td>
-                        <td className="py-3 text-right font-mono text-[#5c6b66]">${fmtPrice(p.avg_cost)}</td>
-                        <td className="py-3 text-right font-mono">${fmtPrice(p.current_price)}</td>
-                        <td className="py-3 text-right font-mono font-semibold">${fmtPrice(p.market_value)}</td>
-                        <td className={`py-3 text-right font-mono font-semibold ${p.unrealized_pnl >= 0 ? "text-[#4a7c59]" : "text-[#d85c41]"}`}>
-                          {p.unrealized_pnl >= 0 ? "+" : ""}${fmtPrice(p.unrealized_pnl)}
-                          <br/>
-                          <span className="text-[10px] font-normal">{fmtPct(p.unrealized_pnl_pct)}</span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-
-            {/* Sector pie */}
-            {sectorData.length > 0 && (
-              <section className="card-flat p-6" data-testid="sector-chart">
-                <div className="flex items-center gap-2 mb-3">
-                  <ChartPieSlice size={18} weight="bold" className="text-[#1a3a32]" />
-                  <h3 className="font-heading font-semibold text-lg text-[#0e1f1a]">Por Sector</h3>
-                </div>
-                <div className="h-[280px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={sectorData} dataKey="value" nameKey="name" innerRadius={50} outerRadius={90} paddingAngle={2}>
-                        {sectorData.map((entry, i) => (
-                          <Cell key={i} fill={SECTOR_COLORS[i % SECTOR_COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <ReTooltip formatter={(v) => `$${fmtPrice(v)}`} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="space-y-1 mt-2">
-                  {sectorData.map((s, i) => (
-                    <div key={s.name} className="flex items-center justify-between text-xs">
-                      <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full" style={{background: SECTOR_COLORS[i % SECTOR_COLORS.length]}} /> {s.name}</span>
-                      <span className="font-mono text-[#5c6b66]">${fmtPrice(s.value)}</span>
-                    </div>
                   ))}
-                </div>
-              </section>
+                  {openPos.length === 0 && (
+                    <tr><td colSpan={7} className="px-4 py-8 text-center text-[#5c6b66] font-mono text-sm">No hay posiciones abiertas</td></tr>
+                  )}
+                </tbody>
+              </table>
             )}
-          </div>
 
-          {/* Realized PnL by symbol + Trades history */}
-          {data.trades_history.length > 0 && (
-            <section className="card-flat p-6" data-testid="trades-history">
-              <h3 className="font-heading font-semibold text-lg text-[#0e1f1a] mb-3">Historial de Ventas (P&L Realizado)</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-[#5c6b66] font-mono text-[10px] uppercase tracking-[0.15em] border-b border-[#e5e0d8]">
-                      <th className="py-2">Fecha</th>
-                      <th className="py-2">Ticker</th>
-                      <th className="py-2 text-right">Acciones</th>
-                      <th className="py-2 text-right">Compra</th>
-                      <th className="py-2 text-right">Venta</th>
-                      <th className="py-2 text-right">P&L</th>
+            {/* Closed trades */}
+            {tab === "closed" && (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-[#5c6b66] text-xs font-mono border-b border-[#e5e0d8]">
+                    <th className="px-4 py-3 text-left">Acción</th>
+                    <th className="px-4 py-3 text-left">Fecha compra</th>
+                    <th className="px-4 py-3 text-left">Fecha venta</th>
+                    <th className="px-4 py-3 text-right">Acc.</th>
+                    <th className="px-4 py-3 text-right">Coste</th>
+                    <th className="px-4 py-3 text-right">Ingresos</th>
+                    <th className="px-4 py-3 text-right">P&L realiz.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {closedTrades.map((ct, i) => (
+                    <tr key={i} className="border-b border-[#f0ece4] hover:bg-[#f9f7f3]">
+                      <td className="px-4 py-2.5">
+                        <span className="font-mono font-bold text-[#1a3a32]">{ct.ticker}</span>
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-[#5c6b66]">{ct.buy_date}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-[#5c6b66]">{ct.sell_date}</td>
+                      <td className="px-4 py-2.5 text-right font-mono text-xs">{fmt(ct.shares, 2)}</td>
+                      <td className="px-4 py-2.5 text-right font-mono text-xs text-[#5c6b66]">{fmtEur(ct.buy_cost_total_eur)}</td>
+                      <td className="px-4 py-2.5 text-right font-mono text-xs text-[#5c6b66]">{fmtEur(ct.sell_proceeds_eur)}</td>
+                      <td className="px-4 py-2.5 text-right"><PnlBadge value={ct.realized_pnl_eur} pct={ct.realized_pnl_pct} /></td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {data.trades_history.map((t, i) => (
-                      <tr key={i} className="border-b border-[#f0ebe1]">
-                        <td className="py-2 font-mono text-xs">{fmtDate(t.date)}</td>
-                        <td className="py-2 font-mono font-semibold">{t.symbol}</td>
-                        <td className="py-2 text-right font-mono">{t.shares}</td>
-                        <td className="py-2 text-right font-mono">${fmtPrice(t.buy_avg_cost)}</td>
-                        <td className="py-2 text-right font-mono">${fmtPrice(t.sell_price)}</td>
-                        <td className={`py-2 text-right font-mono font-semibold ${t.realized_pnl >= 0 ? "text-[#4a7c59]" : "text-[#d85c41]"}`}>
-                          {t.realized_pnl >= 0 ? "+" : ""}${fmtPrice(t.realized_pnl)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )}
-          {/* Cash events / Costs section */}
-          {cashData && cashData.events && cashData.events.length > 0 && (
-            <section className="card-flat p-6" data-testid="cash-events-section">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-heading font-semibold text-lg text-[#0e1f1a]">Costes y Movimientos de Caja</h3>
-                <span className="text-xs text-[#5c6b66] font-mono">{cashData.events.length} eventos</span>
-              </div>
+                  ))}
+                  {closedTrades.length === 0 && (
+                    <tr><td colSpan={7} className="px-4 py-8 text-center text-[#5c6b66] font-mono text-sm">No hay operaciones cerradas</td></tr>
+                  )}
+                </tbody>
+              </table>
+            )}
 
-              {/* Summary cards */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-                <StatCard
-                  testId="costs-fees"
-                  label="Total Comisiones"
-                  value={`${fmtPrice(cashData.summary.total_fees)} €`}
-                  tone="sell"
-                  sub="Conectividad + FX + otras"
-                />
-                <StatCard
-                  testId="costs-dividends"
-                  label="Dividendos Netos"
-                  value={`+${fmtPrice(cashData.summary.total_dividends_net)} €`}
-                  tone="buy"
-                  sub={`Brutos: ${fmtPrice(cashData.summary.total_dividends_gross)} €`}
-                />
-                <StatCard
-                  testId="costs-deposits"
-                  label="Depósitos"
-                  value={`+${fmtPrice(cashData.summary.total_deposits)} €`}
-                />
-                <StatCard
-                  testId="costs-net"
-                  label="Flujo Neto de Caja"
-                  value={`${cashData.summary.net_cash_flow >= 0 ? "+" : ""}${fmtPrice(cashData.summary.net_cash_flow)} €`}
-                  tone={cashData.summary.net_cash_flow >= 0 ? "buy" : "sell"}
-                  sub="Dividendos − Comisiones"
-                />
-              </div>
-
-              {/* Breakdown by type */}
-              <p className="label-small mb-2">Desglose por categoría</p>
-              <div className="space-y-1 mb-4">
-                {cashData.by_type.sort((a, b) => Math.abs(b.total) - Math.abs(a.total)).map((t) => (
-                  <div key={t.type} className="flex items-center justify-between p-2 bg-[#f5f3ef] border border-[#e5e0d8] rounded text-xs">
-                    <span className="font-mono uppercase tracking-wider text-[#5c6b66]">{t.type} <span className="text-[10px]">({t.count})</span></span>
-                    <span className={`font-mono font-semibold ${t.total >= 0 ? "text-[#4a7c59]" : "text-[#d85c41]"}`}>
-                      {t.total >= 0 ? "+" : ""}{fmtPrice(t.total)} €
-                    </span>
+            {/* Fees breakdown */}
+            {tab === "fees" && (
+              <div className="p-6 space-y-3">
+                {[
+                  { label: "Comisiones de transacción (€2/op)", value: stats.tx_fees, desc: `~${Math.round(stats.tx_fees / 2)} operaciones` },
+                  { label: "AutoFX (cambio de divisa)", value: stats.autofx_fees, desc: "0,25% por conversión USD/EUR" },
+                  { label: "Datos de mercado en tiempo real", value: stats.market_data_fees, desc: "Nasdaq, NYSE suscripciones" },
+                  { label: "Conectividad con mercados", value: stats.connectivity_fees, desc: "Euronext, Xetra, LSE, etc." },
+                  { label: "Impuestos de transacción", value: stats.tx_taxes, desc: "Francia, España" },
+                  { label: "Comisiones de cierre", value: stats.closure_fees, desc: "" },
+                  { label: "Comisiones de transferencia", value: stats.transfer_fees, desc: "" },
+                ].map((item) => (
+                  <div key={item.label} className="flex items-center justify-between p-3 rounded-lg border border-[#e5e0d8] bg-[#f9f7f3]">
+                    <div>
+                      <p className="text-sm font-mono text-[#0e1f1a]">{item.label}</p>
+                      {item.desc && <p className="text-xs text-[#5c6b66]">{item.desc}</p>}
+                    </div>
+                    <span className="font-mono font-semibold text-red-500">-{fmtEur(item.value)}</span>
                   </div>
                 ))}
-              </div>
-
-              {/* Detail list */}
-              <details>
-                <summary className="text-xs text-[#5c6b66] cursor-pointer font-mono uppercase tracking-wider">
-                  Ver detalle ({cashData.events.length} movimientos)
-                </summary>
-                <div className="max-h-[300px] overflow-y-auto mt-3 space-y-1">
-                  {cashData.events.map((ev, i) => (
-                    <div key={i} className="grid grid-cols-[90px_100px_1fr_90px] gap-2 items-center text-xs py-1 border-b border-[#f0ebe1]">
-                      <span className="font-mono text-[10px] text-[#5c6b66]">{fmtDate(ev.date)}</span>
-                      <span className="font-mono text-[10px] uppercase text-[#1a3a32]">{ev.type}</span>
-                      <span className="text-[#0e1f1a] truncate">{ev.description || ev.symbol || ""}</span>
-                      <span className={`font-mono text-right ${ev.amount >= 0 ? "text-[#4a7c59]" : "text-[#d85c41]"}`}>
-                        {ev.amount >= 0 ? "+" : ""}{fmtPrice(ev.amount)} {ev.currency || "€"}
-                      </span>
-                    </div>
-                  ))}
+                <div className="flex items-center justify-between p-4 rounded-lg border-2 border-[#1a3a32] bg-[#f5f3ef] mt-4">
+                  <span className="font-mono font-bold text-[#0e1f1a]">TOTAL COMISIONES PAGADAS</span>
+                  <span className="font-mono font-bold text-red-600 text-lg">-{fmtEur(s.total_fees)}</span>
                 </div>
-              </details>
-            </section>
-          )}
-        </>
-      )}
+                <div className="grid grid-cols-2 gap-3 mt-2">
+                  <div className="p-3 rounded-lg border border-green-200 bg-green-50">
+                    <p className="text-xs font-mono text-[#5c6b66]">Total depósitos</p>
+                    <p className="font-mono font-semibold text-green-700">+{fmtEur(stats.deposits)}</p>
+                  </div>
+                  <div className="p-3 rounded-lg border border-[#e5e0d8] bg-[#f9f7f3]">
+                    <p className="text-xs font-mono text-[#5c6b66]">Intereses cobrados</p>
+                    <p className="font-mono font-semibold text-[#0e1f1a]">{fmtEur(stats.interest)}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Dividends */}
+            {tab === "dividends" && (
+              <div>
+                {dividends.length === 0 ? (
+                  <div className="p-12 text-center text-[#5c6b66] font-mono text-sm">No hay dividendos registrados</div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-[#5c6b66] text-xs font-mono border-b border-[#e5e0d8]">
+                        <th className="px-4 py-3 text-left">Fecha</th>
+                        <th className="px-4 py-3 text-left">Acción</th>
+                        <th className="px-4 py-3 text-right">Importe</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dividends.map((d, i) => (
+                        <tr key={i} className="border-b border-[#f0ece4] hover:bg-[#f9f7f3]">
+                          <td className="px-4 py-2.5 font-mono text-xs text-[#5c6b66]">{d.date}</td>
+                          <td className="px-4 py-2.5">
+                            <span className="font-mono font-bold text-[#1a3a32]">{d.ticker || "—"}</span>
+                            {d.product && <span className="text-xs text-[#5c6b66] ml-2">{d.product}</span>}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-mono font-semibold text-green-600">+{fmtEur(d.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-[#e5e0d8]">
+                        <td colSpan={2} className="px-4 py-3 font-mono font-semibold text-[#0e1f1a]">Total dividendos</td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-green-600">+{fmtEur(s.total_dividends)}</td>
+                      </tr>
+                      <tr>
+                        <td colSpan={2} className="px-4 py-2 font-mono text-xs text-[#5c6b66]">Retención fiscal sobre dividendos</td>
+                        <td className="px-4 py-2 text-right font-mono text-xs text-red-500">-{fmtEur(stats.dividend_tax)}</td>
+                      </tr>
+                      <tr>
+                        <td colSpan={2} className="px-4 py-2 font-mono text-xs text-[#5c6b66]">Dividendo neto</td>
+                        <td className="px-4 py-2 text-right font-mono text-xs font-semibold text-green-600">
+                          +{fmtEur((s.total_dividends || 0) - (stats.dividend_tax || 0))}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Pie chart */}
+        {openPos.length > 0 && (
+          <div className="card-flat p-5">
+            <h4 className="font-heading font-semibold text-sm text-[#0e1f1a] mb-1">Distribución</h4>
+            <p className="text-xs text-[#5c6b66] mb-4">por valor actual de cartera</p>
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} innerRadius={45}>
+                  {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                </Pie>
+                <Tooltip formatter={(v) => fmtEur(v)} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="space-y-1.5 mt-3">
+              {pieData.map((d, i) => (
+                <div key={d.name} className="flex items-center justify-between text-xs font-mono">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
+                    <span className="text-[#0e1f1a] font-semibold">{d.name}</span>
+                  </div>
+                  <span className="text-[#5c6b66]">{fmtEur(d.value)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Re-upload */}
+      <details className="card-flat">
+        <summary className="px-5 py-4 cursor-pointer text-sm font-mono text-[#5c6b66] hover:text-[#0e1f1a] flex items-center gap-2">
+          <UploadSimple size={14} /> Reimportar datos (actualizar con nuevo CSV)
+        </summary>
+        <div className="px-5 pb-5">
+          <UploadSection onUploaded={load} />
+        </div>
+      </details>
     </div>
   );
 }

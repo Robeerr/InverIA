@@ -23,6 +23,7 @@ import alerts_worker
 import opportunities
 import portfolio
 import degiro_parser
+import degiro_csv_parser
 import signal_table
 import auth
 
@@ -499,6 +500,84 @@ async def remove_transaction(tx_id: str):
     if res.deleted_count == 0:
         raise HTTPException(404, "Transacción no encontrada")
     return {"deleted": tx_id}
+
+
+@api_router.post("/portfolio/upload-degiro")
+async def upload_degiro_csv(
+    transactions_file: UploadFile = File(...),
+    account_file: UploadFile = File(...)
+):
+    """Parsea Transactions.csv y Account.csv de DEGIRO sin IA — rápido y preciso."""
+    try:
+        tx_content = (await transactions_file.read()).decode("utf-8-sig", errors="replace")
+        acc_content = (await account_file.read()).decode("utf-8-sig", errors="replace")
+
+        trades = degiro_csv_parser.parse_transactions_csv(tx_content)
+        events = degiro_csv_parser.parse_account_csv(acc_content)
+        result = degiro_csv_parser.calculate_portfolio(trades, events)
+
+        # Persist in MongoDB (upsert — reemplaza el anterior)
+        result_to_store = {**result, "updated_at": datetime.now(timezone.utc).isoformat()}
+        # Convert datetime objects to strings for MongoDB storage
+        for trade in result_to_store.get("closed_trades", []):
+            pass  # already strings
+        await db.degiro_portfolio.replace_one({}, result_to_store, upsert=True)
+
+        return {
+            "ok": True,
+            "trades_parsed": len(trades),
+            "events_parsed": len(events),
+            "summary": result["summary"],
+        }
+    except Exception as e:
+        logger.exception("DEGIRO CSV parse failed")
+        raise HTTPException(500, f"Error procesando CSVs: {str(e)[:300]}")
+
+
+@api_router.get("/portfolio/degiro")
+async def get_degiro_portfolio():
+    """Devuelve el portfolio DEGIRO procesado (guardado en MongoDB)."""
+    cached = _cache.get("degiro_portfolio")
+    if cached:
+        return cached
+    doc = await db.degiro_portfolio.find_one({}, {"_id": 0})
+    if not doc:
+        return None
+    # Enriquecer posiciones abiertas con precio actual de Yahoo Finance
+    for pos in doc.get("open_positions", []):
+        try:
+            q = market_data.get_quote(pos["ticker"])
+            if q:
+                current_price = float(q.get("price") or q.get("regularMarketPrice") or 0)
+                if current_price > 0:
+                    pos["current_price"] = current_price
+                    pos["current_value_eur"] = round(current_price * pos["shares"] / pos.get("avg_exchange_rate", 1) if pos.get("avg_exchange_rate") else current_price * pos["shares"], 2)
+                    # Approximate: use avg_cost_eur as base, current price in same currency
+                    total_cost = pos["total_cost_eur"]
+                    # For USD stocks, convert current price to EUR using recent rate (~1.15)
+                    # We use the avg_cost to derive implied exchange rate
+                    if total_cost > 0 and pos["shares"] > 0:
+                        implied_price_eur = total_cost / pos["shares"]
+                        if pos.get("current_price", 0) > 0:
+                            # Find exchange rate from stored trades (approximate)
+                            exchange_rate = pos.get("exchange_rate", 1.15)
+                            current_eur = current_price / exchange_rate
+                            pos["current_price_eur"] = round(current_eur, 4)
+                            pos["current_value_eur"] = round(current_eur * pos["shares"], 2)
+                            pos["unrealized_pnl_eur"] = round(pos["current_value_eur"] - total_cost, 2)
+                            pos["unrealized_pnl_pct"] = round((pos["unrealized_pnl_eur"] / total_cost) * 100, 2) if total_cost else 0
+        except Exception:
+            pass
+    _cache.set("degiro_portfolio", doc, ttl=60)
+    return doc
+
+
+@api_router.delete("/portfolio/degiro")
+async def delete_degiro_portfolio():
+    """Borra el portfolio DEGIRO importado."""
+    await db.degiro_portfolio.delete_many({})
+    _cache._store.pop("degiro_portfolio", None)
+    return {"ok": True}
 
 
 @api_router.post("/portfolio/upload-pdf")
