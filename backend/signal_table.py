@@ -228,7 +228,7 @@ async def signal_worker_loop(db, interval: int = 60):
                         await _set_cooldown(db, cd_key)
                         diff_pct = round(((price - target) / target) * 100, 2)
                         level_num = level_key.replace("nivel", "Nivel ")
-                        _fire_alert(entry, symbol, level_num, target, price, diff_pct, "COMPRA", db=db)
+                        await _fire_alert(entry, symbol, level_num, target, price, diff_pct, "COMPRA", db=db)
 
                     for level_key, target in sell_levels.items():
                         if target is None:
@@ -243,7 +243,7 @@ async def signal_worker_loop(db, interval: int = 60):
                             continue
                         await _set_cooldown(db, cd_key)
                         diff_pct = round(((price - target) / target) * 100, 2)
-                        _fire_alert(entry, symbol, "Deseado/Venta", target, price, diff_pct, "VENTA", db=db)
+                        await _fire_alert(entry, symbol, "Deseado/Venta", target, price, diff_pct, "VENTA", db=db)
 
                 except Exception as e:
                     logger.warning("Signal check error for %s: %s", symbol, e)
@@ -254,8 +254,8 @@ async def signal_worker_loop(db, interval: int = 60):
         await asyncio.sleep(interval)
 
 
-def _fire_alert(entry, symbol, level_label, target, price, diff_pct, action, db=None):
-    """Dispara alerta por Telegram."""
+async def _fire_alert(entry, symbol, level_label, target, price, diff_pct, action, db=None):
+    """Dispara alerta por Telegram y guarda en historial."""
     name = entry.get("name", "") or symbol
     sector = entry.get("sector", "")
     riesgo = entry.get("riesgo", "")
@@ -303,7 +303,8 @@ def _fire_alert(entry, symbol, level_label, target, price, diff_pct, action, db=
         f"⚡ _InverIA · Alerta automática_"
     )
 
-    asyncio.create_task(telegram_notifier.send_message(tg_msg))
+    # Enviar Telegram directamente con await (sin create_task)
+    await telegram_notifier.send_message(tg_msg)
 
     # Guardar en historial de alertas
     if db is not None:
@@ -322,4 +323,4 @@ def _fire_alert(entry, symbol, level_label, target, price, diff_pct, action, db=
             "posibles_ganancias": posibles,
             "fired_at": _now(),
         }
-        asyncio.create_task(db.alert_history.insert_one(history_entry))
+        await db.alert_history.insert_one(history_entry)
