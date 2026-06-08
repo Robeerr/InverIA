@@ -152,10 +152,10 @@ async def root():
     return {"app": "InverIA", "status": "ok"}
 
 
-@api_router.get("/health")
+@api_router.api_route("/health", methods=["GET", "HEAD"])
 async def health():
-    """Lightweight endpoint used by external cron pings (cron-job.org / GitHub Actions)
-    to keep the Render free tier instance warm so the alerts worker keeps running."""
+    """Lightweight endpoint used by UptimeRobot / GitHub Actions to keep the
+    Render free tier instance warm. Accepts both GET and HEAD."""
     return {"status": "ok", "ts": datetime.now(timezone.utc).isoformat()}
 
 
