@@ -56,8 +56,6 @@ if "mongodb+srv://" in mongo_url or "mongodb.net" in mongo_url:
 client = AsyncIOMotorClient(mongo_url, **_mongo_kwargs)
 db = client[os.environ["DB_NAME"]]
 
-# Enable persistent ISIN→ticker cache for DEGIRO parser
-degiro_parser.set_mongo_cache(db.isin_ticker_cache)
 
 app = FastAPI(title="InverIA API")
 api_router = APIRouter(prefix="/api")
