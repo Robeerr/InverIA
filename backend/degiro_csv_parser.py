@@ -381,7 +381,7 @@ def calculate_portfolio(trades: list, events: list) -> dict:
     # Sort trades by date ASC
     trades_sorted = sorted(trades, key=lambda x: (x["date"], x["date_str"]))
 
-    # Per-ticker buy queues: deque of {shares, cost_per_share, date, ...}
+    # Per-ticker buy queues: deque of {shares, cost_per_share, price, price_ccy, date}
     buy_queues = defaultdict(deque)
     # Per-ticker open position tracker
     open_positions = {}
@@ -391,11 +391,15 @@ def calculate_portfolio(trades: list, events: list) -> dict:
         ticker = trade["ticker"]
         shares = trade["shares"]
         cost_per_share = trade["cost_per_share"]  # all-in EUR per share
+        price_native = trade.get("price", 0)       # price in native currency (USD/EUR)
+        price_ccy    = trade.get("price_ccy", "USD")
 
         if trade["action"] == "BUY":
             buy_queues[ticker].append({
                 "shares": shares,
                 "cost_per_share": cost_per_share,
+                "price_native": price_native,
+                "price_ccy": price_ccy,
                 "date": trade["date_str"],
             })
             if ticker not in open_positions:
@@ -405,9 +409,12 @@ def calculate_portfolio(trades: list, events: list) -> dict:
                     "isin": trade["isin"],
                     "shares": 0.0,
                     "total_cost": 0.0,
+                    "total_native_cost": 0.0,  # sum of shares * price_native
+                    "price_ccy": price_ccy,
                 }
             open_positions[ticker]["shares"] += shares
             open_positions[ticker]["total_cost"] += shares * cost_per_share
+            open_positions[ticker]["total_native_cost"] += shares * price_native
 
         elif trade["action"] == "SELL":
             queue = buy_queues[ticker]
@@ -438,12 +445,15 @@ def calculate_portfolio(trades: list, events: list) -> dict:
                 pos = open_positions[ticker]
                 sold_matched = matched_shares
                 if pos["shares"] > 0.0001:
-                    avg = pos["total_cost"] / pos["shares"]
+                    avg_eur    = pos["total_cost"] / pos["shares"]
+                    avg_native = pos["total_native_cost"] / pos["shares"] if pos["total_native_cost"] else 0
                     pos["shares"] = max(0.0, pos["shares"] - sold_matched)
-                    pos["total_cost"] = pos["shares"] * avg
+                    pos["total_cost"] = pos["shares"] * avg_eur
+                    pos["total_native_cost"] = pos["shares"] * avg_native
                 else:
                     pos["shares"] = 0.0
                     pos["total_cost"] = 0.0
+                    pos["total_native_cost"] = 0.0
 
             if matched_shares > 0.0001:
                 sell_proceeds = matched_shares * sell_proceeds_per_share
@@ -466,13 +476,16 @@ def calculate_portfolio(trades: list, events: list) -> dict:
     open_pos_list = []
     for ticker, pos in open_positions.items():
         if pos["shares"] > 0.01:
-            avg_cost = pos["total_cost"] / pos["shares"]
+            avg_cost_eur    = pos["total_cost"] / pos["shares"]
+            avg_price_native = (pos["total_native_cost"] / pos["shares"]) if pos.get("total_native_cost") else 0
             open_pos_list.append({
                 "ticker": ticker,
                 "product": pos["product"],
                 "isin": pos["isin"],
                 "shares": round(pos["shares"], 4),
-                "avg_cost_eur": round(avg_cost, 4),
+                "avg_cost_eur": round(avg_cost_eur, 4),
+                "avg_price_native": round(avg_price_native, 6),   # precio medio en USD/EUR nativo
+                "price_ccy": pos.get("price_ccy", "USD"),
                 "total_cost_eur": round(pos["total_cost"], 2),
             })
 

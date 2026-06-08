@@ -408,7 +408,7 @@ export default function PortfolioView({ setSymbol }) {
                   <tr className="text-[#5c6b66] text-xs font-mono border-b border-[#e5e0d8]">
                     <th className="px-4 py-3 text-left">Acción</th>
                     <th className="px-4 py-3 text-right">Acciones</th>
-                    <th className="px-4 py-3 text-right">Coste medio</th>
+                    <th className="px-4 py-3 text-right">Precio medio</th>
                     <th className="px-4 py-3 text-right">Precio actual</th>
                     <th className="px-4 py-3 text-right">Valor actual</th>
                     <th className="px-4 py-3 text-right">P&L no realiz.</th>
@@ -427,7 +427,12 @@ export default function PortfolioView({ setSymbol }) {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-sm">{fmt(p.shares, 4)}</td>
-                      <td className="px-4 py-3 text-right font-mono text-sm text-[#5c6b66]">{fmtEur(p.avg_cost_eur)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-sm">
+                        {p.avg_price_native
+                          ? <span className="text-[#0e1f1a]">${fmt(p.avg_price_native, 4)}</span>
+                          : <span className="text-[#5c6b66]">{fmtEur(p.avg_cost_eur)}</span>}
+                        <div className="text-[10px] text-[#5c6b66]">{fmtEur(p.avg_cost_eur)}</div>
+                      </td>
                       <td className="px-4 py-3 text-right font-mono text-sm">
                         {p.current_price ? <span>${fmt(p.current_price)}</span> : <span className="text-[#c5bfb4]">—</span>}
                       </td>
