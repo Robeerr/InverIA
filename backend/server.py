@@ -94,24 +94,44 @@ class TransactionsBulk(BaseModel):
 class SignalEntryCreate(BaseModel):
     symbol: str
     name: Optional[str] = ""
-    buy1: Optional[float] = None
-    buy2: Optional[float] = None
-    buy3: Optional[float] = None
-    sell1: Optional[float] = None
-    sell2: Optional[float] = None
-    sell3: Optional[float] = None
+    mercado: Optional[str] = ""
+    deseado: Optional[float] = None
+    nivel1: Optional[float] = None
+    nivel2: Optional[float] = None
+    nivel3: Optional[float] = None
+    nivel4: Optional[float] = None
+    nivel5: Optional[float] = None
+    alert_deseado: Optional[bool] = True
+    alert_nivel1: Optional[bool] = True
+    alert_nivel2: Optional[bool] = True
+    alert_nivel3: Optional[bool] = True
+    alert_nivel4: Optional[bool] = True
+    alert_nivel5: Optional[bool] = True
+    riesgo: Optional[str] = ""
+    sector: Optional[str] = ""
+    posibles_ganancias: Optional[float] = None
     notes: Optional[str] = ""
     active: Optional[bool] = True
 
 
 class SignalEntryUpdate(BaseModel):
     name: Optional[str] = None
-    buy1: Optional[float] = None
-    buy2: Optional[float] = None
-    buy3: Optional[float] = None
-    sell1: Optional[float] = None
-    sell2: Optional[float] = None
-    sell3: Optional[float] = None
+    mercado: Optional[str] = None
+    deseado: Optional[float] = None
+    nivel1: Optional[float] = None
+    nivel2: Optional[float] = None
+    nivel3: Optional[float] = None
+    nivel4: Optional[float] = None
+    nivel5: Optional[float] = None
+    alert_deseado: Optional[bool] = None
+    alert_nivel1: Optional[bool] = None
+    alert_nivel2: Optional[bool] = None
+    alert_nivel3: Optional[bool] = None
+    alert_nivel4: Optional[bool] = None
+    alert_nivel5: Optional[bool] = None
+    riesgo: Optional[str] = None
+    sector: Optional[str] = None
+    posibles_ganancias: Optional[float] = None
     notes: Optional[str] = None
     active: Optional[bool] = None
 
