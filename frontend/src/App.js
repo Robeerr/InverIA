@@ -6,7 +6,6 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import Header from "./components/Header";
 import Dashboard from "./pages/Dashboard";
 import OpportunitiesView from "./pages/OpportunitiesView";
-import PortfolioView from "./pages/PortfolioView";
 import CalendarView from "./pages/CalendarView";
 import SignalsView from "./pages/SignalsView";
 import AlertHistoryView from "./pages/AlertHistoryView";
@@ -63,7 +62,6 @@ function AppInner() {
       <Routes>
         <Route path="/" element={<Dashboard symbol={symbol} setSymbol={setSymbol} model={model} />} />
         <Route path="/oportunidades" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><OpportunitiesView setSymbol={setSymbol} /></div>} />
-        <Route path="/cartera" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><PortfolioView setSymbol={setSymbol} /></div>} />
         <Route path="/calendario" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><CalendarView setSymbol={setSymbol} /></div>} />
         <Route path="/signals" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><SignalsView setSymbol={setSymbol} /></div>} />
         <Route path="/alertas" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><AlertHistoryView /></div>} />

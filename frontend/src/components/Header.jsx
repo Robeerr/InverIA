@@ -1,5 +1,5 @@
 import React from "react";
-import { ChartLineUp, MagnifyingGlass, House, Briefcase, CalendarBlank, Lightning, Moon, Sun, TelegramLogo, Crosshair, List, X, Bell, SignOut, User } from "@phosphor-icons/react";
+import { ChartLineUp, MagnifyingGlass, House, CalendarBlank, Lightning, Moon, Sun, TelegramLogo, Crosshair, List, X, Bell, SignOut, User } from "@phosphor-icons/react";
 import { Input } from "../components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Button } from "../components/ui/button";
@@ -16,7 +16,6 @@ const DEFAULT_MODELS = [
 const NAV = [
   { to: "/", label: "Dashboard", icon: House, testId: "nav-dashboard" },
   { to: "/oportunidades", label: "Oportunidades", icon: Lightning, testId: "nav-opportunities" },
-  { to: "/cartera", label: "Cartera", icon: Briefcase, testId: "nav-portfolio" },
   { to: "/calendario", label: "Calendario", icon: CalendarBlank, testId: "nav-calendar" },
   { to: "/signals", label: "Señales", icon: Crosshair, testId: "nav-signals" },
   { to: "/alertas", label: "Alertas", icon: Bell, testId: "nav-alerts" },
