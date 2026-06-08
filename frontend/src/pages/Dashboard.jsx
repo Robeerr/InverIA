@@ -108,23 +108,17 @@ export default function Dashboard({ symbol, setSymbol, model }) {
     setLoadingQuote(true);
     setAnalysis(null);
     try {
-      const [q, c, ind, n, an] = await Promise.all([
-        api.quote(sym).catch(() => null),
-        api.chart(sym, tf).catch(() => ({ candles: [] })),
-        api.indicators(sym).catch(() => null),
-        api.news(sym).catch(() => ({ items: [] })),
-        api.analyst(sym).catch(() => null),
-      ]);
-      if (!q) {
+      const data = await api.dashboard(sym, tf);
+      if (!data?.quote) {
         toast.error(`No se encontró el símbolo ${sym}`);
         setQuote(null);
         return;
       }
-      setQuote(q);
-      setCandles(c.candles || []);
-      setIndicators(ind);
-      setNews(n.items || []);
-      setAnalystData(an);
+      setQuote(data.quote);
+      setCandles(data.candles || []);
+      setIndicators(data.indicators);
+      setNews(data.news || []);
+      setAnalystData(data.analyst);
     } catch (e) {
       toast.error("Error al cargar datos");
     } finally {

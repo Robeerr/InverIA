@@ -15,6 +15,7 @@ from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 
 import asyncio
+from functools import partial
 import market_data
 import indicators as ind
 import ai_analysis
@@ -208,7 +209,7 @@ async def get_chart(symbol: str, timeframe: str = "1Y"):
     if df is None or df.empty:
         raise HTTPException(404, f"No hay datos históricos para '{sym}'")
     result = {"symbol": sym, "timeframe": timeframe, "candles": market_data.df_to_candles(df)}
-    _cache.set(f"chart:{sym}:{timeframe}", result, ttl=120)  # 2 min
+    _cache.set(f"chart:{sym}:{timeframe}", result, ttl=300)  # 5 min
     return result
 
 
@@ -222,7 +223,7 @@ async def get_indicators(symbol: str):
     if df is None or df.empty:
         raise HTTPException(404, f"No hay datos para indicadores: '{sym}'")
     result = ind.compute_all(df)
-    _cache.set(f"indicators:{sym}", result, ttl=120)  # 2 min
+    _cache.set(f"indicators:{sym}", result, ttl=300)  # 5 min
     return result
 
 
@@ -234,7 +235,7 @@ async def get_news(symbol: str):
     if cached:
         return cached
     result = {"symbol": sym, "items": market_data.get_news(sym)}
-    _cache.set(f"news:{sym}", result, ttl=600)  # 10 min — noticias no cambian tan rápido
+    _cache.set(f"news:{sym}", result, ttl=1800)  # 30 min — noticias no cambian tan rápido
     return result
 
 
@@ -295,19 +296,102 @@ async def analyze(req: AnalyzeRequest):
     }
 
 
+# ---------- Combined Dashboard ----------
+@api_router.get("/dashboard/{symbol}")
+async def dashboard_data(symbol: str, timeframe: str = "1Y"):
+    """Endpoint combinado: devuelve quote + chart + indicators + news + analyst en una sola llamada.
+    Todas las peticiones a Yahoo Finance / Finnhub se lanzan en paralelo via thread pool."""
+    sym = symbol.upper()
+    cache_key = f"dashboard:{sym}:{timeframe}"
+    cached = _cache.get(cache_key)
+    if cached:
+        return cached
+
+    loop = asyncio.get_running_loop()
+
+    # 6 llamadas bloqueantes en paralelo (thread pool)
+    results = await asyncio.gather(
+        loop.run_in_executor(None, market_data.get_quote, sym),
+        loop.run_in_executor(None, partial(market_data.get_stock_data, sym, timeframe=timeframe)),
+        loop.run_in_executor(None, market_data.get_full_indicator_history, sym),
+        loop.run_in_executor(None, market_data.get_news, sym),
+        loop.run_in_executor(None, external_data.finnhub_recommendation_trends, sym),
+        loop.run_in_executor(None, external_data.finnhub_price_target, sym),
+        return_exceptions=True,
+    )
+    quote, df_chart, df_ind, news_items, trends, price_target = results
+
+    if not quote or isinstance(quote, Exception):
+        raise HTTPException(404, f"No se encontraron datos para '{sym}'")
+
+    candles = []
+    if df_chart is not None and not isinstance(df_chart, Exception):
+        try:
+            if not df_chart.empty:
+                candles = market_data.df_to_candles(df_chart)
+        except Exception:
+            pass
+
+    indicators_data = None
+    if df_ind is not None and not isinstance(df_ind, Exception):
+        try:
+            if not df_ind.empty:
+                indicators_data = ind.compute_all(df_ind)
+        except Exception:
+            pass
+
+    news_list = []
+    if news_items and not isinstance(news_items, Exception):
+        news_list = news_items
+
+    analyst_consensus = None
+    if trends and not isinstance(trends, Exception):
+        try:
+            analyst_consensus = external_data.aggregate_recommendation(trends)
+        except Exception:
+            pass
+
+    pt = None if isinstance(price_target, Exception) else price_target
+
+    analyst = {"symbol": sym, "consensus": analyst_consensus, "price_target": pt}
+
+    # Actualizar cachés individuales para que los endpoints separados también sean rápidos
+    _cache.set(f"quote:{sym}", quote, ttl=60)
+    _cache.set(f"chart:{sym}:{timeframe}", {"symbol": sym, "timeframe": timeframe, "candles": candles}, ttl=300)
+    if indicators_data:
+        _cache.set(f"indicators:{sym}", indicators_data, ttl=300)
+    if news_list:
+        _cache.set(f"news:{sym}", {"symbol": sym, "items": news_list}, ttl=1800)
+    _cache.set(f"analyst:{sym}", analyst, ttl=900)
+
+    result = {
+        "symbol": sym,
+        "timeframe": timeframe,
+        "quote": quote,
+        "candles": candles,
+        "indicators": indicators_data,
+        "news": news_list,
+        "analyst": analyst,
+    }
+    _cache.set(cache_key, result, ttl=60)
+    return result
+
+
 # ---------- Watchlist ----------
 @api_router.get("/watchlist")
 async def list_watchlist():
     items = await db.watchlist.find({}, {"_id": 0}).to_list(200)
-    # Hydrate with live quotes
-    hydrated = []
-    for it in items:
-        q = market_data.get_quote(it["symbol"])
-        hydrated.append({
-            **it,
-            "quote": q,
-        })
-    return hydrated
+    if not items:
+        return []
+    loop = asyncio.get_running_loop()
+    quotes = await asyncio.gather(
+        *[loop.run_in_executor(None, market_data.get_quote, it["symbol"]) for it in items],
+        return_exceptions=True,
+    )
+    return [
+        {**it, "quote": q if not isinstance(q, Exception) else None}
+        for it, q in zip(items, quotes)
+    ]
 
 
 @api_router.post("/watchlist")
@@ -372,12 +456,13 @@ async def popular_stocks():
     if cached:
         return cached
     symbols = ["AAPL", "MSFT", "NVDA", "TSLA", "GOOGL", "AMZN", "META", "AMD"]
-    out = []
-    for s in symbols:
-        q = market_data.get_quote(s)
-        if q:
-            out.append(q)
-    _cache.set("popular", out, ttl=60)  # 1 min
+    loop = asyncio.get_running_loop()
+    quotes = await asyncio.gather(
+        *[loop.run_in_executor(None, market_data.get_quote, s) for s in symbols],
+        return_exceptions=True,
+    )
+    out = [q for q in quotes if q and not isinstance(q, Exception)]
+    _cache.set("popular", out, ttl=120)  # 2 min
     return out
 
 
@@ -392,7 +477,7 @@ async def analyst_data(symbol: str):
     consensus = external_data.aggregate_recommendation(trends)
     target = external_data.finnhub_price_target(sym)
     result = {"symbol": sym, "consensus": consensus, "price_target": target}
-    _cache.set(f"analyst:{sym}", result, ttl=300)  # 5 min
+    _cache.set(f"analyst:{sym}", result, ttl=900)  # 15 min
     return result
 
 

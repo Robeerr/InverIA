@@ -1,15 +1,24 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import "./App.css";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Header from "./components/Header";
-import Dashboard from "./pages/Dashboard";
-import OpportunitiesView from "./pages/OpportunitiesView";
-import CalendarView from "./pages/CalendarView";
-import SignalsView from "./pages/SignalsView";
-import AlertHistoryView from "./pages/AlertHistoryView";
 import LoginPage from "./pages/LoginPage";
+
+const Dashboard        = React.lazy(() => import("./pages/Dashboard"));
+const OpportunitiesView = React.lazy(() => import("./pages/OpportunitiesView"));
+const CalendarView     = React.lazy(() => import("./pages/CalendarView"));
+const SignalsView      = React.lazy(() => import("./pages/SignalsView"));
+const AlertHistoryView = React.lazy(() => import("./pages/AlertHistoryView"));
+
+const PageLoader = () => (
+  <div className="min-h-[60vh] flex items-center justify-center">
+    <div className="w-8 h-8 rounded-lg bg-[#1a3a32] animate-pulse flex items-center justify-center">
+      <span className="text-[#f5f3ef] font-bold text-sm">I</span>
+    </div>
+  </div>
+);
 
 function AppInner() {
   const { isAuth, loading } = useAuth();
@@ -54,19 +63,19 @@ function AppInner() {
         symbol={symbol}
         setSymbol={setSymbol}
         onSearch={setSymbol}
-        model={model}
-        setModel={setModel}
         darkMode={darkMode}
         setDarkMode={setDarkMode}
       />
-      <Routes>
-        <Route path="/" element={<Dashboard symbol={symbol} setSymbol={setSymbol} model={model} />} />
-        <Route path="/oportunidades" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><OpportunitiesView setSymbol={setSymbol} /></div>} />
-        <Route path="/calendario" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><CalendarView setSymbol={setSymbol} /></div>} />
-        <Route path="/signals" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><SignalsView setSymbol={setSymbol} /></div>} />
-        <Route path="/alertas" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><AlertHistoryView /></div>} />
-        <Route path="*" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><Dashboard symbol={symbol} setSymbol={setSymbol} model={model} /></div>} />
-      </Routes>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/" element={<Dashboard symbol={symbol} setSymbol={setSymbol} model={model} />} />
+          <Route path="/oportunidades" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><OpportunitiesView setSymbol={setSymbol} /></div>} />
+          <Route path="/calendario" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><CalendarView setSymbol={setSymbol} /></div>} />
+          <Route path="/signals" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><SignalsView setSymbol={setSymbol} /></div>} />
+          <Route path="/alertas" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><AlertHistoryView /></div>} />
+          <Route path="*" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><Dashboard symbol={symbol} setSymbol={setSymbol} model={model} /></div>} />
+        </Routes>
+      </Suspense>
 
       <footer className="border-t border-[#e5e0d8] mt-12 py-6 text-center space-y-2">
         <p className="text-xs text-[#5c6b66]">

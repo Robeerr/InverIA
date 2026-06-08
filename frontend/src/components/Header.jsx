@@ -1,17 +1,11 @@
 import React from "react";
 import { ChartLineUp, MagnifyingGlass, House, CalendarBlank, Lightning, Moon, Sun, TelegramLogo, Crosshair, List, X, Bell, SignOut, User } from "@phosphor-icons/react";
 import { Input } from "../components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Button } from "../components/ui/button";
 import { Link, useLocation } from "react-router-dom";
 import { api } from "../lib/api";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
-
-const DEFAULT_MODELS = [
-  { value: "gpt-oss-120b", label: "Rápido · Gratuito (recomendado)", available: true },
-  { value: "gpt-5.2", label: "Premium · Más preciso", available: true },
-];
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: House, testId: "nav-dashboard" },
@@ -21,10 +15,9 @@ const NAV = [
   { to: "/alertas", label: "Alertas", icon: Bell, testId: "nav-alerts" },
 ];
 
-export default function Header({ symbol, setSymbol, onSearch, model, setModel, showSearch = true, darkMode, setDarkMode }) {
+export default function Header({ symbol, setSymbol, onSearch, showSearch = true, darkMode, setDarkMode }) {
   const { user, logout } = useAuth();
   const [query, setQuery] = React.useState(symbol || "");
-  const [models, setModels] = React.useState(DEFAULT_MODELS);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [backendOk, setBackendOk] = React.useState(null); // null=checking, true=ok, false=down
   const location = useLocation();
@@ -47,13 +40,6 @@ export default function Header({ symbol, setSymbol, onSearch, model, setModel, s
   React.useEffect(() => { setMenuOpen(false); }, [location.pathname]);
 
   React.useEffect(() => setQuery(symbol || ""), [symbol]);
-
-  React.useEffect(() => {
-    api.models().then((d) => {
-      const available = (d.models || []).filter((m) => m.available);
-      if (available.length > 0) setModels(available);
-    }).catch(() => {});
-  }, []);
 
   const submit = (e) => {
     e.preventDefault();

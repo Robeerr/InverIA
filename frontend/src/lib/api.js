@@ -27,7 +27,8 @@ client.interceptors.response.use(
 );
 
 export const api = {
-  models: () => client.get(`/models`).then((r) => r.data),
+  dashboard: (symbol, timeframe = "1Y") =>
+    client.get(`/dashboard/${symbol}`, { params: { timeframe } }).then((r) => r.data),
   quote: (symbol) => client.get(`/quote/${symbol}`).then((r) => r.data),
   chart: (symbol, timeframe = "1Y") =>
     client.get(`/chart/${symbol}`, { params: { timeframe } }).then((r) => r.data),
@@ -44,24 +45,6 @@ export const api = {
     client.get(symbol ? `/history/${symbol}` : `/history`).then((r) => r.data),
   opportunities: (refresh = false) =>
     client.get(`/opportunities/daily`, { params: refresh ? { refresh: true } : {} }).then((r) => r.data),
-  portfolio: {
-    get: () => client.get(`/portfolio`).then((r) => r.data),
-    listTransactions: () => client.get(`/portfolio/transactions`).then((r) => r.data),
-    addTransactions: (transactions) =>
-      client.post(`/portfolio/transactions`, { transactions }).then((r) => r.data),
-    removeTransaction: (id) => client.delete(`/portfolio/transactions/${id}`).then((r) => r.data),
-    clearAll: () => client.delete(`/portfolio/transactions`).then((r) => r.data),
-    uploadPdf: (file) => {
-      const fd = new FormData();
-      fd.append("file", file);
-      return client.post(`/portfolio/upload-pdf`, fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-        timeout: 120000,
-      }).then((r) => r.data);
-    },
-    addCashEvents: (events) => client.post(`/portfolio/cash-events`, { events }).then((r) => r.data),
-    cashEvents: () => client.get(`/portfolio/cash-events`).then((r) => r.data),
-  },
   calendar: {
     earnings: (days = 14, symbols = null) =>
       client.get(`/calendar/earnings`, { params: { days, symbols: symbols || undefined } }).then((r) => r.data),
