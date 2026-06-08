@@ -45,11 +45,11 @@ function App() {
             path="/"
             element={<Dashboard symbol={symbol} setSymbol={setSymbol} model={model} />}
           />
-          <Route path="/oportunidades" element={<div className="max-w-[1480px] mx-auto px-6 py-6"><OpportunitiesView setSymbol={setSymbol} /></div>} />
-          <Route path="/cartera" element={<div className="max-w-[1480px] mx-auto px-6 py-6"><PortfolioView setSymbol={setSymbol} /></div>} />
-          <Route path="/calendario" element={<div className="max-w-[1480px] mx-auto px-6 py-6"><CalendarView setSymbol={setSymbol} /></div>} />
-          <Route path="/signals" element={<div className="max-w-[1480px] mx-auto px-6 py-6"><SignalsView setSymbol={setSymbol} /></div>} />
-          <Route path="/historial" element={<div className="max-w-[1480px] mx-auto px-6 py-6"><HistoryView /></div>} />
+          <Route path="/oportunidades" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><OpportunitiesView setSymbol={setSymbol} /></div>} />
+          <Route path="/cartera" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><PortfolioView setSymbol={setSymbol} /></div>} />
+          <Route path="/calendario" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><CalendarView setSymbol={setSymbol} /></div>} />
+          <Route path="/signals" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><SignalsView setSymbol={setSymbol} /></div>} />
+          <Route path="/historial" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><HistoryView /></div>} />
         </Routes>
 
         <footer className="border-t border-[#e5e0d8] mt-12 py-6 text-center space-y-2">

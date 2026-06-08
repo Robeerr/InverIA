@@ -158,8 +158,8 @@ export default function Dashboard({ symbol, setSymbol, model }) {
   };
 
   return (
-    <main data-testid="main-dashboard" className="max-w-[1480px] mx-auto px-6 py-6 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
-      <div className="space-y-6 min-w-0">
+    <main data-testid="main-dashboard" className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 sm:gap-6">
+      <div className="space-y-4 sm:space-y-6 min-w-0 order-2 lg:order-1">
         {loadingQuote && !quote ? (
           <div className="card-flat p-8 text-center text-[#5c6b66]">Cargando datos...</div>
         ) : quote ? (
@@ -201,6 +201,21 @@ export default function Dashboard({ symbol, setSymbol, model }) {
         <NewsFeed news={news} />
       </div>
 
+      <div className="order-1 lg:order-2 lg:hidden">
+        <SidebarLists
+          watchlist={watchlist}
+          onPickSymbol={handlePickSymbol}
+          onRemoveSymbol={handleRemoveSymbol}
+          onAddCurrent={handleToggleWatchlist}
+          currentSymbol={symbol}
+          alerts={alerts}
+          onAddAlert={handleAddAlert}
+          onRemoveAlert={handleRemoveAlert}
+          popular={popular}
+          compact
+        />
+      </div>
+      <div className="hidden lg:block order-2">
       <SidebarLists
         watchlist={watchlist}
         onPickSymbol={handlePickSymbol}
@@ -212,6 +227,7 @@ export default function Dashboard({ symbol, setSymbol, model }) {
         onRemoveAlert={handleRemoveAlert}
         popular={popular}
       />
+      </div>
     </main>
   );
 }

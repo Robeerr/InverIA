@@ -242,7 +242,7 @@ export default function SignalsView({ setSymbol }) {
 
   // ── render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="max-w-[1480px] mx-auto px-4 py-6 space-y-6">
+    <div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
 
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -361,116 +361,97 @@ export default function SignalsView({ setSymbol }) {
           <p className="text-sm mt-1">Añade una acción o importa desde Excel</p>
         </div>
       ) : (
-        <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-neutral-50 dark:bg-neutral-800/60">
-                <TableHead className="w-12 text-center">⚡</TableHead>
-                <TableHead>Ticker</TableHead>
-                <TableHead>Nombre</TableHead>
-                <TableHead className="text-right text-neutral-500 text-xs">Precio actual</TableHead>
-                <TableHead className="bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400 text-xs text-right">Compra 1</TableHead>
-                <TableHead className="bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400 text-xs text-right">Compra 2</TableHead>
-                <TableHead className="bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400 text-xs text-right">Compra 3</TableHead>
-                <TableHead className="bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400 text-xs text-right">Venta 1</TableHead>
-                <TableHead className="bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400 text-xs text-right">Venta 2</TableHead>
-                <TableHead className="bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400 text-xs text-right">Venta 3</TableHead>
-                <TableHead>Notas</TableHead>
-                <TableHead className="w-10"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {entries.map((e) => (
-                <TableRow
-                  key={e.id}
-                  className={`transition-colors ${!e.active ? "opacity-40" : ""} hover:bg-neutral-50 dark:hover:bg-neutral-800/40`}
-                >
-                  {/* Active toggle */}
-                  <TableCell className="text-center">
-                    <input
-                      type="checkbox"
-                      checked={e.active}
-                      onChange={(ev) => updateField(e.id, "active", ev.target.checked)}
-                      className="w-4 h-4 cursor-pointer accent-blue-600"
-                      title={e.active ? "Monitorización activa" : "Monitorización pausada"}
-                    />
-                  </TableCell>
-
-                  {/* Symbol */}
-                  <TableCell>
-                    <span
-                      className="font-bold text-blue-600 dark:text-blue-400 cursor-pointer hover:underline"
-                      onClick={() => setSymbol && setSymbol(e.symbol)}
-                    >
-                      {e.symbol}
-                    </span>
+        <>
+          {/* Mobile cards */}
+          <div className="sm:hidden space-y-3">
+            {entries.map((e) => (
+              <div key={e.id} className={`rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 space-y-3 ${!e.active ? "opacity-40" : ""}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <input type="checkbox" checked={e.active} onChange={(ev) => updateField(e.id, "active", ev.target.checked)} className="w-4 h-4 accent-blue-600" />
+                    <span className="font-bold text-blue-600 dark:text-blue-400 cursor-pointer" onClick={() => setSymbol && setSymbol(e.symbol)}>{e.symbol}</span>
                     {priceBadge(e.last_price, e, e)}
-                    {saving[e.id] && <span className="ml-1 text-[10px] text-neutral-400 animate-pulse">guardando…</span>}
-                  </TableCell>
-
-                  {/* Name */}
-                  <TableCell>
-                    <EditableCell
-                      value={e.name}
-                      isNumber={false}
-                      placeholder="Nombre"
-                      onChange={(v) => updateField(e.id, "name", v)}
-                    />
-                  </TableCell>
-
-                  {/* Live price */}
-                  <TableCell className="text-right text-sm font-mono text-neutral-600 dark:text-neutral-400">
-                    {fmtPrice(e.last_price)}
-                  </TableCell>
-
-                  {/* Buy levels */}
-                  {["buy1", "buy2", "buy3"].map((k) => (
-                    <TableCell key={k} className="bg-green-50/30 dark:bg-green-950/10 text-right">
-                      <EditableCell
-                        value={e[k]}
-                        onChange={(v) => updateField(e.id, k, v)}
-                        className="text-green-800 dark:text-green-400 font-mono text-sm"
-                      />
-                    </TableCell>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-sm text-neutral-600 dark:text-neutral-400">{fmtPrice(e.last_price)}</span>
+                    <button onClick={() => deleteEntry(e.id)} className="text-neutral-300 hover:text-red-500 text-xl leading-none">×</button>
+                  </div>
+                </div>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">{e.name || "—"}</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {["buy1","buy2","buy3"].map((k,i) => (
+                    <div key={k} className="bg-green-50 dark:bg-green-950/20 rounded-lg p-2 text-center">
+                      <p className="text-[10px] text-green-600 dark:text-green-400 uppercase font-mono">Compra {i+1}</p>
+                      <p className="font-mono text-sm text-green-800 dark:text-green-300 font-semibold">{fmt(e[k])}</p>
+                    </div>
                   ))}
-
-                  {/* Sell levels */}
-                  {["sell1", "sell2", "sell3"].map((k) => (
-                    <TableCell key={k} className="bg-red-50/30 dark:bg-red-950/10 text-right">
-                      <EditableCell
-                        value={e[k]}
-                        onChange={(v) => updateField(e.id, k, v)}
-                        className="text-red-800 dark:text-red-400 font-mono text-sm"
-                      />
-                    </TableCell>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {["sell1","sell2","sell3"].map((k,i) => (
+                    <div key={k} className="bg-red-50 dark:bg-red-950/20 rounded-lg p-2 text-center">
+                      <p className="text-[10px] text-red-600 dark:text-red-400 uppercase font-mono">Venta {i+1}</p>
+                      <p className="font-mono text-sm text-red-800 dark:text-red-300 font-semibold">{fmt(e[k])}</p>
+                    </div>
                   ))}
+                </div>
+                {e.notes && <p className="text-xs text-neutral-400 italic">{e.notes}</p>}
+                {saving[e.id] && <p className="text-[10px] text-neutral-400 animate-pulse">guardando…</p>}
+              </div>
+            ))}
+          </div>
 
-                  {/* Notes */}
-                  <TableCell className="max-w-[180px]">
-                    <EditableCell
-                      value={e.notes}
-                      isNumber={false}
-                      placeholder="Notas"
-                      onChange={(v) => updateField(e.id, "notes", v)}
-                      className="text-xs text-neutral-500"
-                    />
-                  </TableCell>
-
-                  {/* Delete */}
-                  <TableCell>
-                    <button
-                      onClick={() => deleteEntry(e.id)}
-                      className="text-neutral-300 hover:text-red-500 transition-colors text-lg leading-none"
-                      title="Eliminar"
-                    >
-                      ×
-                    </button>
-                  </TableCell>
+          {/* Desktop table */}
+          <div className="hidden sm:block rounded-xl border border-neutral-200 dark:border-neutral-700 overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-neutral-50 dark:bg-neutral-800/60">
+                  <TableHead className="w-12 text-center">⚡</TableHead>
+                  <TableHead>Ticker</TableHead>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead className="text-right text-neutral-500 text-xs">Precio actual</TableHead>
+                  <TableHead className="bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400 text-xs text-right">Compra 1</TableHead>
+                  <TableHead className="bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400 text-xs text-right">Compra 2</TableHead>
+                  <TableHead className="bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400 text-xs text-right">Compra 3</TableHead>
+                  <TableHead className="bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400 text-xs text-right">Venta 1</TableHead>
+                  <TableHead className="bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400 text-xs text-right">Venta 2</TableHead>
+                  <TableHead className="bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400 text-xs text-right">Venta 3</TableHead>
+                  <TableHead>Notas</TableHead>
+                  <TableHead className="w-10"></TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {entries.map((e) => (
+                  <TableRow key={e.id} className={`transition-colors ${!e.active ? "opacity-40" : ""} hover:bg-neutral-50 dark:hover:bg-neutral-800/40`}>
+                    <TableCell className="text-center">
+                      <input type="checkbox" checked={e.active} onChange={(ev) => updateField(e.id, "active", ev.target.checked)} className="w-4 h-4 cursor-pointer accent-blue-600" title={e.active ? "Activo" : "Pausado"} />
+                    </TableCell>
+                    <TableCell>
+                      <span className="font-bold text-blue-600 dark:text-blue-400 cursor-pointer hover:underline" onClick={() => setSymbol && setSymbol(e.symbol)}>{e.symbol}</span>
+                      {priceBadge(e.last_price, e, e)}
+                      {saving[e.id] && <span className="ml-1 text-[10px] text-neutral-400 animate-pulse">guardando…</span>}
+                    </TableCell>
+                    <TableCell><EditableCell value={e.name} isNumber={false} placeholder="Nombre" onChange={(v) => updateField(e.id, "name", v)} /></TableCell>
+                    <TableCell className="text-right text-sm font-mono text-neutral-600 dark:text-neutral-400">{fmtPrice(e.last_price)}</TableCell>
+                    {["buy1","buy2","buy3"].map((k) => (
+                      <TableCell key={k} className="bg-green-50/30 dark:bg-green-950/10 text-right">
+                        <EditableCell value={e[k]} onChange={(v) => updateField(e.id, k, v)} className="text-green-800 dark:text-green-400 font-mono text-sm" />
+                      </TableCell>
+                    ))}
+                    {["sell1","sell2","sell3"].map((k) => (
+                      <TableCell key={k} className="bg-red-50/30 dark:bg-red-950/10 text-right">
+                        <EditableCell value={e[k]} onChange={(v) => updateField(e.id, k, v)} className="text-red-800 dark:text-red-400 font-mono text-sm" />
+                      </TableCell>
+                    ))}
+                    <TableCell className="max-w-[180px]"><EditableCell value={e.notes} isNumber={false} placeholder="Notas" onChange={(v) => updateField(e.id, "notes", v)} className="text-xs text-neutral-500" /></TableCell>
+                    <TableCell>
+                      <button onClick={() => deleteEntry(e.id)} className="text-neutral-300 hover:text-red-500 transition-colors text-lg leading-none" title="Eliminar">×</button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
       )}
 
       <p className="text-xs text-neutral-400 text-center">
