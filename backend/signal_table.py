@@ -149,7 +149,7 @@ async def bulk_upsert(db, rows: list) -> dict:
 
 # ── Price-monitoring worker ──────────────────────────────────────────────────
 
-COOLDOWN_SECONDS = 86400  # máximo 1 alerta por nivel y acción al día
+COOLDOWN_SECONDS = 32400  # máximo 1 alerta por nivel cada 9 horas
 
 
 async def _is_in_cooldown(db, cd_key: str) -> bool:
