@@ -164,6 +164,15 @@ class SignalBulkImport(BaseModel):
     rows: List[dict]
 
 
+class ManualTradeIn(BaseModel):
+    ticker: str
+    action: str          # "BUY" o "SELL"
+    shares: float
+    total_eur: float     # coste total (BUY) o ingresos (SELL) en EUR, todo incluido
+    date_str: str        # "yyyy-MM-dd"
+    product: str = ""
+
+
 # ---------- Health ----------
 @api_router.get("/")
 async def root():
@@ -442,6 +451,49 @@ async def sentiment_news(symbol: str):
     }
 
 
+# ---------- Portfolio helpers ----------
+
+async def _recalculate_portfolio(db):
+    """Lee todos los trades en portfolio_raw_trades y recalcula el portfolio."""
+    from collections import defaultdict as _dd
+    raw_trades = await db.portfolio_raw_trades.find({}, {"_id": 0}).to_list(10000)
+    raw_events = await db.portfolio_account_events.find({}, {"_id": 0}).to_list(50000)
+
+    # Motor devuelve datetime para ISODate; si llega como string, parsear
+    for t in raw_trades:
+        if isinstance(t.get("date"), str):
+            try:
+                t["date"] = datetime.fromisoformat(t["date"])
+            except Exception:
+                t["date"] = datetime.now()
+    for e in raw_events:
+        if isinstance(e.get("date"), str):
+            try:
+                e["date"] = datetime.fromisoformat(e["date"])
+            except Exception:
+                e["date"] = datetime.now()
+
+    result = degiro_csv_parser.calculate_portfolio(raw_trades, raw_events)
+    result["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    # Añadir exchange_rate y price_ccy a open_positions para calcular P&L en EUR
+    rates_by_ticker = _dd(list)
+    for t in raw_trades:
+        if t.get("action") == "BUY":
+            r = t.get("exchange_rate", 1.0)
+            if r and r > 0:
+                rates_by_ticker[t["ticker"]].append(r)
+    for pos in result.get("open_positions", []):
+        rates = rates_by_ticker.get(pos["ticker"], [])
+        avg_rate = sum(rates) / len(rates) if rates else 1.0
+        pos["exchange_rate"] = round(avg_rate, 6)
+        pos["price_ccy"] = "USD" if avg_rate > 1.005 else "EUR"
+
+    await db.degiro_portfolio.replace_one({}, result, upsert=True)
+    _cache._store.pop("degiro_portfolio", None)
+    return result
+
+
 # ---------- Portfolio ----------
 @api_router.get("/portfolio")
 async def get_portfolio():
@@ -514,14 +566,20 @@ async def upload_degiro_csv(
 
         trades = degiro_csv_parser.parse_transactions_csv(tx_content)
         events = degiro_csv_parser.parse_account_csv(acc_content)
-        result = degiro_csv_parser.calculate_portfolio(trades, events)
 
-        # Persist in MongoDB (upsert — reemplaza el anterior)
-        result_to_store = {**result, "updated_at": datetime.now(timezone.utc).isoformat()}
-        # Convert datetime objects to strings for MongoDB storage
-        for trade in result_to_store.get("closed_trades", []):
-            pass  # already strings
-        await db.degiro_portfolio.replace_one({}, result_to_store, upsert=True)
+        # Guardar trades en crudo (reemplaza los de CSV, conserva manuales)
+        await db.portfolio_raw_trades.delete_many({"source": "csv"})
+        if trades:
+            trade_docs = [{**t, "source": "csv", "trade_id": str(uuid.uuid4())} for t in trades]
+            await db.portfolio_raw_trades.insert_many(trade_docs)
+
+        # Guardar eventos de cuenta (dividendos, comisiones, etc.)
+        await db.portfolio_account_events.delete_many({"source": "csv"})
+        if events:
+            event_docs = [{**e, "source": "csv"} for e in events]
+            await db.portfolio_account_events.insert_many(event_docs)
+
+        result = await _recalculate_portfolio(db)
 
         return {
             "ok": True,
@@ -574,10 +632,69 @@ async def get_degiro_portfolio():
 
 @api_router.delete("/portfolio/degiro")
 async def delete_degiro_portfolio():
-    """Borra el portfolio DEGIRO importado."""
+    """Borra todo el portfolio (CSV + manuales)."""
     await db.degiro_portfolio.delete_many({})
+    await db.portfolio_raw_trades.delete_many({})
+    await db.portfolio_account_events.delete_many({})
     _cache._store.pop("degiro_portfolio", None)
     return {"ok": True}
+
+
+@api_router.get("/portfolio/trades")
+async def list_portfolio_trades():
+    """Devuelve todos los trades en crudo (CSV + manuales), ordenados por fecha."""
+    docs = await db.portfolio_raw_trades.find({}, {"_id": 0}).sort("date", 1).to_list(10000)
+    return docs
+
+
+@api_router.post("/portfolio/trade")
+async def add_manual_trade(payload: ManualTradeIn):
+    """Añade una operación manual y recalcula el portfolio."""
+    try:
+        date = datetime.strptime(payload.date_str, "%Y-%m-%d")
+    except Exception:
+        raise HTTPException(400, "Fecha inválida, usa formato yyyy-MM-dd")
+
+    if payload.shares <= 0 or payload.total_eur <= 0:
+        raise HTTPException(400, "Acciones y total deben ser positivos")
+
+    ticker = payload.ticker.upper().strip()
+    shares = abs(payload.shares)
+    total_abs = abs(payload.total_eur)
+    cost_per_share = total_abs / shares
+
+    doc = {
+        "trade_id": str(uuid.uuid4()),
+        "source": "manual",
+        "date": date,
+        "date_str": payload.date_str,
+        "product": payload.product or ticker,
+        "isin": "",
+        "ticker": ticker,
+        "action": payload.action.upper(),
+        "shares": shares,
+        "price": cost_per_share,
+        "price_ccy": "EUR",
+        "value_eur": total_abs,
+        "autofx_fee": 0.0,
+        "tx_fee": 0.0,
+        "total_eur": total_abs,
+        "cost_per_share": cost_per_share,
+        "exchange_rate": 1.0,
+    }
+    await db.portfolio_raw_trades.insert_one(doc)
+    result = await _recalculate_portfolio(db)
+    return {"ok": True, "summary": result["summary"]}
+
+
+@api_router.delete("/portfolio/trade/{trade_id}")
+async def delete_manual_trade(trade_id: str):
+    """Elimina un trade manual y recalcula."""
+    res = await db.portfolio_raw_trades.delete_one({"trade_id": trade_id, "source": "manual"})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Trade no encontrado o no es manual")
+    result = await _recalculate_portfolio(db)
+    return {"ok": True, "summary": result["summary"]}
 
 
 @api_router.post("/portfolio/upload-pdf")
