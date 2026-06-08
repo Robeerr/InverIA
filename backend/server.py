@@ -27,6 +27,27 @@ import signal_table
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
+# ── Simple in-memory TTL cache ────────────────────────────────────────────────
+import time as _time
+
+class _TTLCache:
+    def __init__(self):
+        self._store = {}
+
+    def get(self, key):
+        entry = self._store.get(key)
+        if entry and (_time.time() - entry["ts"]) < entry["ttl"]:
+            return entry["val"]
+        return None
+
+    def set(self, key, val, ttl=30):
+        self._store[key] = {"val": val, "ts": _time.time(), "ttl": ttl}
+
+    def clear(self):
+        self._store.clear()
+
+_cache = _TTLCache()
+
 mongo_url = os.environ["MONGO_URL"]
 # For MongoDB Atlas (mongodb+srv://) use bundled CA certs to avoid SSL handshake errors
 _mongo_kwargs = {}
@@ -167,34 +188,56 @@ async def available_models():
 # ---------- Quote ----------
 @api_router.get("/quote/{symbol}")
 async def get_quote(symbol: str):
-    q = market_data.get_quote(symbol)
+    sym = symbol.upper()
+    cached = _cache.get(f"quote:{sym}")
+    if cached:
+        return cached
+    q = market_data.get_quote(sym)
     if not q:
-        raise HTTPException(404, f"No se encontraron datos para '{symbol.upper()}'")
+        raise HTTPException(404, f"No se encontraron datos para '{sym}'")
+    _cache.set(f"quote:{sym}", q, ttl=30)  # 30s — precio casi en tiempo real
     return q
 
 
 # ---------- Chart (candles + indicators) ----------
 @api_router.get("/chart/{symbol}")
 async def get_chart(symbol: str, timeframe: str = "1Y"):
-    df = market_data.get_stock_data(symbol, timeframe=timeframe)
+    sym = symbol.upper()
+    cached = _cache.get(f"chart:{sym}:{timeframe}")
+    if cached:
+        return cached
+    df = market_data.get_stock_data(sym, timeframe=timeframe)
     if df is None or df.empty:
-        raise HTTPException(404, f"No hay datos históricos para '{symbol.upper()}'")
-    candles = market_data.df_to_candles(df)
-    return {"symbol": symbol.upper(), "timeframe": timeframe, "candles": candles}
+        raise HTTPException(404, f"No hay datos históricos para '{sym}'")
+    result = {"symbol": sym, "timeframe": timeframe, "candles": market_data.df_to_candles(df)}
+    _cache.set(f"chart:{sym}:{timeframe}", result, ttl=120)  # 2 min
+    return result
 
 
 @api_router.get("/indicators/{symbol}")
 async def get_indicators(symbol: str):
-    df = market_data.get_full_indicator_history(symbol)
+    sym = symbol.upper()
+    cached = _cache.get(f"indicators:{sym}")
+    if cached:
+        return cached
+    df = market_data.get_full_indicator_history(sym)
     if df is None or df.empty:
-        raise HTTPException(404, f"No hay datos para indicadores: '{symbol.upper()}'")
-    return ind.compute_all(df)
+        raise HTTPException(404, f"No hay datos para indicadores: '{sym}'")
+    result = ind.compute_all(df)
+    _cache.set(f"indicators:{sym}", result, ttl=120)  # 2 min
+    return result
 
 
 # ---------- News ----------
 @api_router.get("/news/{symbol}")
 async def get_news(symbol: str):
-    return {"symbol": symbol.upper(), "items": market_data.get_news(symbol)}
+    sym = symbol.upper()
+    cached = _cache.get(f"news:{sym}")
+    if cached:
+        return cached
+    result = {"symbol": sym, "items": market_data.get_news(sym)}
+    _cache.set(f"news:{sym}", result, ttl=600)  # 10 min — noticias no cambian tan rápido
+    return result
 
 
 # ---------- AI Analysis ----------
@@ -327,12 +370,16 @@ async def remove_alert(alert_id: str):
 # ---------- Market overview (popular tickers) ----------
 @api_router.get("/market/popular")
 async def popular_stocks():
+    cached = _cache.get("popular")
+    if cached:
+        return cached
     symbols = ["AAPL", "MSFT", "NVDA", "TSLA", "GOOGL", "AMZN", "META", "AMD"]
     out = []
     for s in symbols:
         q = market_data.get_quote(s)
         if q:
             out.append(q)
+    _cache.set("popular", out, ttl=60)  # 1 min
     return out
 
 
@@ -340,14 +387,15 @@ async def popular_stocks():
 @api_router.get("/analyst/{symbol}")
 async def analyst_data(symbol: str):
     sym = symbol.upper()
+    cached = _cache.get(f"analyst:{sym}")
+    if cached:
+        return cached
     trends = external_data.finnhub_recommendation_trends(sym)
     consensus = external_data.aggregate_recommendation(trends)
     target = external_data.finnhub_price_target(sym)
-    return {
-        "symbol": sym,
-        "consensus": consensus,
-        "price_target": target,
-    }
+    result = {"symbol": sym, "consensus": consensus, "price_target": target}
+    _cache.set(f"analyst:{sym}", result, ttl=300)  # 5 min
+    return result
 
 
 @api_router.get("/sentiment/{symbol}")
