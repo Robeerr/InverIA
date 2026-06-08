@@ -237,22 +237,41 @@ def parse_transactions_csv(content: str) -> list:
 
             # ── Total (all-in EUR, most important for cost calculation) ───────
             total_eur = _parse_num(_find_col(row,
-                "Total", "total"))
+                "Total", "total", "Coste total", "Importe total",
+                "Totaal", "Gesamt"))
 
             # ── Value EUR (trade value without fees) ──────────────────────────
             value_eur = abs(_parse_num(_find_col(row,
-                "Valor", "Value", "valor", "value")))
+                "Valor", "Value", "valor", "value",
+                "Valor en EUR", "EUR Value", "Waarde", "Wert")))
+
+            # ── Valor local (native currency, for fallback) ───────────────────
+            local_value = abs(_parse_num(_find_col(row,
+                "Valor local", "Local value", "valor local", "local value",
+                "Lokale waarde")))
 
             ticker = _get_ticker(isin, product)
             action = "BUY" if quantity > 0 else "SELL"
             shares = abs(quantity)
 
             # All-in cost/proceeds in EUR
+            # Priority: Total > Valor+fees > local_value/rate > price*shares/rate
             total_abs = abs(total_eur)
 
-            # Fallback: if total is 0 or missing, reconstruct from value + fees
             if total_abs < 0.01:
+                # Fallback 1: EUR value + fees
                 total_abs = value_eur + autofx_fee + tx_fee
+
+            if total_abs < 0.01 and local_value > 0 and exchange_rate > 0:
+                # Fallback 2: convert local (USD) value to EUR
+                total_abs = local_value / exchange_rate + autofx_fee + tx_fee
+
+            if total_abs < 0.01 and price > 0 and shares > 0:
+                # Fallback 3: price × shares / exchange_rate (always works)
+                base_eur = price * shares / exchange_rate
+                total_abs = base_eur + autofx_fee + tx_fee
+                if total_abs < 0.01:
+                    total_abs = base_eur
 
             cost_per_share = total_abs / shares if shares else 0
 
