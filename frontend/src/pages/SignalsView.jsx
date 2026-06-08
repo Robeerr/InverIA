@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Bell, BellSlash, Trash, Plus, X, UploadSimple, ArrowClockwise } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
-const API = process.env.REACT_APP_BACKEND_URL || "";
+const API = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const fmtP = (v) => (v != null && v !== "" ? `$${Number(v).toFixed(2)}` : "—");

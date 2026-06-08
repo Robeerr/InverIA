@@ -616,10 +616,14 @@ async def bulk_import_signals(payload: SignalBulkImport):
 # ---------- Mount ----------
 app.include_router(api_router)
 
+_cors_origins = os.environ.get("CORS_ORIGINS", "*")
+_origins_list = [o.strip().rstrip("/") for o in _cors_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=[o.strip().rstrip("/") for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o.strip()],
+    allow_credentials=False,
+    allow_origins=_origins_list if "*" not in _origins_list else ["*"],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_methods=["*"],
     allow_headers=["*"],
 )
