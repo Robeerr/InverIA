@@ -13,7 +13,6 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import market_data
-import alerts_worker
 import telegram_notifier
 
 logger = logging.getLogger("signal_table")
@@ -199,9 +198,8 @@ async def signal_worker_loop(db, interval: int = 60):
                             continue
                         if not entry.get(f"alert_{level_key}", True):
                             continue
-                        # Alerta cuando el precio baja hasta el nivel (±1.5% o ya lo ha cruzado por abajo hasta un 3%)
-                        # Rango: desde 1.5% por encima hasta 3% por debajo del objetivo
-                        if not (target * 0.97 <= price <= target * 1.015):
+                        tolerance = target * 0.005  # ±0.5%
+                        if abs(price - target) > tolerance:
                             continue
                         cd_key = f"{symbol}_{level_key}"
                         now_ts = datetime.now(timezone.utc).timestamp()
@@ -217,8 +215,8 @@ async def signal_worker_loop(db, interval: int = 60):
                             continue
                         if not entry.get(f"alert_{level_key}", True):
                             continue
-                        # Alerta cuando el precio sube hasta el objetivo (±1.5% o ya lo ha cruzado por arriba hasta un 3%)
-                        if not (target * 0.985 <= price <= target * 1.03):
+                        tolerance = target * 0.005  # ±0.5%
+                        if abs(price - target) > tolerance:
                             continue
                         cd_key = f"{symbol}_{level_key}"
                         now_ts = datetime.now(timezone.utc).timestamp()
@@ -262,8 +260,3 @@ def _fire_alert(entry, symbol, level_label, target, price, diff_pct, action):
         tg_msg += f" · Riesgo: {telegram_notifier._esc_md(riesgo)}"
 
     asyncio.create_task(telegram_notifier.send_message(tg_msg))
-    asyncio.create_task(
-        alerts_worker.send_alert_email(
-            symbol, target, "below" if action == "COMPRA" else "above", price, diff_pct,
-        )
-    )
