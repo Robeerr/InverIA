@@ -152,10 +152,31 @@ async def bulk_upsert(db, rows: list) -> dict:
 COOLDOWN_SECONDS = 86400  # máximo 1 alerta por nivel y acción al día
 
 
+async def _is_in_cooldown(db, cd_key: str) -> bool:
+    """Comprueba cooldown en MongoDB (persiste entre reinicios del servidor)."""
+    doc = await db.alert_cooldowns.find_one({"key": cd_key})
+    if not doc:
+        return False
+    elapsed = datetime.now(timezone.utc).timestamp() - doc["fired_at"]
+    return elapsed < COOLDOWN_SECONDS
+
+
+async def _set_cooldown(db, cd_key: str):
+    """Guarda el timestamp de la última alerta en MongoDB."""
+    now_ts = datetime.now(timezone.utc).timestamp()
+    await db.alert_cooldowns.update_one(
+        {"key": cd_key},
+        {"$set": {"key": cd_key, "fired_at": now_ts}},
+        upsert=True,
+    )
+
+
 async def signal_worker_loop(db, interval: int = 60):
     """Background: cada `interval` seg comprueba precios vs niveles activos."""
     logger.info("Signal table worker started (interval=%ds)", interval)
-    cooldowns: dict = {}  # "AAPL_nivel1" -> timestamp float
+
+    # Índice para búsquedas rápidas de cooldown
+    await db.alert_cooldowns.create_index("key", unique=True)
 
     while True:
         try:
@@ -180,7 +201,7 @@ async def signal_worker_loop(db, interval: int = 60):
                         {"$set": {"last_price": price, "updated_at": _now()}}
                     )
 
-                    # Niveles de compra (precio baja hasta el nivel → alerta COMPRA)
+                    # Niveles de compra
                     buy_levels = {
                         "nivel1": entry.get("nivel1"),
                         "nivel2": entry.get("nivel2"),
@@ -188,7 +209,7 @@ async def signal_worker_loop(db, interval: int = 60):
                         "nivel4": entry.get("nivel4"),
                         "nivel5": entry.get("nivel5"),
                     }
-                    # Nivel deseado/venta (precio sube hasta el objetivo → alerta VENTA)
+                    # Nivel deseado/venta
                     sell_levels = {
                         "deseado": entry.get("deseado"),
                     }
@@ -202,10 +223,9 @@ async def signal_worker_loop(db, interval: int = 60):
                         if abs(price - target) > tolerance:
                             continue
                         cd_key = f"{symbol}_{level_key}"
-                        now_ts = datetime.now(timezone.utc).timestamp()
-                        if now_ts - cooldowns.get(cd_key, 0) < COOLDOWN_SECONDS:
+                        if await _is_in_cooldown(db, cd_key):
                             continue
-                        cooldowns[cd_key] = now_ts
+                        await _set_cooldown(db, cd_key)
                         diff_pct = round(((price - target) / target) * 100, 2)
                         level_num = level_key.replace("nivel", "Nivel ")
                         _fire_alert(entry, symbol, level_num, target, price, diff_pct, "COMPRA", db=db)
@@ -219,10 +239,9 @@ async def signal_worker_loop(db, interval: int = 60):
                         if abs(price - target) > tolerance:
                             continue
                         cd_key = f"{symbol}_{level_key}"
-                        now_ts = datetime.now(timezone.utc).timestamp()
-                        if now_ts - cooldowns.get(cd_key, 0) < COOLDOWN_SECONDS:
+                        if await _is_in_cooldown(db, cd_key):
                             continue
-                        cooldowns[cd_key] = now_ts
+                        await _set_cooldown(db, cd_key)
                         diff_pct = round(((price - target) / target) * 100, 2)
                         _fire_alert(entry, symbol, "Deseado/Venta", target, price, diff_pct, "VENTA", db=db)
 
