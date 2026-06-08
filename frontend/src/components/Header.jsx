@@ -159,23 +159,6 @@ export default function Header({ symbol, setSymbol, onSearch, model, setModel, s
           >
             <TelegramLogo size={15} />
           </Button>
-          {location.pathname === "/" && (
-          <Select value={model} onValueChange={setModel}>
-            <SelectTrigger
-              data-testid="model-selector"
-              className="hidden md:flex w-[150px] xl:w-[170px] h-10 bg-white border-[#e5e0d8] text-[#0e1f1a]"
-            >
-              <SelectValue placeholder="Modelo IA" />
-            </SelectTrigger>
-            <SelectContent>
-              {models.map((m) => (
-                <SelectItem key={m.value} value={m.value} data-testid={`model-option-${m.value}`}>
-                  {m.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          )}
           {/* User + logout */}
           <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-[#e5e0d8] bg-white text-xs font-mono text-[#5c6b66]">
             <User size={13} />
@@ -217,18 +200,6 @@ export default function Header({ symbol, setSymbol, onSearch, model, setModel, s
             );
           })}
           <div className="pt-2 border-t border-[#e5e0d8] flex items-center gap-2 flex-wrap">
-            {location.pathname === "/" && (
-            <Select value={model} onValueChange={setModel}>
-              <SelectTrigger className="flex-1 min-w-[160px] h-9 bg-white border-[#e5e0d8] text-[#0e1f1a] text-xs">
-                <SelectValue placeholder="Modelo IA" />
-              </SelectTrigger>
-              <SelectContent>
-                {models.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            )}
             <Button onClick={testTelegram} variant="outline" size="icon" className="h-9 w-9 border-[#e5e0d8]" title="Probar Telegram">
               <TelegramLogo size={15} />
             </Button>
