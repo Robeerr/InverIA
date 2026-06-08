@@ -661,6 +661,77 @@ async def bulk_import_signals(payload: SignalBulkImport):
     return result
 
 
+# ---------- Alert History ----------
+@api_router.get("/alerts/history")
+async def get_alert_history(limit: int = 50):
+    """Historial de alertas disparadas (últimas 50)."""
+    items = await db.alert_history.find({}, {"_id": 0}).sort("fired_at", -1).limit(limit).to_list(limit)
+    return items
+
+
+@api_router.delete("/alerts/history")
+async def clear_alert_history():
+    """Borra todo el historial."""
+    await db.alert_history.delete_many({})
+    return {"ok": True}
+
+
+# ---------- Hot Signals (señales calientes para el Dashboard) ----------
+@api_router.get("/signals/hot")
+async def hot_signals(limit: int = 5):
+    """Devuelve las acciones con precio más cercano a algún nivel de compra o venta."""
+    import market_data as md
+    entries = await db.signal_entries.find({"active": True}, {"_id": 0}).to_list(200)
+    results = []
+    for entry in entries:
+        symbol = entry["symbol"]
+        try:
+            q = md.get_quote(symbol)
+            if not q:
+                continue
+            price = float(q.get("price") or q.get("regularMarketPrice") or 0)
+            if price <= 0:
+                continue
+            # Revisar todos los niveles
+            levels = {}
+            for lk in ["nivel1", "nivel2", "nivel3", "nivel4", "nivel5"]:
+                if entry.get(lk) and entry.get(f"alert_{lk}", True):
+                    levels[lk] = entry[lk]
+            if entry.get("deseado") and entry.get("alert_deseado", True):
+                levels["deseado"] = entry["deseado"]
+            if not levels:
+                continue
+            best_pct = None
+            best_label = None
+            best_target = None
+            best_action = None
+            for lk, target in levels.items():
+                pct = abs(price - target) / target * 100
+                if best_pct is None or pct < best_pct:
+                    best_pct = pct
+                    best_label = lk
+                    best_target = target
+                    best_action = "VENTA" if lk == "deseado" else "COMPRA"
+            if best_pct is not None and best_pct <= 10:  # solo si está a menos del 10%
+                results.append({
+                    "symbol": symbol,
+                    "name": entry.get("name", symbol),
+                    "mercado": entry.get("mercado", ""),
+                    "sector": entry.get("sector", ""),
+                    "riesgo": entry.get("riesgo", ""),
+                    "price": price,
+                    "target": best_target,
+                    "level_label": best_label,
+                    "action": best_action,
+                    "pct_away": round(best_pct, 2),
+                    "posibles_ganancias": entry.get("posibles_ganancias"),
+                })
+        except Exception:
+            continue
+    results.sort(key=lambda x: x["pct_away"])
+    return results[:limit]
+
+
 # ---------- Mount ----------
 app.include_router(api_router)
 

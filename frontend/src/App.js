@@ -9,6 +9,7 @@ import OpportunitiesView from "./pages/OpportunitiesView";
 import PortfolioView from "./pages/PortfolioView";
 import CalendarView from "./pages/CalendarView";
 import SignalsView from "./pages/SignalsView";
+import AlertHistoryView from "./pages/AlertHistoryView";
 
 function App() {
   const [symbol, setSymbol] = useState("AAPL");
@@ -49,6 +50,7 @@ function App() {
           <Route path="/cartera" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><PortfolioView setSymbol={setSymbol} /></div>} />
           <Route path="/calendario" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><CalendarView setSymbol={setSymbol} /></div>} />
           <Route path="/signals" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><SignalsView setSymbol={setSymbol} /></div>} />
+          <Route path="/alertas" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><AlertHistoryView /></div>} />
           <Route path="/historial" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><HistoryView /></div>} />
         </Routes>
 

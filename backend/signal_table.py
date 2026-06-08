@@ -149,7 +149,7 @@ async def bulk_upsert(db, rows: list) -> dict:
 
 # ── Price-monitoring worker ──────────────────────────────────────────────────
 
-COOLDOWN_SECONDS = 3600  # no repetir la misma alerta en menos de 1h
+COOLDOWN_SECONDS = 86400  # máximo 1 alerta por nivel y acción al día
 
 
 async def signal_worker_loop(db, interval: int = 60):
@@ -208,7 +208,7 @@ async def signal_worker_loop(db, interval: int = 60):
                         cooldowns[cd_key] = now_ts
                         diff_pct = round(((price - target) / target) * 100, 2)
                         level_num = level_key.replace("nivel", "Nivel ")
-                        _fire_alert(entry, symbol, level_num, target, price, diff_pct, "COMPRA")
+                        _fire_alert(entry, symbol, level_num, target, price, diff_pct, "COMPRA", db=db)
 
                     for level_key, target in sell_levels.items():
                         if target is None:
@@ -224,7 +224,7 @@ async def signal_worker_loop(db, interval: int = 60):
                             continue
                         cooldowns[cd_key] = now_ts
                         diff_pct = round(((price - target) / target) * 100, 2)
-                        _fire_alert(entry, symbol, "Deseado/Venta", target, price, diff_pct, "VENTA")
+                        _fire_alert(entry, symbol, "Deseado/Venta", target, price, diff_pct, "VENTA", db=db)
 
                 except Exception as e:
                     logger.warning("Signal check error for %s: %s", symbol, e)
@@ -235,7 +235,7 @@ async def signal_worker_loop(db, interval: int = 60):
         await asyncio.sleep(interval)
 
 
-def _fire_alert(entry, symbol, level_label, target, price, diff_pct, action):
+def _fire_alert(entry, symbol, level_label, target, price, diff_pct, action, db=None):
     """Dispara alerta por Telegram."""
     name = entry.get("name", "") or symbol
     sector = entry.get("sector", "")
@@ -285,3 +285,22 @@ def _fire_alert(entry, symbol, level_label, target, price, diff_pct, action):
     )
 
     asyncio.create_task(telegram_notifier.send_message(tg_msg))
+
+    # Guardar en historial de alertas
+    if db is not None:
+        history_entry = {
+            "id": str(uuid.uuid4()),
+            "symbol": symbol,
+            "name": name,
+            "mercado": mercado,
+            "sector": sector,
+            "riesgo": riesgo,
+            "action": action,
+            "level_label": level_label,
+            "target": target,
+            "price": price,
+            "diff_pct": diff_pct,
+            "posibles_ganancias": posibles,
+            "fired_at": _now(),
+        }
+        asyncio.create_task(db.alert_history.insert_one(history_entry))

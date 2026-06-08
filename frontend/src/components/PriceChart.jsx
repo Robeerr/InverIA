@@ -37,6 +37,7 @@ export default function PriceChart({
   setTimeframe,
   analysis,
   indicators,
+  signalEntry,
 }) {
   const data = candles || [];
   if (data.length === 0) {
@@ -69,7 +70,7 @@ export default function PriceChart({
             Gráfico de Precio
           </h3>
           <p className="text-xs text-[#5c6b66] mt-0.5">
-            Zona de entrada, SL y Take Profits sugeridos por IA
+            {signalEntry ? "Niveles de compra (azul) y venta (morado) · IA: zona entrada, SL y TPs" : "Zona de entrada, SL y Take Profits sugeridos por IA"}
           </p>
         </div>
         <div className="flex gap-1 bg-[#f5f3ef] border border-[#e5e0d8] rounded-md p-1">
@@ -161,6 +162,32 @@ export default function PriceChart({
                 strokeWidth={2}
                 strokeDasharray="2 2"
                 label={{ value: `TP2: $${tp2}`, position: "right", fill: "#4a7c59", fontSize: 10, fontFamily: "IBM Plex Mono" }}
+              />
+            )}
+
+            {/* Signal entry buy levels overlay */}
+            {signalEntry && ["nivel1","nivel2","nivel3","nivel4","nivel5"].map((lk, i) => {
+              const val = signalEntry[lk];
+              if (!val) return null;
+              return (
+                <ReferenceLine
+                  key={lk}
+                  y={val}
+                  stroke="#2563eb"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 3"
+                  label={{ value: `N${i+1} $${val}`, position: "insideTopRight", fill: "#2563eb", fontSize: 10, fontFamily: "IBM Plex Mono" }}
+                />
+              );
+            })}
+            {/* Signal entry sell/deseado level */}
+            {signalEntry?.deseado && (
+              <ReferenceLine
+                y={signalEntry.deseado}
+                stroke="#7c3aed"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+                label={{ value: `Venta $${signalEntry.deseado}`, position: "insideTopRight", fill: "#7c3aed", fontSize: 10, fontFamily: "IBM Plex Mono" }}
               />
             )}
 

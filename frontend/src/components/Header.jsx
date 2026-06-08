@@ -1,5 +1,5 @@
 import React from "react";
-import { ChartLineUp, MagnifyingGlass, House, Briefcase, CalendarBlank, ClockCounterClockwise, EnvelopeSimple, Lightning, Moon, Sun, TelegramLogo, Crosshair, List, X } from "@phosphor-icons/react";
+import { ChartLineUp, MagnifyingGlass, House, Briefcase, CalendarBlank, ClockCounterClockwise, Lightning, Moon, Sun, TelegramLogo, Crosshair, List, X, Bell } from "@phosphor-icons/react";
 import { Input } from "../components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Button } from "../components/ui/button";
@@ -8,8 +8,8 @@ import { api } from "../lib/api";
 import { toast } from "sonner";
 
 const DEFAULT_MODELS = [
-  { value: "gpt-oss-120b", label: "GPT-OSS 120B (Gratis · Recomendado)", available: true },
-  { value: "gpt-5.2", label: "GPT-5.2 (Premium)", available: true },
+  { value: "gpt-oss-120b", label: "Rápido · Gratuito (recomendado)", available: true },
+  { value: "gpt-5.2", label: "Premium · Más preciso", available: true },
 ];
 
 const NAV = [
@@ -18,6 +18,7 @@ const NAV = [
   { to: "/cartera", label: "Cartera", icon: Briefcase, testId: "nav-portfolio" },
   { to: "/calendario", label: "Calendario", icon: CalendarBlank, testId: "nav-calendar" },
   { to: "/signals", label: "Señales", icon: Crosshair, testId: "nav-signals" },
+  { to: "/alertas", label: "Alertas", icon: Bell, testId: "nav-alerts" },
   { to: "/historial", label: "Historial", icon: ClockCounterClockwise, testId: "nav-history" },
 ];
 
@@ -25,7 +26,23 @@ export default function Header({ symbol, setSymbol, onSearch, model, setModel, s
   const [query, setQuery] = React.useState(symbol || "");
   const [models, setModels] = React.useState(DEFAULT_MODELS);
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [backendOk, setBackendOk] = React.useState(null); // null=checking, true=ok, false=down
   const location = useLocation();
+
+  // Status check every 60 seconds
+  React.useEffect(() => {
+    const check = async () => {
+      try {
+        const res = await fetch((process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "") + "/api/health", { signal: AbortSignal.timeout(8000) });
+        setBackendOk(res.ok);
+      } catch {
+        setBackendOk(false);
+      }
+    };
+    check();
+    const id = setInterval(check, 60000);
+    return () => clearInterval(id);
+  }, []);
 
   React.useEffect(() => { setMenuOpen(false); }, [location.pathname]);
 
@@ -44,16 +61,6 @@ export default function Header({ symbol, setSymbol, onSearch, model, setModel, s
     if (s) {
       setSymbol(s);
       onSearch(s);
-    }
-  };
-
-  const testEmail = async () => {
-    try {
-      await api.alerts.testEmail();
-      toast.success("Email de prueba enviado");
-    } catch (e) {
-      const detail = e?.response?.data?.detail || "Error al enviar email";
-      toast.error(detail, { duration: 12000 });
     }
   };
 
@@ -123,6 +130,14 @@ export default function Header({ symbol, setSymbol, onSearch, model, setModel, s
 
         {/* Actions */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Status indicator */}
+          <div
+            title={backendOk === null ? "Comprobando backend..." : backendOk ? "Backend activo ✓" : "Backend no responde"}
+            className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md border border-[#e5e0d8] bg-white text-xs font-mono"
+          >
+            <span className={`w-2 h-2 rounded-full ${backendOk === null ? "bg-yellow-400 animate-pulse" : backendOk ? "bg-green-500" : "bg-red-500 animate-pulse"}`} />
+            <span className="text-[#5c6b66] hidden lg:inline">{backendOk === null ? "..." : backendOk ? "Online" : "Offline"}</span>
+          </div>
           <Button
             data-testid="dark-mode-toggle"
             onClick={() => setDarkMode(!darkMode)}
@@ -132,16 +147,6 @@ export default function Header({ symbol, setSymbol, onSearch, model, setModel, s
             title={darkMode ? "Modo claro" : "Modo oscuro"}
           >
             {darkMode ? <Sun size={15} /> : <Moon size={15} />}
-          </Button>
-          <Button
-            data-testid="test-email-btn"
-            onClick={testEmail}
-            variant="outline"
-            size="icon"
-            className="hidden sm:flex h-9 w-9 sm:h-10 sm:w-10 border-[#e5e0d8] hover:bg-[#e5e0d8]"
-            title="Probar email"
-          >
-            <EnvelopeSimple size={15} />
           </Button>
           <Button
             data-testid="test-telegram-btn"
@@ -203,7 +208,7 @@ export default function Header({ symbol, setSymbol, onSearch, model, setModel, s
           <div className="pt-2 border-t border-[#e5e0d8] flex items-center gap-2 flex-wrap">
             <Select value={model} onValueChange={setModel}>
               <SelectTrigger className="flex-1 min-w-[160px] h-9 bg-white border-[#e5e0d8] text-[#0e1f1a] text-xs">
-                <SelectValue placeholder="Modelo" />
+                <SelectValue placeholder="Modelo IA" />
               </SelectTrigger>
               <SelectContent>
                 {models.map((m) => (
@@ -211,12 +216,14 @@ export default function Header({ symbol, setSymbol, onSearch, model, setModel, s
                 ))}
               </SelectContent>
             </Select>
-            <Button onClick={testEmail} variant="outline" size="icon" className="h-9 w-9 border-[#e5e0d8]" title="Probar email">
-              <EnvelopeSimple size={15} />
-            </Button>
             <Button onClick={testTelegram} variant="outline" size="icon" className="h-9 w-9 border-[#e5e0d8]" title="Probar Telegram">
               <TelegramLogo size={15} />
             </Button>
+            {/* Status mobile */}
+            <div className="flex items-center gap-1.5 px-2 h-9 rounded-md border border-[#e5e0d8] bg-white text-xs font-mono">
+              <span className={`w-2 h-2 rounded-full ${backendOk === null ? "bg-yellow-400 animate-pulse" : backendOk ? "bg-green-500" : "bg-red-500 animate-pulse"}`} />
+              <span className="text-[#5c6b66]">{backendOk === null ? "Comprobando..." : backendOk ? "Backend online" : "Backend offline"}</span>
+            </div>
           </div>
         </div>
       )}

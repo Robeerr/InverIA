@@ -5,7 +5,32 @@
       "Bash(git remote *)",
       "Bash(git fetch *)",
       "Bash(git checkout *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(python -m pip install -r requirements.txt)",
+      "Bash(py --version)",
+      "Read(//usr/**)",
+      "Read(//usr/local/**)",
+      "Bash(/c/Users/Rober/AppData/Local/Microsoft/WindowsApps/python3 --version)",
+      "Bash(where python *)",
+      "Bash(where python3 *)",
+      "PowerShell(python --version)",
+      "PowerShell(cd \"C:\\\\Users\\\\Rober\\\\Desktop\\\\InverIA\\\\backend\"; $env:MONGO_URL=\"mongodb+srv://alertasrober_db_user:3js7IsPHvHyTuBNh@cluster0.uxknfo7.mongodb.net/?appName=Cluster0\"; $env:DB_NAME=\"InverIA\"; & \"C:\\\\Users\\\\Rober\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\\\\python.exe\" server.py 2>&1 | Select-Object -First 20)",
+      "PowerShell($scripts = \"C:\\\\Users\\\\Rober\\\\AppData\\\\Local\\\\Packages\\\\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\\\\LocalCache\\\\local-packages\\\\Python312\\\\Scripts\"; $env:MONGO_URL=\"mongodb+srv://alertasrober_db_user:3js7IsPHvHyTuBNh@cluster0.uxknfo7.mongodb.net/?appName=Cluster0\"; $env:DB_NAME=\"InverIA\"; Start-Process -FilePath \"$scripts\\\\uvicorn.exe\" -ArgumentList \"server:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\", \"--reload\" -WorkingDirectory \"C:\\\\Users\\\\Rober\\\\Desktop\\\\InverIA\\\\backend\" -RedirectStandardOutput \"C:\\\\Users\\\\Rober\\\\Desktop\\\\InverIA\\\\backend\\\\server_out.txt\" -RedirectStandardError \"C:\\\\Users\\\\Rober\\\\Desktop\\\\InverIA\\\\backend\\\\server_err.txt\" -NoNewWindow; Start-Sleep -Seconds 6; Get-Content \"C:\\\\Users\\\\Rober\\\\Desktop\\\\InverIA\\\\backend\\\\server_err.txt\")",
+      "Bash(npm install *)",
+      "Bash(REACT_APP_BACKEND_URL=http://localhost:8000 BROWSER=none npm start)",
+      "Bash(tail -30 frontend_err.txt)",
+      "Bash(tail -30 frontend_out.txt)",
+      "Bash(REACT_APP_BACKEND_URL=http://localhost:8000 BROWSER=none npm run build)",
+      "Bash(curl -s -X POST http://localhost:8000/api/signals/bulk -H 'Content-Type: application/json' -d '{ *)",
+      "Bash(pkill -f \"craco start\")",
+      "Bash(pkill -f \"react-scripts\")",
+      "Bash(BROWSER=none npm start)",
+      "Bash(grep -q \"Compiled\\\\|ERROR\" \"C:\\\\Users\\\\Rober\\\\Desktop\\\\InverIA\\\\frontend\\\\frontend_out.txt\")",
+      "Bash(npm run *)",
+      "Bash(git rm *)",
+      "Bash(rm \"=2.0.0\")"
     ]
   }
 }
