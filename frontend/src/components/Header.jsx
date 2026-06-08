@@ -158,12 +158,13 @@ export default function Header({ symbol, setSymbol, onSearch, model, setModel, s
           >
             <TelegramLogo size={15} />
           </Button>
+          {location.pathname === "/" && (
           <Select value={model} onValueChange={setModel}>
             <SelectTrigger
               data-testid="model-selector"
               className="hidden md:flex w-[150px] xl:w-[170px] h-10 bg-white border-[#e5e0d8] text-[#0e1f1a]"
             >
-              <SelectValue placeholder="Modelo" />
+              <SelectValue placeholder="Modelo IA" />
             </SelectTrigger>
             <SelectContent>
               {models.map((m) => (
@@ -173,6 +174,7 @@ export default function Header({ symbol, setSymbol, onSearch, model, setModel, s
               ))}
             </SelectContent>
           </Select>
+          )}
           {/* Hamburger */}
           <Button
             onClick={() => setMenuOpen(!menuOpen)}
@@ -206,6 +208,7 @@ export default function Header({ symbol, setSymbol, onSearch, model, setModel, s
             );
           })}
           <div className="pt-2 border-t border-[#e5e0d8] flex items-center gap-2 flex-wrap">
+            {location.pathname === "/" && (
             <Select value={model} onValueChange={setModel}>
               <SelectTrigger className="flex-1 min-w-[160px] h-9 bg-white border-[#e5e0d8] text-[#0e1f1a] text-xs">
                 <SelectValue placeholder="Modelo IA" />
@@ -216,6 +219,7 @@ export default function Header({ symbol, setSymbol, onSearch, model, setModel, s
                 ))}
               </SelectContent>
             </Select>
+            )}
             <Button onClick={testTelegram} variant="outline" size="icon" className="h-9 w-9 border-[#e5e0d8]" title="Probar Telegram">
               <TelegramLogo size={15} />
             </Button>

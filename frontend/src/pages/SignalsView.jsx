@@ -158,7 +158,17 @@ export default function SignalsView({ setSymbol }) {
     } catch { toast.error("No se pudieron cargar las señales"); }
     finally { setLoading(false); }
   };
-  useEffect(() => { fetchEntries(); }, []);
+  useEffect(() => {
+    fetchEntries();
+    // Refresh silencioso cada 30s para mantener precios actualizados
+    const id = setInterval(() => {
+      fetch(`${API}/api/signals`)
+        .then((r) => r.json())
+        .then((data) => setEntries(data))
+        .catch(() => {});
+    }, 30000);
+    return () => clearInterval(id);
+  }, []);
 
   const updateField = async (id, field, value) => {
     setSaving((s) => ({ ...s, [id]: true }));

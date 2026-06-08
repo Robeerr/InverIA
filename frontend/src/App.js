@@ -28,6 +28,11 @@ function App() {
     }
   }, [darkMode]);
 
+  // Título dinámico con el ticker activo
+  useEffect(() => {
+    document.title = symbol ? `${symbol} · InverIA` : "InverIA · Análisis Bursátil";
+  }, [symbol]);
+
   return (
     <div className="App min-h-screen">
       <BrowserRouter>

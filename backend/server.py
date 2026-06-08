@@ -621,20 +621,21 @@ async def daily_opportunities(refresh: bool = False):
 # ---------- Signal Table (puntos de compra/venta) ----------
 @api_router.get("/signals")
 async def list_signals():
+    # El worker actualiza last_price en MongoDB cada 60s, así que no
+    # necesitamos llamar a Yahoo aquí. Respuesta instantánea desde DB.
+    cached = _cache.get("signals_list")
+    if cached is not None:
+        return cached
     entries = await signal_table.list_entries(db)
-    for e in entries:
-        try:
-            q = market_data.get_quote(e["symbol"])
-            if q:
-                e["last_price"] = float(q.get("price") or q.get("regularMarketPrice") or 0)
-        except Exception:
-            pass
+    _cache.set("signals_list", entries, ttl=20)
     return entries
 
 
 @api_router.post("/signals")
 async def create_signal(item: SignalEntryCreate):
     entry = await signal_table.create_entry(db, item.model_dump())
+    _cache._store.pop("signals_list", None)
+    _cache._store.pop("signals_hot", None)
     return entry
 
 
@@ -644,6 +645,8 @@ async def update_signal(entry_id: str, item: SignalEntryUpdate):
     updated = await signal_table.update_entry(db, entry_id, data)
     if not updated:
         raise HTTPException(404, "Señal no encontrada")
+    _cache._store.pop("signals_list", None)
+    _cache._store.pop("signals_hot", None)
     return updated
 
 
@@ -652,12 +655,16 @@ async def delete_signal(entry_id: str):
     ok = await signal_table.delete_entry(db, entry_id)
     if not ok:
         raise HTTPException(404, "Señal no encontrada")
+    _cache._store.pop("signals_list", None)
+    _cache._store.pop("signals_hot", None)
     return {"deleted": entry_id}
 
 
 @api_router.post("/signals/bulk")
 async def bulk_import_signals(payload: SignalBulkImport):
     result = await signal_table.bulk_upsert(db, payload.rows)
+    _cache._store.pop("signals_list", None)
+    _cache._store.pop("signals_hot", None)
     return result
 
 
@@ -679,17 +686,18 @@ async def clear_alert_history():
 # ---------- Hot Signals (señales calientes para el Dashboard) ----------
 @api_router.get("/signals/hot")
 async def hot_signals(limit: int = 5):
-    """Devuelve las acciones con precio más cercano a algún nivel de compra o venta."""
-    import market_data as md
+    """Devuelve las acciones con precio más cercano a algún nivel de compra o venta.
+    Usa last_price guardado por el worker en MongoDB — respuesta instantánea."""
+    cached = _cache.get("signals_hot")
+    if cached is not None:
+        return cached
     entries = await db.signal_entries.find({"active": True}, {"_id": 0}).to_list(200)
     results = []
     for entry in entries:
         symbol = entry["symbol"]
         try:
-            q = md.get_quote(symbol)
-            if not q:
-                continue
-            price = float(q.get("price") or q.get("regularMarketPrice") or 0)
+            # Usa el precio guardado por el worker (actualizado cada 60s)
+            price = float(entry.get("last_price") or 0)
             if price <= 0:
                 continue
             # Revisar todos los niveles
@@ -729,7 +737,9 @@ async def hot_signals(limit: int = 5):
         except Exception:
             continue
     results.sort(key=lambda x: x["pct_away"])
-    return results[:limit]
+    top = results[:limit]
+    _cache.set("signals_hot", top, ttl=30)
+    return top
 
 
 # ---------- Mount ----------
