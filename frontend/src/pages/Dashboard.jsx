@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { Fire, TrendUp, TrendDown, ArrowRight } from "@phosphor-icons/react";
@@ -99,6 +99,7 @@ export default function Dashboard({ symbol, setSymbol, model }) {
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [signalEntry, setSignalEntry] = useState(null);
+  const signalsCache = useRef(null); // session-level cache to avoid re-fetching all signals on every symbol change
 
   const loadSymbolData = useCallback(async (sym, tf) => {
     setLoadingQuote(true);
@@ -162,13 +163,18 @@ export default function Dashboard({ symbol, setSymbol, model }) {
   useEffect(() => {
     loadSymbolData(symbol, timeframe);
     const token = localStorage.getItem("inveria_token");
-    fetch(`${API}/api/signals`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-      .then((r) => r.json())
-      .then((entries) => {
-        const match = entries.find((e) => e.symbol === symbol.toUpperCase());
-        setSignalEntry(match || null);
-      })
-      .catch(() => setSignalEntry(null));
+    const findEntry = (entries) => {
+      const match = entries.find((e) => e.symbol === symbol.toUpperCase());
+      setSignalEntry(match || null);
+    };
+    if (signalsCache.current) {
+      findEntry(signalsCache.current);
+    } else {
+      fetch(`${API}/api/signals`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+        .then((r) => r.json())
+        .then((entries) => { signalsCache.current = entries; findEntry(entries); })
+        .catch(() => setSignalEntry(null));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
 

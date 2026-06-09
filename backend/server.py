@@ -519,11 +519,16 @@ async def sentiment_news(symbol: str):
 @api_router.get("/calendar/earnings")
 async def earnings_calendar(days: int = 14, symbols: Optional[str] = None):
     """Upcoming earnings from Finnhub. If symbols=comma list, filter by those tickers only."""
-    sym_filter = None
-    if symbols:
-        sym_filter = {s.strip().upper() for s in symbols.split(",") if s.strip()}
+    sym_list = sorted({s.strip().upper() for s in symbols.split(",") if s.strip()}) if symbols else []
+    cache_key = f"earnings:{days}:{','.join(sym_list)}"
+    cached = _cache.get(cache_key)
+    if cached is not None:
+        return cached
+    sym_filter = set(sym_list) if sym_list else None
     data = external_data.finnhub_earnings_calendar(days=days, symbols=sym_filter)
-    return data or {"items": []}
+    result = data or {"items": []}
+    _cache.set(cache_key, result, ttl=1800)  # 30 min — earnings don't change intraday
+    return result
 
 
 # ---------- Analysis History ----------
@@ -703,7 +708,7 @@ async def hot_signals(limit: int = 5):
             continue
     results.sort(key=lambda x: x["pct_away"])
     top = results[:limit]
-    _cache.set("signals_hot", top, ttl=30)
+    _cache.set("signals_hot", top, ttl=300)
     return top
 
 
