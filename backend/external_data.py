@@ -141,35 +141,20 @@ def aggregate_recommendation(trends):
     }
 
 
-def finnhub_earnings_calendar(days: int = 14, symbols=None):
-    """Upcoming earnings from Finnhub for next `days` days."""
-    from datetime import datetime, timedelta
-    key = _finnhub_key()
-    if not key:
-        return None
-    today = datetime.utcnow().date()
-    to = today + timedelta(days=days)
+def _fetch_earnings_for_symbol(sym: str, from_date: str, to_date: str, key: str):
+    """Fetch earnings for a single symbol from Finnhub."""
     try:
         r = _finnhub_get(
             "/calendar/earnings",
-            {
-                "from": today.isoformat(),
-                "to": to.isoformat(),
-                "token": key,
-            },
-            timeout=15,
+            {"symbol": sym, "from": from_date, "to": to_date, "token": key},
+            timeout=10,
         )
         if r.status_code != 200:
-            return None
-        d = r.json() or {}
-        items = d.get("earningsCalendar") or []
-        out = []
-        for it in items:
-            sym = (it.get("symbol") or "").upper()
-            if symbols and sym not in symbols:
-                continue
-            out.append({
-                "symbol": sym,
+            return []
+        items = r.json().get("earningsCalendar") or []
+        return [
+            {
+                "symbol": (it.get("symbol") or sym).upper(),
                 "date": it.get("date"),
                 "hour": it.get("hour"),
                 "eps_estimate": it.get("epsEstimate"),
@@ -178,9 +163,57 @@ def finnhub_earnings_calendar(days: int = 14, symbols=None):
                 "revenue_actual": it.get("revenueActual"),
                 "quarter": it.get("quarter"),
                 "year": it.get("year"),
-            })
+            }
+            for it in items
+        ]
+    except Exception:
+        return []
+
+
+def finnhub_earnings_calendar(days: int = 14, symbols=None):
+    """Upcoming earnings from Finnhub for next `days` days.
+    When symbols list provided, fetches per-symbol to bypass free-tier pagination limit."""
+    from datetime import datetime, timedelta
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    key = _finnhub_key()
+    if not key:
+        return None
+    today = datetime.utcnow().date()
+    to = today + timedelta(days=days)
+    from_str, to_str = today.isoformat(), to.isoformat()
+
+    if symbols:
+        # Per-symbol requests in parallel — avoids free-tier result cap on bulk queries
+        out = []
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            futures = {ex.submit(_fetch_earnings_for_symbol, sym, from_str, to_str, key): sym for sym in symbols}
+            for future in as_completed(futures):
+                out.extend(future.result())
         out.sort(key=lambda x: x.get("date") or "")
-        return {"items": out, "from": today.isoformat(), "to": to.isoformat()}
+        return {"items": out, "from": from_str, "to": to_str}
+
+    # No symbol filter — bulk request (may be capped by Finnhub free tier)
+    try:
+        r = _finnhub_get("/calendar/earnings", {"from": from_str, "to": to_str, "token": key}, timeout=15)
+        if r.status_code != 200:
+            return None
+        items = r.json().get("earningsCalendar") or []
+        out = [
+            {
+                "symbol": (it.get("symbol") or "").upper(),
+                "date": it.get("date"),
+                "hour": it.get("hour"),
+                "eps_estimate": it.get("epsEstimate"),
+                "eps_actual": it.get("epsActual"),
+                "revenue_estimate": it.get("revenueEstimate"),
+                "revenue_actual": it.get("revenueActual"),
+                "quarter": it.get("quarter"),
+                "year": it.get("year"),
+            }
+            for it in items
+        ]
+        out.sort(key=lambda x: x.get("date") or "")
+        return {"items": out, "from": from_str, "to": to_str}
     except Exception:
         return None
 

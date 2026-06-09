@@ -28,24 +28,23 @@ export default function CalendarView({ setSymbol }) {
       const token = localStorage.getItem("inveria_token");
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
-      // Fetch signals and all earnings in parallel, then filter client-side
-      const [sigRes, earningsRes] = await Promise.all([
-        axios.get(`${API}/signals`, { headers }),
-        axios.get(`${API}/calendar/earnings`, { headers, params: { days } }),
-      ]);
-
+      // Fetch signals first (fast, cached 20s), then earnings filtered by symbols in parallel-per-symbol on backend
+      const sigRes = await axios.get(`${API}/signals`, { headers });
       const raw = sigRes.data;
       const entries = Array.isArray(raw) ? raw : (raw?.items || raw?.entries || []);
-      const syms = new Set(entries.map((e) => e.symbol).filter(Boolean));
+      const syms = [...new Set(entries.map((e) => e.symbol).filter(Boolean))];
 
-      if (!syms.size) {
+      if (!syms.length) {
         setData({ items: [] });
         return;
       }
 
-      const allItems = earningsRes.data?.items || [];
-      const filtered = allItems.filter((it) => syms.has(it.symbol));
-      setData({ items: filtered });
+      // Pass symbols to backend — it fetches per-symbol in parallel (bypasses Finnhub free-tier cap)
+      const earningsRes = await axios.get(`${API}/calendar/earnings`, {
+        headers,
+        params: { days, symbols: syms.join(",") },
+      });
+      setData(earningsRes.data || { items: [] });
     } catch (err) {
       setData({ items: [] });
     } finally {
