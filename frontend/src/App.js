@@ -58,7 +58,7 @@ function AppInner() {
   if (!isAuth) return <LoginPage />;
 
   return (
-    <div className="App min-h-screen">
+    <div className="App min-h-screen overflow-x-hidden">
       <Header
         symbol={symbol}
         setSymbol={setSymbol}

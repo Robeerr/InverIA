@@ -2,7 +2,8 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { CalendarBlank, ArrowRight, Funnel } from "@phosphor-icons/react";
 import { Button } from "../components/ui/button";
-import { api } from "../lib/api";
+import { api, API } from "../lib/api";
+import axios from "axios";
 
 function dayLabel(dateStr) {
   if (!dateStr) return "—";
@@ -21,20 +22,21 @@ export default function CalendarView({ setSymbol }) {
   const [data, setData] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
   const [days, setDays] = React.useState(14);
-  const [onlyWatchlist, setOnlyWatchlist] = React.useState(false);
+  const [onlySignals, setOnlySignals] = React.useState(true);
 
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
       let symbolsParam = null;
-      if (onlyWatchlist) {
+      if (onlySignals) {
         try {
-          const [wl, port] = await Promise.all([api.watchlist.list(), api.portfolio.get()]);
-          const syms = new Set([
-            ...wl.map((w) => w.symbol),
-            ...(port.positions || []).map((p) => p.symbol),
-          ]);
-          symbolsParam = Array.from(syms).join(",");
+          const token = localStorage.getItem("inveria_token");
+          const res = await axios.get(`${API}/signals`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          const entries = res.data?.entries || res.data || [];
+          const syms = [...new Set(entries.map((e) => e.symbol).filter(Boolean))];
+          symbolsParam = syms.join(",");
           if (!symbolsParam) {
             setData({ items: [] });
             return;
@@ -46,7 +48,7 @@ export default function CalendarView({ setSymbol }) {
     } finally {
       setLoading(false);
     }
-  }, [days, onlyWatchlist]);
+  }, [days, onlySignals]);
 
   React.useEffect(() => { load(); }, [load]);
 
@@ -87,12 +89,12 @@ export default function CalendarView({ setSymbol }) {
             </select>
             <Button
               data-testid="filter-watchlist"
-              onClick={() => setOnlyWatchlist(!onlyWatchlist)}
-              variant={onlyWatchlist ? "default" : "outline"}
-              className={onlyWatchlist ? "bg-[#1a3a32] text-[#f5f3ef] font-mono text-xs" : "border-[#e5e0d8] font-mono text-xs"}
+              onClick={() => setOnlySignals(!onlySignals)}
+              variant={onlySignals ? "default" : "outline"}
+              className={onlySignals ? "bg-[#1a3a32] text-[#f5f3ef] font-mono text-xs" : "border-[#e5e0d8] font-mono text-xs"}
             >
               <Funnel size={14} weight="bold" className="mr-1" />
-              {onlyWatchlist ? "Solo Mis Acciones" : "Todas"}
+              {onlySignals ? "Solo Mis Señales" : "Todas"}
             </Button>
           </div>
         </div>
@@ -103,8 +105,8 @@ export default function CalendarView({ setSymbol }) {
       {!loading && data && grouped.length === 0 && (
         <div className="card-flat p-12 text-center">
           <p className="text-sm text-[#5c6b66]">
-            {onlyWatchlist
-              ? "Ninguna de tus acciones tiene earnings próximos."
+            {onlySignals
+              ? "Ninguna de tus señales tiene earnings próximos."
               : "Sin earnings programados en este rango."}
           </p>
         </div>

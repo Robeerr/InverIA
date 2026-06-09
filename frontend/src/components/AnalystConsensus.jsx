@@ -41,7 +41,7 @@ export default function AnalystConsensusCard({ data }) {
           <h3 className="font-heading font-semibold text-lg text-[#0e1f1a]">Consenso Wall Street</h3>
         </div>
         <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#5c6b66]">
-          {c.period} · {total} analistas
+          {c.period ? new Date(c.period + "T00:00:00").toLocaleDateString("es-ES", { month: "short", year: "numeric" }) : ""} · {total} analistas
         </span>
       </div>
 

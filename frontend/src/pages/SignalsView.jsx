@@ -3,6 +3,10 @@ import { Bell, BellSlash, Trash, Plus, X, UploadSimple, ArrowClockwise } from "@
 import { toast } from "sonner";
 
 const API = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
+const authHeaders = () => {
+  const token = localStorage.getItem("inveria_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const fmtP = (v) => (v != null && v !== "" ? `$${Number(v).toFixed(2)}` : "—");
@@ -153,7 +157,7 @@ export default function SignalsView({ setSymbol }) {
   const fetchEntries = async () => {
     setLoading(true);
     try {
-      const r = await fetch(`${API}/api/signals`);
+      const r = await fetch(`${API}/api/signals`, { headers: authHeaders() });
       setEntries(await r.json());
     } catch { toast.error("No se pudieron cargar las señales"); }
     finally { setLoading(false); }
@@ -162,7 +166,7 @@ export default function SignalsView({ setSymbol }) {
     fetchEntries();
     // Refresh silencioso cada 30s para mantener precios actualizados
     const id = setInterval(() => {
-      fetch(`${API}/api/signals`)
+      fetch(`${API}/api/signals`, { headers: authHeaders() })
         .then((r) => r.json())
         .then((data) => setEntries(data))
         .catch(() => {});
@@ -175,7 +179,7 @@ export default function SignalsView({ setSymbol }) {
     try {
       const r = await fetch(`${API}/api/signals/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ [field]: value }),
       });
       if (!r.ok) throw new Error();
@@ -188,7 +192,7 @@ export default function SignalsView({ setSymbol }) {
   const deleteEntry = async (id) => {
     if (!window.confirm("¿Eliminar esta entrada?")) return;
     try {
-      await fetch(`${API}/api/signals/${id}`, { method: "DELETE" });
+      await fetch(`${API}/api/signals/${id}`, { method: "DELETE", headers: authHeaders() });
       setEntries((prev) => prev.filter((e) => e.id !== id));
       toast.success("Eliminado");
     } catch { toast.error("Error al eliminar"); }
@@ -206,7 +210,7 @@ export default function SignalsView({ setSymbol }) {
       posibles_ganancias: num("posibles_ganancias"), notes: newEntry.notes, active: true,
     };
     try {
-      const r = await fetch(`${API}/api/signals`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const r = await fetch(`${API}/api/signals`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(payload) });
       if (!r.ok) throw new Error();
       const created = await r.json();
       setEntries((prev) => [...prev, created]);
@@ -220,7 +224,7 @@ export default function SignalsView({ setSymbol }) {
     if (!rows.length) { toast.error("No se detectaron filas. Comprueba el formato."); return; }
     setImporting(true);
     try {
-      const r = await fetch(`${API}/api/signals/bulk`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rows }) });
+      const r = await fetch(`${API}/api/signals/bulk`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ rows }) });
       if (!r.ok) throw new Error();
       const { created, updated } = await r.json();
       toast.success(`Importado: ${created} nuevas, ${updated} actualizadas`);
@@ -368,7 +372,11 @@ export default function SignalsView({ setSymbol }) {
               <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg px-3 py-2">
                 <div>
                   <p className="text-[10px] text-blue-500 uppercase font-mono font-bold">Deseado / Venta</p>
-                  <p className="font-mono font-bold text-blue-700 dark:text-blue-300">{fmtP(e.deseado)}</p>
+                  <EditableCell
+                    value={e.deseado}
+                    onChange={(v) => updateField(e.id, "deseado", v)}
+                    className="font-mono font-bold text-blue-700 dark:text-blue-300 text-sm"
+                  />
                 </div>
                 <div className="flex items-center gap-1">
                   {e.posibles_ganancias != null && <span className="text-xs text-green-600 font-bold">{fmtPct(e.posibles_ganancias)}</span>}
@@ -388,7 +396,11 @@ export default function SignalsView({ setSymbol }) {
                         <p className="text-[9px] text-green-600 uppercase font-mono font-bold">Nivel {n}</p>
                         <BellToggle active={alertOn} onClick={() => updateField(e.id, alertKey, !alertOn)} />
                       </div>
-                      <p className="font-mono font-bold text-green-800 dark:text-green-300 text-sm">{fmtP(val)}</p>
+                      <EditableCell
+                        value={val}
+                        onChange={(v) => updateField(e.id, `nivel${n}`, v)}
+                        className="font-mono font-bold text-green-800 dark:text-green-300 text-sm"
+                      />
                     </div>
                   );
                 })}
