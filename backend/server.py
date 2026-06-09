@@ -374,13 +374,16 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y"):
         "news": news_list,
         "analyst": analyst,
     }
-    _cache.set(cache_key, result, ttl=60)
+    _cache.set(cache_key, result, ttl=300)
     return result
 
 
 # ---------- Watchlist ----------
 @api_router.get("/watchlist")
 async def list_watchlist():
+    cached = _cache.get("watchlist_with_quotes")
+    if cached is not None:
+        return cached
     items = await db.watchlist.find({}, {"_id": 0}).to_list(200)
     if not items:
         return []
@@ -389,10 +392,12 @@ async def list_watchlist():
         *[loop.run_in_executor(None, market_data.get_quote, it["symbol"]) for it in items],
         return_exceptions=True,
     )
-    return [
+    result = [
         {**it, "quote": q if not isinstance(q, Exception) else None}
         for it, q in zip(items, quotes)
     ]
+    _cache.set("watchlist_with_quotes", result, ttl=45)
+    return result
 
 
 @api_router.post("/watchlist")
@@ -407,6 +412,7 @@ async def add_watchlist(item: WatchlistCreate):
         raise HTTPException(404, f"Símbolo no válido: {symbol}")
     obj = WatchlistItem(symbol=symbol)
     await db.watchlist.insert_one(obj.model_dump())
+    _cache._store.pop("watchlist_with_quotes", None)
     return {**obj.model_dump(), "quote": q}
 
 
@@ -415,6 +421,7 @@ async def remove_watchlist(symbol: str):
     res = await db.watchlist.delete_one({"symbol": symbol.upper()})
     if res.deleted_count == 0:
         raise HTTPException(404, "No encontrado")
+    _cache._store.pop("watchlist_with_quotes", None)
     return {"deleted": symbol.upper()}
 
 
@@ -848,7 +855,7 @@ async def prewarm_opportunities():
     """Pre-warm the daily opportunities scan in the background on startup.
     By the time users visit Oportunidades, results are cached (in-memory)."""
     async def _run():
-        await asyncio.sleep(10)  # Let other startup tasks finish first
+        await asyncio.sleep(120)  # Wait for real user traffic to settle first
         try:
             await opportunities.scan_daily_opportunities()
         except Exception:
