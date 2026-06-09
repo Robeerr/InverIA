@@ -30,7 +30,8 @@ export default function CalendarView({ setSymbol }) {
 
       // Fetch signals list to get the symbols
       const sigRes = await axios.get(`${API}/signals`, { headers });
-      const entries = sigRes.data?.entries || sigRes.data || [];
+      const raw = sigRes.data;
+      const entries = Array.isArray(raw) ? raw : (raw?.items || raw?.entries || []);
       const syms = [...new Set(entries.map((e) => e.symbol).filter(Boolean))];
 
       if (!syms.length) {
