@@ -39,10 +39,12 @@ export default function CalendarView({ setSymbol }) {
       }
 
       const symbolsParam = syms.join(",");
+      console.log("[CalendarView] Buscando earnings para:", symbolsParam);
       const earningsRes = await axios.get(`${API}/calendar/earnings`, {
         headers,
         params: { days, symbols: symbolsParam },
       });
+      console.log("[CalendarView] Respuesta Finnhub:", earningsRes.data);
       setData(earningsRes.data || { items: [] });
     } catch {
       setData({ items: [] });
