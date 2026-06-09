@@ -803,6 +803,15 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 @app.on_event("startup")
+async def create_db_indexes():
+    await db.signal_entries.create_index("symbol")
+    await db.signal_entries.create_index("active")
+    await db.analyses.create_index([("symbol", 1), ("created_at", -1)])
+    await db.watchlist.create_index("symbol", unique=True)
+    await db.alerts.create_index("symbol")
+
+
+@app.on_event("startup")
 async def start_alerts_worker():
     asyncio.create_task(alerts_worker.alerts_worker_loop(db))
 

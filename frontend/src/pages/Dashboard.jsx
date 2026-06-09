@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { Fire, TrendUp, TrendDown, ArrowRight } from "@phosphor-icons/react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import QuoteHeader from "../components/QuoteHeader";
 import PriceChart from "../components/PriceChart";
 import RecommendationPanel from "../components/RecommendationPanel";
@@ -90,6 +91,7 @@ function HotSignals({ onPickSymbol }) {
 }
 
 export default function Dashboard({ symbol, setSymbol, model }) {
+  const queryClient = useQueryClient();
   const [timeframe, setTimeframe] = useState("1Y");
   const [quote, setQuote] = useState(null);
   const [candles, setCandles] = useState([]);
@@ -99,10 +101,11 @@ export default function Dashboard({ symbol, setSymbol, model }) {
   const [news, setNews] = useState([]);
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
-  const [watchlist, setWatchlist] = useState([]);
-  const [alerts, setAlerts] = useState([]);
-  const [popular, setPopular] = useState([]);
   const [signalEntry, setSignalEntry] = useState(null);
+
+  const { data: watchlist = [] } = useQuery({ queryKey: ["watchlist"], queryFn: api.watchlist.list, staleTime: 60_000 });
+  const { data: alerts = [] } = useQuery({ queryKey: ["alerts"], queryFn: api.alerts.list, staleTime: 60_000 });
+  const { data: popular = [] } = useQuery({ queryKey: ["popular"], queryFn: api.popular, staleTime: 120_000 });
 
   const loadSymbolData = useCallback(async (sym, tf) => {
     setLoadingQuote(true);
@@ -164,21 +167,8 @@ export default function Dashboard({ symbol, setSymbol, model }) {
     }
   }, [symbol, model]);
 
-  const loadWatchlist = useCallback(async () => {
-    try { setWatchlist(await api.watchlist.list()); } catch {}
-  }, []);
-  const loadAlerts = useCallback(async () => {
-    try { setAlerts(await api.alerts.list()); } catch {}
-  }, []);
-  const loadPopular = useCallback(async () => {
-    try { setPopular(await api.popular()); } catch {}
-  }, []);
-
   useEffect(() => {
     loadSymbolData(symbol, timeframe);
-    loadWatchlist();
-    loadAlerts();
-    loadPopular();
     // Load signal entry for this symbol (for chart overlay)
     const token = localStorage.getItem("inveria_token");
     fetch(`${API}/api/signals`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
@@ -243,7 +233,7 @@ export default function Dashboard({ symbol, setSymbol, model }) {
         await api.watchlist.add(symbol);
         toast.success(`${symbol} añadido a watchlist`);
       }
-      await loadWatchlist();
+      queryClient.invalidateQueries({ queryKey: ["watchlist"] });
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Error en watchlist");
     }
@@ -253,18 +243,18 @@ export default function Dashboard({ symbol, setSymbol, model }) {
     try {
       await api.alerts.add(payload);
       toast.success("Alerta creada — recibirás email cuando se dispare");
-      await loadAlerts();
+      queryClient.invalidateQueries({ queryKey: ["alerts"] });
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Error al crear alerta");
     }
   };
 
   const handleRemoveAlert = async (id) => {
-    try { await api.alerts.remove(id); await loadAlerts(); } catch { toast.error("Error"); }
+    try { await api.alerts.remove(id); queryClient.invalidateQueries({ queryKey: ["alerts"] }); } catch { toast.error("Error"); }
   };
 
   const handleRemoveSymbol = async (sym) => {
-    try { await api.watchlist.remove(sym); await loadWatchlist(); toast.success(`${sym} eliminado`); } catch { toast.error("Error"); }
+    try { await api.watchlist.remove(sym); queryClient.invalidateQueries({ queryKey: ["watchlist"] }); toast.success(`${sym} eliminado`); } catch { toast.error("Error"); }
   };
 
   return (
