@@ -28,27 +28,25 @@ export default function CalendarView({ setSymbol }) {
       const token = localStorage.getItem("inveria_token");
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
-      // Fetch signals list to get the symbols
-      const sigRes = await axios.get(`${API}/signals`, { headers });
+      // Fetch signals and all earnings in parallel, then filter client-side
+      const [sigRes, earningsRes] = await Promise.all([
+        axios.get(`${API}/signals`, { headers }),
+        axios.get(`${API}/calendar/earnings`, { headers, params: { days } }),
+      ]);
+
       const raw = sigRes.data;
       const entries = Array.isArray(raw) ? raw : (raw?.items || raw?.entries || []);
-      const syms = [...new Set(entries.map((e) => e.symbol).filter(Boolean))];
+      const syms = new Set(entries.map((e) => e.symbol).filter(Boolean));
 
-      if (!syms.length) {
+      if (!syms.size) {
         setData({ items: [] });
         return;
       }
 
-      const symbolsParam = syms.join(",");
-      console.log("[CalendarView] Buscando earnings para:", symbolsParam);
-      const earningsRes = await axios.get(`${API}/calendar/earnings`, {
-        headers,
-        params: { days, symbols: symbolsParam },
-      });
-      console.log("[CalendarView] Respuesta Finnhub:", earningsRes.data);
-      setData(earningsRes.data || { items: [] });
+      const allItems = earningsRes.data?.items || [];
+      const filtered = allItems.filter((it) => syms.has(it.symbol));
+      setData({ items: filtered });
     } catch (err) {
-      console.error("[CalendarView] ERROR:", err?.response?.data || err?.message || err);
       setData({ items: [] });
     } finally {
       setLoading(false);
