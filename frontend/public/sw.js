@@ -27,7 +27,8 @@ self.addEventListener('fetch', (e) => {
           cached ||
           fetch(request).then((res) => {
             if (res.ok) {
-              caches.open(CACHE).then((c) => c.put(request, res.clone()));
+              const clone = res.clone();
+              caches.open(CACHE).then((c) => c.put(request, clone));
             }
             return res;
           })
@@ -42,7 +43,10 @@ self.addEventListener('fetch', (e) => {
       caches.match(request).then((cached) => {
         const network = fetch(request)
           .then((res) => {
-            if (res.ok) caches.open(CACHE).then((c) => c.put(request, res.clone()));
+            if (res.ok) {
+              const clone = res.clone();
+              caches.open(CACHE).then((c) => c.put(request, clone));
+            }
             return res;
           })
           .catch(() => cached);
