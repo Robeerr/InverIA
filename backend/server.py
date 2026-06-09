@@ -518,17 +518,23 @@ async def sentiment_news(symbol: str):
 # ---------- Earnings Calendar ----------
 @api_router.get("/calendar/earnings")
 async def earnings_calendar(days: int = 14, symbols: Optional[str] = None):
-    """Upcoming earnings from Finnhub. If symbols=comma list, filter by those tickers only."""
+    """Upcoming earnings from Finnhub. Always fetches 60 days and caches by symbols only;
+    the day range is then filtered in-memory so every day-filter combo shares the same cache."""
+    from datetime import datetime, timedelta
     sym_list = sorted({s.strip().upper() for s in symbols.split(",") if s.strip()}) if symbols else []
-    cache_key = f"earnings:{days}:{','.join(sym_list)}"
+    # Cache key ignores `days` — we always fetch 60d and slice in memory
+    cache_key = f"earnings60:{','.join(sym_list)}"
     cached = _cache.get(cache_key)
-    if cached is not None:
-        return cached
-    sym_filter = set(sym_list) if sym_list else None
-    data = external_data.finnhub_earnings_calendar(days=days, symbols=sym_filter)
-    result = data or {"items": []}
-    _cache.set(cache_key, result, ttl=1800)  # 30 min — earnings don't change intraday
-    return result
+    if cached is None:
+        sym_filter = set(sym_list) if sym_list else None
+        data = external_data.finnhub_earnings_calendar(days=60, symbols=sym_filter)
+        cached = data or {"items": []}
+        _cache.set(cache_key, cached, ttl=1800)  # 30 min — earnings don't change intraday
+
+    # Filter down to the requested day window
+    cutoff = (datetime.utcnow().date() + timedelta(days=days)).isoformat()
+    filtered = [it for it in (cached.get("items") or []) if (it.get("date") or "") <= cutoff]
+    return {"items": filtered}
 
 
 # ---------- Analysis History ----------
