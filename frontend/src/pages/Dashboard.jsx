@@ -2,12 +2,10 @@ import React, { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { Fire, TrendUp, TrendDown, ArrowRight } from "@phosphor-icons/react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import QuoteHeader from "../components/QuoteHeader";
 import PriceChart from "../components/PriceChart";
 import RecommendationPanel from "../components/RecommendationPanel";
 import IndicatorsPanel from "../components/IndicatorsPanel";
-import SidebarLists from "../components/SidebarLists";
 import TradingLevels from "../components/TradingLevels";
 import AnalystConsensusCard from "../components/AnalystConsensus";
 import { NewsFeed, FundamentalsCard, RisksCatalystsCard } from "../components/InfoCards";
@@ -91,7 +89,6 @@ function HotSignals({ onPickSymbol }) {
 }
 
 export default function Dashboard({ symbol, setSymbol, model }) {
-  const queryClient = useQueryClient();
   const [timeframe, setTimeframe] = useState("1Y");
   const [quote, setQuote] = useState(null);
   const [candles, setCandles] = useState([]);
@@ -102,10 +99,6 @@ export default function Dashboard({ symbol, setSymbol, model }) {
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [signalEntry, setSignalEntry] = useState(null);
-
-  const { data: watchlist = [] } = useQuery({ queryKey: ["watchlist"], queryFn: api.watchlist.list, staleTime: 60_000 });
-  const { data: alerts = [] } = useQuery({ queryKey: ["alerts"], queryFn: api.alerts.list, staleTime: 60_000 });
-  const { data: popular = [] } = useQuery({ queryKey: ["popular"], queryFn: api.popular, staleTime: 120_000 });
 
   const loadSymbolData = useCallback(async (sym, tf) => {
     setLoadingQuote(true);
@@ -150,7 +143,6 @@ export default function Dashboard({ symbol, setSymbol, model }) {
       setAnalysis(res.analysis);
       if (res.indicators) setIndicators(res.indicators);
       if (res.quote) setQuote(res.quote);
-      // Hydrate analyst data if available
       if (res.analyst_consensus || res.price_target) {
         setAnalystData({
           symbol,
@@ -169,7 +161,6 @@ export default function Dashboard({ symbol, setSymbol, model }) {
 
   useEffect(() => {
     loadSymbolData(symbol, timeframe);
-    // Load signal entry for this symbol (for chart overlay)
     const token = localStorage.getItem("inveria_token");
     fetch(`${API}/api/signals`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then((r) => r.json())
@@ -205,7 +196,6 @@ export default function Dashboard({ symbol, setSymbol, model }) {
           setQuote((prev) => prev ? { ...prev, ...data } : prev);
         } catch {}
       };
-      // Suppress console errors — fallback to polling silently
       ws.onerror = () => {};
       ws.onclose = () => { if (!closed) startFallback(); };
     } catch {
@@ -221,115 +211,50 @@ export default function Dashboard({ symbol, setSymbol, model }) {
 
   const handlePickSymbol = (sym) => setSymbol(sym);
 
-  const inWatchlist = !!watchlist.find((w) => w.symbol === symbol);
-
-  const handleToggleWatchlist = async () => {
-    const exists = watchlist.find((w) => w.symbol === symbol);
-    try {
-      if (exists) {
-        await api.watchlist.remove(symbol);
-        toast.success(`${symbol} eliminado de watchlist`);
-      } else {
-        await api.watchlist.add(symbol);
-        toast.success(`${symbol} añadido a watchlist`);
-      }
-      queryClient.invalidateQueries({ queryKey: ["watchlist"] });
-    } catch (e) {
-      toast.error(e?.response?.data?.detail || "Error en watchlist");
-    }
-  };
-
-  const handleAddAlert = async (payload) => {
-    try {
-      await api.alerts.add(payload);
-      toast.success("Alerta creada — recibirás email cuando se dispare");
-      queryClient.invalidateQueries({ queryKey: ["alerts"] });
-    } catch (e) {
-      toast.error(e?.response?.data?.detail || "Error al crear alerta");
-    }
-  };
-
-  const handleRemoveAlert = async (id) => {
-    try { await api.alerts.remove(id); queryClient.invalidateQueries({ queryKey: ["alerts"] }); } catch { toast.error("Error"); }
-  };
-
-  const handleRemoveSymbol = async (sym) => {
-    try { await api.watchlist.remove(sym); queryClient.invalidateQueries({ queryKey: ["watchlist"] }); toast.success(`${sym} eliminado`); } catch { toast.error("Error"); }
-  };
-
   return (
-    <main data-testid="main-dashboard" className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 sm:gap-6">
-      <div className="space-y-4 sm:space-y-6 min-w-0 order-2 lg:order-1">
-        <HotSignals onPickSymbol={handlePickSymbol} />
-        {loadingQuote && !quote ? (
-          <div className="card-flat p-8 text-center text-[#5c6b66]">Cargando datos...</div>
-        ) : quote ? (
-          <QuoteHeader quote={quote} inWatchlist={inWatchlist} onToggleWatchlist={handleToggleWatchlist} />
-        ) : null}
+    <main data-testid="main-dashboard" className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+      <HotSignals onPickSymbol={handlePickSymbol} />
 
-        <TradingLevels
-          quote={quote}
-          analysis={analysis}
-          analystConsensus={analystData?.consensus}
-          priceTarget={analystData?.price_target}
-        />
+      {loadingQuote && !quote ? (
+        <div className="card-flat p-8 text-center text-[#5c6b66]">Cargando datos...</div>
+      ) : quote ? (
+        <QuoteHeader quote={quote} />
+      ) : null}
 
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6">
-          <PriceChart
-            candles={candles}
-            timeframe={timeframe}
-            setTimeframe={refreshTimeframe}
-            analysis={analysis}
-            indicators={indicators}
-            signalEntry={signalEntry}
-          />
-          <RecommendationPanel
-            analysis={analysis}
-            isLoading={loadingAnalysis}
-            onAnalyze={runAnalysis}
-            model={model}
-          />
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <AnalystConsensusCard data={analystData} />
-          <IndicatorsPanel indicators={indicators} analysis={analysis} />
-        </div>
-
-        <FundamentalsCard quote={quote} analysis={analysis} />
-
-        {analysis && <RisksCatalystsCard analysis={analysis} />}
-
-        <NewsFeed news={news} />
-      </div>
-
-      <div className="order-1 lg:order-2 lg:hidden">
-        <SidebarLists
-          watchlist={watchlist}
-          onPickSymbol={handlePickSymbol}
-          onRemoveSymbol={handleRemoveSymbol}
-          onAddCurrent={handleToggleWatchlist}
-          currentSymbol={symbol}
-          alerts={alerts}
-          onAddAlert={handleAddAlert}
-          onRemoveAlert={handleRemoveAlert}
-          popular={popular}
-          compact
-        />
-      </div>
-      <div className="hidden lg:block order-2">
-      <SidebarLists
-        watchlist={watchlist}
-        onPickSymbol={handlePickSymbol}
-        onRemoveSymbol={handleRemoveSymbol}
-        onAddCurrent={handleToggleWatchlist}
-        currentSymbol={symbol}
-        alerts={alerts}
-        onAddAlert={handleAddAlert}
-        onRemoveAlert={handleRemoveAlert}
-        popular={popular}
+      <TradingLevels
+        quote={quote}
+        analysis={analysis}
+        analystConsensus={analystData?.consensus}
+        priceTarget={analystData?.price_target}
       />
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6">
+        <PriceChart
+          candles={candles}
+          timeframe={timeframe}
+          setTimeframe={refreshTimeframe}
+          analysis={analysis}
+          indicators={indicators}
+          signalEntry={signalEntry}
+        />
+        <RecommendationPanel
+          analysis={analysis}
+          isLoading={loadingAnalysis}
+          onAnalyze={runAnalysis}
+          model={model}
+        />
       </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <AnalystConsensusCard data={analystData} />
+        <IndicatorsPanel indicators={indicators} analysis={analysis} />
+      </div>
+
+      <FundamentalsCard quote={quote} analysis={analysis} />
+
+      {analysis && <RisksCatalystsCard analysis={analysis} />}
+
+      <NewsFeed news={news} />
     </main>
   );
 }

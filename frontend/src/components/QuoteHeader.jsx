@@ -1,9 +1,8 @@
 import React from "react";
-import { TrendUp, TrendDown, Buildings, Star, StarHalf } from "@phosphor-icons/react";
+import { TrendUp, TrendDown, Buildings } from "@phosphor-icons/react";
 import { fmtPrice, fmtPct, fmtNum } from "../lib/format";
-import { Button } from "../components/ui/button";
 
-export default function QuoteHeader({ quote, inWatchlist, onToggleWatchlist }) {
+export default function QuoteHeader({ quote }) {
   if (!quote) return null;
   const up = (quote.change ?? 0) >= 0;
   const Color = up ? "text-[#4a7c59]" : "text-[#d85c41]";
@@ -40,28 +39,16 @@ export default function QuoteHeader({ quote, inWatchlist, onToggleWatchlist }) {
           </div>
         </div>
 
-        <div className="flex items-end gap-6">
-          <div className="text-right">
-            <p data-testid="quote-price" className="font-mono font-semibold text-3xl md:text-4xl text-[#0e1f1a] leading-none">
-              ${fmtPrice(quote.price)}
-            </p>
-            <div className={`mt-2 font-mono text-sm flex items-center justify-end gap-1 ${Color}`}>
-              <TrendIcon size={14} weight="bold" />
-              <span data-testid="quote-change">
-                {up ? "+" : ""}{fmtPrice(quote.change)} ({fmtPct(quote.change_percent)})
-              </span>
-            </div>
+        <div className="text-right">
+          <p data-testid="quote-price" className="font-mono font-semibold text-3xl md:text-4xl text-[#0e1f1a] leading-none">
+            ${fmtPrice(quote.price)}
+          </p>
+          <div className={`mt-2 font-mono text-sm flex items-center justify-end gap-1 ${Color}`}>
+            <TrendIcon size={14} weight="bold" />
+            <span data-testid="quote-change">
+              {up ? "+" : ""}{fmtPrice(quote.change)} ({fmtPct(quote.change_percent)})
+            </span>
           </div>
-          <Button
-            data-testid="watchlist-toggle"
-            onClick={onToggleWatchlist}
-            variant="outline"
-            size="icon"
-            className="border-[#e5e0d8] hover:bg-[#e5e0d8]"
-            title={inWatchlist ? "Quitar de watchlist" : "Añadir a watchlist"}
-          >
-            {inWatchlist ? <Star size={18} weight="fill" className="text-[#1a3a32]" /> : <StarHalf size={18} />}
-          </Button>
         </div>
       </div>
 
