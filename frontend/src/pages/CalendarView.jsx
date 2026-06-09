@@ -46,7 +46,8 @@ export default function CalendarView({ setSymbol }) {
       });
       console.log("[CalendarView] Respuesta Finnhub:", earningsRes.data);
       setData(earningsRes.data || { items: [] });
-    } catch {
+    } catch (err) {
+      console.error("[CalendarView] ERROR:", err?.response?.data || err?.message || err);
       setData({ items: [] });
     } finally {
       setLoading(false);
