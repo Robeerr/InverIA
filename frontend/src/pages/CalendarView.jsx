@@ -1,8 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { CalendarBlank, ArrowRight, Funnel } from "@phosphor-icons/react";
-import { Button } from "../components/ui/button";
-import { api, API } from "../lib/api";
+import { CalendarBlank, ArrowRight } from "@phosphor-icons/react";
+import { API } from "../lib/api";
 import axios from "axios";
 
 function dayLabel(dateStr) {
@@ -22,33 +21,35 @@ export default function CalendarView({ setSymbol }) {
   const [data, setData] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
   const [days, setDays] = React.useState(14);
-  const [onlySignals, setOnlySignals] = React.useState(true);
 
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
-      let symbolsParam = null;
-      if (onlySignals) {
-        try {
-          const token = localStorage.getItem("inveria_token");
-          const res = await axios.get(`${API}/signals`, {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-          });
-          const entries = res.data?.entries || res.data || [];
-          const syms = [...new Set(entries.map((e) => e.symbol).filter(Boolean))];
-          symbolsParam = syms.join(",");
-          if (!symbolsParam) {
-            setData({ items: [] });
-            return;
-          }
-        } catch { /* noop */ }
+      const token = localStorage.getItem("inveria_token");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      // Fetch signals list to get the symbols
+      const sigRes = await axios.get(`${API}/signals`, { headers });
+      const entries = sigRes.data?.entries || sigRes.data || [];
+      const syms = [...new Set(entries.map((e) => e.symbol).filter(Boolean))];
+
+      if (!syms.length) {
+        setData({ items: [] });
+        return;
       }
-      const d = await api.calendar.earnings(days, symbolsParam);
-      setData(d);
+
+      const symbolsParam = syms.join(",");
+      const earningsRes = await axios.get(`${API}/calendar/earnings`, {
+        headers,
+        params: { days, symbols: symbolsParam },
+      });
+      setData(earningsRes.data || { items: [] });
+    } catch {
+      setData({ items: [] });
     } finally {
       setLoading(false);
     }
-  }, [days, onlySignals]);
+  }, [days]);
 
   React.useEffect(() => { load(); }, [load]);
 
@@ -72,31 +73,20 @@ export default function CalendarView({ setSymbol }) {
               <h2 className="font-heading font-bold text-2xl text-[#0e1f1a]">Calendario de Resultados</h2>
             </div>
             <p className="text-sm text-[#5c6b66] mt-1">
-              Próximas publicaciones de resultados (earnings) de empresas cotizadas.
+              Próximos earnings de tus acciones en Señales.
             </p>
           </div>
-          <div className="flex gap-2 items-center">
-            <select
-              data-testid="days-select"
-              value={days}
-              onChange={(e) => setDays(parseInt(e.target.value))}
-              className="bg-white border border-[#e5e0d8] rounded text-xs px-2 py-1.5 font-mono"
-            >
-              <option value={7}>Próximos 7 días</option>
-              <option value={14}>Próximos 14 días</option>
-              <option value={30}>Próximos 30 días</option>
-              <option value={60}>Próximos 60 días</option>
-            </select>
-            <Button
-              data-testid="filter-watchlist"
-              onClick={() => setOnlySignals(!onlySignals)}
-              variant={onlySignals ? "default" : "outline"}
-              className={onlySignals ? "bg-[#1a3a32] text-[#f5f3ef] font-mono text-xs" : "border-[#e5e0d8] font-mono text-xs"}
-            >
-              <Funnel size={14} weight="bold" className="mr-1" />
-              {onlySignals ? "Solo Mis Señales" : "Todas"}
-            </Button>
-          </div>
+          <select
+            data-testid="days-select"
+            value={days}
+            onChange={(e) => setDays(parseInt(e.target.value))}
+            className="bg-white border border-[#e5e0d8] rounded text-xs px-2 py-1.5 font-mono"
+          >
+            <option value={7}>Próximos 7 días</option>
+            <option value={14}>Próximos 14 días</option>
+            <option value={30}>Próximos 30 días</option>
+            <option value={60}>Próximos 60 días</option>
+          </select>
         </div>
       </section>
 
@@ -104,11 +94,7 @@ export default function CalendarView({ setSymbol }) {
 
       {!loading && data && grouped.length === 0 && (
         <div className="card-flat p-12 text-center">
-          <p className="text-sm text-[#5c6b66]">
-            {onlySignals
-              ? "Ninguna de tus señales tiene earnings próximos."
-              : "Sin earnings programados en este rango."}
-          </p>
+          <p className="text-sm text-[#5c6b66]">Ninguna de tus señales tiene earnings en este período.</p>
         </div>
       )}
 
