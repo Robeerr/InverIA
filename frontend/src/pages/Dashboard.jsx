@@ -180,7 +180,8 @@ export default function Dashboard({ symbol, setSymbol, model }) {
     loadAlerts();
     loadPopular();
     // Load signal entry for this symbol (for chart overlay)
-    fetch(`${API}/api/signals`)
+    const token = localStorage.getItem("inveria_token");
+    fetch(`${API}/api/signals`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then((r) => r.json())
       .then((entries) => {
         const match = entries.find((e) => e.symbol === symbol.toUpperCase());
@@ -190,15 +191,41 @@ export default function Dashboard({ symbol, setSymbol, model }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
 
+  // WebSocket for live price updates (~8s refresh). Falls back to 30s polling if WS fails.
   useEffect(() => {
     if (!symbol) return;
-    const id = setInterval(async () => {
-      try {
-        const q = await api.quote(symbol);
-        setQuote(q);
-      } catch {}
-    }, 30000);
-    return () => clearInterval(id);
+    let ws;
+    let fallbackId;
+    let closed = false;
+
+    const startFallback = () => {
+      if (fallbackId) return;
+      fallbackId = setInterval(async () => {
+        try { setQuote(await api.quote(symbol)); } catch {}
+      }, 30000);
+    };
+
+    try {
+      const base = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
+      const wsBase = base.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
+      ws = new WebSocket(`${wsBase}/api/ws/quote/${symbol}`);
+      ws.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          setQuote((prev) => prev ? { ...prev, ...data } : prev);
+        } catch {}
+      };
+      ws.onerror = () => { if (!closed) startFallback(); };
+      ws.onclose = () => { if (!closed) startFallback(); };
+    } catch {
+      startFallback();
+    }
+
+    return () => {
+      closed = true;
+      clearInterval(fallbackId);
+      if (ws) ws.close();
+    };
   }, [symbol]);
 
   const handlePickSymbol = (sym) => setSymbol(sym);

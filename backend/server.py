@@ -1,6 +1,7 @@
 """FastAPI server for the InverIA stock analysis app."""
-from fastapi import FastAPI, APIRouter, HTTPException, Request, UploadFile, File, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Request, UploadFile, File, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -357,12 +358,12 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y"):
 
     # Actualizar cachés individuales para que los endpoints separados también sean rápidos
     _cache.set(f"quote:{sym}", quote, ttl=60)
-    _cache.set(f"chart:{sym}:{timeframe}", {"symbol": sym, "timeframe": timeframe, "candles": candles}, ttl=300)
+    _cache.set(f"chart:{sym}:{timeframe}", {"symbol": sym, "timeframe": timeframe, "candles": candles}, ttl=3600)
     if indicators_data:
-        _cache.set(f"indicators:{sym}", indicators_data, ttl=300)
+        _cache.set(f"indicators:{sym}", indicators_data, ttl=3600)
     if news_list:
         _cache.set(f"news:{sym}", {"symbol": sym, "items": news_list}, ttl=1800)
-    _cache.set(f"analyst:{sym}", analyst, ttl=900)
+    _cache.set(f"analyst:{sym}", analyst, ttl=604800)
 
     result = {
         "symbol": sym,
@@ -477,15 +478,17 @@ async def analyst_data(symbol: str):
     consensus = external_data.aggregate_recommendation(trends)
     target = external_data.finnhub_price_target(sym)
     result = {"symbol": sym, "consensus": consensus, "price_target": target}
-    _cache.set(f"analyst:{sym}", result, ttl=900)  # 15 min
+    _cache.set(f"analyst:{sym}", result, ttl=604800)  # 7 días — Finnhub actualiza mensualmente
     return result
 
 
 @api_router.get("/sentiment/{symbol}")
 async def sentiment_news(symbol: str):
     sym = symbol.upper()
+    cached = _cache.get(f"sentiment:{sym}")
+    if cached:
+        return cached
     items = external_data.alpha_sentiment_news(sym) or []
-    # avg sentiment
     scores = [i["ticker_sentiment_score"] for i in items if i.get("ticker_sentiment_score") is not None]
     avg = round(sum(scores) / len(scores), 3) if scores else None
     label = None
@@ -500,12 +503,9 @@ async def sentiment_news(symbol: str):
             label = "NEGATIVO"
         else:
             label = "NEUTRO"
-    return {
-        "symbol": sym,
-        "average_score": avg,
-        "label": label,
-        "items": items,
-    }
+    result = {"symbol": sym, "average_score": avg, "label": label, "items": items}
+    _cache.set(f"sentiment:{sym}", result, ttl=86400)  # 24h — Alpha Vantage: 5 calls/min
+    return result
 
 
 # ---------- Earnings Calendar ----------
@@ -700,6 +700,72 @@ async def hot_signals(limit: int = 5):
     return top
 
 
+# ---------- WebSocket: live quote streaming ----------
+class _QuoteManager:
+    """Broadcasts real-time quote updates to all connected WebSocket clients.
+    One polling task per symbol shared across all subscribers — minimises Finnhub calls."""
+
+    def __init__(self):
+        self._conns: dict[str, list[WebSocket]] = {}
+        self._tasks: dict[str, asyncio.Task] = {}
+
+    async def connect(self, symbol: str, ws: WebSocket):
+        await ws.accept()
+        self._conns.setdefault(symbol, []).append(ws)
+        if symbol not in self._tasks or self._tasks[symbol].done():
+            self._tasks[symbol] = asyncio.create_task(self._push_loop(symbol))
+
+    def disconnect(self, symbol: str, ws: WebSocket):
+        conns = self._conns.get(symbol, [])
+        if ws in conns:
+            conns.remove(ws)
+        if not conns:
+            task = self._tasks.pop(symbol, None)
+            if task:
+                task.cancel()
+
+    async def _push_loop(self, symbol: str):
+        loop = asyncio.get_running_loop()
+        while self._conns.get(symbol):
+            try:
+                q = await loop.run_in_executor(None, market_data.get_quote, symbol)
+                if q:
+                    payload = {
+                        "current": q.get("current"),
+                        "change": q.get("change"),
+                        "change_percent": q.get("change_percent"),
+                        "high": q.get("high"),
+                        "low": q.get("low"),
+                        "previous_close": q.get("previous_close"),
+                    }
+                    dead = []
+                    for ws in list(self._conns.get(symbol, [])):
+                        try:
+                            await ws.send_json(payload)
+                        except Exception:
+                            dead.append(ws)
+                    for ws in dead:
+                        self.disconnect(symbol, ws)
+            except Exception:
+                pass
+            await asyncio.sleep(8)  # ~7.5 Finnhub calls/min per symbol (limit: 60/min)
+
+
+_quote_manager = _QuoteManager()
+
+
+@api_router.websocket("/ws/quote/{symbol}")
+async def ws_quote(websocket: WebSocket, symbol: str):
+    """Stream live price updates for a symbol. Pushes every ~8s."""
+    sym = symbol.upper()
+    await _quote_manager.connect(sym, websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except (WebSocketDisconnect, Exception):
+        _quote_manager.disconnect(sym, websocket)
+
+
 # ---------- Mount ----------
 app.include_router(api_router)
 
@@ -711,6 +777,7 @@ async def app_root():
 _cors_origins = os.environ.get("CORS_ORIGINS", "*")
 _origins_list = [o.strip().rstrip("/") for o in _cors_origins.split(",") if o.strip()]
 
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=False,
@@ -743,6 +810,28 @@ async def start_alerts_worker():
 @app.on_event("startup")
 async def start_signal_worker():
     asyncio.create_task(signal_table.signal_worker_loop(db))
+
+
+@app.on_event("startup")
+async def self_ping_loop():
+    """Ping /health every 10 min to prevent Render free tier from spinning down."""
+    import httpx
+
+    async def _run():
+        await asyncio.sleep(30)
+        render_url = os.environ.get("RENDER_EXTERNAL_URL", "")
+        if not render_url:
+            return
+        url = f"{render_url.rstrip('/')}/api/health"
+        async with httpx.AsyncClient(timeout=10) as client:
+            while True:
+                try:
+                    await client.head(url)
+                except Exception:
+                    pass
+                await asyncio.sleep(600)  # 10 min
+
+    asyncio.create_task(_run())
 
 
 @app.on_event("startup")
