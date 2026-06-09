@@ -807,7 +807,7 @@ async def create_db_indexes():
     await db.signal_entries.create_index("symbol")
     await db.signal_entries.create_index("active")
     await db.analyses.create_index([("symbol", 1), ("created_at", -1)])
-    await db.watchlist.create_index("symbol", unique=True)
+    await db.watchlist.create_index("symbol")
     await db.alerts.create_index("symbol")
 
 
