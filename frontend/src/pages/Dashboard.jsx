@@ -215,7 +215,8 @@ export default function Dashboard({ symbol, setSymbol, model }) {
           setQuote((prev) => prev ? { ...prev, ...data } : prev);
         } catch {}
       };
-      ws.onerror = () => { if (!closed) startFallback(); };
+      // Suppress console errors — fallback to polling silently
+      ws.onerror = () => {};
       ws.onclose = () => { if (!closed) startFallback(); };
     } catch {
       startFallback();
