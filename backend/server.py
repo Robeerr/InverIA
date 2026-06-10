@@ -1,4 +1,6 @@
 """FastAPI server for the InverIA stock analysis app."""
+import math
+import json
 from fastapi import FastAPI, APIRouter, HTTPException, Request, UploadFile, File, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.middleware.gzip import GZipMiddleware
@@ -59,7 +61,23 @@ client = AsyncIOMotorClient(mongo_url, **_mongo_kwargs)
 db = client[os.environ["DB_NAME"]]
 
 
-app = FastAPI(title="InverIA API")
+def _clean_nans(v):
+    """Recursively replace NaN/Inf floats with None so JSON serialization never fails."""
+    if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+        return None
+    if isinstance(v, dict):
+        return {k: _clean_nans(v2) for k, v2 in v.items()}
+    if isinstance(v, list):
+        return [_clean_nans(v2) for v2 in v]
+    return v
+
+
+class SafeJSONResponse(JSONResponse):
+    def render(self, content) -> bytes:
+        return json.dumps(_clean_nans(content), ensure_ascii=False).encode("utf-8")
+
+
+app = FastAPI(title="InverIA API", default_response_class=SafeJSONResponse)
 api_router = APIRouter(prefix="/api")
 
 logger = logging.getLogger("inveria")
