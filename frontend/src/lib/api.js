@@ -47,6 +47,7 @@ export const api = {
     client.get(`/opportunities/daily`, { params: refresh ? { refresh: true } : {} }).then((r) => r.data),
   opportunitiesScreener: (refresh = false) =>
     client.get(`/opportunities/screener`, { params: refresh ? { refresh: true } : {} }).then((r) => r.data),
+  marketMovers: () => client.get(`/market/movers`).then((r) => r.data),
   calendar: {
     earnings: (days = 14, symbols = null) =>
       client.get(`/calendar/earnings`, { params: { days, symbols: symbols || undefined } }).then((r) => r.data),

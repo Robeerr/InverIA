@@ -24,6 +24,7 @@ import indicators as ind
 import ai_analysis
 import external_data
 import polygon_data
+import fmp_data
 import alerts_worker
 import opportunities
 import signal_table
@@ -799,6 +800,18 @@ async def growth_screener(refresh: bool = False):
     """Growth screener: 7 hard filters (market cap, price, no dividend, volume,
     near 52w high, revenue growth, EPS growth) over a curated growth universe."""
     data = await opportunities.scan_growth_screener(force_refresh=refresh)
+    return data
+
+
+@api_router.get("/market/movers")
+async def market_movers():
+    """Biggest gainers / losers / most-active US stocks (Financial Modeling Prep)."""
+    cached = _cache.get("market_movers")
+    if cached is not None:
+        return cached
+    loop = asyncio.get_running_loop()
+    data = await loop.run_in_executor(None, fmp_data.get_market_movers)
+    _cache.set("market_movers", data, ttl=600)  # 10 min
     return data
 
 

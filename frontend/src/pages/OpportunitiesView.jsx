@@ -1,6 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { Lightning, TrendDown, TrendUp, Sparkle, Pulse, Sun, ArrowRight, ArrowClockwise, Funnel } from "@phosphor-icons/react";
+import { Lightning, TrendDown, TrendUp, Sparkle, Pulse, Sun, ArrowRight, ArrowClockwise, Funnel, Fire } from "@phosphor-icons/react";
 import { Button } from "../components/ui/button";
 import { api } from "../lib/api";
 import { fmtPrice, fmtPct, fmtNum } from "../lib/format";
@@ -135,6 +135,41 @@ function ScreenerCard({ row, onPick }) {
   );
 }
 
+function MoversColumn({ title, icon: Icon, rows, color, onPick }) {
+  return (
+    <div className="card-flat p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Icon size={16} weight="bold" style={{ color }} />
+        <h3 className="font-heading font-semibold text-sm text-[#0e1f1a]">{title}</h3>
+      </div>
+      <div className="space-y-1 max-h-[520px] overflow-y-auto pr-1">
+        {(rows || []).length === 0 && <p className="text-xs text-[#5c6b66] py-4 text-center">—</p>}
+        {(rows || []).map((r) => {
+          const pct = r.change_percent;
+          return (
+            <div
+              key={r.symbol}
+              onClick={() => onPick(r.symbol)}
+              className="flex items-center justify-between gap-2 px-2 py-1.5 rounded hover:bg-[#f5f3ef] cursor-pointer"
+            >
+              <div className="min-w-0">
+                <p className="font-mono font-semibold text-xs text-[#0e1f1a]">{r.symbol}</p>
+                <p className="text-[10px] text-[#5c6b66] truncate max-w-[130px]">{r.name}</p>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="font-mono text-xs text-[#0e1f1a]">${fmtPrice(r.price)}</p>
+                <p className="font-mono text-[11px] font-semibold" style={{ color }}>
+                  {pct != null ? `${pct >= 0 ? "+" : ""}${Number(pct).toFixed(2)}%` : "—"}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function OpportunitiesView({ setSymbol }) {
   const navigate = useNavigate();
   const [mode, setMode] = React.useState("signals"); // "signals" | "screener"
@@ -147,6 +182,10 @@ export default function OpportunitiesView({ setSymbol }) {
   // --- Screener mode state ---
   const [screener, setScreener] = React.useState(null);
   const [screenerLoading, setScreenerLoading] = React.useState(false);
+
+  // --- Movers mode state ---
+  const [movers, setMovers] = React.useState(null);
+  const [moversLoading, setMoversLoading] = React.useState(false);
 
   const load = React.useCallback(async (refresh = false) => {
     setLoading(true);
@@ -174,6 +213,17 @@ export default function OpportunitiesView({ setSymbol }) {
     }
   }, []);
 
+  const loadMovers = React.useCallback(async () => {
+    setMoversLoading(true);
+    try {
+      setMovers(await api.marketMovers());
+    } catch (e) {
+      // noop
+    } finally {
+      setMoversLoading(false);
+    }
+  }, []);
+
   React.useEffect(() => {
     load();
   }, [load]);
@@ -181,6 +231,10 @@ export default function OpportunitiesView({ setSymbol }) {
   React.useEffect(() => {
     if (mode === "screener" && !screener) loadScreener();
   }, [mode, screener, loadScreener]);
+
+  React.useEffect(() => {
+    if (mode === "movers" && !movers) loadMovers();
+  }, [mode, movers, loadMovers]);
 
   const handlePick = (sym) => {
     setSymbol(sym);
@@ -213,6 +267,7 @@ export default function OpportunitiesView({ setSymbol }) {
       <div className="flex gap-2 flex-wrap">
         <TabButton id="signals" icon={Lightning}>Señales del día</TabButton>
         <TabButton id="screener" icon={Funnel}>Screener Crecimiento</TabButton>
+        <TabButton id="movers" icon={Fire}>Movers del mercado</TabButton>
       </div>
 
       {/* ============ SIGNALS MODE ============ */}
@@ -376,6 +431,41 @@ export default function OpportunitiesView({ setSymbol }) {
           ) : (
             <div className="card-flat p-12 text-center">
               <p className="text-sm text-[#5c6b66]">Ninguna acción del universo cumple hoy los 7 filtros. Prueba a refrescar más tarde.</p>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ============ MOVERS MODE ============ */}
+      {mode === "movers" && (
+        <>
+          <section className="card-flat p-6">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Fire size={20} weight="fill" className="text-[#d85c41]" />
+                  <h2 className="font-heading font-bold text-2xl text-[#0e1f1a]">Movers del Mercado</h2>
+                </div>
+                <p className="text-sm text-[#5c6b66]">Mayores subidas, bajadas y más negociadas del mercado US hoy.</p>
+              </div>
+              <Button onClick={loadMovers} disabled={moversLoading} variant="outline" className="border-[#e5e0d8] font-mono text-xs">
+                <ArrowClockwise size={14} weight="bold" className="mr-1" />
+                {moversLoading ? "Cargando..." : "Refrescar"}
+              </Button>
+            </div>
+          </section>
+
+          {moversLoading && !movers ? (
+            <div className="card-flat p-12 text-center"><p className="text-sm text-[#5c6b66]">Cargando movers del mercado...</p></div>
+          ) : movers && ((movers.gainers || []).length || (movers.losers || []).length || (movers.actives || []).length) ? (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <MoversColumn title="Mayores subidas" icon={TrendUp} rows={movers.gainers} color="#4a7c59" onPick={handlePick} />
+              <MoversColumn title="Mayores bajadas" icon={TrendDown} rows={movers.losers} color="#d85c41" onPick={handlePick} />
+              <MoversColumn title="Más negociadas" icon={Pulse} rows={movers.actives} color="#1F6FB5" onPick={handlePick} />
+            </div>
+          ) : (
+            <div className="card-flat p-12 text-center">
+              <p className="text-sm text-[#5c6b66]">No hay datos de movers. Requiere configurar <span className="font-mono">FMP_API_KEY</span> en el servidor.</p>
             </div>
           )}
         </>
