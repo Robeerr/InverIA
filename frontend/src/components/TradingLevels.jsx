@@ -1,8 +1,6 @@
 import React from "react";
-import { ArrowUpRight, ArrowDownRight, Minus, Target, Shield, TrendUp, TrendDown, Crosshair, Star, BellRinging } from "@phosphor-icons/react";
-import { toast } from "sonner";
+import { ArrowUpRight, ArrowDownRight, Minus, Target, Shield, TrendUp, TrendDown, Crosshair, Star } from "@phosphor-icons/react";
 import { fmtPrice, fmtPct } from "../lib/format";
-import { api } from "../lib/api";
 
 // Build the list of high-conviction price levels from the Volume Profile.
 function buildVpLevels(vp) {
@@ -38,43 +36,6 @@ function ConfluenceBadge({ match }) {
       <Star size={9} weight="fill" />
       Alta prob · {match.type}
     </span>
-  );
-}
-
-// Small "create alert" button — wires an AI level straight to the Telegram alert system.
-function AlertButton({ symbol, price, direction, onDone }) {
-  const [busy, setBusy] = React.useState(false);
-  const [done, setDone] = React.useState(false);
-  if (!symbol || price == null) return null;
-  const handle = async () => {
-    if (busy || done) return;
-    setBusy(true);
-    try {
-      await api.alerts.add({ symbol, target_price: Number(Number(price).toFixed(2)), direction });
-      setDone(true);
-      toast.success(`Alerta creada: ${symbol} ${direction === "above" ? "≥" : "≤"} $${fmtPrice(price)}`);
-      onDone && onDone();
-    } catch (e) {
-      toast.error("No se pudo crear la alerta");
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <button
-      type="button"
-      onClick={handle}
-      disabled={busy || done}
-      title={done ? "Alerta creada" : `Crear alerta en $${fmtPrice(price)}`}
-      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-mono font-semibold uppercase tracking-wider transition-colors ${
-        done
-          ? "bg-[#4a7c59]/15 text-[#4a7c59] cursor-default"
-          : "bg-[#1a3a32]/10 text-[#1a3a32] hover:bg-[#1a3a32] hover:text-[#f5f3ef]"
-      }`}
-    >
-      <BellRinging size={9} weight="bold" />
-      {done ? "Creada" : busy ? "..." : "Alerta"}
-    </button>
   );
 }
 
@@ -282,10 +243,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
                           ${fmtPrice(z.min)} - ${fmtPrice(z.max)}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        {match && <ConfluenceBadge match={match} />}
-                        <AlertButton symbol={quote?.symbol} price={z.max} direction="below" />
-                      </div>
+                      {match && <div className="mt-1"><ConfluenceBadge match={match} /></div>}
                       {z.comment && <p className="text-[11px] text-[#5c6b66] mt-1 leading-snug">{z.comment}</p>}
                     </div>
                   );
@@ -337,9 +295,6 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
                           ${fmtPrice(t.price)}
                           {d != null && <span className="text-[10px] text-[#5c6b66] ml-1">({d >= 0 ? "+" : ""}{d.toFixed(2)}%)</span>}
                         </span>
-                      </div>
-                      <div className="mt-1">
-                        <AlertButton symbol={quote?.symbol} price={t.price} direction="above" />
                       </div>
                       {t.comment && <p className="text-[11px] text-[#5c6b66] mt-1 leading-snug">{t.comment}</p>}
                     </div>

@@ -11,8 +11,7 @@ const NAV = [
   { to: "/", label: "Dashboard", icon: House, testId: "nav-dashboard" },
   { to: "/oportunidades", label: "Oportunidades", icon: Lightning, testId: "nav-opportunities" },
   { to: "/calendario", label: "Calendario", icon: CalendarBlank, testId: "nav-calendar" },
-  { to: "/signals", label: "Señales", icon: Crosshair, testId: "nav-signals" },
-  { to: "/alertas", label: "Alertas", icon: Bell, testId: "nav-alerts" },
+  { to: "/signals", label: "Alertas", icon: Bell, testId: "nav-signals" },
 ];
 
 export default function Header({ symbol, setSymbol, onSearch, showSearch = true, darkMode, setDarkMode }) {

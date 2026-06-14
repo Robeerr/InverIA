@@ -30,7 +30,7 @@ MODEL_MAP = {
     "claude-sonnet-4.5": ("anthropic", "claude-sonnet-4-5-20250929", False),
 }
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gpt-oss-120b"
 
 
 SYSTEM_PROMPT = """Eres un analista financiero senior especializado en inversión a medio y largo plazo en acciones de EE.UU.
