@@ -19,6 +19,7 @@ export default function Dashboard({ symbol, setSymbol, model }) {
   const [analysis, setAnalysis] = useState(null);
   const [analystData, setAnalystData] = useState(null);
   const [marketSignals, setMarketSignals] = useState(null);
+  const [volumeProfile, setVolumeProfile] = useState(null);
   const [news, setNews] = useState([]);
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
@@ -29,6 +30,7 @@ export default function Dashboard({ symbol, setSymbol, model }) {
     setLoadingQuote(true);
     setAnalysis(null);
     setMarketSignals(null);
+    setVolumeProfile(null);
     try {
       const data = await api.dashboard(sym, tf);
       if (!data?.quote) {
@@ -79,6 +81,7 @@ export default function Dashboard({ symbol, setSymbol, model }) {
       if (res.insider || res.earnings_history) {
         setMarketSignals({ insider: res.insider, earningsHistory: res.earnings_history });
       }
+      if (res.volume_profile) setVolumeProfile(res.volume_profile);
       toast.success(`Análisis ${model} completado`);
     } catch (e) {
       const msg = e?.response?.data?.detail || "Error al generar análisis IA";
@@ -157,6 +160,7 @@ export default function Dashboard({ symbol, setSymbol, model }) {
         analysis={analysis}
         analystConsensus={analystData?.consensus}
         priceTarget={analystData?.price_target}
+        volumeProfile={volumeProfile}
       />
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6">
