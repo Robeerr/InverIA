@@ -671,6 +671,14 @@ async def daily_opportunities(refresh: bool = False):
     return data
 
 
+@api_router.get("/opportunities/screener")
+async def growth_screener(refresh: bool = False):
+    """Growth screener: 7 hard filters (market cap, price, no dividend, volume,
+    near 52w high, revenue growth, EPS growth) over a curated growth universe."""
+    data = await opportunities.scan_growth_screener(force_refresh=refresh)
+    return data
+
+
 # ---------- Signal Table (puntos de compra/venta) ----------
 @api_router.get("/signals")
 async def list_signals():
@@ -962,6 +970,21 @@ async def prewarm_opportunities():
             logger.info("Opportunities pre-warm complete")
         except Exception as e:
             logger.warning(f"Opportunities pre-warm failed: {e}")
+    asyncio.create_task(_run())
+
+
+@app.on_event("startup")
+async def prewarm_screener():
+    """Pre-warm the growth screener in background, staggered after the opportunities
+    pre-warm so we don't hammer yfinance with 150+ quote requests at boot. Runs in a
+    background task (not tied to an HTTP request) to avoid proxy timeouts."""
+    async def _run():
+        try:
+            await asyncio.sleep(180)  # let the opportunities pre-warm finish first
+            await opportunities.scan_growth_screener(force_refresh=True)
+            logger.info("Growth screener pre-warm complete")
+        except Exception as e:
+            logger.warning(f"Screener pre-warm failed: {e}")
     asyncio.create_task(_run())
 
 

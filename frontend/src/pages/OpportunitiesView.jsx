@@ -1,9 +1,9 @@
 import React from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { Lightning, TrendDown, TrendUp, Sparkle, Pulse, Sun, ArrowRight, ArrowClockwise } from "@phosphor-icons/react";
+import { useNavigate } from "react-router-dom";
+import { Lightning, TrendDown, TrendUp, Sparkle, Pulse, Sun, ArrowRight, ArrowClockwise, Funnel } from "@phosphor-icons/react";
 import { Button } from "../components/ui/button";
 import { api } from "../lib/api";
-import { fmtPrice, fmtPct } from "../lib/format";
+import { fmtPrice, fmtPct, fmtNum } from "../lib/format";
 
 const CATEGORY_META = {
   OVERSOLD: { label: "Sobrevendidas (RSI<30)", icon: TrendDown, color: "#4a7c59", desc: "RSI muy bajo, posible rebote técnico" },
@@ -82,21 +82,78 @@ function OpportunityCard({ op, onPick }) {
   );
 }
 
+function ScreenerCard({ row, onPick }) {
+  const dist = row.dist_52w_high;
+  const distColor = dist == null ? "#5c6b66" : dist >= -5 ? "#4a7c59" : dist >= -12 ? "#c9a14a" : "#d85c41";
+  return (
+    <div
+      data-testid={`screener-${row.symbol}`}
+      className="card-flat p-4 hover:shadow-md transition-all cursor-pointer card-hover"
+      onClick={() => onPick(row.symbol)}
+    >
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-10 h-10 rounded-md bg-[#1a3a32] text-[#f5f3ef] flex items-center justify-center font-mono font-bold text-xs shrink-0">
+            {row.symbol.slice(0, 3)}
+          </div>
+          <div className="min-w-0">
+            <p className="font-mono font-bold text-sm text-[#0e1f1a]">{row.symbol}</p>
+            <p className="text-[10px] text-[#5c6b66] truncate max-w-[140px]">{row.name}</p>
+          </div>
+        </div>
+        <span
+          className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold"
+          style={{ background: `${distColor}15`, color: distColor, border: `1px solid ${distColor}40` }}
+        >
+          {dist != null ? `${dist}% máx.` : "—"}
+        </span>
+      </div>
+
+      <div className="flex items-baseline justify-between mb-3">
+        <p className="font-mono font-bold text-lg text-[#0e1f1a]">${fmtPrice(row.price)}</p>
+        <p className="text-[10px] text-[#5c6b66] font-mono">${fmtNum(row.market_cap)} cap</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-1 text-center mb-3 text-[10px] font-mono">
+        <div className="bg-[#4a7c59]/10 border border-[#4a7c59]/30 rounded px-1 py-1.5">
+          <p className="text-[#5c6b66] uppercase text-[9px]">Ventas YoY</p>
+          <p className="text-[#4a7c59] font-semibold">+{row.revenue_growth}%</p>
+        </div>
+        <div className="bg-[#7A4FB7]/10 border border-[#7A4FB7]/30 rounded px-1 py-1.5">
+          <p className="text-[#5c6b66] uppercase text-[9px]">EPS YoY</p>
+          <p className="text-[#7A4FB7] font-semibold">{row.eps_growth > 0 ? "+" : ""}{row.eps_growth}%</p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between text-[10px] text-[#5c6b66]">
+        <span className="truncate max-w-[150px]">{row.sector || "—"}</span>
+        <span className="flex items-center gap-1 text-[#1a3a32] font-mono">
+          Analizar <ArrowRight size={10} weight="bold" />
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function OpportunitiesView({ setSymbol }) {
   const navigate = useNavigate();
+  const [mode, setMode] = React.useState("signals"); // "signals" | "screener"
+
+  // --- Signals mode state ---
   const [data, setData] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
   const [filter, setFilter] = React.useState("ALL");
+
+  // --- Screener mode state ---
+  const [screener, setScreener] = React.useState(null);
+  const [screenerLoading, setScreenerLoading] = React.useState(false);
 
   const load = React.useCallback(async (refresh = false) => {
     setLoading(true);
     try {
       const d = await api.opportunities(refresh);
       setData(d);
-      // If backend is still warming the scan, retry shortly until data is ready
-      if (d?.status === "warming") {
-        setTimeout(() => load(false), 8000);
-      }
+      if (d?.status === "warming") setTimeout(() => load(false), 8000);
     } catch (e) {
       // noop
     } finally {
@@ -104,9 +161,26 @@ export default function OpportunitiesView({ setSymbol }) {
     }
   }, []);
 
+  const loadScreener = React.useCallback(async (refresh = false) => {
+    setScreenerLoading(true);
+    try {
+      const d = await api.opportunitiesScreener(refresh);
+      setScreener(d);
+      if (d?.status === "warming") setTimeout(() => loadScreener(false), 8000);
+    } catch (e) {
+      // noop
+    } finally {
+      setScreenerLoading(false);
+    }
+  }, []);
+
   React.useEffect(() => {
     load();
   }, [load]);
+
+  React.useEffect(() => {
+    if (mode === "screener" && !screener) loadScreener();
+  }, [mode, screener, loadScreener]);
 
   const handlePick = (sym) => {
     setSymbol(sym);
@@ -116,109 +190,201 @@ export default function OpportunitiesView({ setSymbol }) {
   const filtered = React.useMemo(() => {
     if (!data) return [];
     if (filter === "ALL") return data.top || [];
-    return (data.by_category?.[filter] || []);
+    return data.by_category?.[filter] || [];
   }, [data, filter]);
+
+  const TabButton = ({ id, icon: Icon, children }) => (
+    <button
+      onClick={() => setMode(id)}
+      className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-mono border transition-all ${
+        mode === id
+          ? "bg-[#1a3a32] text-[#f5f3ef] border-[#1a3a32]"
+          : "bg-white text-[#5c6b66] border-[#e5e0d8] hover:border-[#1a3a32]"
+      }`}
+    >
+      <Icon size={15} weight="bold" />
+      {children}
+    </button>
+  );
 
   return (
     <div data-testid="opportunities-view" className="space-y-6">
-      <section className="card-flat p-6">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Lightning size={20} weight="fill" className="text-[#c9a14a]" />
-              <h2 className="font-heading font-bold text-2xl text-[#0e1f1a]">Oportunidades del Día</h2>
-            </div>
-            <p className="text-sm text-[#5c6b66]">
-              Escaneo diario de {data?.universe_size || 50} acciones populares · Detecta sobrecompras, caídas fuertes, momentum y breakouts.
-            </p>
-          </div>
-          <Button
-            data-testid="refresh-opportunities"
-            onClick={() => load(true)}
-            disabled={loading}
-            variant="outline"
-            className="border-[#e5e0d8] font-mono text-xs"
-          >
-            <ArrowClockwise size={14} weight="bold" className="mr-1" />
-            {loading ? "Escaneando..." : "Refrescar"}
-          </Button>
-        </div>
-        {data?.generated_at && (
-          <p className="text-[10px] text-[#5c6b66] mt-2 font-mono">
-            Último escaneo: {new Date(data.generated_at).toLocaleString("es-ES")} · {data.opportunities_found} oportunidades detectadas
-          </p>
-        )}
-      </section>
+      {/* Mode tabs */}
+      <div className="flex gap-2 flex-wrap">
+        <TabButton id="signals" icon={Lightning}>Señales del día</TabButton>
+        <TabButton id="screener" icon={Funnel}>Screener Crecimiento</TabButton>
+      </div>
 
-      {/* Category filter */}
-      {data && (
-        <div className="flex gap-2 flex-wrap" data-testid="category-filter">
-          <button
-            onClick={() => setFilter("ALL")}
-            className={`px-3 py-1.5 rounded-full text-xs font-mono border transition-all ${
-              filter === "ALL"
-                ? "bg-[#1a3a32] text-[#f5f3ef] border-[#1a3a32]"
-                : "bg-white text-[#5c6b66] border-[#e5e0d8] hover:border-[#1a3a32]"
-            }`}
-          >
-            Top 15 ({data.top?.length || 0})
-          </button>
-          {Object.entries(CATEGORY_META).map(([key, meta]) => {
-            const count = data.by_category?.[key]?.length || 0;
-            if (count === 0) return null;
-            return (
-              <button
-                key={key}
-                data-testid={`filter-${key}`}
-                onClick={() => setFilter(key)}
-                className={`px-3 py-1.5 rounded-full text-xs font-mono border transition-all ${
-                  filter === key
-                    ? "text-[#f5f3ef] border-transparent"
-                    : "bg-white text-[#5c6b66] border-[#e5e0d8] hover:border-current"
-                }`}
-                style={filter === key ? { backgroundColor: meta.color, borderColor: meta.color } : { color: meta.color }}
+      {/* ============ SIGNALS MODE ============ */}
+      {mode === "signals" && (
+        <>
+          <section className="card-flat p-6">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Lightning size={20} weight="fill" className="text-[#c9a14a]" />
+                  <h2 className="font-heading font-bold text-2xl text-[#0e1f1a]">Oportunidades del Día</h2>
+                </div>
+                <p className="text-sm text-[#5c6b66]">
+                  Escaneo de {data?.universe_size || 30} acciones · Detecta sobrecompras, caídas fuertes, momentum y breakouts.
+                </p>
+              </div>
+              <Button
+                data-testid="refresh-opportunities"
+                onClick={() => load(true)}
+                disabled={loading}
+                variant="outline"
+                className="border-[#e5e0d8] font-mono text-xs"
               >
-                {meta.label} ({count})
+                <ArrowClockwise size={14} weight="bold" className="mr-1" />
+                {loading ? "Escaneando..." : "Refrescar"}
+              </Button>
+            </div>
+            {data?.generated_at && (
+              <p className="text-[10px] text-[#5c6b66] mt-2 font-mono">
+                Último escaneo: {new Date(data.generated_at).toLocaleString("es-ES")} · {data.opportunities_found} oportunidades detectadas
+              </p>
+            )}
+          </section>
+
+          {data && (
+            <div className="flex gap-2 flex-wrap" data-testid="category-filter">
+              <button
+                onClick={() => setFilter("ALL")}
+                className={`px-3 py-1.5 rounded-full text-xs font-mono border transition-all ${
+                  filter === "ALL"
+                    ? "bg-[#1a3a32] text-[#f5f3ef] border-[#1a3a32]"
+                    : "bg-white text-[#5c6b66] border-[#e5e0d8] hover:border-[#1a3a32]"
+                }`}
+              >
+                Top 15 ({data.top?.length || 0})
               </button>
-            );
-          })}
-        </div>
+              {Object.entries(CATEGORY_META).map(([key, meta]) => {
+                const count = data.by_category?.[key]?.length || 0;
+                if (count === 0) return null;
+                return (
+                  <button
+                    key={key}
+                    data-testid={`filter-${key}`}
+                    onClick={() => setFilter(key)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-mono border transition-all ${
+                      filter === key
+                        ? "text-[#f5f3ef] border-transparent"
+                        : "bg-white text-[#5c6b66] border-[#e5e0d8] hover:border-current"
+                    }`}
+                    style={filter === key ? { backgroundColor: meta.color, borderColor: meta.color } : { color: meta.color }}
+                  >
+                    {meta.label} ({count})
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {filter !== "ALL" && CATEGORY_META[filter] && (
+            <div className="bg-[#f5f3ef] border-l-4 px-4 py-2 rounded text-sm" style={{ borderColor: CATEGORY_META[filter].color }}>
+              <p className="text-[#0e1f1a] font-medium">{CATEGORY_META[filter].label}</p>
+              <p className="text-xs text-[#5c6b66] mt-0.5">{CATEGORY_META[filter].desc}</p>
+            </div>
+          )}
+
+          {loading && !data && (
+            <div className="card-flat p-12 text-center">
+              <p className="text-sm text-[#5c6b66]">Escaneando el mercado... Esto puede tardar 10-20 segundos.</p>
+            </div>
+          )}
+
+          {data?.status === "warming" && (
+            <div className="card-flat p-12 text-center" data-testid="opportunities-warming">
+              <p className="text-sm text-[#5c6b66]">Calentando el escáner... Se actualizará automáticamente en unos segundos.</p>
+            </div>
+          )}
+
+          {data && data.status !== "warming" && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filtered.map((op) => (
+                <OpportunityCard key={op.symbol} op={op} onPick={handlePick} />
+              ))}
+            </div>
+          )}
+
+          {data && data.status !== "warming" && filtered.length === 0 && (
+            <div className="card-flat p-12 text-center">
+              <p className="text-sm text-[#5c6b66]">Sin oportunidades en esta categoría hoy.</p>
+            </div>
+          )}
+        </>
       )}
 
-      {/* Active category info */}
-      {filter !== "ALL" && CATEGORY_META[filter] && (
-        <div className="bg-[#f5f3ef] border-l-4 px-4 py-2 rounded text-sm" style={{ borderColor: CATEGORY_META[filter].color }}>
-          <p className="text-[#0e1f1a] font-medium">{CATEGORY_META[filter].label}</p>
-          <p className="text-xs text-[#5c6b66] mt-0.5">{CATEGORY_META[filter].desc}</p>
-        </div>
-      )}
+      {/* ============ SCREENER MODE ============ */}
+      {mode === "screener" && (
+        <>
+          <section className="card-flat p-6">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Funnel size={20} weight="fill" className="text-[#1a3a32]" />
+                  <h2 className="font-heading font-bold text-2xl text-[#0e1f1a]">Screener de Crecimiento</h2>
+                </div>
+                <p className="text-sm text-[#5c6b66]">
+                  Empresas de {screener?.universe_size || 120} que cumplen los 7 filtros de crecimiento + momentum.
+                </p>
+              </div>
+              <Button
+                onClick={() => loadScreener(true)}
+                disabled={screenerLoading}
+                variant="outline"
+                className="border-[#e5e0d8] font-mono text-xs"
+              >
+                <ArrowClockwise size={14} weight="bold" className="mr-1" />
+                {screenerLoading ? "Filtrando..." : "Refrescar"}
+              </Button>
+            </div>
 
-      {loading && (
-        <div className="card-flat p-12 text-center">
-          <p className="text-sm text-[#5c6b66]">Escaneando el mercado... Esto puede tardar 10-20 segundos.</p>
-        </div>
-      )}
+            {/* Filter chips */}
+            {screener?.filters && (
+              <div className="flex flex-wrap gap-2 mt-4">
+                {screener.filters.map((f, i) => (
+                  <span key={i} className="text-[10px] font-mono px-2 py-1 rounded-full border border-[#1a3a32]/30 bg-[#1a3a32]/5 text-[#1a3a32]">
+                    {f}
+                  </span>
+                ))}
+              </div>
+            )}
 
-      {!loading && data?.status === "warming" && (
-        <div className="card-flat p-12 text-center" data-testid="opportunities-warming">
-          <p className="text-sm text-[#5c6b66]">
-            Calentando el escáner de oportunidades... Se actualizará automáticamente en unos segundos.
-          </p>
-        </div>
-      )}
+            {screener?.generated_at && (
+              <p className="text-[10px] text-[#5c6b66] mt-3 font-mono">
+                Último filtrado: {new Date(screener.generated_at).toLocaleString("es-ES")} · {screener.matches} cumplen los 7 filtros
+              </p>
+            )}
+          </section>
 
-      {!loading && data && data.status !== "warming" && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((op) => (
-            <OpportunityCard key={op.symbol} op={op} onPick={handlePick} />
-          ))}
-        </div>
-      )}
+          {screenerLoading && !screener && (
+            <div className="card-flat p-12 text-center">
+              <p className="text-sm text-[#5c6b66]">Aplicando filtros sobre el universo de crecimiento... 20-40 segundos.</p>
+            </div>
+          )}
 
-      {!loading && data && data.status !== "warming" && filtered.length === 0 && (
-        <div className="card-flat p-12 text-center">
-          <p className="text-sm text-[#5c6b66]">Sin oportunidades en esta categoría hoy.</p>
-        </div>
+          {screener?.status === "warming" && (
+            <div className="card-flat p-12 text-center">
+              <p className="text-sm text-[#5c6b66]">Calentando el screener... Se actualizará automáticamente en unos segundos.</p>
+            </div>
+          )}
+
+          {screener && screener.status !== "warming" && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {(screener.results || []).map((row) => (
+                <ScreenerCard key={row.symbol} row={row} onPick={handlePick} />
+              ))}
+            </div>
+          )}
+
+          {screener && screener.status !== "warming" && (screener.results || []).length === 0 && (
+            <div className="card-flat p-12 text-center">
+              <p className="text-sm text-[#5c6b66]">Ninguna acción del universo cumple hoy los 7 filtros. Prueba a refrescar más tarde.</p>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

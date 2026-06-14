@@ -27,6 +27,159 @@ _CACHE_TTL = timedelta(minutes=60)
 _scan_lock = asyncio.Lock()
 
 
+# ---------- Growth screener ----------
+# Curated universe of growth / quality US names (NASDAQ-100 + popular growth mid-caps).
+# Not the whole market, but where real growth opportunities tend to live, and scannable
+# on a free-tier budget. The cheap filters discard most of these with no extra API calls.
+GROWTH_UNIVERSE = [
+    # Mega / large-cap tech
+    "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "ORCL", "CRM", "ADBE",
+    # Software / cloud
+    "NOW", "INTU", "SNOW", "DDOG", "NET", "CRWD", "ZS", "PANW", "FTNT", "MDB",
+    "TEAM", "WDAY", "HUBS", "PLTR", "SHOP", "TWLO", "OKTA", "GTLB", "S", "ESTC",
+    "CFLT", "PATH", "U", "DT", "APP", "DOCU", "ZM",
+    # Semiconductors
+    "AMD", "AVGO", "QCOM", "MU", "LRCX", "KLAC", "AMAT", "MRVL", "ON", "ARM",
+    "SMCI", "NXPI", "MPWR", "ANET", "VRT",
+    # Internet / consumer-tech
+    "NFLX", "UBER", "ABNB", "DASH", "BKNG", "MELI", "SE", "PINS", "SNAP", "RBLX",
+    "SPOT", "DUOL", "CHWY", "ETSY", "W",
+    # Fintech
+    "PYPL", "COIN", "SOFI", "AFRM", "HOOD", "NU", "TOST", "BILL", "UPST",
+    # EV / energy / clean-tech
+    "RIVN", "ENPH", "FSLR", "BE", "FLNC",
+    # Health / biotech growth
+    "MRNA", "VRTX", "REGN", "ISRG", "DXCM", "BIIB", "ALNY", "TMDX", "NTRA",
+    # Consumer growth
+    "CMG", "LULU", "CELH", "ELF", "MNST", "DKNG", "WING", "CAVA", "ANF",
+    # Industrial / other growth
+    "AXON", "RKLB", "IOT", "DELL", "URI", "PWR",
+]
+
+# Human-readable labels for the 7 filters (shown as chips in the UI)
+SCREENER_FILTERS = [
+    "Market Cap > $2B",
+    "Precio > $9",
+    "Sin dividendo",
+    "Vol. medio > 200K",
+    "A < 20% del máx. 52 sem.",
+    "Ventas YoY > 20%",
+    "Crecimiento EPS > 0%",
+]
+
+_screener_cache = {"data": None, "ts": None}
+_SCREENER_TTL = timedelta(hours=2)
+_screener_lock = asyncio.Lock()
+
+
+def _passes_cheap_filters(q: dict) -> bool:
+    """The 5 filters that need only the quote (no extra API calls)."""
+    price = q.get("price")
+    mcap = q.get("market_cap")
+    dy = q.get("dividend_yield")
+    avgvol = q.get("avg_volume")
+    high52 = q.get("high_52w")
+    if not price or price <= 9:
+        return False
+    if not mcap or mcap <= 2_000_000_000:
+        return False
+    if dy and dy >= 0.001:  # pays a dividend -> excluded
+        return False
+    if not avgvol or avgvol <= 200_000:
+        return False
+    if not high52 or high52 <= 0:
+        return False
+    # within 20% of the 52-week high
+    if (price - high52) / high52 * 100 <= -20:
+        return False
+    return True
+
+
+async def scan_growth_screener(force_refresh: bool = False):
+    now = datetime.now(timezone.utc)
+    if not force_refresh and _screener_cache["data"] and _screener_cache["ts"] and (now - _screener_cache["ts"]) < _SCREENER_TTL:
+        return _screener_cache["data"]
+
+    if _screener_lock.locked():
+        if _screener_cache["data"]:
+            return _screener_cache["data"]
+        return {
+            "generated_at": now.isoformat(),
+            "universe_size": len(GROWTH_UNIVERSE),
+            "matches": 0,
+            "results": [],
+            "filters": SCREENER_FILTERS,
+            "status": "warming",
+        }
+
+    async with _screener_lock:
+        now = datetime.now(timezone.utc)
+        if not force_refresh and _screener_cache["data"] and _screener_cache["ts"] and (now - _screener_cache["ts"]) < _SCREENER_TTL:
+            return _screener_cache["data"]
+
+        # Phase 1 — quotes only, apply the 5 cheap filters (no extra API calls)
+        sem = asyncio.Semaphore(8)
+
+        async def _get_quote(s):
+            async with sem:
+                try:
+                    return s, await asyncio.to_thread(market_data.get_quote, s)
+                except Exception:
+                    return s, None
+
+        quote_results = await asyncio.gather(*[_get_quote(s) for s in GROWTH_UNIVERSE])
+        finalists = [(s, q) for s, q in quote_results if q and _passes_cheap_filters(q)]
+
+        # Phase 2 — enrich only the finalists with growth metrics, apply the 2 growth filters
+        sem2 = asyncio.Semaphore(3)
+
+        async def _enrich(s, q):
+            async with sem2:
+                try:
+                    return s, q, (await asyncio.to_thread(external_data.finnhub_basic_financials, s) or {})
+                except Exception:
+                    return s, q, {}
+
+        enriched = await asyncio.gather(*[_enrich(s, q) for s, q in finalists])
+
+        results = []
+        for s, q, m in enriched:
+            rev_g = m.get("revenue_growth")
+            eps_g = m.get("eps_growth")
+            if rev_g is None or rev_g <= 20:        # Ventas YoY > 20%
+                continue
+            if eps_g is None or eps_g <= 0:          # Crecimiento EPS > 0%
+                continue
+            price = q.get("price")
+            high52 = q.get("high_52w")
+            dist = ((price - high52) / high52 * 100) if (high52 and price) else None
+            results.append({
+                "symbol": s,
+                "name": q.get("name"),
+                "price": price,
+                "market_cap": q.get("market_cap"),
+                "avg_volume": q.get("avg_volume"),
+                "revenue_growth": round(rev_g, 1),
+                "eps_growth": round(eps_g, 1),
+                "dist_52w_high": round(dist, 1) if dist is not None else None,
+                "sector": q.get("sector"),
+                "change_percent": q.get("change_percent"),
+            })
+
+        results.sort(key=lambda x: x.get("revenue_growth") or 0, reverse=True)
+
+        data = {
+            "generated_at": now.isoformat(),
+            "universe_size": len(GROWTH_UNIVERSE),
+            "matches": len(results),
+            "results": results,
+            "filters": SCREENER_FILTERS,
+        }
+        _screener_cache["data"] = data
+        _screener_cache["ts"] = now
+        return data
+
+
 async def _analyze_one(symbol: str):
     try:
         quote = await asyncio.to_thread(market_data.get_quote, symbol)
