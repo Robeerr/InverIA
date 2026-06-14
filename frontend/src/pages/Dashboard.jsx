@@ -93,7 +93,11 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
         setMarketSignals({ insider: res.insider, earningsHistory: res.earnings_history });
       }
       if (res.volume_profile) setVolumeProfile(res.volume_profile);
-      toast.success(`Análisis ${model} completado`);
+      if (res.fellback) {
+        toast.warning(`${res.requested_model} no disponible (límite o error) — análisis hecho con ${res.model}`);
+      } else {
+        toast.success(`Análisis completado (${res.model || model})`);
+      }
     } catch (e) {
       const msg = e?.response?.data?.detail || "Error al generar análisis IA";
       toast.error(msg);

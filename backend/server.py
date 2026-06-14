@@ -311,27 +311,42 @@ async def analyze(req: AnalyzeRequest):
     earnings_hist = earnings_hist if isinstance(earnings_hist, dict) else None
     analyst_consensus = external_data.aggregate_recommendation(trends)
 
+    requested_model = req.model or ai_analysis.DEFAULT_MODEL
+    analyze_kwargs = dict(
+        analyst_consensus=analyst_consensus,
+        price_target=price_target,
+        volume_profile=vp,
+        insider=insider,
+        earnings_history=earnings_hist,
+    )
+    used_model = requested_model
+    FALLBACK_MODEL = "gpt-oss-120b"  # Groq — higher free-tier limits, robust fallback
     try:
         result = await ai_analysis.analyze_stock(
-            quote,
-            indicators_data,
-            news,
-            model_key=req.model or "gpt-oss-120b",
-            analyst_consensus=analyst_consensus,
-            price_target=price_target,
-            volume_profile=vp,
-            insider=insider,
-            earnings_history=earnings_hist,
+            quote, indicators_data, news, model_key=requested_model, **analyze_kwargs
         )
     except Exception as e:
-        logger.exception("AI analysis failed")
-        raise HTTPException(500, f"Error de análisis IA: {e}")
+        # The chosen model failed (rate limit, timeout, transient API error).
+        # Retry once with a robust free model so the user still gets an analysis.
+        if requested_model != FALLBACK_MODEL:
+            logger.warning(f"Model '{requested_model}' failed ({e}); falling back to {FALLBACK_MODEL}")
+            try:
+                result = await ai_analysis.analyze_stock(
+                    quote, indicators_data, news, model_key=FALLBACK_MODEL, **analyze_kwargs
+                )
+                used_model = FALLBACK_MODEL
+            except Exception as e2:
+                logger.exception("AI analysis failed (including fallback)")
+                raise HTTPException(500, f"Error de análisis IA: {e2}")
+        else:
+            logger.exception("AI analysis failed")
+            raise HTTPException(500, f"Error de análisis IA: {e}")
 
     # Persist
     doc = {
         "id": str(uuid.uuid4()),
         "symbol": symbol,
-        "model": req.model,
+        "model": used_model,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "quote_snapshot": quote,
         "indicators_snapshot": indicators_data,
@@ -341,7 +356,9 @@ async def analyze(req: AnalyzeRequest):
 
     return {
         "symbol": symbol,
-        "model": req.model,
+        "model": used_model,
+        "requested_model": requested_model,
+        "fellback": used_model != requested_model,
         "quote": quote,
         "indicators": indicators_data,
         "analysis": result,
