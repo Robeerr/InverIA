@@ -555,7 +555,7 @@ export default function SignalsView({ setSymbol }) {
       )}
 
       <p className="text-xs text-neutral-400 text-center pb-2">
-        🔔 Alertas comprobadas cada 60s · Telegram + Email · 1h cooldown por nivel · Haz clic en cualquier precio para editarlo
+        🔔 Alertas solo en horario de mercado (9:30-16:00 ET) · 1 vez al día por nivel · Telegram + Email · Haz clic en cualquier precio para editarlo
       </p>
     </div>
   );

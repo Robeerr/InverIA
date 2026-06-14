@@ -9,7 +9,8 @@ y toggles individuales por nivel para activar/desactivar alertas.
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, time
+from zoneinfo import ZoneInfo
 from typing import Optional
 
 import market_data
@@ -149,24 +150,34 @@ async def bulk_upsert(db, rows: list) -> dict:
 
 # ── Price-monitoring worker ──────────────────────────────────────────────────
 
-COOLDOWN_SECONDS = 32400  # máximo 1 alerta por nivel cada 9 horas
+EASTERN = ZoneInfo("America/New_York")
+
+
+def is_market_open() -> bool:
+    """True solo en horario regular de mercado US: L-V 9:30-16:00 ET."""
+    now = datetime.now(EASTERN)
+    if now.weekday() >= 5:  # sábado=5, domingo=6
+        return False
+    return time(9, 30) <= now.time() <= time(16, 0)
+
+
+def _market_day() -> str:
+    """Fecha de la sesión de hoy en horario del Este (para 'una vez al día')."""
+    return datetime.now(EASTERN).date().isoformat()
 
 
 async def _is_in_cooldown(db, cd_key: str) -> bool:
-    """Comprueba cooldown en MongoDB (persiste entre reinicios del servidor)."""
+    """True si ese nivel ya disparó hoy. La cd_key incluye la fecha de mercado,
+    así que cada día de trading es una clave nueva → máximo 1 alerta por nivel y día."""
     doc = await db.alert_cooldowns.find_one({"key": cd_key})
-    if not doc:
-        return False
-    elapsed = datetime.now(timezone.utc).timestamp() - doc["fired_at"]
-    return elapsed < COOLDOWN_SECONDS
+    return doc is not None
 
 
 async def _set_cooldown(db, cd_key: str):
-    """Guarda el timestamp de la última alerta en MongoDB."""
-    now_ts = datetime.now(timezone.utc).timestamp()
+    """Marca el nivel como disparado hoy (persiste en MongoDB)."""
     await db.alert_cooldowns.update_one(
         {"key": cd_key},
-        {"$set": {"key": cd_key, "fired_at": now_ts}},
+        {"$set": {"key": cd_key, "fired_at": datetime.now(timezone.utc).timestamp()}},
         upsert=True,
     )
 
@@ -180,6 +191,11 @@ async def signal_worker_loop(db, interval: int = 60):
 
     while True:
         try:
+            # Solo evaluar/disparar alertas con el mercado abierto (9:30-16:00 ET, L-V)
+            if not is_market_open():
+                await asyncio.sleep(interval)
+                continue
+            today = _market_day()
             entries = await db.signal_entries.find(
                 {"active": True}, {"_id": 0}
             ).to_list(500)
@@ -222,7 +238,7 @@ async def signal_worker_loop(db, interval: int = 60):
                         tolerance = target * 0.005  # ±0.5%
                         if abs(price - target) > tolerance:
                             continue
-                        cd_key = f"{symbol}_{level_key}"
+                        cd_key = f"{symbol}_{level_key}_{today}"
                         if await _is_in_cooldown(db, cd_key):
                             continue
                         await _set_cooldown(db, cd_key)
@@ -238,7 +254,7 @@ async def signal_worker_loop(db, interval: int = 60):
                         tolerance = target * 0.005  # ±0.5%
                         if abs(price - target) > tolerance:
                             continue
-                        cd_key = f"{symbol}_{level_key}"
+                        cd_key = f"{symbol}_{level_key}_{today}"
                         if await _is_in_cooldown(db, cd_key):
                             continue
                         await _set_cooldown(db, cd_key)
