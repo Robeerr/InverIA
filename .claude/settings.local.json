@@ -30,7 +30,12 @@
       "Bash(grep -q \"Compiled\\\\|ERROR\" \"C:\\\\Users\\\\Rober\\\\Desktop\\\\InverIA\\\\frontend\\\\frontend_out.txt\")",
       "Bash(npm run *)",
       "Bash(git rm *)",
-      "Bash(rm \"=2.0.0\")"
+      "Bash(rm \"=2.0.0\")",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Rober\\\\Desktop\\\\InverIA\" -Force)",
+      "Bash(Select-Object -First 20)",
+      "Bash(Get-ChildItem \"C:\\\\Users\\\\Rober\\\\Desktop\\\\InverIA\\\\frontend\" -Filter \"tailwind.config.*\")",
+      "Bash(git config *)",
+      "Bash(git commit *)"
     ]
   }
 }
