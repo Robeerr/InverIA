@@ -116,6 +116,10 @@ class AnalyzeRequest(BaseModel):
     model: Optional[str] = "gpt-oss-120b"
 
 
+class CompareRequest(BaseModel):
+    symbols: List[str]
+
+
 
 class SignalEntryCreate(BaseModel):
     symbol: str
@@ -451,6 +455,43 @@ async def analyze(req: AnalyzeRequest):
         "earnings_history": earnings_hist,
         "volume_profile": vp or None,
     }
+
+
+# ---------- Compare ----------
+@api_router.post("/compare")
+async def compare_stocks(req: CompareRequest):
+    """Compare up to 6 stocks side by side: quote + key indicators + 3-month candles
+    for the normalized performance chart."""
+    syms = []
+    for s in (req.symbols or []):
+        s = (s or "").strip().upper()
+        if s and s not in syms:
+            syms.append(s)
+    syms = syms[:6]
+    if not syms:
+        return {"items": []}
+
+    loop = asyncio.get_running_loop()
+
+    async def _one(sym):
+        try:
+            quote = await loop.run_in_executor(None, market_data.get_quote, sym)
+            if not quote:
+                return {"symbol": sym, "error": "No encontrado"}
+            dfi = await loop.run_in_executor(None, market_data.get_full_indicator_history, sym)
+            candles, indicators_data = [], None
+            if dfi is not None and not dfi.empty:
+                try:
+                    indicators_data = ind.compute_all(dfi)
+                    candles = market_data.df_to_candles(dfi.tail(63))  # ~3 months
+                except Exception:
+                    pass
+            return {"symbol": sym, "quote": quote, "indicators": indicators_data, "candles": candles}
+        except Exception as e:
+            return {"symbol": sym, "error": str(e)[:120]}
+
+    items = await asyncio.gather(*[_one(s) for s in syms])
+    return {"items": list(items)}
 
 
 # ---------- Combined Dashboard ----------
