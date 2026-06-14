@@ -1,6 +1,82 @@
 import React from "react";
-import { Newspaper, ArrowSquareOut, Warning, Lightning, Users, ChartLineUp } from "@phosphor-icons/react";
+import { Newspaper, ArrowSquareOut, Warning, Lightning, Users, ChartLineUp, Crosshair, Target } from "@phosphor-icons/react";
 import { fmtPrice, fmtNum } from "../lib/format";
+
+export function PricePredictionCard({ analysis, quote }) {
+  const pp = analysis?.price_prediction;
+  const ep = analysis?.earnings_prediction;
+  const hasPP = pp && (pp.target_3m != null || pp.target_6m != null || pp.target_12m != null);
+  const hasEP = ep && ep.will_beat;
+  if (!hasPP && !hasEP) return null;
+  const current = quote?.price;
+  const conf = Math.max(0, Math.min(100, pp?.confidence || 0));
+  const confColor = conf >= 70 ? "bg-[#4a7c59]" : conf >= 40 ? "bg-[#c9a14a]" : "bg-[#d85c41]";
+
+  const Cell = ({ label, val }) => {
+    const d = current && val ? ((val - current) / current) * 100 : null;
+    return (
+      <div className="bg-[#f5f3ef] border border-[#e5e0d8] rounded-md px-2 py-3 text-center">
+        <p className="text-[10px] uppercase tracking-wider text-[#5c6b66]">{label}</p>
+        <p className="font-mono font-bold text-lg text-[#0e1f1a] mt-1">{val != null ? `$${fmtPrice(val)}` : "—"}</p>
+        {d != null && (
+          <p className={`font-mono text-[11px] mt-0.5 ${d >= 0 ? "text-[#4a7c59]" : "text-[#d85c41]"}`}>
+            {d >= 0 ? "+" : ""}{d.toFixed(1)}%
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  const beatStyle = {
+    "SÍ":  { bg: "bg-[#4a7c59]/10", text: "text-[#4a7c59]", label: "Batirá ✓" },
+    "SI":  { bg: "bg-[#4a7c59]/10", text: "text-[#4a7c59]", label: "Batirá ✓" },
+    "NO":  { bg: "bg-[#d85c41]/10", text: "text-[#d85c41]", label: "No batirá" },
+  };
+  const beat = hasEP ? (beatStyle[(ep.will_beat || "").toUpperCase()] || { bg: "bg-[#5c6b66]/10", text: "text-[#5c6b66]", label: "Incierto" }) : null;
+
+  return (
+    <section data-testid="price-prediction" className="card-flat p-6 animate-fade-up">
+      <div className="flex items-center gap-2 mb-3">
+        <Crosshair size={18} weight="bold" className="text-[#1a3a32]" />
+        <h3 className="font-heading font-semibold text-lg text-[#0e1f1a]">Predicciones IA</h3>
+      </div>
+
+      {hasPP && (
+        <>
+          <div className="flex items-center justify-between mb-2">
+            <p className="label-small">Precio objetivo estimado</p>
+            <span className="font-mono text-[11px] text-[#5c6b66]">Confianza {conf}%</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <Cell label="3 meses" val={pp.target_3m} />
+            <Cell label="6 meses" val={pp.target_6m} />
+            <Cell label="12 meses" val={pp.target_12m} />
+          </div>
+          <div className="h-1.5 bg-[#e5e0d8] rounded-full overflow-hidden mt-3">
+            <div className={`h-full ${confColor} transition-all`} style={{ width: `${conf}%` }} />
+          </div>
+          {pp.rationale && (
+            <p className="text-xs text-[#5c6b66] mt-3 leading-relaxed border-l-2 border-[#1a3a32] pl-3">{pp.rationale}</p>
+          )}
+        </>
+      )}
+
+      {hasEP && (
+        <div className={`${hasPP ? "mt-4 pt-4 border-t border-[#e5e0d8]" : ""}`}>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <p className="label-small">Próximos resultados (earnings)</p>
+            <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-mono font-semibold ${beat.bg} ${beat.text}`}>
+              {beat.label}{ep.confidence ? ` · ${ep.confidence}%` : ""}
+            </span>
+          </div>
+          {ep.rationale && <p className="text-xs text-[#5c6b66] mt-2 leading-relaxed">{ep.rationale}</p>}
+        </div>
+      )}
+
+      <p className="text-[10px] text-[#5c6b66] mt-3">Proyecciones estimadas por IA, no garantizadas. Solo educativo.</p>
+    </section>
+  );
+}
 
 export function NewsFeed({ news }) {
   if (!news || news.length === 0) {

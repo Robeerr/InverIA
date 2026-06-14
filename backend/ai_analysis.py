@@ -100,6 +100,20 @@ ESTRUCTURA JSON EXACTA:
 
   "earnings_view": "Si hay datos de historial_resultados_earnings: comenta si la empresa suele batir o fallar estimaciones (beat_rate) y qué implica para la fiabilidad. Si no hay datos, devuelve cadena vacía.",
 
+  "price_prediction": {
+    "target_3m": número (precio estimado a 3 meses),
+    "target_6m": número (precio estimado a 6 meses),
+    "target_12m": número (precio estimado a 12 meses),
+    "confidence": número 0-100,
+    "rationale": "1-2 frases justificando la proyección. Ancla la estimación en el precio objetivo de analistas, la tendencia, los fundamentales y el Volume Profile. No inventes cifras disparatadas."
+  },
+
+  "earnings_prediction": {
+    "will_beat": "SÍ" | "NO" | "INCIERTO",
+    "confidence": número 0-100,
+    "rationale": "Basándote en el beat_rate histórico y la tendencia de resultados, ¿batirá las próximas estimaciones? Si no hay datos de earnings, devuelve INCIERTO."
+  },
+
   "competitive_position": "Posición competitiva de la empresa: ¿es la líder (#1) de su sector? ¿En qué sub-sectores compite y con qué cuota aproximada de mercado? Usa tu conocimiento de la empresa. Si no la conoces bien, dilo con honestidad en vez de inventar.",
 
   "main_rival": "El competidor que supone la mayor amenaza estructural y por qué (1-2 frases). Si la empresa es la #1, indica igualmente su rival más relevante.",
