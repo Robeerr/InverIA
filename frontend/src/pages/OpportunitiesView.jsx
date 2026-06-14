@@ -119,9 +119,9 @@ function ScreenerCard({ row, onPick }) {
           <p className="text-[#5c6b66] uppercase text-[9px]">Ventas YoY</p>
           <p className="text-[#4a7c59] font-semibold">{row.revenue_growth != null ? `+${row.revenue_growth}%` : "—"}</p>
         </div>
-        <div className="bg-[#7A4FB7]/10 border border-[#7A4FB7]/30 rounded px-1 py-1.5">
-          <p className="text-[#5c6b66] uppercase text-[9px]">EPS YoY</p>
-          <p className="text-[#7A4FB7] font-semibold">{row.eps_growth != null ? `${row.eps_growth > 0 ? "+" : ""}${row.eps_growth}%` : "—"}</p>
+        <div className="bg-[#1F6FB5]/10 border border-[#1F6FB5]/30 rounded px-1 py-1.5">
+          <p className="text-[#5c6b66] uppercase text-[9px]">Vol. medio</p>
+          <p className="text-[#1F6FB5] font-semibold">{fmtNum(row.avg_volume)}</p>
         </div>
       </div>
 

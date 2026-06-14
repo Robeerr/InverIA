@@ -56,7 +56,9 @@ GROWTH_UNIVERSE = [
     "AXON", "RKLB", "IOT", "DELL", "URI", "PWR",
 ]
 
-# Human-readable labels for the 7 filters (shown as chips in the UI)
+# Human-readable labels for the filters (shown as chips in the UI). EPS-growth was
+# dropped: Finnhub's free tier doesn't provide it reliably and a "EPS > 0" rule
+# wrongly excludes top growth names (Snowflake, Cloudflare) that reinvest profits.
 SCREENER_FILTERS = [
     "Market Cap > $2B",
     "Precio > $9",
@@ -64,7 +66,6 @@ SCREENER_FILTERS = [
     "Vol. medio > 200K",
     "A < 20% del máx. 52 sem.",
     "Ventas YoY > 20%",
-    "Crecimiento EPS > 0%",
 ]
 
 _screener_cache = {"data": None, "ts": None}
@@ -130,13 +131,10 @@ async def _run_screener_scan():
             results = []
             for s, q, m in enriched:
                 rev_g = m.get("revenue_growth")
-                eps_g = m.get("eps_growth")
-                # Growth filters are best-effort: exclude only when the metric IS available
-                # and fails. If Finnhub doesn't return it, keep the stock (it already passed
-                # the 5 quality/momentum filters) rather than dropping everything.
+                # Revenue-growth filter is best-effort: exclude only when the metric IS
+                # available and fails. If Finnhub doesn't return it, keep the stock (it
+                # already passed the 5 quality/momentum filters) rather than dropping all.
                 if rev_g is not None and rev_g <= 20:    # Ventas YoY > 20%
-                    continue
-                if eps_g is not None and eps_g <= 0:     # Crecimiento EPS > 0%
                     continue
                 price = q.get("price")
                 high52 = q.get("high_52w")
@@ -148,7 +146,6 @@ async def _run_screener_scan():
                     "market_cap": q.get("market_cap"),
                     "avg_volume": q.get("avg_volume"),
                     "revenue_growth": round(rev_g, 1) if rev_g is not None else None,
-                    "eps_growth": round(eps_g, 1) if eps_g is not None else None,
                     "dist_52w_high": round(dist, 1) if dist is not None else None,
                     "sector": q.get("sector"),
                     "change_percent": q.get("change_percent"),
