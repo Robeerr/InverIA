@@ -156,6 +156,38 @@ def finnhub_earnings_surprises(symbol: str, quarters: int = 4):
         return None
 
 
+def finnhub_basic_financials(symbol: str):
+    """Fundamental metrics (P/E, EPS, beta, 52w range, dividend yield, avg volume) from
+    Finnhub — used as a fallback when yfinance .info returns an incomplete quote.
+    Returns a dict with only the fields that are available, or None."""
+    key = _finnhub_key()
+    if not key:
+        return None
+    try:
+        r = _finnhub_get("/stock/metric", {"symbol": symbol.upper(), "metric": "all", "token": key})
+        if r.status_code != 200:
+            return None
+        m = (r.json() or {}).get("metric") or {}
+        if not m:
+            return None
+        dy = m.get("dividendYieldIndicatedAnnual") or m.get("currentDividendYieldTTM")
+        avg_vol = m.get("3MonthAverageTradingVolume") or m.get("10DayAverageTradingVolume")
+        out = {
+            "pe_ratio": m.get("peTTM"),
+            "eps": m.get("epsTTM") or m.get("epsInclExtraItemsTTM"),
+            "beta": m.get("beta"),
+            "high_52w": m.get("52WeekHigh"),
+            "low_52w": m.get("52WeekLow"),
+            # Finnhub gives yield as a percent (e.g. 1.09); store as decimal for the frontend
+            "dividend_yield": round(dy / 100, 4) if dy else None,
+            # Finnhub reports average volume in millions of shares
+            "avg_volume": int(avg_vol * 1_000_000) if avg_vol else None,
+        }
+        return {k: v for k, v in out.items() if v is not None}
+    except Exception:
+        return None
+
+
 def finnhub_quote(symbol: str):
     """Real-time quote from Finnhub (current, prev close, day high/low, %)."""
     key = _finnhub_key()

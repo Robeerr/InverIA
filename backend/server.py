@@ -259,6 +259,25 @@ async def get_news(symbol: str):
     return result
 
 
+def _enrich_quote_fundamentals(quote: dict, symbol: str) -> dict:
+    """Fill missing fundamentals (P/E, EPS, beta, 52w, dividend yield) from Finnhub
+    when yfinance .info returns an incomplete quote. Cached 1h per symbol."""
+    if not quote:
+        return quote
+    fields = ("pe_ratio", "eps", "beta", "high_52w", "low_52w", "dividend_yield")
+    if not any(quote.get(k) is None for k in fields):
+        return quote
+    cache_key = f"fin_metrics:{symbol}"
+    metrics = _cache.get(cache_key)
+    if metrics is None:
+        metrics = external_data.finnhub_basic_financials(symbol) or {}
+        _cache.set(cache_key, metrics, ttl=3600)
+    for k, v in metrics.items():
+        if quote.get(k) is None and v is not None:
+            quote[k] = v
+    return quote
+
+
 # ---------- AI Analysis ----------
 @api_router.post("/analyze")
 async def analyze(req: AnalyzeRequest):
@@ -266,6 +285,7 @@ async def analyze(req: AnalyzeRequest):
     quote = market_data.get_quote(symbol)
     if not quote:
         raise HTTPException(404, f"Símbolo no encontrado: {symbol}")
+    quote = _enrich_quote_fundamentals(quote, symbol)
 
     df = market_data.get_full_indicator_history(symbol)
     if df is None or df.empty:
@@ -361,6 +381,9 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y"):
 
     if not quote or isinstance(quote, Exception):
         raise HTTPException(404, f"No se encontraron datos para '{sym}'")
+
+    # Fill missing fundamentals from Finnhub if yfinance returned an incomplete quote
+    quote = await loop.run_in_executor(None, _enrich_quote_fundamentals, quote, sym)
 
     candles = []
     if df_chart is not None and not isinstance(df_chart, Exception):
