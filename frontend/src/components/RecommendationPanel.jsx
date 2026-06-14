@@ -3,6 +3,36 @@ import { Brain, ArrowUpRight, ArrowDownRight, Minus, Target, Shield, TrendUp, Li
 import { Button } from "../components/ui/button";
 import { fmtPrice } from "../lib/format";
 
+const FREE_MODELS = [
+  { id: "gpt-oss-120b", label: "GPT-OSS 120B" },
+  { id: "llama-3.3-70b", label: "Llama 3.3 70B" },
+  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+];
+
+function modelLabel(id) {
+  return (FREE_MODELS.find((m) => m.id === id) || {}).label || id;
+}
+
+function ModelSelector({ model, setModel, disabled }) {
+  if (!setModel) return null;
+  return (
+    <div className="mb-3">
+      <label className="label-small mb-1 block">Modelo de IA (todos gratis)</label>
+      <select
+        data-testid="model-selector"
+        value={model}
+        onChange={(e) => setModel(e.target.value)}
+        disabled={disabled}
+        className="w-full bg-[#f5f3ef] border border-[#e5e0d8] rounded-md px-3 py-2 font-mono text-sm text-[#0e1f1a] focus:outline-none focus:border-[#1a3a32] disabled:opacity-50"
+      >
+        {FREE_MODELS.map((m) => (
+          <option key={m.id} value={m.id}>{m.label}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function RecPill({ rec }) {
   if (rec === "COMPRAR") {
     return (
@@ -41,7 +71,7 @@ function ConfidenceBar({ value }) {
   );
 }
 
-export default function RecommendationPanel({ analysis, isLoading, onAnalyze, model }) {
+export default function RecommendationPanel({ analysis, isLoading, onAnalyze, model, setModel }) {
   if (!analysis && !isLoading) {
     return (
       <section data-testid="recommendation-panel-empty" className="card-flat p-6">
@@ -56,13 +86,14 @@ export default function RecommendationPanel({ analysis, isLoading, onAnalyze, mo
         <p className="text-sm text-[#5c6b66] mb-4">
           Genera una recomendación de compra/venta con niveles precisos basada en los datos en vivo y análisis técnico.
         </p>
+        <ModelSelector model={model} setModel={setModel} />
         <Button
           data-testid="run-analysis-btn"
           onClick={onAnalyze}
           className="w-full bg-[#1a3a32] hover:bg-[#0e1f1a] text-[#f5f3ef] font-mono"
         >
           <Lightning size={16} weight="bold" className="mr-2" />
-          Generar análisis ({model})
+          Generar análisis
         </Button>
       </section>
     );
@@ -86,7 +117,7 @@ export default function RecommendationPanel({ analysis, isLoading, onAnalyze, mo
           <div className="h-4 bg-[#e5e0d8] rounded animate-pulse" />
         </div>
         <p className="text-xs text-[#5c6b66] mt-4 text-center">
-          {model} está analizando datos técnicos y fundamentales...
+          {modelLabel(model)} está analizando datos técnicos y fundamentales...
         </p>
       </section>
     );
@@ -171,14 +202,17 @@ export default function RecommendationPanel({ analysis, isLoading, onAnalyze, mo
         )}
       </div>
 
-      <Button
-        data-testid="rerun-analysis-btn"
-        onClick={onAnalyze}
-        variant="outline"
-        className="w-full mt-5 border-[#e5e0d8] hover:bg-[#e5e0d8] font-mono text-xs"
-      >
-        Re-analizar con {model}
-      </Button>
+      <div className="mt-5">
+        <ModelSelector model={model} setModel={setModel} />
+        <Button
+          data-testid="rerun-analysis-btn"
+          onClick={onAnalyze}
+          variant="outline"
+          className="w-full border-[#e5e0d8] hover:bg-[#e5e0d8] font-mono text-xs"
+        >
+          Re-analizar con {modelLabel(model)}
+        </Button>
+      </div>
     </section>
   );
 }

@@ -11,7 +11,7 @@ import { api } from "../lib/api";
 
 const API = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
 
-export default function Dashboard({ symbol, setSymbol, model }) {
+export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const [timeframe, setTimeframe] = useState("1Y");
   const [quote, setQuote] = useState(null);
   const [candles, setCandles] = useState([]);
@@ -177,6 +177,7 @@ export default function Dashboard({ symbol, setSymbol, model }) {
           isLoading={loadingAnalysis}
           onAnalyze={runAnalysis}
           model={model}
+          setModel={setModel}
         />
       </div>
 

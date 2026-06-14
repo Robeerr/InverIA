@@ -1,4 +1,5 @@
-"""AI analysis service supporting Groq (free) + premium models via emergentintegrations."""
+"""AI analysis service supporting Groq + Google Gemini (both free) + premium via emergentintegrations."""
+import asyncio
 import json
 import os
 import uuid
@@ -12,13 +13,21 @@ except ImportError:
     LlmChat = None
     UserMessage = None
 
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    genai = None
 
+
+# (provider, model_id, is_free)
 MODEL_MAP = {
-    "llama-3.3-70b": ("groq", "llama-3.3-70b-versatile", True),
     "gpt-oss-120b": ("groq", "openai/gpt-oss-120b", True),
+    "llama-3.3-70b": ("groq", "llama-3.3-70b-versatile", True),
+    "gemini-2.5-flash": ("google_free", "gemini-2.5-flash", True),
     "gpt-5.2": ("openai", "gpt-5.2", False),
     "claude-sonnet-4.5": ("anthropic", "claude-sonnet-4-5-20250929", False),
-    "gemini-3-flash": ("gemini", "gemini-3-flash-preview", False),
 }
 
 DEFAULT_MODEL = "gpt-oss-120b"
@@ -222,6 +231,31 @@ def _build_payload(quote: dict, indicators: dict, news: list,
     )
 
 
+def _parse_model_json(content: str) -> dict:
+    """Clean and parse a model's text response into a dict, tolerating
+    <think> blocks, ```json fences and surrounding prose."""
+    text = (content or "").strip()
+    if "<think>" in text:
+        end = text.find("</think>")
+        if end != -1:
+            text = text[end + len("</think>"):].strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.lower().startswith("json"):
+            text = text[4:]
+        text = text.strip()
+    if not text:
+        raise RuntimeError("El modelo devolvió una respuesta vacía. Intenta otra vez o cambia de modelo.")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1:
+            return json.loads(text[start: end + 1])
+        raise RuntimeError(f"No se pudo parsear el JSON del modelo. Inicio: {text[:100]}")
+
+
 async def _analyze_with_groq(model_id: str, user_msg: str) -> dict:
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
@@ -248,26 +282,35 @@ async def _analyze_with_groq(model_id: str, user_msg: str) -> dict:
         completion = await _call(use_json_format=False)
 
     content = completion.choices[0].message.content or ""
-    text = content.strip()
-    if "<think>" in text:
-        end = text.find("</think>")
-        if end != -1:
-            text = text[end + len("</think>"):].strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        if text.lower().startswith("json"):
-            text = text[4:]
-        text = text.strip()
-    if not text:
-        raise RuntimeError("Modelo devolvió respuesta vacía. Intenta otra vez o cambia de modelo.")
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1:
-            return json.loads(text[start: end + 1])
-        raise RuntimeError(f"No se pudo parsear JSON del modelo. Inicio: {text[:100]}")
+    return _parse_model_json(content)
+
+
+async def _analyze_with_gemini_free(model_id: str, user_msg: str) -> dict:
+    """Google Gemini via the free AI Studio API (GEMINI_API_KEY)."""
+    if not GEMINI_AVAILABLE:
+        raise RuntimeError(
+            "La librería google-generativeai no está instalada en el servidor. "
+            "Añádela a requirements.txt y vuelve a desplegar."
+        )
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "GEMINI_API_KEY no configurada. Crea una key gratis en "
+            "https://aistudio.google.com/apikey y añádela en Render."
+        )
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(
+        model_name=model_id,
+        system_instruction=SYSTEM_PROMPT,
+        generation_config={
+            "temperature": 0.3,
+            "max_output_tokens": 4000,
+            "response_mime_type": "application/json",
+        },
+    )
+    # SDK is synchronous — run off the event loop
+    response = await asyncio.to_thread(model.generate_content, user_msg)
+    return _parse_model_json(getattr(response, "text", "") or "")
 
 
 async def _analyze_with_emergent(provider: str, model_id: str, user_msg: str) -> dict:
@@ -285,20 +328,7 @@ async def _analyze_with_emergent(provider: str, model_id: str, user_msg: str) ->
         system_message=SYSTEM_PROMPT,
     ).with_model(provider, model_id)
     response = await chat.send_message(UserMessage(text=user_msg))
-    text = str(response).strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        if text.lower().startswith("json"):
-            text = text[4:]
-        text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1:
-            return json.loads(text[start: end + 1])
-        raise
+    return _parse_model_json(str(response))
 
 
 async def analyze_stock(
@@ -319,4 +349,6 @@ async def analyze_stock(
 
     if provider == "groq":
         return await _analyze_with_groq(model_id, user_msg)
+    if provider == "google_free":
+        return await _analyze_with_gemini_free(model_id, user_msg)
     return await _analyze_with_emergent(provider, model_id, user_msg)
