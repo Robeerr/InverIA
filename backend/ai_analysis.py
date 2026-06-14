@@ -4,8 +4,6 @@ import os
 import uuid
 from groq import AsyncGroq
 
-# emergentintegrations is an Emergent-only library. In external deployments (Render, etc.)
-# it's not available — premium models are then disabled but Groq models still work.
 try:
     from emergentintegrations.llm.chat import LlmChat, UserMessage
     EMERGENT_AVAILABLE = True
@@ -15,7 +13,6 @@ except ImportError:
     UserMessage = None
 
 
-# Provider, model_id, is_free
 MODEL_MAP = {
     "llama-3.3-70b": ("groq", "llama-3.3-70b-versatile", True),
     "gpt-oss-120b": ("groq", "openai/gpt-oss-120b", True),
@@ -27,62 +24,172 @@ MODEL_MAP = {
 DEFAULT_MODEL = "gpt-oss-120b"
 
 
-SYSTEM_PROMPT = """Eres un analista financiero senior especializado en análisis técnico y trading de acciones de EE.UU.
-Tu tarea es analizar los datos técnicos proporcionados y dar una recomendación CLARA y ACCIONABLE con MÚLTIPLES niveles operativos.
+SYSTEM_PROMPT = """Eres un analista financiero senior especializado en inversión a medio y largo plazo en acciones de EE.UU.
+Tu metodología se basa en identificar NIVELES DE ACUMULACIÓN por zonas — como hacen los mejores gestores de fondos:
+comprar por tramos a medida que el precio cae hacia soportes clave, con objetivos de rentabilidad del 30-80%.
+
+FILOSOFÍA:
+- Los niveles de compra se sitúan en SOPORTES HISTÓRICOS, niveles Fibonacci, máximos/mínimos relevantes y zonas de volumen.
+- Los take-profits se basan en resistencias históricas y objetivos de precio de analistas.
+- Siempre se piensa en términos de riesgo/recompensa: mínimo 2:1, idealmente 3:1 o más.
+- Los stops son amplios para no ser sacado por volatilidad normal.
 
 REGLAS ESTRICTAS:
 - Responde SIEMPRE en español.
-- Devuelve UNICAMENTE un objeto JSON válido (sin markdown, sin texto extra), con esta estructura EXACTA:
+- Devuelve ÚNICAMENTE un objeto JSON válido (sin markdown, sin texto extra).
+- NUNCA dejes arrays vacíos: risks, catalysts, key_levels.support y key_levels.resistance deben tener siempre al menos 3 elementos cada uno.
+- Los precios deben ser números reales basados en los datos recibidos, NO inventados.
+- key_levels.support: niveles por DEBAJO del precio actual (zonas de compra).
+- key_levels.resistance: niveles por ENCIMA del precio actual (zonas de toma de beneficios).
+
+ESTRUCTURA JSON EXACTA:
 {
   "recommendation": "COMPRAR" | "VENDER" | "MANTENER",
   "confidence": 0-100,
   "trend": "ALCISTA" | "BAJISTA" | "LATERAL",
-  "summary": "Resumen ejecutivo en 2-3 frases.",
+  "horizon": "MEDIO_PLAZO (3-12 meses)",
+  "summary": "Resumen ejecutivo en 2-3 frases explicando la tesis de inversión principal y por qué estos niveles son relevantes.",
+
   "entry_zones": [
-    {"label": "CONSERVADORA", "min": número, "max": número, "comment": "explicación breve"},
-    {"label": "MODERADA", "min": número, "max": número, "comment": "explicación breve"},
-    {"label": "AGRESIVA", "min": número, "max": número, "comment": "explicación breve"}
+    {"label": "NIVEL 1 — Zona Óptima", "min": número, "max": número, "comment": "Explica por qué este nivel es soporte clave (Fibonacci, histórico, etc.)"},
+    {"label": "NIVEL 2 — Segunda Entrada", "min": número, "max": número, "comment": "Siguiente soporte si rompe el nivel 1"},
+    {"label": "NIVEL 3 — Entrada Agresiva", "min": número, "max": número, "comment": "Zona de soporte fuerte, mayor rebote esperado"}
   ],
+
   "stop_losses": [
-    {"label": "AJUSTADO", "price": número, "comment": "breve"},
-    {"label": "ESTANDAR", "price": número, "comment": "breve"},
-    {"label": "AMPLIO", "price": número, "comment": "breve"}
+    {"label": "STOP AJUSTADO", "price": número, "comment": "Pérdida máxima del 5-7%, para operaciones de corto plazo"},
+    {"label": "STOP ESTÁNDAR", "price": número, "comment": "Pérdida máxima del 10-12%, nivel clave que invalida la tesis"},
+    {"label": "STOP AMPLIO", "price": número, "comment": "Pérdida máxima del 15-20%, solo para inversión a largo plazo"}
   ],
+
   "take_profits": [
-    {"label": "TP1", "price": número, "comment": "breve"},
-    {"label": "TP2", "price": número, "comment": "breve"},
-    {"label": "TP3", "price": número, "comment": "breve (ambicioso)"}
+    {"label": "TP1 — Conservador", "price": número, "comment": "Primera resistencia clave, rentabilidad del 15-25%"},
+    {"label": "TP2 — Objetivo Principal", "price": número, "comment": "Resistencia fuerte, rentabilidad del 30-50%"},
+    {"label": "TP3 — Objetivo Ambicioso", "price": número, "comment": "Máximo potencial, rentabilidad del 60-100%"}
   ],
+
   "entry_zone": {"min": número, "max": número},
   "stop_loss": número,
   "take_profit_1": número,
   "take_profit_2": número,
   "risk_reward_ratio": número,
+
   "key_levels": {
     "support": [número, número, número],
     "resistance": [número, número, número]
   },
-  "technical_analysis": "Análisis detallado de RSI, MACD, Bollinger, medias móviles. 3-5 frases.",
-  "pattern_analysis": "Patrones gráficos detectados y su implicación.",
-  "fundamentals_view": "Comentario breve sobre P/E, sector, contexto.",
-  "risks": ["riesgo 1", "riesgo 2", "riesgo 3"],
-  "catalysts": ["catalizador 1", "catalizador 2"],
-  "timeframe": "CORTO_PLAZO" | "MEDIO_PLAZO" | "LARGO_PLAZO"
+
+  "technical_analysis": "Análisis detallado en 4-6 frases: RSI (nivel exacto e interpretación), MACD (señal y cruce), medias móviles (SMA20, SMA50, SMA200 y su relación con el precio), Bandas de Bollinger, volumen.",
+
+  "fibonacci_analysis": "Explica los niveles Fibonacci clave detectados y cuál coincide mejor con los soportes técnicos.",
+
+  "pattern_analysis": "Patrones chartistas identificados (doble suelo, cabeza-hombros, triángulos, etc.) y su implicación para el precio.",
+
+  "fundamentals_view": "Comentario sobre P/E vs sector, crecimiento de ingresos, márgenes, deuda. ¿Está barata o cara la acción en términos fundamentales?",
+
+  "risks": [
+    "Riesgo específico 1 con impacto cuantificado si es posible",
+    "Riesgo específico 2",
+    "Riesgo específico 3",
+    "Riesgo macroeconómico relevante"
+  ],
+
+  "catalysts": [
+    "Catalizador 1 con fecha aproximada si se conoce",
+    "Catalizador 2",
+    "Catalizador 3"
+  ],
+
+  "timeframe": "MEDIO_PLAZO"
 }
 
-REGLAS PARA LOS NIVELES:
-- Las 3 zonas de entrada (CONSERVADORA/MODERADA/AGRESIVA): cada una con un par min/max diferente. CONSERVADORA cerca de soportes fuertes, AGRESIVA cerca del precio actual.
-- Los 3 stop losses (AJUSTADO/ESTANDAR/AMPLIO): AJUSTADO < ESTANDAR < AMPLIO en distancia al precio actual.
-- Los 3 take profits (TP1/TP2/TP3): TP1 más cercano y conservador, TP3 más ambicioso. Distintos precios.
-- Si COMPRAR: stop_loss < precio_actual, take_profits > precio_actual.
-- Si VENDER (short): stop_loss > precio_actual, take_profits < precio_actual.
-- TP1/TP2 de relación riesgo/beneficio mínima de 1.5.
-- entry_zone, stop_loss, take_profit_1, take_profit_2 son los valores "estándar" (compatibilidad): equivalen a la opción MODERADA / ESTANDAR / TP1 / TP2.
-- NO inventes datos. Basa todo en los inputs.
+CÓMO CALCULAR LOS NIVELES (usa los datos Fibonacci y soportes históricos del input):
+1. NIVEL 1 de entrada: cerca del retroceso Fibonacci 38.2% o soporte histórico más cercano por debajo del precio actual
+2. NIVEL 2: retroceso Fibonacci 50% o segundo soporte histórico
+3. NIVEL 3: retroceso Fibonacci 61.8% o soporte más fuerte
+4. STOP: por debajo del soporte más cercano a la entrada elegida (margen del 3-5%)
+5. TP1: resistencia más cercana por encima del precio actual
+6. TP2: siguiente resistencia o extensión Fibonacci 127.2%
+7. TP3: extensión Fibonacci 161.8% o precio objetivo de analistas
+
+IMPORTANTE: Si la acción está en tendencia BAJISTA en el CORTO plazo pero los fundamentales son sólidos, recomienda COMPRAR por tramos en los niveles de soporte. No confundas tendencia de corto plazo con oportunidad de medio plazo.
 """
 
 
-async def _analyze_with_groq(model_id: str, messages_payload: str) -> dict:
+def _build_payload(quote: dict, indicators: dict, news: list,
+                   analyst_consensus: dict = None, price_target: dict = None) -> str:
+    ind = indicators or {}
+    price = quote.get("price") or 0
+    # Prefer yfinance 52w values; fallback to indicator-computed values
+    high_52w = quote.get("high_52w") or ind.get("high_52w") or price * 1.3
+    low_52w = quote.get("low_52w") or ind.get("low_52w") or price * 0.7
+
+    # Fibonacci retracements from 52-week range (high → low, standard support levels)
+    rng = high_52w - low_52w
+    fib_levels = {
+        "23.6% (soporte menor)": round(high_52w - rng * 0.236, 2),
+        "38.2% (soporte moderado)": round(high_52w - rng * 0.382, 2),
+        "50.0% (soporte clave)": round(high_52w - rng * 0.500, 2),
+        "61.8% (soporte fuerte — golden ratio)": round(high_52w - rng * 0.618, 2),
+        "78.6% (soporte muy fuerte)": round(high_52w - rng * 0.786, 2),
+    }
+    # Fibonacci extensions for take-profits
+    fib_extensions = {
+        "127.2% (objetivo conservador)": round(low_52w + rng * 1.272, 2),
+        "161.8% (objetivo principal)": round(low_52w + rng * 1.618, 2),
+        "200.0% (objetivo ambicioso)": round(low_52w + rng * 2.000, 2),
+    }
+
+    sr = ind.get("support_resistance") or {}
+    sma = ind.get("sma") or {}
+
+    payload = {
+        "symbol": quote.get("symbol"),
+        "precio_actual": price,
+        "nombre_empresa": quote.get("name"),
+        "sector": quote.get("sector"),
+        "industria": quote.get("industry"),
+        "rango_52_semanas": {"maximo": high_52w, "minimo": low_52w},
+        "posicion_en_rango_52s": f"{round((price - low_52w) / rng * 100, 1)}% desde mínimo" if rng > 0 else "N/A",
+        "fibonacci_retrocesos": fib_levels,
+        "fibonacci_extensiones_objetivo": fib_extensions,
+        "soportes_tecnicos": sr.get("supports", []),
+        "resistencias_tecnicas": sr.get("resistances", []),
+        "medias_moviles": {
+            "SMA20": sma.get("20"),
+            "SMA50": sma.get("50"),
+            "SMA200": sma.get("200"),
+            "precio_vs_SMA20": f"{round((price / sma['20'] - 1) * 100, 1)}%" if sma.get("20") else None,
+            "precio_vs_SMA50": f"{round((price / sma['50'] - 1) * 100, 1)}%" if sma.get("50") else None,
+            "precio_vs_SMA200": f"{round((price / sma['200'] - 1) * 100, 1)}%" if sma.get("200") else None,
+        },
+        "rsi": ind.get("rsi"),
+        "macd": ind.get("macd"),
+        "bollinger": ind.get("bollinger"),
+        "volumen_promedio": quote.get("avg_volume"),
+        "volumen_hoy": quote.get("volume"),
+        "per": quote.get("pe_ratio"),
+        "eps": quote.get("eps"),
+        "market_cap_millones": round(quote.get("market_cap", 0) / 1e6, 0) if quote.get("market_cap") else None,
+        "dividendo_yield": quote.get("dividend_yield"),
+        "beta": quote.get("beta"),
+        "consenso_analistas_wall_street": analyst_consensus,
+        "precio_objetivo_analistas": price_target,
+        "patrones_tecnicos_detectados": ind.get("patterns", []),
+        "noticias_recientes": [n.get("title") for n in (news or [])][:6],
+    }
+
+    return (
+        f"Analiza en profundidad la acción {quote.get('symbol')} con precio actual ${price}.\n\n"
+        f"DATOS COMPLETOS:\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
+        f"Genera el análisis completo con todos los niveles operativos. "
+        f"Usa los niveles Fibonacci y soportes técnicos proporcionados como base para los precios. "
+        f"Rellena OBLIGATORIAMENTE risks (mínimo 4), catalysts (mínimo 3) y key_levels con valores reales. "
+        f"Responde SOLO con JSON válido."
+    )
+
+
+async def _analyze_with_groq(model_id: str, user_msg: str) -> dict:
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         raise RuntimeError("GROQ_API_KEY no configurada")
@@ -93,16 +200,15 @@ async def _analyze_with_groq(model_id: str, messages_payload: str) -> dict:
             model=model_id,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": messages_payload + "\n\nRESPONDE SOLO CON JSON VÁLIDO."},
+                {"role": "user", "content": user_msg},
             ],
-            max_tokens=2200,
-            temperature=0.4,
+            max_tokens=3000,
+            temperature=0.3,
         )
         if use_json_format:
             kwargs["response_format"] = {"type": "json_object"}
         return await client.chat.completions.create(**kwargs)
 
-    # First try with strict JSON mode; on failure, retry without it
     try:
         completion = await _call(use_json_format=True)
     except Exception:
@@ -110,7 +216,6 @@ async def _analyze_with_groq(model_id: str, messages_payload: str) -> dict:
 
     content = completion.choices[0].message.content or ""
     text = content.strip()
-    # Strip <think> blocks (reasoning models include them)
     if "<think>" in text:
         end = text.find("</think>")
         if end != -1:
@@ -128,7 +233,7 @@ async def _analyze_with_groq(model_id: str, messages_payload: str) -> dict:
         start = text.find("{")
         end = text.rfind("}")
         if start != -1 and end != -1:
-            return json.loads(text[start : end + 1])
+            return json.loads(text[start: end + 1])
         raise RuntimeError(f"No se pudo parsear JSON del modelo. Inicio: {text[:100]}")
 
 
@@ -159,7 +264,7 @@ async def _analyze_with_emergent(provider: str, model_id: str, user_msg: str) ->
         start = text.find("{")
         end = text.rfind("}")
         if start != -1 and end != -1:
-            return json.loads(text[start : end + 1])
+            return json.loads(text[start: end + 1])
         raise
 
 
@@ -173,22 +278,7 @@ async def analyze_stock(
     sentiment_score: float = None,
 ) -> dict:
     provider, model_id, _is_free = MODEL_MAP.get(model_key, MODEL_MAP[DEFAULT_MODEL])
-
-    payload = {
-        "quote": quote,
-        "indicators": indicators,
-        "recent_news_titles": [n.get("title") for n in (news or [])][:5],
-        "analyst_consensus": analyst_consensus,
-        "analyst_price_targets": price_target,
-        "news_sentiment_score": sentiment_score,
-    }
-
-    user_msg = (
-        f"Analiza los siguientes datos en VIVO y devuelve la recomendación en JSON. "
-        f"Precio actual ${quote.get('price')}.\n\n"
-        f"DATOS:\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
-        f"Responde SOLO con el JSON, sin markdown."
-    )
+    user_msg = _build_payload(quote, indicators, news, analyst_consensus, price_target)
 
     if provider == "groq":
         return await _analyze_with_groq(model_id, user_msg)

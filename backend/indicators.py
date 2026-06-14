@@ -133,7 +133,7 @@ def compute_all(df: pd.DataFrame):
     high_52w = float(df["High"].tail(252).max()) if len(df) > 0 else 0.0
     low_52w = float(df["Low"].tail(252).min()) if len(df) > 0 else 0.0
 
-    sr = support_resistance(df)
+    sr = support_resistance(df, n_levels=5)
     fib = fibonacci_levels(high_52w, low_52w)
     patterns = detect_patterns(df)
 

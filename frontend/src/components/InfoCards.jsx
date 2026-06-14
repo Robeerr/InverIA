@@ -128,6 +128,22 @@ export function RisksCatalystsCard({ analysis }) {
           <p className="text-xs text-[#0e1f1a] leading-relaxed">{analysis.technical_analysis}</p>
         </div>
       )}
+      {(analysis.fibonacci_analysis || analysis.pattern_analysis) && (
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+          {analysis.fibonacci_analysis && (
+            <div className="p-3 bg-[#f5f3ef] border border-[#e5e0d8] rounded-md">
+              <p className="label-small mb-1">Fibonacci</p>
+              <p className="text-xs text-[#0e1f1a] leading-relaxed">{analysis.fibonacci_analysis}</p>
+            </div>
+          )}
+          {analysis.pattern_analysis && (
+            <div className="p-3 bg-[#f5f3ef] border border-[#e5e0d8] rounded-md">
+              <p className="label-small mb-1">Patrones Técnicos</p>
+              <p className="text-xs text-[#0e1f1a] leading-relaxed">{analysis.pattern_analysis}</p>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
