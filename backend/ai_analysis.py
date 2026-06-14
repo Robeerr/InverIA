@@ -231,9 +231,59 @@ def _build_payload(quote: dict, indicators: dict, news: list,
     )
 
 
+def _repair_truncated_json(text: str):
+    """Best-effort repair of JSON truncated mid-output (e.g. hit the token limit):
+    close any open string, then close open arrays/objects so json.loads can parse
+    whatever complete fields were produced. Returns a candidate string or None."""
+    start = text.find("{")
+    if start == -1:
+        return None
+    s = text[start:]
+    in_str = False
+    escape = False
+    stack = []
+    for ch in s:
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if ch == "{":
+            stack.append("}")
+        elif ch == "[":
+            stack.append("]")
+        elif ch in "}]" and stack:
+            stack.pop()
+    repaired = s
+    if in_str:
+        repaired += '"'
+    # Drop dangling separators left by the cut (",", ":", or an orphan "key")
+    repaired = repaired.rstrip()
+    while repaired and repaired[-1] in ",:":
+        repaired = repaired[:-1].rstrip()
+        if repaired and repaired[-1] == '"':
+            # remove the orphan key string that had no value
+            depth = 0
+            for j in range(len(repaired) - 1, -1, -1):
+                if repaired[j] == '"' and (j == 0 or repaired[j - 1] != "\\"):
+                    depth += 1
+                    if depth == 2:
+                        repaired = repaired[:j].rstrip().rstrip(",").rstrip()
+                        break
+    for closer in reversed(stack):
+        repaired += closer
+    return repaired
+
+
 def _parse_model_json(content: str) -> dict:
     """Clean and parse a model's text response into a dict, tolerating
-    <think> blocks, ```json fences and surrounding prose."""
+    <think> blocks, ```json fences, surrounding prose and truncated output."""
     text = (content or "").strip()
     if "<think>" in text:
         end = text.find("</think>")
@@ -246,14 +296,27 @@ def _parse_model_json(content: str) -> dict:
         text = text.strip()
     if not text:
         raise RuntimeError("El modelo devolvió una respuesta vacía. Intenta otra vez o cambia de modelo.")
+    # 1) Direct parse
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1:
+        pass
+    # 2) Substring between first { and last }
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        try:
             return json.loads(text[start: end + 1])
-        raise RuntimeError(f"No se pudo parsear el JSON del modelo. Inicio: {text[:100]}")
+        except json.JSONDecodeError:
+            pass
+    # 3) Repair truncated JSON (token limit hit mid-output)
+    repaired = _repair_truncated_json(text)
+    if repaired:
+        try:
+            return json.loads(repaired)
+        except json.JSONDecodeError:
+            pass
+    raise RuntimeError(f"No se pudo parsear el JSON del modelo. Inicio: {text[:100]}")
 
 
 async def _analyze_with_groq(model_id: str, user_msg: str) -> dict:
@@ -304,13 +367,21 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str) -> dict:
         system_instruction=SYSTEM_PROMPT,
         generation_config={
             "temperature": 0.3,
-            "max_output_tokens": 4000,
+            # Gemini 2.5 Flash spends part of the budget on internal "thinking",
+            # so give plenty of headroom for thinking + the full JSON answer.
+            "max_output_tokens": 16384,
             "response_mime_type": "application/json",
         },
     )
     # SDK is synchronous — run off the event loop
     response = await asyncio.to_thread(model.generate_content, user_msg)
-    return _parse_model_json(getattr(response, "text", "") or "")
+    text = getattr(response, "text", "") or ""
+    if not text:
+        raise RuntimeError(
+            "Gemini no devolvió texto (posible límite de tokens agotado en 'thinking'). "
+            "Intenta otra vez o usa GPT-OSS 120B."
+        )
+    return _parse_model_json(text)
 
 
 async def _analyze_with_emergent(provider: str, model_id: str, user_msg: str) -> dict:
