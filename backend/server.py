@@ -260,11 +260,13 @@ async def get_news(symbol: str):
 
 
 def _enrich_quote_fundamentals(quote: dict, symbol: str) -> dict:
-    """Fill missing fundamentals (P/E, EPS, beta, 52w, dividend yield) from Finnhub
-    when yfinance .info returns an incomplete quote. Cached 1h per symbol."""
+    """Fill missing fundamentals (P/E, EPS, beta, 52w, dividend yield) and add growth
+    metrics (revenue/EPS YoY) from Finnhub. yfinance never provides the growth fields,
+    so this effectively always runs — but it's cached 1h per symbol."""
     if not quote:
         return quote
-    fields = ("pe_ratio", "eps", "beta", "high_52w", "low_52w", "dividend_yield")
+    fields = ("pe_ratio", "eps", "beta", "high_52w", "low_52w", "dividend_yield",
+              "revenue_growth", "eps_growth")
     if not any(quote.get(k) is None for k in fields):
         return quote
     cache_key = f"fin_metrics:{symbol}"
@@ -285,7 +287,6 @@ async def analyze(req: AnalyzeRequest):
     quote = market_data.get_quote(symbol)
     if not quote:
         raise HTTPException(404, f"Símbolo no encontrado: {symbol}")
-    quote = _enrich_quote_fundamentals(quote, symbol)
 
     df = market_data.get_full_indicator_history(symbol)
     if df is None or df.empty:
@@ -294,14 +295,15 @@ async def analyze(req: AnalyzeRequest):
     indicators_data = ind.compute_all(df)
     news = market_data.get_news(symbol, limit=5)
 
-    # Enrich with analyst consensus + Volume Profile + insider/earnings data (all in parallel)
+    # Enrich with analyst consensus + Volume Profile + insider/earnings/financials (all in parallel)
     loop = asyncio.get_running_loop()
-    trends, price_target, vp, insider, earnings_hist = await asyncio.gather(
+    trends, price_target, vp, insider, earnings_hist, basic_fin = await asyncio.gather(
         loop.run_in_executor(None, external_data.finnhub_recommendation_trends, symbol),
         loop.run_in_executor(None, external_data.finnhub_price_target, symbol),
         loop.run_in_executor(None, polygon_data.get_volume_profile, symbol, 365),
         loop.run_in_executor(None, external_data.finnhub_insider_transactions, symbol),
         loop.run_in_executor(None, external_data.finnhub_earnings_surprises, symbol),
+        loop.run_in_executor(None, external_data.finnhub_basic_financials, symbol),
         return_exceptions=True,
     )
     trends = trends if isinstance(trends, list) else []
@@ -309,6 +311,11 @@ async def analyze(req: AnalyzeRequest):
     vp = vp if isinstance(vp, dict) else {}
     insider = insider if isinstance(insider, dict) else None
     earnings_hist = earnings_hist if isinstance(earnings_hist, dict) else None
+    basic_fin = basic_fin if isinstance(basic_fin, dict) else {}
+    # Fill missing quote fundamentals + add growth metrics (revenue/EPS YoY) from Finnhub
+    for k, v in basic_fin.items():
+        if quote.get(k) is None and v is not None:
+            quote[k] = v
     analyst_consensus = external_data.aggregate_recommendation(trends)
 
     requested_model = req.model or ai_analysis.DEFAULT_MODEL

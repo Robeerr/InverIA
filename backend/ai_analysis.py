@@ -100,6 +100,12 @@ ESTRUCTURA JSON EXACTA:
 
   "earnings_view": "Si hay datos de historial_resultados_earnings: comenta si la empresa suele batir o fallar estimaciones (beat_rate) y qué implica para la fiabilidad. Si no hay datos, devuelve cadena vacía.",
 
+  "competitive_position": "Posición competitiva de la empresa: ¿es la líder (#1) de su sector? ¿En qué sub-sectores compite y con qué cuota aproximada de mercado? Usa tu conocimiento de la empresa. Si no la conoces bien, dilo con honestidad en vez de inventar.",
+
+  "main_rival": "El competidor que supone la mayor amenaza estructural y por qué (1-2 frases). Si la empresa es la #1, indica igualmente su rival más relevante.",
+
+  "sector_outlook": "Potencial del sector a 3-5 años: catalizadores estructurales, tendencias de fondo y vientos de cola o de cara que afectarán a la empresa.",
+
   "risks": [
     "Riesgo específico 1 con impacto cuantificado si es posible",
     "Riesgo específico 2",
@@ -197,6 +203,8 @@ def _build_payload(quote: dict, indicators: dict, news: list,
         "volumen_hoy": quote.get("volume"),
         "per": quote.get("pe_ratio"),
         "eps": quote.get("eps"),
+        "crecimiento_ventas_yoy_pct": quote.get("revenue_growth"),
+        "crecimiento_eps_yoy_pct": quote.get("eps_growth"),
         "market_cap_millones": round(quote.get("market_cap", 0) / 1e6, 0) if quote.get("market_cap") else None,
         "dividendo_yield": quote.get("dividend_yield"),
         "beta": quote.get("beta"),

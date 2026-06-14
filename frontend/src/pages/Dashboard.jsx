@@ -6,7 +6,7 @@ import RecommendationPanel from "../components/RecommendationPanel";
 import IndicatorsPanel from "../components/IndicatorsPanel";
 import TradingLevels from "../components/TradingLevels";
 import AnalystConsensusCard from "../components/AnalystConsensus";
-import { NewsFeed, FundamentalsCard, RisksCatalystsCard, MarketSignalsCard } from "../components/InfoCards";
+import { NewsFeed, FundamentalsCard, RisksCatalystsCard, MarketSignalsCard, InvestmentThesisCard } from "../components/InfoCards";
 import { api } from "../lib/api";
 
 const API = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
@@ -209,6 +209,8 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
           earningsHistory={marketSignals.earningsHistory}
         />
       )}
+
+      {analysis && <InvestmentThesisCard analysis={analysis} />}
 
       {analysis && <RisksCatalystsCard analysis={analysis} />}
 
