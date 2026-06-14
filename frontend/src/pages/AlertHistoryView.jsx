@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Bell, ArrowsClockwise, Trash, TrendUp, TrendDown } from "@phosphor-icons/react";
+import { Bell, ArrowsClockwise, Trash, TrendUp, TrendDown, ArrowUp, ArrowDown } from "@phosphor-icons/react";
 import { toast } from "sonner";
+import { api } from "../lib/api";
 
 const API = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
 
@@ -35,6 +36,8 @@ function RiesgoBadge({ riesgo }) {
 export default function AlertHistoryView() {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [active, setActive] = useState([]);
+  const [loadingActive, setLoadingActive] = useState(false);
 
   const loadHistory = useCallback(async () => {
     setLoading(true);
@@ -50,7 +53,30 @@ export default function AlertHistoryView() {
     }
   }, []);
 
-  useEffect(() => { loadHistory(); }, [loadHistory]);
+  const loadActive = useCallback(async () => {
+    setLoadingActive(true);
+    try {
+      const data = await api.alerts.list();
+      // Active = not permanently dismissed
+      setActive((data || []).filter((a) => !a.triggered));
+    } catch (e) {
+      // silent — panel just shows empty
+    } finally {
+      setLoadingActive(false);
+    }
+  }, []);
+
+  const removeAlert = async (id) => {
+    try {
+      await api.alerts.remove(id);
+      setActive((prev) => prev.filter((a) => a.id !== id));
+      toast.success("Alerta eliminada");
+    } catch {
+      toast.error("No se pudo eliminar la alerta");
+    }
+  };
+
+  useEffect(() => { loadHistory(); loadActive(); }, [loadHistory, loadActive]);
 
   const clearHistory = async () => {
     if (!window.confirm("¿Borrar todo el historial de alertas?")) return;
@@ -72,16 +98,16 @@ export default function AlertHistoryView() {
             <Bell size={20} className="text-[#f5f3ef]" weight="bold" />
           </div>
           <div>
-            <h2 className="font-heading font-bold text-xl text-[#0e1f1a]">Historial de Alertas</h2>
-            <p className="text-xs text-[#5c6b66] mt-0.5">Registro de todas las alertas disparadas por el sistema</p>
+            <h2 className="font-heading font-bold text-xl text-[#0e1f1a]">Alertas</h2>
+            <p className="text-xs text-[#5c6b66] mt-0.5">Tus alertas activas y el registro de las que se han disparado</p>
           </div>
         </div>
         <div className="flex gap-2">
           <button
-            onClick={loadHistory}
+            onClick={() => { loadHistory(); loadActive(); }}
             className="flex items-center gap-2 px-4 py-2 rounded-md border border-[#e5e0d8] bg-white text-[#0e1f1a] text-sm font-mono hover:bg-[#f5f3ef] transition-colors"
           >
-            <ArrowsClockwise size={15} weight="bold" className={loading ? "animate-spin" : ""} />
+            <ArrowsClockwise size={15} weight="bold" className={(loading || loadingActive) ? "animate-spin" : ""} />
             Actualizar
           </button>
           {history.length > 0 && (
@@ -90,11 +116,52 @@ export default function AlertHistoryView() {
               className="flex items-center gap-2 px-4 py-2 rounded-md border border-red-200 bg-white text-red-600 text-sm font-mono hover:bg-red-50 transition-colors"
             >
               <Trash size={15} weight="bold" />
-              Borrar todo
+              Borrar historial
             </button>
           )}
         </div>
       </div>
+
+      {/* Active alerts panel */}
+      <section data-testid="active-alerts" className="card-flat p-5">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="font-heading font-semibold text-lg text-[#0e1f1a]">Alertas Activas</h3>
+            <p className="text-xs text-[#5c6b66] mt-0.5">
+              Niveles que vigilas. Aviso por Telegram cuando el precio los toque (1 vez al día, solo en horario de mercado).
+            </p>
+          </div>
+          <span className="font-mono text-sm text-[#5c6b66]">{active.length}</span>
+        </div>
+        {loadingActive && active.length === 0 ? (
+          <p className="text-sm text-[#5c6b66] py-4 text-center">Cargando alertas...</p>
+        ) : active.length === 0 ? (
+          <p className="text-sm text-[#5c6b66] py-4 text-center">
+            No tienes alertas activas. Crea alertas desde los niveles de un análisis IA en el panel principal.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {active.map((a) => (
+              <div key={a.id} data-testid={`active-alert-${a.id}`} className="flex items-center justify-between gap-3 bg-[#f5f3ef] border border-[#e5e0d8] rounded-md px-3 py-2">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="font-mono font-bold text-[#1a3a32]">{a.symbol}</span>
+                  <span className={`inline-flex items-center gap-1 text-xs font-mono ${a.direction === "above" ? "text-[#4a7c59]" : "text-[#d85c41]"}`}>
+                    {a.direction === "above" ? <ArrowUp size={12} weight="bold" /> : <ArrowDown size={12} weight="bold" />}
+                    {a.direction === "above" ? "≥" : "≤"} ${Number(a.target_price).toFixed(2)}
+                  </span>
+                </div>
+                <button
+                  onClick={() => removeAlert(a.id)}
+                  title="Eliminar alerta"
+                  className="text-[#5c6b66] hover:text-[#d85c41] transition-colors shrink-0"
+                >
+                  <Trash size={16} weight="bold" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* Stats summary */}
       {history.length > 0 && (
