@@ -87,6 +87,10 @@ ESTRUCTURA JSON EXACTA:
 
   "fundamentals_view": "Comentario sobre P/E vs sector, crecimiento de ingresos, márgenes, deuda. ¿Está barata o cara la acción en términos fundamentales?",
 
+  "insider_view": "Si hay datos de insider_trading_directivos: interpreta si los directivos compran o venden y qué implica. Si no hay datos, devuelve cadena vacía.",
+
+  "earnings_view": "Si hay datos de historial_resultados_earnings: comenta si la empresa suele batir o fallar estimaciones (beat_rate) y qué implica para la fiabilidad. Si no hay datos, devuelve cadena vacía.",
+
   "risks": [
     "Riesgo específico 1 con impacto cuantificado si es posible",
     "Riesgo específico 2",
@@ -120,13 +124,18 @@ TP1: primera HVN o resistencia técnica por encima del precio actual
 TP2: VAH del Value Area o siguiente resistencia
 TP3: extensión Fibonacci 161.8% o precio objetivo analistas
 
+SEÑALES ADICIONALES (úsalas para ajustar confianza y recomendación):
+- **Insider trading**: Si los directivos COMPRAN sus propias acciones (net_shares positivo), es una de las señales alcistas más fiables — sube la confianza. Si VENDEN masivamente, precaución.
+- **Earnings history**: Un beat_rate alto (>75%) indica una empresa que suele superar expectativas — mayor fiabilidad de la tesis alcista. Un beat_rate bajo añade riesgo.
+
 IMPORTANTE: Si la acción está en tendencia BAJISTA en el CORTO plazo pero los fundamentales son sólidos, recomienda COMPRAR por tramos en los niveles de soporte. No confundas tendencia de corto plazo con oportunidad de medio plazo.
 """
 
 
 def _build_payload(quote: dict, indicators: dict, news: list,
                    analyst_consensus: dict = None, price_target: dict = None,
-                   volume_profile: dict = None) -> str:
+                   volume_profile: dict = None, insider: dict = None,
+                   earnings_history: dict = None) -> str:
     ind = indicators or {}
     price = quote.get("price") or 0
     # Prefer yfinance 52w values; fallback to indicator-computed values
@@ -184,6 +193,8 @@ def _build_payload(quote: dict, indicators: dict, news: list,
         "beta": quote.get("beta"),
         "consenso_analistas_wall_street": analyst_consensus,
         "precio_objetivo_analistas": price_target,
+        "insider_trading_directivos": insider,
+        "historial_resultados_earnings": earnings_history,
         "patrones_tecnicos_detectados": ind.get("patterns", []),
         "noticias_recientes": [n.get("title") for n in (news or [])][:6],
         "volume_profile": {
@@ -299,9 +310,12 @@ async def analyze_stock(
     price_target: dict = None,
     sentiment_score: float = None,
     volume_profile: dict = None,
+    insider: dict = None,
+    earnings_history: dict = None,
 ) -> dict:
     provider, model_id, _is_free = MODEL_MAP.get(model_key, MODEL_MAP[DEFAULT_MODEL])
-    user_msg = _build_payload(quote, indicators, news, analyst_consensus, price_target, volume_profile)
+    user_msg = _build_payload(quote, indicators, news, analyst_consensus, price_target,
+                              volume_profile, insider, earnings_history)
 
     if provider == "groq":
         return await _analyze_with_groq(model_id, user_msg)

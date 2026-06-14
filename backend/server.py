@@ -274,17 +274,21 @@ async def analyze(req: AnalyzeRequest):
     indicators_data = ind.compute_all(df)
     news = market_data.get_news(symbol, limit=5)
 
-    # Enrich with analyst consensus + Volume Profile from Polygon
+    # Enrich with analyst consensus + Volume Profile + insider/earnings data (all in parallel)
     loop = asyncio.get_running_loop()
-    trends, price_target, vp = await asyncio.gather(
+    trends, price_target, vp, insider, earnings_hist = await asyncio.gather(
         loop.run_in_executor(None, external_data.finnhub_recommendation_trends, symbol),
         loop.run_in_executor(None, external_data.finnhub_price_target, symbol),
         loop.run_in_executor(None, polygon_data.get_volume_profile, symbol, 365),
+        loop.run_in_executor(None, external_data.finnhub_insider_transactions, symbol),
+        loop.run_in_executor(None, external_data.finnhub_earnings_surprises, symbol),
         return_exceptions=True,
     )
     trends = trends if isinstance(trends, list) else []
     price_target = price_target if isinstance(price_target, dict) else {}
     vp = vp if isinstance(vp, dict) else {}
+    insider = insider if isinstance(insider, dict) else None
+    earnings_hist = earnings_hist if isinstance(earnings_hist, dict) else None
     analyst_consensus = external_data.aggregate_recommendation(trends)
 
     try:
@@ -296,6 +300,8 @@ async def analyze(req: AnalyzeRequest):
             analyst_consensus=analyst_consensus,
             price_target=price_target,
             volume_profile=vp,
+            insider=insider,
+            earnings_history=earnings_hist,
         )
     except Exception as e:
         logger.exception("AI analysis failed")
@@ -322,6 +328,9 @@ async def analyze(req: AnalyzeRequest):
         "news": news,
         "analyst_consensus": analyst_consensus,
         "price_target": price_target,
+        "insider": insider,
+        "earnings_history": earnings_hist,
+        "volume_profile": vp or None,
     }
 
 

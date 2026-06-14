@@ -1,5 +1,5 @@
 import React from "react";
-import { Newspaper, ArrowSquareOut, Warning, Lightning } from "@phosphor-icons/react";
+import { Newspaper, ArrowSquareOut, Warning, Lightning, Users, ChartLineUp } from "@phosphor-icons/react";
 import { fmtPrice, fmtNum } from "../lib/format";
 
 export function NewsFeed({ news }) {
@@ -83,6 +83,90 @@ export function FundamentalsCard({ quote, analysis }) {
           <p className="text-xs text-[#0e1f1a] leading-relaxed">{analysis.fundamentals_view}</p>
         </div>
       )}
+      {analysis?.insider_view && (
+        <div className="mt-3 p-3 bg-[#f5f3ef] border border-[#e5e0d8] rounded-md">
+          <p className="label-small mb-1">Insider Trading (directivos)</p>
+          <p className="text-xs text-[#0e1f1a] leading-relaxed">{analysis.insider_view}</p>
+        </div>
+      )}
+      {analysis?.earnings_view && (
+        <div className="mt-3 p-3 bg-[#f5f3ef] border border-[#e5e0d8] rounded-md">
+          <p className="label-small mb-1">Historial de Resultados</p>
+          <p className="text-xs text-[#0e1f1a] leading-relaxed">{analysis.earnings_view}</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+export function MarketSignalsCard({ insider, earningsHistory }) {
+  if (!insider && !earningsHistory) return null;
+  const isBuy = insider && insider.net_shares > 0;
+  return (
+    <section data-testid="market-signals" className="card-flat p-6 animate-fade-up">
+      <h3 className="font-heading font-semibold text-lg text-[#0e1f1a] mb-3">
+        Señales de Mercado
+      </h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {insider && (
+          <div data-testid="insider-card" className="border border-[#e5e0d8] rounded-md p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Users size={14} weight="bold" className="text-[#1a3a32]" />
+              <p className="label-small">Insider Trading (6 meses)</p>
+            </div>
+            <div className={`inline-flex px-2 py-1 rounded text-[11px] font-mono font-semibold mb-3 ${isBuy ? "bg-[#4a7c59]/10 text-[#4a7c59]" : "bg-[#d85c41]/10 text-[#d85c41]"}`}>
+              {insider.signal}
+            </div>
+            <div className="flex gap-4 mb-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-[#5c6b66]">Compras</p>
+                <p className="font-mono text-sm text-[#4a7c59] font-semibold">{insider.buy_transactions}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-[#5c6b66]">Ventas</p>
+                <p className="font-mono text-sm text-[#d85c41] font-semibold">{insider.sell_transactions}</p>
+              </div>
+            </div>
+            <div className="space-y-1 max-h-[140px] overflow-y-auto pr-1">
+              {(insider.recent || []).map((t, i) => (
+                <div key={i} className="flex items-center justify-between text-[11px] border-b border-[#e5e0d8] py-1">
+                  <span className="text-[#5c6b66] truncate max-w-[120px]">{t.name || "—"}</span>
+                  <span className={`font-mono ${(t.shares || 0) >= 0 ? "text-[#4a7c59]" : "text-[#d85c41]"}`}>
+                    {(t.shares || 0) >= 0 ? "+" : ""}{fmtNum(t.shares)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {earningsHistory && (
+          <div data-testid="earnings-card" className="border border-[#e5e0d8] rounded-md p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <ChartLineUp size={14} weight="bold" className="text-[#1a3a32]" />
+              <p className="label-small">Historial Resultados (EPS)</p>
+            </div>
+            <div className="inline-flex px-2 py-1 rounded text-[11px] font-mono font-semibold mb-3 bg-[#1a3a32]/10 text-[#1a3a32]">
+              Bate estimaciones {earningsHistory.beat_rate}% ({earningsHistory.beats}/{earningsHistory.total})
+            </div>
+            <div className="space-y-1">
+              {(earningsHistory.quarters || []).map((q, i) => {
+                const beat = q.actual != null && q.estimate != null && q.actual >= q.estimate;
+                return (
+                  <div key={i} className="flex items-center justify-between text-[11px] border-b border-[#e5e0d8] py-1">
+                    <span className="text-[#5c6b66]">{q.period}</span>
+                    <span className="font-mono text-[#0e1f1a]">
+                      ${q.actual ?? "—"} <span className="text-[#5c6b66]">vs ${q.estimate ?? "—"}</span>
+                    </span>
+                    <span className={`font-mono ${beat ? "text-[#4a7c59]" : "text-[#d85c41]"}`}>
+                      {q.surprise_percent != null ? `${q.surprise_percent > 0 ? "+" : ""}${q.surprise_percent}%` : (beat ? "✓" : "✗")}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
     </section>
   );
 }

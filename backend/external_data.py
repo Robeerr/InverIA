@@ -68,6 +68,94 @@ def finnhub_price_target(symbol: str):
         return None
 
 
+def finnhub_insider_transactions(symbol: str, months: int = 6):
+    """Recent insider (officer/director) buy/sell transactions.
+    A net-buying pattern by executives is one of the strongest bullish signals.
+    Returns None if unavailable on the current plan."""
+    from datetime import datetime, timedelta
+    key = _finnhub_key()
+    if not key:
+        return None
+    try:
+        frm = (datetime.utcnow().date() - timedelta(days=months * 30)).isoformat()
+        to = datetime.utcnow().date().isoformat()
+        r = _finnhub_get(
+            "/stock/insider-transactions",
+            {"symbol": symbol.upper(), "from": frm, "to": to, "token": key},
+        )
+        if r.status_code != 200:
+            return None
+        rows = (r.json() or {}).get("data") or []
+        if not rows:
+            return None
+        # change > 0 = buy (acquisition), change < 0 = sell (disposal)
+        buys = sum(1 for x in rows if (x.get("change") or 0) > 0)
+        sells = sum(1 for x in rows if (x.get("change") or 0) < 0)
+        net_shares = sum((x.get("change") or 0) for x in rows)
+        recent = sorted(rows, key=lambda x: x.get("transactionDate") or "", reverse=True)[:8]
+        return {
+            "buy_transactions": buys,
+            "sell_transactions": sells,
+            "net_shares": net_shares,
+            "signal": (
+                "COMPRA NETA (alcista)" if net_shares > 0
+                else "VENTA NETA (bajista)" if net_shares < 0
+                else "NEUTRAL"
+            ),
+            "recent": [
+                {
+                    "name": x.get("name"),
+                    "date": x.get("transactionDate"),
+                    "shares": x.get("change"),
+                    "price": x.get("transactionPrice"),
+                }
+                for x in recent
+            ],
+        }
+    except Exception:
+        return None
+
+
+def finnhub_earnings_surprises(symbol: str, quarters: int = 4):
+    """Historical EPS actual vs estimate — shows if the company tends to beat/miss.
+    Returns None if unavailable on the current plan."""
+    key = _finnhub_key()
+    if not key:
+        return None
+    try:
+        r = _finnhub_get(
+            "/stock/earnings",
+            {"symbol": symbol.upper(), "limit": quarters, "token": key},
+        )
+        if r.status_code != 200:
+            return None
+        rows = r.json() or []
+        if not rows or not isinstance(rows, list):
+            return None
+        out = []
+        beats = 0
+        for x in rows[:quarters]:
+            actual = x.get("actual")
+            estimate = x.get("estimate")
+            surprise_pct = x.get("surprisePercent")
+            if actual is not None and estimate is not None and actual >= estimate:
+                beats += 1
+            out.append({
+                "period": x.get("period"),
+                "actual": actual,
+                "estimate": estimate,
+                "surprise_percent": surprise_pct,
+            })
+        return {
+            "quarters": out,
+            "beats": beats,
+            "total": len(out),
+            "beat_rate": round(beats / len(out) * 100, 0) if out else 0,
+        }
+    except Exception:
+        return None
+
+
 def finnhub_quote(symbol: str):
     """Real-time quote from Finnhub (current, prev close, day high/low, %)."""
     key = _finnhub_key()

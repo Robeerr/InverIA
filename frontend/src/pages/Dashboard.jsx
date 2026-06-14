@@ -6,7 +6,7 @@ import RecommendationPanel from "../components/RecommendationPanel";
 import IndicatorsPanel from "../components/IndicatorsPanel";
 import TradingLevels from "../components/TradingLevels";
 import AnalystConsensusCard from "../components/AnalystConsensus";
-import { NewsFeed, FundamentalsCard, RisksCatalystsCard } from "../components/InfoCards";
+import { NewsFeed, FundamentalsCard, RisksCatalystsCard, MarketSignalsCard } from "../components/InfoCards";
 import { api } from "../lib/api";
 
 const API = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
@@ -18,6 +18,7 @@ export default function Dashboard({ symbol, setSymbol, model }) {
   const [indicators, setIndicators] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [analystData, setAnalystData] = useState(null);
+  const [marketSignals, setMarketSignals] = useState(null);
   const [news, setNews] = useState([]);
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
@@ -27,6 +28,7 @@ export default function Dashboard({ symbol, setSymbol, model }) {
   const loadSymbolData = useCallback(async (sym, tf) => {
     setLoadingQuote(true);
     setAnalysis(null);
+    setMarketSignals(null);
     try {
       const data = await api.dashboard(sym, tf);
       if (!data?.quote) {
@@ -73,6 +75,9 @@ export default function Dashboard({ symbol, setSymbol, model }) {
           consensus: res.analyst_consensus,
           price_target: res.price_target,
         });
+      }
+      if (res.insider || res.earnings_history) {
+        setMarketSignals({ insider: res.insider, earningsHistory: res.earnings_history });
       }
       toast.success(`Análisis ${model} completado`);
     } catch (e) {
@@ -177,6 +182,13 @@ export default function Dashboard({ symbol, setSymbol, model }) {
       </div>
 
       <FundamentalsCard quote={quote} analysis={analysis} />
+
+      {marketSignals && (
+        <MarketSignalsCard
+          insider={marketSignals.insider}
+          earningsHistory={marketSignals.earningsHistory}
+        />
+      )}
 
       {analysis && <RisksCatalystsCard analysis={analysis} />}
 
