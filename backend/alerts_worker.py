@@ -2,7 +2,8 @@
 import asyncio
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, time
+from zoneinfo import ZoneInfo
 import resend
 import market_data
 import telegram_notifier
@@ -10,6 +11,15 @@ import telegram_notifier
 logger = logging.getLogger("alerts_worker")
 
 CHECK_INTERVAL = 60  # seconds
+EASTERN = ZoneInfo("America/New_York")
+
+
+def is_market_open() -> bool:
+    """True only during regular US market hours: Mon-Fri 9:30-16:00 ET."""
+    now = datetime.now(EASTERN)
+    if now.weekday() >= 5:  # Saturday=5, Sunday=6
+        return False
+    return time(9, 30) <= now.time() <= time(16, 0)
 
 
 def _build_email_html(symbol: str, target: float, direction: str, current_price: float, change_pct):
@@ -29,7 +39,7 @@ def _build_email_html(symbol: str, target: float, direction: str, current_price:
                 <td align="right" style="font-family:'Courier New',monospace;font-size:14px;color:{color};">{('+' if (change_pct or 0) >= 0 else '')}{change_pct}%</td>
               </tr>
             </table>
-            <p style="font-size:12px;color:#5c6b66;margin:24px 0 0 0;">Esta alerta ya fue marcada como disparada. Crea una nueva si quieres seguir monitorizando.</p>
+            <p style="font-size:12px;color:#5c6b66;margin:24px 0 0 0;">La alerta se reactivará automáticamente mañana si el precio sigue en ese nivel.</p>
           </td></tr>
         </table>
       </td></tr>
@@ -46,7 +56,6 @@ async def send_alert_email(symbol: str, target: float, direction: str, current_p
         return False, "RESEND_API_KEY no configurada en el servidor."
     resend.api_key = api_key
     recipient = os.environ.get("ALERT_RECIPIENT_EMAIL")
-    # Support both env var names for backwards compatibility
     sender = (
         os.environ.get("ALERT_FROM_EMAIL")
         or os.environ.get("SENDER_EMAIL")
@@ -67,7 +76,6 @@ async def send_alert_email(symbol: str, target: float, direction: str, current_p
     except Exception as e:
         err = str(e)
         logger.exception(f"Error enviando email: {err}")
-        # Translate common Resend errors into user-friendly Spanish messages
         if "domain is not verified" in err.lower() or "not verified" in err.lower():
             return False, (
                 f"El dominio del remitente ({sender}) no está verificado en Resend. "
@@ -83,12 +91,19 @@ async def send_alert_email(symbol: str, target: float, direction: str, current_p
 
 
 async def evaluate_alerts(db):
-    """Check all non-triggered alerts. Trigger and email those that crossed the threshold."""
-    cursor = db.alerts.find({"triggered": False})
+    """Check active alerts during market hours only.
+    Each alert fires at most once per trading day — resets automatically the next day."""
+    if not is_market_open():
+        return
+
+    today = date.today().isoformat()  # "YYYY-MM-DD" in server local time (UTC on Render)
+
+    # Only check alerts not yet triggered today (triggered:True means permanently dismissed)
+    cursor = db.alerts.find({"triggered": False, "last_triggered_date": {"$ne": today}})
     alerts = await cursor.to_list(500)
     if not alerts:
         return
-    # Group by symbol to limit calls
+
     by_symbol = {}
     for a in alerts:
         by_symbol.setdefault(a["symbol"], []).append(a)
@@ -101,20 +116,20 @@ async def evaluate_alerts(db):
         change_pct = quote.get("change_percent")
         for a in items:
             target = float(a["target_price"])
-            triggered = (
+            fired = (
                 (a["direction"] == "above" and price >= target)
                 or (a["direction"] == "below" and price <= target)
             )
-            if triggered:
+            if fired:
+                # Mark triggered for today only — alert resets automatically tomorrow
                 await db.alerts.update_one(
                     {"id": a["id"]},
                     {"$set": {
-                        "triggered": True,
+                        "last_triggered_date": today,
                         "triggered_at": datetime.now(timezone.utc).isoformat(),
                         "triggered_price": price,
                     }},
                 )
-                # Send notifications in parallel: email + Telegram
                 await asyncio.gather(
                     send_alert_email(symbol, target, a["direction"], price, change_pct),
                     telegram_notifier.send_alert(symbol, target, a["direction"], price, change_pct),
