@@ -131,9 +131,12 @@ async def _run_screener_scan():
             for s, q, m in enriched:
                 rev_g = m.get("revenue_growth")
                 eps_g = m.get("eps_growth")
-                if rev_g is None or rev_g <= 20:        # Ventas YoY > 20%
+                # Growth filters are best-effort: exclude only when the metric IS available
+                # and fails. If Finnhub doesn't return it, keep the stock (it already passed
+                # the 5 quality/momentum filters) rather than dropping everything.
+                if rev_g is not None and rev_g <= 20:    # Ventas YoY > 20%
                     continue
-                if eps_g is None or eps_g <= 0:          # Crecimiento EPS > 0%
+                if eps_g is not None and eps_g <= 0:     # Crecimiento EPS > 0%
                     continue
                 price = q.get("price")
                 high52 = q.get("high_52w")
@@ -144,14 +147,18 @@ async def _run_screener_scan():
                     "price": price,
                     "market_cap": q.get("market_cap"),
                     "avg_volume": q.get("avg_volume"),
-                    "revenue_growth": round(rev_g, 1),
-                    "eps_growth": round(eps_g, 1),
+                    "revenue_growth": round(rev_g, 1) if rev_g is not None else None,
+                    "eps_growth": round(eps_g, 1) if eps_g is not None else None,
                     "dist_52w_high": round(dist, 1) if dist is not None else None,
                     "sector": q.get("sector"),
                     "change_percent": q.get("change_percent"),
                 })
 
-            results.sort(key=lambda x: x.get("revenue_growth") or 0, reverse=True)
+            # Known-growth names first (highest revenue growth), then the rest
+            results.sort(
+                key=lambda x: (x.get("revenue_growth") is not None, x.get("revenue_growth") or 0),
+                reverse=True,
+            )
 
             _screener_cache["data"] = {
                 "generated_at": datetime.now(timezone.utc).isoformat(),

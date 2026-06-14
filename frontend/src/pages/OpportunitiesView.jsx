@@ -117,11 +117,11 @@ function ScreenerCard({ row, onPick }) {
       <div className="grid grid-cols-2 gap-1 text-center mb-3 text-[10px] font-mono">
         <div className="bg-[#4a7c59]/10 border border-[#4a7c59]/30 rounded px-1 py-1.5">
           <p className="text-[#5c6b66] uppercase text-[9px]">Ventas YoY</p>
-          <p className="text-[#4a7c59] font-semibold">+{row.revenue_growth}%</p>
+          <p className="text-[#4a7c59] font-semibold">{row.revenue_growth != null ? `+${row.revenue_growth}%` : "—"}</p>
         </div>
         <div className="bg-[#7A4FB7]/10 border border-[#7A4FB7]/30 rounded px-1 py-1.5">
           <p className="text-[#5c6b66] uppercase text-[9px]">EPS YoY</p>
-          <p className="text-[#7A4FB7] font-semibold">{row.eps_growth > 0 ? "+" : ""}{row.eps_growth}%</p>
+          <p className="text-[#7A4FB7] font-semibold">{row.eps_growth != null ? `${row.eps_growth > 0 ? "+" : ""}${row.eps_growth}%` : "—"}</p>
         </div>
       </div>
 
@@ -327,7 +327,7 @@ export default function OpportunitiesView({ setSymbol }) {
                   <h2 className="font-heading font-bold text-2xl text-[#0e1f1a]">Screener de Crecimiento</h2>
                 </div>
                 <p className="text-sm text-[#5c6b66]">
-                  Empresas de {screener?.universe_size || 120} que cumplen los 7 filtros de crecimiento + momentum.
+                  Universo de {screener?.universe_size || 120} acciones filtrado por calidad, momentum y crecimiento.
                 </p>
               </div>
               <Button
@@ -352,9 +352,9 @@ export default function OpportunitiesView({ setSymbol }) {
               </div>
             )}
 
-            {screener?.generated_at && (
+            {screener?.generated_at && screener.status !== "warming" && (
               <p className="text-[10px] text-[#5c6b66] mt-3 font-mono">
-                Último filtrado: {new Date(screener.generated_at).toLocaleString("es-ES")} · {screener.matches} cumplen los 7 filtros
+                Último filtrado: {new Date(screener.generated_at).toLocaleString("es-ES")} · {screener.matches} resultados
               </p>
             )}
           </section>

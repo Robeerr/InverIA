@@ -182,9 +182,22 @@ def finnhub_basic_financials(symbol: str):
             "dividend_yield": round(dy / 100, 4) if dy else None,
             # Finnhub reports average volume in millions of shares
             "avg_volume": int(avg_vol * 1_000_000) if avg_vol else None,
-            # Growth metrics (already in percent, e.g. 23.4 = 23.4%) — used by the screener
-            "revenue_growth": m.get("revenueGrowthTTMYoy"),
-            "eps_growth": m.get("epsGrowthTTMYoy"),
+            # Growth metrics (already in percent, e.g. 23.4 = 23.4%) — used by the screener.
+            # Fall back across the fields Finnhub may populate on the free tier.
+            "revenue_growth": (
+                m.get("revenueGrowthTTMYoy")
+                if m.get("revenueGrowthTTMYoy") is not None
+                else m.get("revenueGrowthQuarterlyYoy")
+                if m.get("revenueGrowthQuarterlyYoy") is not None
+                else m.get("revenueGrowth3Y")
+            ),
+            "eps_growth": (
+                m.get("epsGrowthTTMYoy")
+                if m.get("epsGrowthTTMYoy") is not None
+                else m.get("epsGrowthQuarterlyYoy")
+                if m.get("epsGrowthQuarterlyYoy") is not None
+                else m.get("epsGrowth3Y")
+            ),
         }
         return {k: v for k, v in out.items() if v is not None}
     except Exception:
