@@ -70,7 +70,18 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       const res = await api.analyze(symbol, model);
       setAnalysis(res.analysis);
       if (res.indicators) setIndicators(res.indicators);
-      if (res.quote) setQuote(res.quote);
+      // Merge quote without overwriting good fields with nulls — yfinance .info
+      // sometimes returns an incomplete quote (missing P/E, EPS, beta...).
+      if (res.quote) {
+        setQuote((prev) => {
+          if (!prev) return res.quote;
+          const merged = { ...prev };
+          for (const [k, v] of Object.entries(res.quote)) {
+            if (v != null) merged[k] = v;
+          }
+          return merged;
+        });
+      }
       if (res.analyst_consensus || res.price_target) {
         setAnalystData({
           symbol,

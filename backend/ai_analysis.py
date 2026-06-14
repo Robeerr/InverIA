@@ -30,7 +30,7 @@ MODEL_MAP = {
     "claude-sonnet-4.5": ("anthropic", "claude-sonnet-4-5-20250929", False),
 }
 
-DEFAULT_MODEL = "gpt-oss-120b"
+DEFAULT_MODEL = "gemini-2.5-flash"
 
 
 SYSTEM_PROMPT = """Eres un analista financiero senior especializado en inversión a medio y largo plazo en acciones de EE.UU.
@@ -123,15 +123,15 @@ CÓMO CALCULAR LOS NIVELES (prioridad de fuentes, de mayor a menor fiabilidad):
 
 REGLA DE ORO: Un nivel es fuerte cuando coinciden 2+ fuentes (ej: retroceso 61.8% + HVN del Volume Profile + soporte técnico = nivel de compra muy alto).
 
-NIVELES DE ENTRADA:
-- NIVEL 1: Zona más cercana por debajo del precio actual con confluencia HVN + Fibonacci
-- NIVEL 2: Siguiente HVN fuerte o retroceso Fibonacci mayor (50% o 61.8%)
-- NIVEL 3: POC del Volume Profile si está por debajo, o retroceso 78.6%
+NIVELES DE ENTRADA (deben ESCALONARSE en profundidad — acumulación por tramos, NO los tres pegados al precio actual):
+- NIVEL 1: Zona más cercana por debajo del precio actual con confluencia HVN + Fibonacci (típicamente -1% a -5%)
+- NIVEL 2: Siguiente soporte fuerte o retroceso Fibonacci 50%/61.8% (típicamente -8% a -15%)
+- NIVEL 3 (ENTRADA AGRESIVA PROFUNDA): cerca del VAL (Value Area Low) o de la HVN más profunda. Representa un escenario de corrección fuerte donde la acción está claramente infravalorada. DEBE estar bastante por debajo del precio (típicamente -15% a -30%). NUNCA pongas el NIVEL 3 pegado al precio actual: su función es capturar una caída profunda hacia soporte estructural.
 
-STOPS: por debajo de la LVN más cercana al nivel de entrada (el precio cae rápido ahí)
-TP1: primera HVN o resistencia técnica por encima del precio actual
-TP2: VAH del Value Area o siguiente resistencia
-TP3: extensión Fibonacci 161.8% o precio objetivo analistas
+STOPS: por debajo de la LVN o del VAL (el precio cae rápido al perder esas zonas)
+TP1: primera HVN, POC (si está por encima) o resistencia técnica cercana
+TP2: VAH del Value Area o retroceso Fibonacci 50%/61.8%
+TP3: objetivo ambicioso PERO REALISTA. Usa la extensión Fibonacci 127.2%/161.8% o el precio objetivo de analistas, PERO NUNCA un valor que supere de forma absurda el máximo de 52 semanas (más de ~10-15% por encima del máximo histórico es irreal). Si la extensión Fibonacci da un valor disparatado, limita el TP3 al máximo de 52 semanas o al precio objetivo de los analistas.
 
 SEÑALES ADICIONALES (úsalas para ajustar confianza y recomendación):
 - **Insider trading**: Si los directivos COMPRAN sus propias acciones (net_shares positivo), es una de las señales alcistas más fiables — sube la confianza. Si VENDEN masivamente, precaución.

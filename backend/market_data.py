@@ -340,6 +340,17 @@ def get_quote(ticker: str) -> Optional[dict]:
         change = float(last_price) - float(prev_close)
         change_pct = (change / float(prev_close)) * 100
 
+    # Dividend yield: yfinance is inconsistent (decimal 0.0109 vs percent 1.09 across
+    # versions). Prefer dividendRate/price (unambiguous); else normalize to a decimal.
+    raw_dy = info.get("dividendYield")
+    div_rate = info.get("dividendRate")
+    if div_rate and last_price:
+        dividend_yield = round(div_rate / float(last_price), 4)
+    elif raw_dy is not None:
+        dividend_yield = round(raw_dy / 100, 4) if raw_dy > 1 else round(raw_dy, 4)
+    else:
+        dividend_yield = None
+
     return {
         "symbol": ticker.upper(),
         "name": info.get("longName") or info.get("shortName") or ticker.upper(),
@@ -359,7 +370,7 @@ def get_quote(ticker: str) -> Optional[dict]:
         "pe_ratio": _r(info.get("trailingPE")),
         "forward_pe": _r(info.get("forwardPE")),
         "eps": _r(info.get("trailingEps")),
-        "dividend_yield": _r(info.get("dividendYield")),
+        "dividend_yield": dividend_yield,
         "beta": _r(info.get("beta")),
         "high_52w": _r(info.get("fiftyTwoWeekHigh")),
         "low_52w": _r(info.get("fiftyTwoWeekLow")),

@@ -23,7 +23,7 @@ const PageLoader = () => (
 function AppInner() {
   const { isAuth, loading } = useAuth();
   const [symbol, setSymbol] = useState("AAPL");
-  const [model, setModel] = useState(() => localStorage.getItem("inveria-model") || "gpt-oss-120b");
+  const [model, setModel] = useState(() => localStorage.getItem("inveria-model") || "gemini-2.5-flash");
 
   useEffect(() => {
     localStorage.setItem("inveria-model", model);
