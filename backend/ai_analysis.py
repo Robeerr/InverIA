@@ -103,21 +103,30 @@ ESTRUCTURA JSON EXACTA:
   "timeframe": "MEDIO_PLAZO"
 }
 
-CÓMO CALCULAR LOS NIVELES (usa los datos Fibonacci y soportes históricos del input):
-1. NIVEL 1 de entrada: cerca del retroceso Fibonacci 38.2% o soporte histórico más cercano por debajo del precio actual
-2. NIVEL 2: retroceso Fibonacci 50% o segundo soporte histórico
-3. NIVEL 3: retroceso Fibonacci 61.8% o soporte más fuerte
-4. STOP: por debajo del soporte más cercano a la entrada elegida (margen del 3-5%)
-5. TP1: resistencia más cercana por encima del precio actual
-6. TP2: siguiente resistencia o extensión Fibonacci 127.2%
-7. TP3: extensión Fibonacci 161.8% o precio objetivo de analistas
+CÓMO CALCULAR LOS NIVELES (prioridad de fuentes, de mayor a menor fiabilidad):
+1. **Volume Profile (prioridad máxima)**: El POC es el soporte/resistencia más fuerte. Las HVN son zonas donde el precio rebota. Úsalos como base para los niveles de entrada.
+2. **Fibonacci**: Los retrocesos 38.2%, 50%, 61.8% que coincidan con HVN del Volume Profile son niveles de confluencia EXTREMADAMENTE fiables — ponlos como NIVEL 1 o NIVEL 2.
+3. **Soportes técnicos**: Pivots históricos del gráfico como confirmación adicional.
+
+REGLA DE ORO: Un nivel es fuerte cuando coinciden 2+ fuentes (ej: retroceso 61.8% + HVN del Volume Profile + soporte técnico = nivel de compra muy alto).
+
+NIVELES DE ENTRADA:
+- NIVEL 1: Zona más cercana por debajo del precio actual con confluencia HVN + Fibonacci
+- NIVEL 2: Siguiente HVN fuerte o retroceso Fibonacci mayor (50% o 61.8%)
+- NIVEL 3: POC del Volume Profile si está por debajo, o retroceso 78.6%
+
+STOPS: por debajo de la LVN más cercana al nivel de entrada (el precio cae rápido ahí)
+TP1: primera HVN o resistencia técnica por encima del precio actual
+TP2: VAH del Value Area o siguiente resistencia
+TP3: extensión Fibonacci 161.8% o precio objetivo analistas
 
 IMPORTANTE: Si la acción está en tendencia BAJISTA en el CORTO plazo pero los fundamentales son sólidos, recomienda COMPRAR por tramos en los niveles de soporte. No confundas tendencia de corto plazo con oportunidad de medio plazo.
 """
 
 
 def _build_payload(quote: dict, indicators: dict, news: list,
-                   analyst_consensus: dict = None, price_target: dict = None) -> str:
+                   analyst_consensus: dict = None, price_target: dict = None,
+                   volume_profile: dict = None) -> str:
     ind = indicators or {}
     price = quote.get("price") or 0
     # Prefer yfinance 52w values; fallback to indicator-computed values
@@ -177,6 +186,19 @@ def _build_payload(quote: dict, indicators: dict, news: list,
         "precio_objetivo_analistas": price_target,
         "patrones_tecnicos_detectados": ind.get("patterns", []),
         "noticias_recientes": [n.get("title") for n in (news or [])][:6],
+        "volume_profile": {
+            "POC_punto_de_control": (volume_profile or {}).get("poc"),
+            "VAH_value_area_high": (volume_profile or {}).get("vah"),
+            "VAL_value_area_low": (volume_profile or {}).get("val"),
+            "HVN_zonas_alto_volumen": (volume_profile or {}).get("hvn", []),
+            "LVN_zonas_bajo_volumen": (volume_profile or {}).get("lvn", []),
+            "descripcion": (
+                "El POC es el precio con mayor volumen negociado histórico — soporte/resistencia más fuerte. "
+                "Las HVN son zonas de alto volumen (el precio rebota). "
+                "Las LVN son zonas de bajo volumen (el precio las atraviesa rápido). "
+                "El Value Area (VAL-VAH) contiene el 70% del volumen total — zona de equilibrio."
+            ) if volume_profile else "No disponible",
+        } if volume_profile else None,
     }
 
     return (
@@ -276,9 +298,10 @@ async def analyze_stock(
     analyst_consensus: dict = None,
     price_target: dict = None,
     sentiment_score: float = None,
+    volume_profile: dict = None,
 ) -> dict:
     provider, model_id, _is_free = MODEL_MAP.get(model_key, MODEL_MAP[DEFAULT_MODEL])
-    user_msg = _build_payload(quote, indicators, news, analyst_consensus, price_target)
+    user_msg = _build_payload(quote, indicators, news, analyst_consensus, price_target, volume_profile)
 
     if provider == "groq":
         return await _analyze_with_groq(model_id, user_msg)
