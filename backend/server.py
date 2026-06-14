@@ -280,6 +280,76 @@ def _enrich_quote_fundamentals(quote: dict, symbol: str) -> dict:
     return quote
 
 
+def _valid_positive_nums(arr):
+    out = []
+    for x in (arr or []):
+        try:
+            v = float(x)
+            if v > 0:
+                out.append(round(v, 2))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _ensure_key_levels(result: dict, indicators_data: dict, vp: dict, price) -> dict:
+    """Guarantee analysis.key_levels has real support/resistance numbers. Models
+    occasionally return empty or non-numeric levels (shown as NaN in the UI); when that
+    happens, fill from real data — Volume Profile (POC/VAH/VAL/HVN) + technical pivots."""
+    if not isinstance(result, dict) or not price:
+        return result
+    kl = result.get("key_levels") if isinstance(result.get("key_levels"), dict) else {}
+    supports = [s for s in _valid_positive_nums(kl.get("support")) if s < price]
+    resistances = [r for r in _valid_positive_nums(kl.get("resistance")) if r > price]
+
+    below, above = set(), set()
+    sr = (indicators_data or {}).get("support_resistance") or {}
+    for v in _valid_positive_nums(sr.get("supports")):
+        below.add(v)
+    for v in _valid_positive_nums(sr.get("resistances")):
+        above.add(v)
+    if isinstance(vp, dict):
+        for key in ("poc", "vah", "val"):
+            v = vp.get(key)
+            if isinstance(v, (int, float)) and v > 0:
+                (below if v < price else above).add(round(float(v), 2))
+        for h in _valid_positive_nums(vp.get("hvn")):
+            (below if h < price else above).add(h)
+
+    for c in sorted([c for c in below if c < price], reverse=True):
+        if len(supports) >= 3:
+            break
+        if c not in supports:
+            supports.append(c)
+    for c in sorted([c for c in above if c > price]):
+        if len(resistances) >= 3:
+            break
+        if c not in resistances:
+            resistances.append(c)
+
+    result["key_levels"] = {
+        "support": sorted(set(supports), reverse=True)[:4],
+        "resistance": sorted(set(resistances))[:4],
+    }
+    return result
+
+
+def _cap_take_profits(result: dict, high_52w) -> dict:
+    """Keep take-profits realistic: never more than 15% above the 52-week high. Some
+    models ignore the prompt rule and emit absurd Fibonacci-extension targets."""
+    if not isinstance(result, dict) or not high_52w:
+        return result
+    ceiling = round(float(high_52w) * 1.15, 2)
+    for tp in (result.get("take_profits") or []):
+        if isinstance(tp, dict) and isinstance(tp.get("price"), (int, float)) and tp["price"] > ceiling:
+            tp["price"] = ceiling
+    for k in ("take_profit_1", "take_profit_2"):
+        v = result.get(k)
+        if isinstance(v, (int, float)) and v > ceiling:
+            result[k] = ceiling
+    return result
+
+
 # ---------- AI Analysis ----------
 @api_router.post("/analyze")
 async def analyze(req: AnalyzeRequest):
@@ -348,6 +418,11 @@ async def analyze(req: AnalyzeRequest):
         else:
             logger.exception("AI analysis failed")
             raise HTTPException(500, f"Error de análisis IA: {e}")
+
+    # Guarantee real support/resistance levels and realistic take-profits regardless
+    # of how the model filled them (key_levels can come back empty -> NaN in the UI).
+    result = _ensure_key_levels(result, indicators_data, vp, quote.get("price"))
+    result = _cap_take_profits(result, quote.get("high_52w"))
 
     # Persist
     doc = {
