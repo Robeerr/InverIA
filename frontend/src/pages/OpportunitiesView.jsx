@@ -359,27 +359,21 @@ export default function OpportunitiesView({ setSymbol }) {
             )}
           </section>
 
-          {screenerLoading && !screener && (
+          {(!screener || screener.status === "warming") ? (
             <div className="card-flat p-12 text-center">
-              <p className="text-sm text-[#5c6b66]">Aplicando filtros sobre el universo de crecimiento... 20-40 segundos.</p>
+              <p className="text-sm text-[#5c6b66]">
+                {screenerLoading || screener?.status === "warming"
+                  ? "Aplicando los 7 filtros sobre el universo de crecimiento… La primera vez tarda ~40s y se actualiza solo."
+                  : "No se pudo cargar el screener. Pulsa «Refrescar» para reintentar."}
+              </p>
             </div>
-          )}
-
-          {screener?.status === "warming" && (
-            <div className="card-flat p-12 text-center">
-              <p className="text-sm text-[#5c6b66]">Calentando el screener... Se actualizará automáticamente en unos segundos.</p>
-            </div>
-          )}
-
-          {screener && screener.status !== "warming" && (
+          ) : (screener.results || []).length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {(screener.results || []).map((row) => (
+              {screener.results.map((row) => (
                 <ScreenerCard key={row.symbol} row={row} onPick={handlePick} />
               ))}
             </div>
-          )}
-
-          {screener && screener.status !== "warming" && (screener.results || []).length === 0 && (
+          ) : (
             <div className="card-flat p-12 text-center">
               <p className="text-sm text-[#5c6b66]">Ninguna acción del universo cumple hoy los 7 filtros. Prueba a refrescar más tarde.</p>
             </div>

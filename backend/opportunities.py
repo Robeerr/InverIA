@@ -95,89 +95,104 @@ def _passes_cheap_filters(q: dict) -> bool:
     return True
 
 
+async def _run_screener_scan():
+    """Run the full two-phase screener scan and store it in cache. Holds the lock so
+    only one scan runs at a time. Meant to be launched as a background task."""
+    if _screener_lock.locked():
+        return
+    async with _screener_lock:
+        try:
+            # Phase 1 — quotes only, apply the 5 cheap filters (no extra API calls)
+            sem = asyncio.Semaphore(8)
+
+            async def _get_quote(s):
+                async with sem:
+                    try:
+                        return s, await asyncio.to_thread(market_data.get_quote, s)
+                    except Exception:
+                        return s, None
+
+            quote_results = await asyncio.gather(*[_get_quote(s) for s in GROWTH_UNIVERSE])
+            finalists = [(s, q) for s, q in quote_results if q and _passes_cheap_filters(q)]
+
+            # Phase 2 — enrich only finalists with growth metrics, apply the 2 growth filters
+            sem2 = asyncio.Semaphore(3)
+
+            async def _enrich(s, q):
+                async with sem2:
+                    try:
+                        return s, q, (await asyncio.to_thread(external_data.finnhub_basic_financials, s) or {})
+                    except Exception:
+                        return s, q, {}
+
+            enriched = await asyncio.gather(*[_enrich(s, q) for s, q in finalists])
+
+            results = []
+            for s, q, m in enriched:
+                rev_g = m.get("revenue_growth")
+                eps_g = m.get("eps_growth")
+                if rev_g is None or rev_g <= 20:        # Ventas YoY > 20%
+                    continue
+                if eps_g is None or eps_g <= 0:          # Crecimiento EPS > 0%
+                    continue
+                price = q.get("price")
+                high52 = q.get("high_52w")
+                dist = ((price - high52) / high52 * 100) if (high52 and price) else None
+                results.append({
+                    "symbol": s,
+                    "name": q.get("name"),
+                    "price": price,
+                    "market_cap": q.get("market_cap"),
+                    "avg_volume": q.get("avg_volume"),
+                    "revenue_growth": round(rev_g, 1),
+                    "eps_growth": round(eps_g, 1),
+                    "dist_52w_high": round(dist, 1) if dist is not None else None,
+                    "sector": q.get("sector"),
+                    "change_percent": q.get("change_percent"),
+                })
+
+            results.sort(key=lambda x: x.get("revenue_growth") or 0, reverse=True)
+
+            _screener_cache["data"] = {
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "universe_size": len(GROWTH_UNIVERSE),
+                "matches": len(results),
+                "results": results,
+                "filters": SCREENER_FILTERS,
+            }
+            _screener_cache["ts"] = datetime.now(timezone.utc)
+        except Exception:
+            pass
+
+
 async def scan_growth_screener(force_refresh: bool = False):
+    """Non-blocking: return cached data immediately, and kick off a background scan when
+    the cache is missing or stale. The first call returns a 'warming' placeholder and the
+    client polls until results are ready — scanning 120 names would otherwise time out."""
     now = datetime.now(timezone.utc)
-    if not force_refresh and _screener_cache["data"] and _screener_cache["ts"] and (now - _screener_cache["ts"]) < _SCREENER_TTL:
+    fresh = (
+        _screener_cache["data"]
+        and _screener_cache["ts"]
+        and (now - _screener_cache["ts"]) < _SCREENER_TTL
+    )
+    if fresh and not force_refresh:
         return _screener_cache["data"]
 
-    if _screener_lock.locked():
-        if _screener_cache["data"]:
-            return _screener_cache["data"]
-        return {
-            "generated_at": now.isoformat(),
-            "universe_size": len(GROWTH_UNIVERSE),
-            "matches": 0,
-            "results": [],
-            "filters": SCREENER_FILTERS,
-            "status": "warming",
-        }
+    # Need a (re)scan — launch it in the background so the request stays fast
+    if not _screener_lock.locked():
+        asyncio.create_task(_run_screener_scan())
 
-    async with _screener_lock:
-        now = datetime.now(timezone.utc)
-        if not force_refresh and _screener_cache["data"] and _screener_cache["ts"] and (now - _screener_cache["ts"]) < _SCREENER_TTL:
-            return _screener_cache["data"]
+    if _screener_cache["data"]:
+        return _screener_cache["data"]  # stale but usable while the new scan runs
 
-        # Phase 1 — quotes only, apply the 5 cheap filters (no extra API calls)
-        sem = asyncio.Semaphore(8)
-
-        async def _get_quote(s):
-            async with sem:
-                try:
-                    return s, await asyncio.to_thread(market_data.get_quote, s)
-                except Exception:
-                    return s, None
-
-        quote_results = await asyncio.gather(*[_get_quote(s) for s in GROWTH_UNIVERSE])
-        finalists = [(s, q) for s, q in quote_results if q and _passes_cheap_filters(q)]
-
-        # Phase 2 — enrich only the finalists with growth metrics, apply the 2 growth filters
-        sem2 = asyncio.Semaphore(3)
-
-        async def _enrich(s, q):
-            async with sem2:
-                try:
-                    return s, q, (await asyncio.to_thread(external_data.finnhub_basic_financials, s) or {})
-                except Exception:
-                    return s, q, {}
-
-        enriched = await asyncio.gather(*[_enrich(s, q) for s, q in finalists])
-
-        results = []
-        for s, q, m in enriched:
-            rev_g = m.get("revenue_growth")
-            eps_g = m.get("eps_growth")
-            if rev_g is None or rev_g <= 20:        # Ventas YoY > 20%
-                continue
-            if eps_g is None or eps_g <= 0:          # Crecimiento EPS > 0%
-                continue
-            price = q.get("price")
-            high52 = q.get("high_52w")
-            dist = ((price - high52) / high52 * 100) if (high52 and price) else None
-            results.append({
-                "symbol": s,
-                "name": q.get("name"),
-                "price": price,
-                "market_cap": q.get("market_cap"),
-                "avg_volume": q.get("avg_volume"),
-                "revenue_growth": round(rev_g, 1),
-                "eps_growth": round(eps_g, 1),
-                "dist_52w_high": round(dist, 1) if dist is not None else None,
-                "sector": q.get("sector"),
-                "change_percent": q.get("change_percent"),
-            })
-
-        results.sort(key=lambda x: x.get("revenue_growth") or 0, reverse=True)
-
-        data = {
-            "generated_at": now.isoformat(),
-            "universe_size": len(GROWTH_UNIVERSE),
-            "matches": len(results),
-            "results": results,
-            "filters": SCREENER_FILTERS,
-        }
-        _screener_cache["data"] = data
-        _screener_cache["ts"] = now
-        return data
+    return {
+        "generated_at": now.isoformat(),
+        "universe_size": len(GROWTH_UNIVERSE),
+        "matches": 0,
+        "results": [],
+        "filters": SCREENER_FILTERS,
+        "status": "warming",
+    }
 
 
 async def _analyze_one(symbol: str):

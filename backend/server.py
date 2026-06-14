@@ -1063,7 +1063,7 @@ async def prewarm_screener():
     async def _run():
         try:
             await asyncio.sleep(180)  # let the opportunities pre-warm finish first
-            await opportunities.scan_growth_screener(force_refresh=True)
+            await opportunities._run_screener_scan()  # blocking scan -> fills cache
             logger.info("Growth screener pre-warm complete")
         except Exception as e:
             logger.warning(f"Screener pre-warm failed: {e}")
