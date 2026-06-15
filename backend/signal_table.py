@@ -191,7 +191,7 @@ async def _set_cooldown(db, cd_key: str):
     )
 
 
-async def signal_worker_loop(db, interval: int = 60):
+async def signal_worker_loop(db, interval: int = 30):
     """Background: cada `interval` seg comprueba precios vs niveles activos."""
     logger.info("Signal table worker started (interval=%ds)", interval)
 
