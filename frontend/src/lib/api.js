@@ -54,6 +54,6 @@ export const api = {
       client.get(`/calendar/earnings`, { params: { days, symbols: symbols || undefined } }).then((r) => r.data),
   },
   alerts: {
-    testTelegram: () => client.post(`/alerts/test-telegram`).then((r) => r.data),
+    testTelegram: (grupo) => client.post(`/alerts/test-telegram`, null, { params: grupo ? { grupo } : {} }).then((r) => r.data),
   },
 };

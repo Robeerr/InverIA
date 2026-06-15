@@ -49,12 +49,23 @@ def _send_sync(token: str, chat_id: str, text: str, parse_mode: str = "MarkdownV
         return False, str(e)[:200]
 
 
-async def send_message(text: str, parse_mode: str = "MarkdownV2") -> tuple[bool, Optional[str]]:
-    """Send a plain notification. Returns (ok, error_message)."""
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+def _creds_for_group(grupo: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    """Devuelve (token, chat_id) del bot según el grupo de la señal.
+    'cimientos' usa su propio bot; si no está configurado, cae al bot por defecto.
+    Cualquier otro grupo (Cartera / ideas_javi) usa el bot por defecto."""
+    if grupo == "cimientos":
+        token = os.environ.get("TELEGRAM_BOT_TOKEN_CIMIENTOS") or os.environ.get("TELEGRAM_BOT_TOKEN")
+        chat_id = os.environ.get("TELEGRAM_CHAT_ID_CIMIENTOS") or os.environ.get("TELEGRAM_CHAT_ID")
+        return token, chat_id
+    return os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_CHAT_ID")
+
+
+async def send_message(text: str, parse_mode: str = "MarkdownV2", grupo: Optional[str] = None) -> tuple[bool, Optional[str]]:
+    """Send a plain notification through the bot for `grupo`. Returns (ok, error_message)."""
+    token, chat_id = _creds_for_group(grupo)
     if not token or not chat_id:
-        return False, "TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID no configurado en el servidor."
+        which = "de Cimientos" if grupo == "cimientos" else "por defecto"
+        return False, f"Bot de Telegram {which} no configurado en el servidor (token/chat_id)."
     return await asyncio.to_thread(_send_sync, token, chat_id, text, parse_mode)
 
 
@@ -77,11 +88,12 @@ async def send_alert(symbol: str, target: float, direction: str, current_price: 
     return await send_message(format_alert_message(symbol, target, direction, current_price, change_pct))
 
 
-async def send_test() -> tuple[bool, Optional[str]]:
-    """Manual test notification."""
+async def send_test(grupo: Optional[str] = None) -> tuple[bool, Optional[str]]:
+    """Manual test notification (al bot del grupo indicado)."""
+    nombre = "Cimientos" if grupo == "cimientos" else "Cartera"
     text = (
-        "✅ *InverIA · Test*\n\n"
+        f"✅ *InverIA · Test {_esc_md(nombre)}*\n\n"
         "Telegram funcionando correctamente\\.\n"
-        "A partir de ahora recibirás aquí las alertas de precio en tiempo real\\."
+        f"Aquí recibirás las alertas de *{_esc_md(nombre)}* en tiempo real\\."
     )
-    return await send_message(text)
+    return await send_message(text, grupo=grupo)

@@ -370,8 +370,8 @@ async def _fire_alert(entry, symbol, level_label, target, price, diff_pct, actio
         f"⚡ _InverIA · Alerta automática_"
     )
 
-    # Enviar Telegram directamente con await (sin create_task)
-    await telegram_notifier.send_message(tg_msg)
+    # Enviar Telegram al bot del grupo (Cartera o Cimientos)
+    await telegram_notifier.send_message(tg_msg, grupo=entry.get("grupo", "ideas_javi"))
 
     # Guardar en historial de alertas
     if db is not None:

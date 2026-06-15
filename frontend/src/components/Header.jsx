@@ -51,12 +51,14 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
   };
 
   const testTelegram = async () => {
-    try {
-      await api.alerts.testTelegram();
-      toast.success("Mensaje de Telegram enviado");
-    } catch (e) {
-      const detail = e?.response?.data?.detail || "Error al enviar Telegram";
-      toast.error(detail, { duration: 12000 });
+    for (const [grupo, label] of [["ideas_javi", "Cartera"], ["cimientos", "Cimientos"]]) {
+      try {
+        await api.alerts.testTelegram(grupo);
+        toast.success(`Telegram ${label}: enviado ✓`);
+      } catch (e) {
+        const detail = e?.response?.data?.detail || `Error al enviar Telegram (${label})`;
+        toast.error(`${label}: ${detail}`, { duration: 12000 });
+      }
     }
   };
 

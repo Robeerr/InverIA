@@ -788,9 +788,9 @@ async def test_email():
 
 
 @api_router.post("/alerts/test-telegram")
-async def test_telegram():
+async def test_telegram(grupo: Optional[str] = None, _user: str = Depends(auth.get_current_user)):
     import telegram_notifier
-    sent, err = await telegram_notifier.send_test()
+    sent, err = await telegram_notifier.send_test(grupo=grupo)
     if not sent:
         raise HTTPException(500, err or "No se pudo enviar mensaje de Telegram")
     return {"ok": True}
