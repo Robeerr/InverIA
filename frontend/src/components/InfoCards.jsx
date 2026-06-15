@@ -299,7 +299,7 @@ export function RisksCatalystsCard({ analysis }) {
           <ul className="space-y-1.5">
             {(analysis.risks || []).map((r, i) => (
               <li key={i} className="text-xs text-[#0e1f1a] pl-3 border-l-2 border-[#d85c41]">
-                {typeof r === "string" ? r : (r?.risk ?? r?.text ?? r?.description ?? "")}
+                {r}
               </li>
             ))}
           </ul>
@@ -312,7 +312,7 @@ export function RisksCatalystsCard({ analysis }) {
           <ul className="space-y-1.5">
             {(analysis.catalysts || []).map((c, i) => (
               <li key={i} className="text-xs text-[#0e1f1a] pl-3 border-l-2 border-[#4a7c59]">
-                {typeof c === "string" ? c : (c?.catalyst ?? c?.text ?? c?.description ?? "")}
+                {c}
               </li>
             ))}
           </ul>
