@@ -59,10 +59,14 @@ ESTRUCTURA JSON EXACTA:
   "horizon": "MEDIO_PLAZO (3-12 meses)",
   "summary": "Resumen ejecutivo en 2-3 frases explicando la tesis de inversión principal y por qué estos niveles son relevantes.",
 
+  "risks": ["Riesgo concreto 1 (cuantificado si es posible)", "Riesgo concreto 2", "Riesgo concreto 3", "Riesgo macroeconómico relevante"],
+  "catalysts": ["Catalizador 1 (con fecha si se conoce)", "Catalizador 2", "Catalizador 3"],
+
   "entry_zones": [
-    {"label": "NIVEL 1 — Zona Óptima", "min": número, "max": número, "comment": "Explica por qué este nivel es soporte clave (Fibonacci, histórico, etc.)"},
+    {"label": "NIVEL 1 — Zona Óptima", "min": número, "max": número, "comment": "Primer soporte cercano (Fibonacci/histórico/HVN)"},
     {"label": "NIVEL 2 — Segunda Entrada", "min": número, "max": número, "comment": "Siguiente soporte si rompe el nivel 1"},
-    {"label": "NIVEL 3 — Entrada Agresiva", "min": número, "max": número, "comment": "Zona de soporte fuerte, mayor rebote esperado"}
+    {"label": "NIVEL 3 — Tercera Entrada", "min": número, "max": número, "comment": "Soporte más profundo"},
+    {"label": "NIVEL 4 — Entrada Agresiva", "min": número, "max": número, "comment": "Soporte muy fuerte cerca del VAL, máximo rebote esperado"}
   ],
 
   "stop_losses": [
@@ -120,21 +124,10 @@ ESTRUCTURA JSON EXACTA:
 
   "sector_outlook": "Potencial del sector a 3-5 años: catalizadores estructurales, tendencias de fondo y vientos de cola o de cara que afectarán a la empresa.",
 
-  "risks": [
-    "Riesgo específico 1 con impacto cuantificado si es posible",
-    "Riesgo específico 2",
-    "Riesgo específico 3",
-    "Riesgo macroeconómico relevante"
-  ],
-
-  "catalysts": [
-    "Catalizador 1 con fecha aproximada si se conoce",
-    "Catalizador 2",
-    "Catalizador 3"
-  ],
-
   "timeframe": "MEDIO_PLAZO"
 }
+
+RECORDATORIO: risks (mínimo 4) y catalysts (mínimo 3) van al PRINCIPIO del JSON y son OBLIGATORIOS — nunca los dejes vacíos.
 
 CÓMO CALCULAR LOS NIVELES (prioridad de fuentes, de mayor a menor fiabilidad):
 1. **Volume Profile (prioridad máxima)**: El POC es el soporte/resistencia más fuerte. Las HVN son zonas donde el precio rebota. Úsalos como base para los niveles de entrada.
@@ -354,7 +347,7 @@ async def _analyze_with_groq(model_id: str, user_msg: str) -> dict:
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_msg},
             ],
-            max_tokens=3000,
+            max_tokens=4000,
             temperature=0.3,
         )
         if use_json_format:
