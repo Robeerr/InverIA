@@ -32,7 +32,7 @@ Dashboard profesional de análisis bursátil con datos en vivo y planes operativ
 
 ### 🔔 Alertas (tabla de cartera)
 Dos sub-pestañas sobre la misma colección de señales (campo `grupo`):
-- **Ideas Javi**: tabla editable con **niveles 1-5 + nivel deseado/venta**, riesgo y posibles ganancias. **Importación desde Excel** (pega tus celdas) y edición en línea.
+- **Cartera**: tabla editable con **niveles 1-5 + nivel deseado/venta**, riesgo y posibles ganancias. **Importación desde Excel** (pega tus celdas) y edición en línea.
 - **Cimientos**: núcleo de cartera con **niveles de compra escalonados (25→100%)**, divisa, BZ, **caída necesaria** y **distancia a objetivo** calculadas en vivo, nivel de venta/protección y objetivo a 5 años.
 - Notificación por **Telegram + email** cuando el precio alcanza un nivel activado, **solo en horario de mercado** (9:30-16:00 ET) y **una vez al día por nivel**.
 

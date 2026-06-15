@@ -10,10 +10,10 @@ const authHeaders = () => {
 
 // ── sub-tabs ───────────────────────────────────────────────────────────────────
 const GRUPOS = [
-  { key: "ideas_javi", label: "Ideas Javi", icon: Lightning },
-  { key: "cimientos",  label: "Cimientos",  icon: Bank },
+  { key: "ideas_javi", label: "Cartera",   icon: Lightning },
+  { key: "cimientos",  label: "Cimientos", icon: Bank },
 ];
-const grupoOf = (e) => e.grupo || "ideas_javi"; // entradas antiguas → Ideas Javi
+const grupoOf = (e) => e.grupo || "ideas_javi"; // entradas antiguas → Cartera
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const fmtP = (v) => (v != null && v !== "" ? `$${Number(v).toFixed(2)}` : "—");
@@ -352,7 +352,7 @@ export default function SignalsView({ setSymbol }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
-            {isCim ? "🏛️ Cimientos de Cartera" : "📋 Ideas Javi"}
+            {isCim ? "🏛️ Cimientos de Cartera" : "📋 Cartera"}
           </h1>
           <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-0.5">
             {isCim
@@ -444,7 +444,7 @@ export default function SignalsView({ setSymbol }) {
       {showAdd && (
         <div className="rounded-xl border border-[#1a3a32]/30 bg-[#f5f3ef] dark:bg-neutral-900 p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-[#0e1f1a] dark:text-neutral-200">➕ Nueva acción · {isCim ? "Cimientos" : "Ideas Javi"}</p>
+            <p className="text-sm font-semibold text-[#0e1f1a] dark:text-neutral-200">➕ Nueva acción · {isCim ? "Cimientos" : "Cartera"}</p>
             <button onClick={() => setShowAdd(false)}><X size={16} /></button>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
