@@ -265,8 +265,8 @@ async def signal_worker_loop(db, interval: int = 60):
                             continue
                         if not entry.get(f"alert_{level_key}", True):
                             continue
-                        tolerance = target * 0.005  # ±0.5%
-                        if abs(price - target) > tolerance:
+                        # Compra: disparar solo cuando el precio BAJA al nivel o por debajo
+                        if price > target:
                             continue
                         cd_key = f"{symbol}_{level_key}_{today}"
                         if await _is_in_cooldown(db, cd_key):
@@ -281,8 +281,8 @@ async def signal_worker_loop(db, interval: int = 60):
                             continue
                         if not entry.get(f"alert_{level_key}", True):
                             continue
-                        tolerance = target * 0.005  # ±0.5%
-                        if abs(price - target) > tolerance:
+                        # Venta: disparar solo cuando el precio SUBE al objetivo o por encima
+                        if price < target:
                             continue
                         cd_key = f"{symbol}_{level_key}_{today}"
                         if await _is_in_cooldown(db, cd_key):
