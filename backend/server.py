@@ -1076,12 +1076,9 @@ async def create_db_indexes():
 
 
 @app.on_event("startup")
-async def start_alerts_worker():
-    asyncio.create_task(alerts_worker.alerts_worker_loop(db))
-
-
-@app.on_event("startup")
 async def start_signal_worker():
+    # Single alert system: the portfolio table (signal_table). The old PriceAlert
+    # worker was removed — it had no UI and ran 24/7 (risk of phantom alerts).
     asyncio.create_task(signal_table.signal_worker_loop(db))
 
 
