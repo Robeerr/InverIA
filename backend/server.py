@@ -850,7 +850,7 @@ async def market_movers():
 
 # ---------- Signal Table (puntos de compra/venta) ----------
 @api_router.get("/signals")
-async def list_signals():
+async def list_signals(_user: str = Depends(auth.get_current_user)):
     # El worker actualiza last_price en MongoDB cada 60s, así que no
     # necesitamos llamar a Yahoo aquí. Respuesta instantánea desde DB.
     cached = _cache.get("signals_list")
@@ -862,7 +862,7 @@ async def list_signals():
 
 
 @api_router.post("/signals")
-async def create_signal(item: SignalEntryCreate):
+async def create_signal(item: SignalEntryCreate, _user: str = Depends(auth.get_current_user)):
     entry = await signal_table.create_entry(db, item.model_dump())
     _cache._store.pop("signals_list", None)
     _cache._store.pop("signals_hot", None)
@@ -870,7 +870,7 @@ async def create_signal(item: SignalEntryCreate):
 
 
 @api_router.patch("/signals/{entry_id}")
-async def update_signal(entry_id: str, item: SignalEntryUpdate):
+async def update_signal(entry_id: str, item: SignalEntryUpdate, _user: str = Depends(auth.get_current_user)):
     data = {k: v for k, v in item.model_dump().items() if v is not None}
     updated = await signal_table.update_entry(db, entry_id, data)
     if not updated:
@@ -881,7 +881,7 @@ async def update_signal(entry_id: str, item: SignalEntryUpdate):
 
 
 @api_router.delete("/signals/{entry_id}")
-async def delete_signal(entry_id: str):
+async def delete_signal(entry_id: str, _user: str = Depends(auth.get_current_user)):
     ok = await signal_table.delete_entry(db, entry_id)
     if not ok:
         raise HTTPException(404, "Señal no encontrada")
@@ -891,7 +891,7 @@ async def delete_signal(entry_id: str):
 
 
 @api_router.post("/signals/bulk")
-async def bulk_import_signals(payload: SignalBulkImport):
+async def bulk_import_signals(payload: SignalBulkImport, _user: str = Depends(auth.get_current_user)):
     result = await signal_table.bulk_upsert(db, payload.rows)
     _cache._store.pop("signals_list", None)
     _cache._store.pop("signals_hot", None)
@@ -900,14 +900,14 @@ async def bulk_import_signals(payload: SignalBulkImport):
 
 # ---------- Alert History ----------
 @api_router.get("/alerts/history")
-async def get_alert_history(limit: int = 50):
+async def get_alert_history(limit: int = 50, _user: str = Depends(auth.get_current_user)):
     """Historial de alertas disparadas (últimas 50)."""
     items = await db.alert_history.find({}, {"_id": 0}).sort("fired_at", -1).limit(limit).to_list(limit)
     return items
 
 
 @api_router.delete("/alerts/history")
-async def clear_alert_history():
+async def clear_alert_history(_user: str = Depends(auth.get_current_user)):
     """Borra todo el historial."""
     await db.alert_history.delete_many({})
     return {"ok": True}
@@ -915,7 +915,7 @@ async def clear_alert_history():
 
 # ---------- Hot Signals (señales calientes para el Dashboard) ----------
 @api_router.get("/signals/hot")
-async def hot_signals(limit: int = 5):
+async def hot_signals(limit: int = 5, _user: str = Depends(auth.get_current_user)):
     """Devuelve las acciones con precio más cercano a algún nivel de compra o venta.
     Usa last_price guardado por el worker en MongoDB — respuesta instantánea."""
     cached = _cache.get("signals_hot")
