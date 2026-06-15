@@ -31,12 +31,18 @@ class Token(BaseModel):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+def _bcrypt_trunc(password: str) -> bytes:
+    """bcrypt solo usa los primeros 72 bytes; las versiones nuevas lanzan error
+    en vez de truncar. Truncamos nosotros para aceptar frases largas sin romper."""
+    return password.encode("utf-8")[:72]
+
+
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    return pwd_context.verify(_bcrypt_trunc(plain), hashed)
 
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    return pwd_context.hash(_bcrypt_trunc(password))
 
 
 def authenticate_user(username: str, password: str) -> bool:
