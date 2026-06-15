@@ -383,6 +383,38 @@ def get_quote(ticker: str) -> Optional[dict]:
     }
 
 
+def get_index_quote(symbol: str):
+    """Lightweight quote for indices/futures (e.g. ES=F) via yfinance fast_info —
+    bypasses the Finnhub path, which doesn't cover futures. Futures trade ~24h, so
+    this works before the equity pre-market opens."""
+    try:
+        t = _ticker(symbol)
+        try:
+            fast = t.fast_info
+        except Exception:
+            fast = {}
+        last = _g(fast, "last_price")
+        prev = _g(fast, "previous_close")
+        if last is None:
+            try:
+                info = t.info or {}
+            except Exception:
+                info = {}
+            last = info.get("regularMarketPrice")
+            prev = prev or info.get("previousClose")
+        if last is None:
+            return None
+        change_pct = None
+        if prev:
+            change_pct = (float(last) - float(prev)) / float(prev) * 100
+        return {
+            "price": round(float(last), 2),
+            "change_percent": round(change_pct, 2) if change_pct is not None else None,
+        }
+    except Exception:
+        return None
+
+
 def _try_finnhub_quote(ticker: str):
     """Get a quote from Finnhub. Thread-safe rate-limited."""
     key = os.environ.get("FINNHUB_API_KEY")

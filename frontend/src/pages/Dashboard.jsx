@@ -11,6 +11,26 @@ import { api } from "../lib/api";
 
 const API = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
 
+function MarketFuturesBar({ futures }) {
+  if (!futures?.items?.length) return null;
+  return (
+    <div className="card-flat px-4 py-2.5 flex items-center gap-x-5 gap-y-1 flex-wrap">
+      <span className="text-[10px] uppercase tracking-[0.2em] text-[#5c6b66] font-mono">Futuros · apertura</span>
+      {futures.items.map((f) => {
+        const up = (f.change_percent ?? 0) >= 0;
+        return (
+          <div key={f.symbol} className="flex items-center gap-2">
+            <span className="text-xs text-[#0e1f1a] font-medium">{f.label}</span>
+            <span className={`font-mono text-xs font-semibold ${up ? "text-[#4a7c59]" : "text-[#d85c41]"}`}>
+              {f.change_percent != null ? `${up ? "+" : ""}${f.change_percent}%` : "—"}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const [timeframe, setTimeframe] = useState("1Y");
   const [quote, setQuote] = useState(null);
@@ -20,6 +40,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const [analystData, setAnalystData] = useState(null);
   const [marketSignals, setMarketSignals] = useState(null);
   const [volumeProfile, setVolumeProfile] = useState(null);
+  const [futures, setFutures] = useState(null);
   const [news, setNews] = useState([]);
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
@@ -124,6 +145,15 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
 
+  // Index futures bar — refresh every 60s, independent of the selected symbol
+  useEffect(() => {
+    let id;
+    const load = () => api.marketFutures().then(setFutures).catch(() => {});
+    load();
+    id = setInterval(load, 60000);
+    return () => clearInterval(id);
+  }, []);
+
   // WebSocket for live price updates (~8s refresh). Falls back to 30s polling if WS fails.
   useEffect(() => {
     if (!symbol) return;
@@ -164,6 +194,8 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
 
   return (
     <main data-testid="main-dashboard" className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+      <MarketFuturesBar futures={futures} />
+
       {loadingQuote && !quote ? (
         <div className="card-flat p-8 text-center text-[#5c6b66]">Cargando datos...</div>
       ) : quote ? (

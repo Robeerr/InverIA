@@ -803,6 +803,31 @@ async def growth_screener(refresh: bool = False):
     return data
 
 
+@api_router.get("/market/futures")
+async def market_futures():
+    """Index futures (S&P 500, Nasdaq 100, Dow) — trade ~24h, so they show where the
+    market is heading before the equity pre-market opens."""
+    cached = _cache.get("market_futures")
+    if cached is not None:
+        return cached
+    loop = asyncio.get_running_loop()
+    futs = [("ES=F", "S&P 500"), ("NQ=F", "Nasdaq 100"), ("YM=F", "Dow Jones")]
+
+    async def _one(sym, label):
+        q = await loop.run_in_executor(None, market_data.get_index_quote, sym)
+        return {
+            "symbol": sym,
+            "label": label,
+            "price": (q or {}).get("price"),
+            "change_percent": (q or {}).get("change_percent"),
+        }
+
+    items = await asyncio.gather(*[_one(s, l) for s, l in futs])
+    data = {"items": list(items)}
+    _cache.set("market_futures", data, ttl=60)
+    return data
+
+
 @api_router.get("/market/movers")
 async def market_movers():
     """Biggest gainers / losers / most-active US stocks (Financial Modeling Prep)."""
