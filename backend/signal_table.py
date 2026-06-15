@@ -223,16 +223,25 @@ async def signal_worker_loop(db, interval: int = 60):
                     if price <= 0:
                         continue
 
-                    await db.signal_entries.update_one(
-                        {"id": entry["id"]},
-                        {"$set": {
-                            "last_price": price,
-                            "market_state": quote.get("market_state"),
-                            "pre_market_price": quote.get("pre_market_price"),
-                            "post_market_price": quote.get("post_market_price"),
-                            "updated_at": _now(),
-                        }}
-                    )
+                    upd = {
+                        "last_price": price,
+                        "market_state": "REGULAR" if market_open else None,
+                        "pre_market_price": None,
+                        "post_market_price": None,
+                        "updated_at": _now(),
+                    }
+                    # Fuera del horario regular, obtener pre/post de las velas prepost
+                    if not market_open:
+                        ext = market_data.get_extended_quote(symbol)
+                        if ext:
+                            upd["market_state"] = ext.get("market_state")
+                            if ext.get("market_state") == "PRE":
+                                upd["pre_market_price"] = ext.get("extended_price")
+                            elif ext.get("market_state") == "POST":
+                                upd["post_market_price"] = ext.get("extended_price")
+                            if ext.get("regular_close"):
+                                upd["last_price"] = ext["regular_close"]
+                    await db.signal_entries.update_one({"id": entry["id"]}, {"$set": upd})
 
                     # Las alertas de nivel solo se disparan en horario regular
                     if not market_open:

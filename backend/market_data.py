@@ -415,6 +415,49 @@ def get_index_quote(symbol: str):
         return None
 
 
+def get_extended_quote(symbol: str):
+    """Pre-market / after-hours quote using prepost 1-minute candles (yfinance .info
+    no longer exposes preMarketPrice/marketState reliably). Returns
+    {market_state, extended_price, regular_close} or None."""
+    from datetime import time as _t
+    try:
+        t = _ticker(symbol)
+        df = t.history(period="2d", interval="1m", prepost=True)
+        if df is None or df.empty:
+            return None
+        try:
+            if df.index.tz is None:
+                df = df.tz_localize("UTC").tz_convert("America/New_York")
+            else:
+                df = df.tz_convert("America/New_York")
+        except Exception:
+            pass
+        last_price = float(df["Close"].iloc[-1])
+        last_time = df.index[-1].time()
+        if _t(4, 0) <= last_time < _t(9, 30):
+            state = "PRE"
+        elif _t(9, 30) <= last_time < _t(16, 0):
+            state = "REGULAR"
+        elif _t(16, 0) <= last_time < _t(20, 0):
+            state = "POST"
+        else:
+            state = "CLOSED"
+        regular_close = None
+        try:
+            reg = df.between_time("09:30", "16:00")
+            if not reg.empty:
+                regular_close = round(float(reg["Close"].iloc[-1]), 2)
+        except Exception:
+            pass
+        return {
+            "market_state": state,
+            "extended_price": round(last_price, 2),
+            "regular_close": regular_close,
+        }
+    except Exception:
+        return None
+
+
 def _try_finnhub_quote(ticker: str):
     """Get a quote from Finnhub. Thread-safe rate-limited."""
     key = os.environ.get("FINNHUB_API_KEY")
