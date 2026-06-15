@@ -223,6 +223,9 @@ async def signal_worker_loop(db, interval: int = 30):
 
             for entry in entries:
                 symbol = entry["symbol"]
+                # Precio de la comprobación anterior: solo alertamos en el CRUCE de nivel
+                # (antes fuera del nivel, ahora dentro), no por estar ya dentro de la zona.
+                prev_price = entry.get("last_price")
                 try:
                     quote = market_data.get_quote(symbol)
                     if not quote:
@@ -275,8 +278,12 @@ async def signal_worker_loop(db, interval: int = 30):
                             continue
                         if not entry.get(f"alert_{level_key}", True):
                             continue
-                        # Compra: disparar solo cuando el precio BAJA al nivel o por debajo
+                        # Compra: disparar SOLO en el cruce a la baja (antes por encima del
+                        # nivel, ahora en/por debajo). Si el precio ya estaba dentro de la zona
+                        # —o es la primera lectura (sin baseline)— no se alerta.
                         if price > target:
+                            continue
+                        if prev_price is None or prev_price <= target:
                             continue
                         cd_key = f"{symbol}_{level_key}_{today}"
                         if await _is_in_cooldown(db, cd_key):
@@ -291,8 +298,12 @@ async def signal_worker_loop(db, interval: int = 30):
                             continue
                         if not entry.get(f"alert_{level_key}", True):
                             continue
-                        # Venta: disparar solo cuando el precio SUBE al objetivo o por encima
+                        # Venta: disparar SOLO en el cruce al alza (antes por debajo del
+                        # objetivo, ahora en/por encima). Si ya estaba por encima —o es la
+                        # primera lectura (sin baseline)— no se alerta.
                         if price < target:
+                            continue
+                        if prev_price is None or prev_price >= target:
                             continue
                         cd_key = f"{symbol}_{level_key}_{today}"
                         if await _is_in_cooldown(db, cd_key):
