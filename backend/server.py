@@ -1109,19 +1109,6 @@ async def self_ping_loop():
 
 @app.on_event("startup")
 async def prewarm_opportunities():
-    """Pre-warm the daily opportunities scan in the background on startup.
-    By the time users visit Oportunidades, results are cached (in-memory)."""
-    async def _run():
-        await asyncio.sleep(120)  # Wait for real user traffic to settle first
-        try:
-            await opportunities.scan_daily_opportunities()
-        except Exception:
-            pass
-    asyncio.create_task(_run())
-
-
-@app.on_event("startup")
-async def prewarm_opportunities():
     """Pre-cache the daily opportunities scan in background so the first user
     request hits a warm cache (avoids cold-start timeouts on Render/proxy)."""
     async def _run():

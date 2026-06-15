@@ -35,7 +35,11 @@
       "Bash(Select-Object -First 20)",
       "Bash(Get-ChildItem \"C:\\\\Users\\\\Rober\\\\Desktop\\\\InverIA\\\\frontend\" -Filter \"tailwind.config.*\")",
       "Bash(git config *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(python _test_finnhub.py)",
+      "PowerShell($envFile = \"C:\\\\Users\\\\Rober\\\\Desktop\\\\InverIA\\\\backend\\\\.env\"; if \\(Test-Path $envFile\\) { $line = Get-Content $envFile | Where-Object { $_ -match \"^FINNHUB_API_KEY=\" }; if \\($line\\) { Write-Output \"FINNHUB_API_KEY found \\(length: $\\(\\(\\($line -split '=',2\\)[1]\\).Trim\\(\\).Length\\)\\)\" } else { Write-Output \"FINNHUB_API_KEY NOT in .env\" } } else { Write-Output \".env does not exist locally\" })",
+      "PowerShell($npm = Get-Command npm -ErrorAction SilentlyContinue; $node = Get-Command node -ErrorAction SilentlyContinue; if \\($npm\\) { Write-Output \"npm: $\\($npm.Source\\)\" }; if \\($node\\) { Write-Output \"node: $\\(node --version\\)\" }; if \\(-not $npm\\) { Write-Output \"npm NOT available\" })",
+      "PowerShell(Set-Location \"C:\\\\Users\\\\Rober\\\\Desktop\\\\InverIA\\\\frontend\"; $env:CI = \"false\"; npm run build 2>&1 | Select-Object -Last 25)"
     ]
   }
 }

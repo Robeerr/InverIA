@@ -53,16 +53,7 @@ export const api = {
     earnings: (days = 14, symbols = null) =>
       client.get(`/calendar/earnings`, { params: { days, symbols: symbols || undefined } }).then((r) => r.data),
   },
-  watchlist: {
-    list: () => client.get(`/watchlist`).then((r) => r.data),
-    add: (symbol) => client.post(`/watchlist`, { symbol }).then((r) => r.data),
-    remove: (symbol) => client.delete(`/watchlist/${symbol}`).then((r) => r.data),
-  },
   alerts: {
-    list: () => client.get(`/alerts`).then((r) => r.data),
-    add: (payload) => client.post(`/alerts`, payload).then((r) => r.data),
-    remove: (id) => client.delete(`/alerts/${id}`).then((r) => r.data),
-    testEmail: () => client.post(`/alerts/test-email`).then((r) => r.data),
     testTelegram: () => client.post(`/alerts/test-telegram`).then((r) => r.data),
   },
 };
