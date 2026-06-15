@@ -220,7 +220,7 @@ def _build_payload(quote: dict, indicators: dict, news: list,
         "insider_trading_directivos": insider,
         "historial_resultados_earnings": earnings_history,
         "patrones_tecnicos_detectados": ind.get("patterns", []),
-        "noticias_recientes": [n.get("title") for n in (news or [])][:6],
+        "noticias_recientes": [n.get("title") for n in (news or [])][:3],
         "volume_profile": {
             "POC_punto_de_control": (volume_profile or {}).get("poc"),
             "VAH_value_area_high": (volume_profile or {}).get("vah"),
@@ -347,7 +347,7 @@ async def _analyze_with_groq(model_id: str, user_msg: str) -> dict:
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_msg},
             ],
-            max_tokens=4000,
+            max_tokens=2500,
             temperature=0.3,
         )
         if use_json_format:
