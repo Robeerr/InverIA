@@ -31,8 +31,9 @@ Dashboard profesional de análisis bursátil con datos en vivo y planes operativ
 - **Screener de Crecimiento**: 6 filtros (market cap > $2B, precio > $9, sin dividendo, volumen > 200K, a <20% de máximos 52s, ventas YoY > 20%) sobre un universo curado de ~105 growth stocks, con escaneo en dos fases para ser eficiente.
 
 ### 🔔 Alertas (tabla de cartera)
-- Tabla editable de acciones con **niveles 1-5 + nivel deseado/venta**, riesgo y posibles ganancias.
-- **Importación desde Excel** (pega tus celdas) y edición en línea.
+Dos sub-pestañas sobre la misma colección de señales (campo `grupo`):
+- **Ideas Javi**: tabla editable con **niveles 1-5 + nivel deseado/venta**, riesgo y posibles ganancias. **Importación desde Excel** (pega tus celdas) y edición en línea.
+- **Cimientos**: núcleo de cartera con **niveles de compra escalonados (25→100%)**, divisa, BZ, **caída necesaria** y **distancia a objetivo** calculadas en vivo, nivel de venta/protección y objetivo a 5 años.
 - Notificación por **Telegram + email** cuando el precio alcanza un nivel activado, **solo en horario de mercado** (9:30-16:00 ET) y **una vez al día por nivel**.
 
 ### 📅 Otros

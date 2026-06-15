@@ -126,6 +126,7 @@ class SignalEntryCreate(BaseModel):
     symbol: str
     name: Optional[str] = ""
     mercado: Optional[str] = ""
+    grupo: Optional[str] = "ideas_javi"
     deseado: Optional[float] = None
     nivel1: Optional[float] = None
     nivel2: Optional[float] = None
@@ -143,11 +144,15 @@ class SignalEntryCreate(BaseModel):
     posibles_ganancias: Optional[float] = None
     notes: Optional[str] = ""
     active: Optional[bool] = True
+    divisa: Optional[str] = ""
+    bz: Optional[float] = None
+    objetivo_5a: Optional[float] = None
 
 
 class SignalEntryUpdate(BaseModel):
     name: Optional[str] = None
     mercado: Optional[str] = None
+    grupo: Optional[str] = None
     deseado: Optional[float] = None
     nivel1: Optional[float] = None
     nivel2: Optional[float] = None
@@ -165,6 +170,9 @@ class SignalEntryUpdate(BaseModel):
     posibles_ganancias: Optional[float] = None
     notes: Optional[str] = None
     active: Optional[bool] = None
+    divisa: Optional[str] = None
+    bz: Optional[float] = None
+    objetivo_5a: Optional[float] = None
 
 
 class SignalBulkImport(BaseModel):

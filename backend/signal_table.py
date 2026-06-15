@@ -24,17 +24,19 @@ def _now() -> str:
 
 
 ALLOWED_CREATE = (
-    "symbol", "name", "mercado",
+    "symbol", "name", "mercado", "grupo",
     "deseado", "nivel1", "nivel2", "nivel3", "nivel4", "nivel5",
     "alert_deseado", "alert_nivel1", "alert_nivel2", "alert_nivel3", "alert_nivel4", "alert_nivel5",
     "riesgo", "sector", "posibles_ganancias", "notes", "active",
+    "divisa", "bz", "objetivo_5a",
 )
 
 ALLOWED_UPDATE = (
-    "name", "mercado",
+    "name", "mercado", "grupo",
     "deseado", "nivel1", "nivel2", "nivel3", "nivel4", "nivel5",
     "alert_deseado", "alert_nivel1", "alert_nivel2", "alert_nivel3", "alert_nivel4", "alert_nivel5",
     "riesgo", "sector", "posibles_ganancias", "notes", "active",
+    "divisa", "bz", "objetivo_5a",
 )
 
 
@@ -42,6 +44,7 @@ def _make_entry(
     symbol: str,
     name: str = "",
     mercado: str = "",
+    grupo: str = "ideas_javi",
     deseado: Optional[float] = None,
     nivel1: Optional[float] = None,
     nivel2: Optional[float] = None,
@@ -59,12 +62,16 @@ def _make_entry(
     posibles_ganancias: Optional[float] = None,
     notes: str = "",
     active: bool = True,
+    divisa: str = "",
+    bz: Optional[float] = None,
+    objetivo_5a: Optional[float] = None,
 ) -> dict:
     return {
         "id": str(uuid.uuid4()),
         "symbol": symbol.upper().strip(),
         "name": (name or "").strip(),
         "mercado": (mercado or "").strip().upper(),
+        "grupo": (grupo or "ideas_javi").strip(),
         "deseado": deseado,
         "nivel1": nivel1,
         "nivel2": nivel2,
@@ -82,6 +89,9 @@ def _make_entry(
         "posibles_ganancias": posibles_ganancias,
         "notes": (notes or "").strip(),
         "active": active,
+        "divisa": (divisa or "").strip().upper(),
+        "bz": bz,
+        "objetivo_5a": objetivo_5a,
         "created_at": _now(),
         "updated_at": _now(),
         "last_price": None,
