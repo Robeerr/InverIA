@@ -12,6 +12,34 @@ const authHeaders = () => {
 const fmtP = (v) => (v != null && v !== "" ? `$${Number(v).toFixed(2)}` : "—");
 const fmtPct = (v) => (v != null ? `${Number(v).toFixed(2)}%` : "—");
 
+// Pre-market / after-hours info for an entry (from the quote the worker stores)
+function extendedInfo(e) {
+  const s = (e.market_state || "").toUpperCase();
+  if ((s === "PRE" || s === "PREPRE") && e.pre_market_price != null) {
+    return { label: "PRE", price: e.pre_market_price };
+  }
+  if ((s === "POST" || s === "POSTPOST") && e.post_market_price != null) {
+    return { label: "AH", price: e.post_market_price };
+  }
+  return null;
+}
+
+function ExtendedBadge({ entry }) {
+  const ext = extendedInfo(entry);
+  if (!ext) return null;
+  const base = entry.last_price;
+  const pct = base ? ((ext.price - base) / base) * 100 : null;
+  const up = (pct ?? 0) >= 0;
+  return (
+    <div
+      className={`text-[10px] font-mono ${up ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+      title={ext.label === "PRE" ? "Pre-market" : "After-hours"}
+    >
+      {ext.label} ${Number(ext.price).toFixed(2)}{pct != null ? ` (${up ? "+" : ""}${pct.toFixed(2)}%)` : ""}
+    </div>
+  );
+}
+
 const RIESGO_STYLE = {
   BAJO:  { bg: "bg-green-100 dark:bg-green-900/40",  text: "text-green-700 dark:text-green-300" },
   MEDIO: { bg: "bg-yellow-100 dark:bg-yellow-900/40", text: "text-yellow-700 dark:text-yellow-300" },
@@ -364,6 +392,7 @@ export default function SignalsView({ setSymbol }) {
                   <div className="text-right">
                     <p className="text-xs text-neutral-400">Precio actual</p>
                     <p className="font-mono font-bold text-[#0e1f1a] dark:text-neutral-100">{fmtP(e.last_price)}</p>
+                    <ExtendedBadge entry={e} />
                   </div>
                   <button onClick={() => deleteEntry(e.id)} className="text-neutral-300 hover:text-red-500 text-xl p-1"><Trash size={16} /></button>
                 </div>
@@ -481,6 +510,7 @@ export default function SignalsView({ setSymbol }) {
                     <span className="font-mono font-bold text-neutral-900 dark:text-white text-sm">
                       {fmtP(e.last_price)}
                     </span>
+                    <ExtendedBadge entry={e} />
                   </td>
 
                   {/* Deseado */}

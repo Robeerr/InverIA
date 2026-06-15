@@ -161,6 +161,15 @@ def is_market_open() -> bool:
     return time(9, 30) <= now.time() <= time(16, 0)
 
 
+def _extended_session_active() -> bool:
+    """True durante pre-market, regular y after-hours (L-V 4:00-20:00 ET).
+    Usado para refrescar precios (incl. pre/post) sin disparar alertas fuera de hora."""
+    now = datetime.now(EASTERN)
+    if now.weekday() >= 5:
+        return False
+    return time(4, 0) <= now.time() <= time(20, 0)
+
+
 def _market_day() -> str:
     """Fecha de la sesión de hoy en horario del Este (para 'una vez al día')."""
     return datetime.now(EASTERN).date().isoformat()
@@ -191,10 +200,12 @@ async def signal_worker_loop(db, interval: int = 60):
 
     while True:
         try:
-            # Solo evaluar/disparar alertas con el mercado abierto (9:30-16:00 ET, L-V)
-            if not is_market_open():
+            # Refrescar precios durante toda la sesión extendida (pre/regular/post);
+            # las alertas, en cambio, solo se disparan en horario regular.
+            if not _extended_session_active():
                 await asyncio.sleep(interval)
                 continue
+            market_open = is_market_open()
             today = _market_day()
             entries = await db.signal_entries.find(
                 {"active": True}, {"_id": 0}
@@ -214,8 +225,18 @@ async def signal_worker_loop(db, interval: int = 60):
 
                     await db.signal_entries.update_one(
                         {"id": entry["id"]},
-                        {"$set": {"last_price": price, "updated_at": _now()}}
+                        {"$set": {
+                            "last_price": price,
+                            "market_state": quote.get("market_state"),
+                            "pre_market_price": quote.get("pre_market_price"),
+                            "post_market_price": quote.get("post_market_price"),
+                            "updated_at": _now(),
+                        }}
                     )
+
+                    # Las alertas de nivel solo se disparan en horario regular
+                    if not market_open:
+                        continue
 
                     # Niveles de compra
                     buy_levels = {

@@ -824,7 +824,7 @@ async def list_signals():
     if cached is not None:
         return cached
     entries = await signal_table.list_entries(db)
-    _cache.set("signals_list", entries, ttl=300)
+    _cache.set("signals_list", entries, ttl=60)  # fresco para ver pre/post sin retraso
     return entries
 
 

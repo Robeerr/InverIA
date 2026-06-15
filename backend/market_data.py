@@ -362,6 +362,10 @@ def get_quote(ticker: str) -> Optional[dict]:
         "volume": int(volume) if volume else None,
         "change": _r(change),
         "change_percent": _r(change_pct),
+        # Extended hours (pre-market / after-hours) — from the Yahoo info we already fetch
+        "market_state": info.get("marketState"),
+        "pre_market_price": _r(info.get("preMarketPrice")),
+        "post_market_price": _r(info.get("postMarketPrice")),
         "market_cap": int(market_cap) if market_cap else None,
         "currency": _g(fast, "currency") or info.get("currency") or "USD",
         "exchange": info.get("exchange"),
