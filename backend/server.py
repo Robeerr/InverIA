@@ -524,14 +524,27 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y"):
     # Instrumentación: medimos cuánto tarda cada fuente para diagnosticar lentitud en Render.
     _t_total = _time.time()
 
+    # Tope de 8s por fuente: la página carga siempre en <8s aunque alguna fuente externa
+    # esté lenta (Finnhub bloqueado, Yahoo caído). Los datos ausentes aparecen None y
+    # quedan en caché la próxima vez que el usuario cargue el mismo ticker.
+    _SRC_TIMEOUT = 8.0
+
     async def _timed(name, fn, *args):
         t0 = _time.time()
         try:
-            return await loop.run_in_executor(None, fn, *args)
+            return await asyncio.wait_for(
+                loop.run_in_executor(None, fn, *args),
+                timeout=_SRC_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            dt = _time.time() - t0
+            logger.warning("dashboard[%s] %s TIMEOUT %.1fs", sym, name, dt)
+            return None
+        except Exception as exc:
+            return exc
         finally:
             dt = _time.time() - t0
-            # Silencioso en operación normal; solo avisa de fuentes anómalamente lentas.
-            if dt > 6.0:
+            if dt > 5.0:
                 logger.warning("dashboard[%s] %s LENTO: %.1fs", sym, name, dt)
 
     # 6 llamadas bloqueantes en paralelo (thread pool).

@@ -22,6 +22,7 @@ import pandas as pd
 import requests
 import yfinance as yf
 
+_log = logging.getLogger("inveria.market_data")
 # Silence yfinance noisy 401 errors (we fall back to other sources anyway)
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
@@ -70,13 +71,19 @@ class _FinnhubLimiter:
         self.lock = threading.Lock()
 
     def acquire(self):
-        cap = self.bg_cap if _finnhub_bg_ctx.get() else self.max_per_min
+        is_bg = _finnhub_bg_ctx.get()
+        cap = self.bg_cap if is_bg else self.max_per_min
+        t_start = time.time()
         while True:
             with self.lock:
                 now = time.time()
                 self.calls = [t for t in self.calls if now - t < 60]
                 if len(self.calls) < cap:
                     self.calls.append(now)
+                    waited = now - t_start
+                    if waited > 2.0:
+                        _log.warning("Finnhub limiter blocked %.1fs [bg=%s window=%d cap=%d]",
+                                     waited, is_bg, len(self.calls), cap)
                     return
                 sleep_for = 60 - (now - self.calls[0]) + 0.05
             # Dormimos FUERA del lock para no serializar al resto de callers.
