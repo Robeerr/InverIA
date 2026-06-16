@@ -534,14 +534,36 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y"):
             if dt > 6.0:
                 logger.warning("dashboard[%s] %s LENTO: %.1fs", sym, name, dt)
 
-    # 6 llamadas bloqueantes en paralelo (thread pool)
+    # 6 llamadas bloqueantes en paralelo (thread pool).
+    # trends y price_target se cachean 4h — los datos de analistas cambian pocas veces al día
+    # y son los más lentos al tener que pasar por el rate limiter de Finnhub.
+    def _cached_trends(s):
+        ck = f"trends:{s}"
+        v = _cache.get(ck)
+        if v is not None:
+            return v
+        v = external_data.finnhub_recommendation_trends(s)
+        if v is not None:
+            _cache.set(ck, v, ttl=14400)
+        return v
+
+    def _cached_price_target(s):
+        ck = f"price_target:{s}"
+        v = _cache.get(ck)
+        if v is not None:
+            return v
+        v = external_data.finnhub_price_target(s)
+        if v is not None:
+            _cache.set(ck, v, ttl=14400)
+        return v
+
     results = await asyncio.gather(
         _timed("quote", market_data.get_quote, sym),
         _timed("chart", partial(market_data.get_stock_data, sym, timeframe=timeframe)),
         _timed("indicators", market_data.get_full_indicator_history, sym),
         _timed("news", market_data.get_news, sym),
-        _timed("trends", external_data.finnhub_recommendation_trends, sym),
-        _timed("price_target", external_data.finnhub_price_target, sym),
+        _timed("trends", _cached_trends, sym),
+        _timed("price_target", _cached_price_target, sym),
         return_exceptions=True,
     )
     quote, df_chart, df_ind, news_items, trends, price_target = results
