@@ -90,6 +90,14 @@ async def lifespan(app: FastAPI):
     await db.watchlist.create_index("symbol")
     await db.alerts.create_index("symbol")
 
+    # Wire the persistent snapshot cache and hydrate in-memory caches from the last
+    # saved scan so the first request returns data instantly (no "warming" screen).
+    opportunities.set_db(db)
+    try:
+        await opportunities.load_snapshots_into_cache()
+    except Exception as e:
+        logger.warning(f"Snapshot hydrate failed: {e}")
+
     # Single alert system: the portfolio table (signal_table) worker.
     asyncio.create_task(signal_table.signal_worker_loop(db))
 

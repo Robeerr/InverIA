@@ -193,12 +193,20 @@ export default function OpportunitiesView({ setSymbol }) {
   const [movers, setMovers] = React.useState(null);
   const [moversLoading, setMoversLoading] = React.useState(false);
 
+  // True if a scan result is older than ~3 min (likely served from the persisted
+  // snapshot after a restart while a fresh scan finishes in the background).
+  const isStale = (d) => {
+    if (!d?.generated_at) return false;
+    return (Date.now() - new Date(d.generated_at).getTime()) > 3 * 60 * 1000;
+  };
+
   const load = React.useCallback(async (refresh = false) => {
     setLoading(true);
     try {
       const d = await api.opportunities(refresh);
       setData(d);
       if (d?.status === "warming") setTimeout(() => load(false), 8000);
+      else if (isStale(d)) setTimeout(() => load(false), 90000); // pick up the fresh scan
     } catch (e) {
       // noop
     } finally {
@@ -212,6 +220,7 @@ export default function OpportunitiesView({ setSymbol }) {
       const d = await api.opportunitiesScreener(refresh);
       setScreener(d);
       if (d?.status === "warming") setTimeout(() => loadScreener(false), 8000);
+      else if (isStale(d)) setTimeout(() => loadScreener(false), 90000);
     } catch (e) {
       // noop
     } finally {
@@ -304,6 +313,7 @@ export default function OpportunitiesView({ setSymbol }) {
             {data?.generated_at && (
               <p className="text-[10px] text-[#5c6b66] mt-2 font-mono">
                 Último escaneo: {new Date(data.generated_at).toLocaleString("es-ES")} · {data.opportunities_found} oportunidades detectadas
+                {isStale(data) && <span className="text-[#c9a14a]"> · actualizando datos…</span>}
               </p>
             )}
           </section>
@@ -416,6 +426,7 @@ export default function OpportunitiesView({ setSymbol }) {
             {screener?.generated_at && screener.status !== "warming" && (
               <p className="text-[10px] text-[#5c6b66] mt-3 font-mono">
                 Último filtrado: {new Date(screener.generated_at).toLocaleString("es-ES")} · {screener.matches} resultados
+                {isStale(screener) && <span className="text-[#c9a14a]"> · actualizando datos…</span>}
               </p>
             )}
           </section>

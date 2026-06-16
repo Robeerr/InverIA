@@ -1,9 +1,54 @@
 """Daily opportunities scanner — analyzes a universe of stocks and detects buy signals."""
 import asyncio
+import logging
 from datetime import datetime, timezone, timedelta
 import market_data
 import indicators as ind
 import external_data
+
+_log = logging.getLogger("inveria.opportunities")
+
+# ---------- Persistent snapshot cache (MongoDB) ----------
+# Survives server restarts: the last completed scan is stored in Mongo so a fresh
+# boot can show data instantly (instead of a 2-3 min "warming" screen) while a new
+# scan refreshes in the background. Set by server.py at startup via set_db().
+_db = None
+
+
+def set_db(db):
+    global _db
+    _db = db
+
+
+async def _save_snapshot(kind: str, data: dict):
+    """Persist the latest scan to Mongo (best-effort; never blocks the scan)."""
+    if _db is None:
+        return
+    try:
+        await _db.scan_snapshots.replace_one(
+            {"_id": kind},
+            {"_id": kind, "data": data, "saved_at": datetime.now(timezone.utc)},
+            upsert=True,
+        )
+    except Exception as e:
+        _log.warning("snapshot save failed (%s): %s", kind, e)
+
+
+async def load_snapshots_into_cache():
+    """At startup, hydrate the in-memory caches from the last persisted scan so the
+    first user request returns data immediately. A background pre-warm then refreshes."""
+    if _db is None:
+        return
+    mapping = {"daily": _cache, "screener": _screener_cache}
+    for kind, cache in mapping.items():
+        try:
+            doc = await _db.scan_snapshots.find_one({"_id": kind})
+            if doc and doc.get("data"):
+                cache["data"] = doc["data"]
+                cache["ts"] = doc.get("saved_at")
+                _log.info("Loaded %s snapshot from Mongo (saved %s)", kind, doc.get("saved_at"))
+        except Exception as e:
+            _log.warning("snapshot load failed (%s): %s", kind, e)
 
 
 UNIVERSE = [
@@ -211,6 +256,7 @@ async def _run_screener_scan():
                 "filters": SCREENER_FILTERS,
             }
             _screener_cache["ts"] = datetime.now(timezone.utc)
+            await _save_snapshot("screener", _screener_cache["data"])
         except Exception:
             pass
 
@@ -411,4 +457,5 @@ async def scan_daily_opportunities(force_refresh: bool = False):
         }
         _cache["data"] = data
         _cache["ts"] = now
+        await _save_snapshot("daily", data)
         return data
