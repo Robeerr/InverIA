@@ -48,6 +48,9 @@ function OpportunityCard({ op, onPick }) {
         </p>
       </div>
 
+      {op.reason && (
+        <p className="text-[11px] text-[#5c6b66] italic mb-2 leading-snug">{op.reason}</p>
+      )}
       <div className="space-y-1 mb-3">
         {op.signals.slice(0, 3).map((s, i) => (
           <p key={i} className="text-[11px] text-[#0e1f1a] flex items-start gap-1">
@@ -109,10 +112,13 @@ function ScreenerCard({ row, onPick }) {
         </span>
       </div>
 
-      <div className="flex items-baseline justify-between mb-3">
+      <div className="flex items-baseline justify-between mb-2">
         <p className="font-mono font-bold text-lg text-[#0e1f1a]">${fmtPrice(row.price)}</p>
         <p className="text-[10px] text-[#5c6b66] font-mono">${fmtNum(row.market_cap)} cap</p>
       </div>
+      {row.reason && (
+        <p className="text-[11px] text-[#5c6b66] italic mb-2 leading-snug">{row.reason}</p>
+      )}
 
       <div className="grid grid-cols-2 gap-1 text-center mb-3 text-[10px] font-mono">
         <div className="bg-[#4a7c59]/10 border border-[#4a7c59]/30 rounded px-1 py-1.5">

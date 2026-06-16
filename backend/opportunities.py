@@ -22,6 +22,51 @@ UNIVERSE = [
 ]
 
 
+def _build_screener_reason(rev_g, dist_52w, change_pct, market_cap):
+    """Generate a short human-readable explanation for a screener result."""
+    parts = []
+    if rev_g is not None:
+        parts.append(f"ingresos +{rev_g}% anual")
+    if dist_52w is not None:
+        if dist_52w >= -5:
+            parts.append("cerca de máximos históricos")
+        elif dist_52w >= -15:
+            parts.append(f"a {abs(dist_52w):.0f}% de sus máximos")
+    if change_pct is not None and abs(change_pct) >= 1.5:
+        word = "sube" if change_pct > 0 else "baja"
+        parts.append(f"{word} {abs(change_pct):.1f}% hoy")
+    if not parts:
+        return "Supera los 7 filtros de calidad, momentum y crecimiento."
+    return "Destaca por: " + ", ".join(parts) + "."
+
+
+def _build_opportunity_reason(category, signals, rsi, change_pct, analyst_consensus):
+    """Generate a short human-readable explanation for a daily opportunity."""
+    cat_intro = {
+        "OVERSOLD": "RSI en zona de sobreventa",
+        "DIP": "Caída fuerte hoy",
+        "VALUE": "Cerca de mínimos anuales",
+        "MOMENTUM": "Momentum alcista",
+        "BREAKOUT": "Rompiendo máximos anuales",
+        "GENERAL": "Señales técnicas positivas",
+    }.get(category, "Señal detectada")
+    extras = []
+    if rsi is not None:
+        if rsi < 32:
+            extras.append(f"RSI {rsi:.0f}")
+        elif rsi > 60:
+            extras.append(f"RSI {rsi:.0f} (fuerte)")
+    if change_pct is not None and abs(change_pct) >= 2:
+        extras.append(f"{'+' if change_pct > 0 else ''}{change_pct:.1f}% hoy")
+    if analyst_consensus and analyst_consensus.lower() in ("strong buy", "buy"):
+        extras.append("analistas recomiendan compra")
+    if extras:
+        return f"{cat_intro} · {', '.join(extras)}."
+    if signals:
+        return f"{cat_intro}. {signals[0]}."
+    return cat_intro + "."
+
+
 _cache = {"data": None, "ts": None}
 _CACHE_TTL = timedelta(minutes=60)
 _scan_lock = asyncio.Lock()
@@ -134,16 +179,22 @@ async def _run_screener_scan():
                 price = q.get("price")
                 high52 = q.get("high_52w")
                 dist = ((price - high52) / high52 * 100) if (high52 and price) else None
+                dist_r = round(dist, 1) if dist is not None else None
+                rev_r = round(rev_g, 1) if rev_g is not None else None
+                cp = q.get("change_percent")
+                mc = q.get("market_cap")
+                reason = _build_screener_reason(rev_r, dist_r, cp, mc)
                 results.append({
                     "symbol": s,
                     "name": q.get("name"),
                     "price": price,
-                    "market_cap": q.get("market_cap"),
+                    "market_cap": mc,
                     "avg_volume": q.get("avg_volume"),
-                    "revenue_growth": round(rev_g, 1) if rev_g is not None else None,
-                    "dist_52w_high": round(dist, 1) if dist is not None else None,
+                    "revenue_growth": rev_r,
+                    "dist_52w_high": dist_r,
                     "sector": q.get("sector"),
-                    "change_percent": q.get("change_percent"),
+                    "change_percent": cp,
+                    "reason": reason,
                 })
 
             # Known-growth names first (highest revenue growth), then the rest
@@ -279,19 +330,22 @@ async def _analyze_one(symbol: str):
         supports = sr.get("supports") or []
         resistances = sr.get("resistances") or []
 
+        cat = category or "GENERAL"
+        cons_label = consensus["consensus"] if consensus else None
         return {
             "symbol": symbol,
             "name": quote.get("name"),
             "price": quote.get("price"),
             "change_percent": quote.get("change_percent"),
             "rsi": rsi_val,
-            "category": category or "GENERAL",
+            "category": cat,
             "score": score,
             "signals": signals,
+            "reason": _build_opportunity_reason(cat, signals, rsi_val, quote.get("change_percent"), cons_label),
             "suggested_entry": price,
             "nearest_support": supports[0] if supports else None,
             "nearest_resistance": resistances[0] if resistances else None,
-            "analyst_consensus": consensus["consensus"] if consensus else None,
+            "analyst_consensus": cons_label,
             "analysts_count": consensus["total_analysts"] if consensus else None,
             "market_cap": quote.get("market_cap"),
             "sector": quote.get("sector"),
