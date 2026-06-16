@@ -225,10 +225,11 @@ async def signal_worker_loop(db, interval: int = 30):
                 continue
 
             # Fase 1: traer precios en PARALELO (Finnhub-only, sin el .info lento), un
-            # fetch por símbolo único. Antes era un loop secuencial que con muchos
-            # símbolos no terminaba dentro del intervalo y saturaba la única CPU.
+            # fetch por símbolo único. Marcamos como background para no competir con
+            # las solicitudes del usuario (dashboard) en el rate limiter de Finnhub.
+            token = market_data.enter_finnhub_background()
             symbols = list({e["symbol"] for e in entries})
-            sem = asyncio.Semaphore(6)
+            sem = asyncio.Semaphore(4)
 
             async def _fetch_price(sym):
                 async with sem:
@@ -244,6 +245,7 @@ async def signal_worker_loop(db, interval: int = 30):
             fetched = await asyncio.gather(
                 *[_fetch_price(s) for s in symbols], return_exceptions=True
             )
+            market_data.reset_finnhub_background(token)
             price_map: dict = {}
             for res in fetched:
                 if isinstance(res, Exception) or not res:

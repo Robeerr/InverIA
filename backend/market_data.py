@@ -83,7 +83,7 @@ class _FinnhubLimiter:
             time.sleep(min(max(sleep_for, 0.05), 1.0))
 
 
-_finnhub_limiter = _FinnhubLimiter(max_per_min=50)
+_finnhub_limiter = _FinnhubLimiter(max_per_min=50, bg_reserve=20)
 
 
 def _ticker(symbol: str):
@@ -151,10 +151,10 @@ _INFO_TTL_SECONDS = 3600
 # yfinance `.info`/`.news` no aceptan timeout y en Render (Yahoo bloquea cloud) pueden
 # COLGARSE muchos segundos, bloqueando el dashboard. Los ejecutamos en un pool con un
 # tope duro: si Yahoo no responde a tiempo, seguimos con lo que tengamos (precio Finnhub).
-_yf_pool = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="yf")
-_INFO_FETCH_TIMEOUT = 4.0      # seg máx esperando a .info
-_NEWS_FETCH_TIMEOUT = 5.0      # seg máx esperando a .news
-_HISTORY_FETCH_TIMEOUT = 5.0   # seg máx esperando a .history antes de caer al fallback
+_yf_pool = concurrent.futures.ThreadPoolExecutor(max_workers=8, thread_name_prefix="yf")
+_INFO_FETCH_TIMEOUT = 3.0      # seg máx esperando a .info
+_NEWS_FETCH_TIMEOUT = 3.0      # seg máx esperando a .news
+_HISTORY_FETCH_TIMEOUT = 2.0   # seg máx esperando a .history antes de caer al fallback
 
 
 def _call_with_timeout(fn, timeout, default):
@@ -194,7 +194,7 @@ def _fetch_stooq_history(ticker: str, interval: str = "d") -> Optional[pd.DataFr
     try:
         sym = _stooq_symbol(ticker)
         url = f"https://stooq.com/q/d/l/?s={sym}&i={interval}"
-        r = _http.get(url, timeout=10)
+        r = _http.get(url, timeout=5)
         if r.status_code != 200 or not r.text or "apikey" in r.text.lower() or "No data" in r.text:
             return None
         df = pd.read_csv(io.StringIO(r.text))
@@ -223,7 +223,7 @@ def _fetch_yahoo_chart(ticker: str, interval: str, period: str) -> Optional[pd.D
             "includePrePost": "false",
             "events": "div,splits",
         }
-        r = _yf_session.get(url, params=params, timeout=6)
+        r = _yf_session.get(url, params=params, timeout=3)
         if r.status_code != 200:
             return None
         data = r.json() or {}
