@@ -52,24 +52,24 @@ def fibonacci_levels(high: float, low: float):
 
 
 def support_resistance(df: pd.DataFrame, window: int = 5, n_levels: int = 3):
-    """Find local minima (support) and maxima (resistance) pivots."""
+    """Find local minima (support) and maxima (resistance) pivots.
+
+    Vectorizado con rolling centrado: un pivote es el valor que coincide con el
+    mín (soporte) / máx (resistencia) de su ventana de tamaño 2*window+1.
+    rolling con min_periods completo deja NaN en los extremos, que quedan excluidos
+    igual que en la versión por loop original."""
     highs = df["High"]
     lows = df["Low"]
-    supports = []
-    resistances = []
-
-    for i in range(window, len(df) - window):
-        local_lows = lows.iloc[i - window : i + window + 1]
-        local_highs = highs.iloc[i - window : i + window + 1]
-        if lows.iloc[i] == local_lows.min():
-            supports.append(float(lows.iloc[i]))
-        if highs.iloc[i] == local_highs.max():
-            resistances.append(float(highs.iloc[i]))
+    w = 2 * window + 1
+    local_min = lows.rolling(w, center=True).min()
+    local_max = highs.rolling(w, center=True).max()
+    supports = lows[lows == local_min]
+    resistances = highs[highs == local_max]
 
     current = float(df["Close"].iloc[-1])
     # Closest supports below current, resistances above current
-    supports_below = sorted({round(s, 2) for s in supports if s < current}, reverse=True)[:n_levels]
-    resistances_above = sorted({round(r, 2) for r in resistances if r > current})[:n_levels]
+    supports_below = sorted({round(float(s), 2) for s in supports if s < current}, reverse=True)[:n_levels]
+    resistances_above = sorted({round(float(r), 2) for r in resistances if r > current})[:n_levels]
 
     return {
         "supports": supports_below,

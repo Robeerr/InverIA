@@ -53,6 +53,23 @@
     - Account.pdf (93 pág) → **482 cash events** en 13-30s (FEE, DIVIDEND, INTEREST, CONNECTIVITY, WITHDRAWAL, DEPOSIT clasificados)
   - **No consume cuota Groq**, soluciona el bloqueo crítico de hoy
 
+- ✅ **Iteración 6 (2026-06-16) — Optimización de velocidad (backend + frontend)**:
+  - **Raíz del problema**: `get_quote()` arrastraba `yfinance.info` (1-3s) en CADA llamada aunque casi siempre solo se necesita el precio; y el worker de señales recorría ~500 símbolos en serie cada 30s, saturando la única CPU del free tier de Render.
+  - **Backend**:
+    - Nuevo `market_data.get_quote_fast()`: precio SOLO de Finnhub, sin `.info`. Usado en worker, websocket y validación de símbolos (watchlist/alerts).
+    - Caché de `.info` (fundamentales) 1h en `market_data` — `.info` ya no se re-descarga intradía.
+    - Sesión HTTP global con keep-alive (`requests.Session` + pooling) compartida por `market_data`/`external_data`/`polygon_data`/`fmp_data` — elimina el handshake TLS por llamada.
+    - Worker de señales reescrito en 2 fases: Fase 1 trae precios en PARALELO (semáforo 6, Finnhub-only); Fase 2 mantiene la misma lógica de cruce/alertas pero sin red.
+    - `/analyze`: `get_quote` + `get_full_indicator_history` movidos al `gather` (antes bloqueaban el event loop ~3-5s); `get_news` también paralelizado.
+    - Vectorizados `indicators.support_resistance` (rolling centrado, sin loop) y `market_data.df_to_candles` (sin `iterrows`).
+    - **Fix de paso**: el websocket enviaba claves (`current`/`high`/`low`) que no coincidían con las del frontend (`price`/`day_high`/`day_low`) → el precio en vivo no se actualizaba. Corregido.
+  - **Frontend**:
+    - `React.memo(PriceChart)` + `useMemo` del dominio Y → el gráfico Recharts deja de redibujarse en cada tick del WebSocket.
+    - Hook compartido `useSignals()` (react-query) → Dashboard y Calendario comparten caché de `/signals` (antes 3 fetches duplicados). Futuros también vía react-query.
+    - Desinstaladas 5 deps sin uso (swr, framer-motion, dayjs, lodash, date-fns) + react-day-picker + `ui/calendar.jsx` muerto.
+    - Fuentes: quitada la precarga de Inter (no se usaba) y el `@import` bloqueante; Manrope/IBM Plex ahora vía `<link>` en `index.html`.
+    - `useMemo` en `visible`/counts de SignalsView; health-check de Header 60s→120s.
+
 ## Backlog (P0/P1/P2)
 - **P1**: Cache de sentiment de Alpha Vantage (25/día limit) por ~6h
 - **P1**: Validación de niveles en backtest (entry_min < entry_max, etc.)

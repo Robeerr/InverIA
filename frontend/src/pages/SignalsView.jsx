@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Bell, BellSlash, Trash, Plus, X, UploadSimple, ArrowClockwise, Lightning, Bank } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
@@ -255,8 +255,15 @@ export default function SignalsView({ setSymbol }) {
   const [newEntry, setNewEntry] = useState(EMPTY);
 
   const isCim = grupo === "cimientos";
-  const visible = entries.filter((e) => grupoOf(e) === grupo);
-  const countOf = (g) => entries.filter((e) => grupoOf(e) === g).length;
+  // Memoizado: el polling de 30s reescribe `entries`; sin esto, filtrar y contar se
+  // recalculaba en cada render (y countOf se llamaba 2× por render, re-filtrando todo).
+  const visible = useMemo(() => entries.filter((e) => grupoOf(e) === grupo), [entries, grupo]);
+  const counts = useMemo(() => {
+    const c = {};
+    for (const e of entries) { const g = grupoOf(e); c[g] = (c[g] || 0) + 1; }
+    return c;
+  }, [entries]);
+  const countOf = (g) => counts[g] || 0;
 
   const fetchEntries = async () => {
     setLoading(true);

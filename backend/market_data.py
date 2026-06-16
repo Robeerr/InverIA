@@ -30,6 +30,14 @@ try:
 except Exception:
     _yf_session = None
 
+# Sesión HTTP global con connection pooling + keep-alive. Evita el handshake TLS
+# en cada llamada a Finnhub/Stooq (cientos por ciclo del worker / screener).
+_http = requests.Session()
+_http.headers.update({"User-Agent": "Mozilla/5.0"})
+_http_adapter = requests.adapters.HTTPAdapter(pool_connections=10, pool_maxsize=20)
+_http.mount("https://", _http_adapter)
+_http.mount("http://", _http_adapter)
+
 
 # ---------- Finnhub rate limiter ----------
 # Free tier = 60 calls/minute. We stay safely below that.
@@ -110,6 +118,30 @@ def _cache_set(key: str, df):
         _history_cache[key] = {"df": df, "ts": time.time()}
 
 
+# ---------- Fundamentals (.info) cache ----------
+# yfinance `.info` es la operación más cara (descarga/parsea el blob completo de
+# fundamentales, ~1-3s). Los fundamentales no cambian intradía, así que cacheamos 1h.
+_info_cache: dict = {}
+_info_lock = threading.Lock()
+_INFO_TTL_SECONDS = 3600
+
+
+def _get_info_cached(ticker: str, t) -> dict:
+    key = ticker.upper()
+    with _info_lock:
+        entry = _info_cache.get(key)
+        if entry and (time.time() - entry["ts"]) < _INFO_TTL_SECONDS:
+            return entry["info"]
+    try:
+        info = t.info or {}
+    except Exception:
+        info = {}
+    if info:
+        with _info_lock:
+            _info_cache[key] = {"info": info, "ts": time.time()}
+    return info
+
+
 # ---------- Stooq fallback (free, no API key, no rate limit) ----------
 def _stooq_symbol(ticker: str) -> str:
     """Stooq uses lowercase + .us suffix for US stocks. ETFs same. Crypto/FX different."""
@@ -125,7 +157,7 @@ def _fetch_stooq_history(ticker: str, interval: str = "d") -> Optional[pd.DataFr
     try:
         sym = _stooq_symbol(ticker)
         url = f"https://stooq.com/q/d/l/?s={sym}&i={interval}"
-        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        r = _http.get(url, timeout=10)
         if r.status_code != 200 or not r.text or "apikey" in r.text.lower() or "No data" in r.text:
             return None
         df = pd.read_csv(io.StringIO(r.text))
@@ -277,6 +309,34 @@ def get_full_indicator_history(ticker: str):
     return df
 
 
+def get_quote_fast(ticker: str) -> Optional[dict]:
+    """Precio SOLO de Finnhub, sin tocar yfinance `.info` (lo más lento).
+
+    Para listados (watchlist, populares, screener), el worker de señales y el
+    websocket — todos solo necesitan el precio en vivo, no los fundamentales.
+    Devuelve None si Finnhub no responde (el caller puede caer a get_quote)."""
+    d = _try_finnhub_quote(ticker)
+    if not d or d.get("current") is None:
+        return None
+    last_price = d.get("current")
+    prev_close = d.get("previous_close")
+    change = change_pct = None
+    if prev_close:
+        change = float(last_price) - float(prev_close)
+        change_pct = (change / float(prev_close)) * 100
+    return {
+        "symbol": ticker.upper(),
+        "name": ticker.upper(),
+        "price": round(float(last_price), 2),
+        "previous_close": _r(prev_close),
+        "open": _r(d.get("open")),
+        "day_high": _r(d.get("high")),
+        "day_low": _r(d.get("low")),
+        "change": _r(change),
+        "change_percent": _r(change_pct),
+    }
+
+
 def get_quote(ticker: str) -> Optional[dict]:
     """Fast quote. Finnhub PRIMARIO (reliable, no IP-block, has API key), yfinance fallback."""
     finnhub_data = _try_finnhub_quote(ticker)
@@ -286,17 +346,15 @@ def get_quote(ticker: str) -> Optional[dict]:
     info: dict = {}
     fast: dict = {}
     if finnhub_data:
-        # Best-effort fundamentals from yfinance (puede fallar en cloud, no es bloqueante)
+        # Best-effort fundamentals from yfinance (puede fallar en cloud, no es bloqueante).
+        # .info va cacheado 1h (es lo más caro de yfinance).
         try:
             t = _ticker(ticker)
             try:
                 fast = t.fast_info  # type: ignore[assignment]
             except Exception:
                 fast = {}
-            try:
-                info = t.info or {}
-            except Exception:
-                info = {}
+            info = _get_info_cached(ticker, t)
         except Exception:
             info = {}
             fast = {}
@@ -316,10 +374,7 @@ def get_quote(ticker: str) -> Optional[dict]:
                 fast = t.fast_info  # type: ignore[assignment]
             except Exception:
                 fast = {}
-            try:
-                info = t.info or {}
-            except Exception:
-                info = {}
+            info = _get_info_cached(ticker, t)
         except Exception:
             return None
 
@@ -461,7 +516,7 @@ def _try_finnhub_quote(ticker: str):
         return None
     _finnhub_limiter.acquire()
     try:
-        r = requests.get(
+        r = _http.get(
             "https://finnhub.io/api/v1/quote",
             params={"symbol": ticker.upper(), "token": key},
             timeout=8,
@@ -469,7 +524,7 @@ def _try_finnhub_quote(ticker: str):
         if r.status_code == 429:
             # Esperamos 5 segundos y reintentamos una vez
             time.sleep(5)
-            r = requests.get(
+            r = _http.get(
                 "https://finnhub.io/api/v1/quote",
                 params={"symbol": ticker.upper(), "token": key},
                 timeout=8,
@@ -515,20 +570,29 @@ def get_news(ticker: str, limit: int = 8):
 
 
 def df_to_candles(df: pd.DataFrame):
-    """Convert OHLC dataframe to list of dicts for the frontend chart."""
+    """Convert OHLC dataframe to list of dicts for the frontend chart.
+
+    Vectorizado con zip sobre arrays de columna (mucho más rápido que iterrows,
+    que crea una Series por fila)."""
     if df is None or df.empty:
         return []
-    rows = []
-    for _, r in df.iterrows():
-        rows.append({
-            "date": r["Date"].isoformat(),
-            "open": round(float(r["Open"]), 2),
-            "high": round(float(r["High"]), 2),
-            "low": round(float(r["Low"]), 2),
-            "close": round(float(r["Close"]), 2),
-            "volume": int(r["Volume"]) if not pd.isna(r["Volume"]) else 0,
-        })
-    return rows
+    dates = df["Date"]
+    o = df["Open"].astype(float).round(2)
+    h = df["High"].astype(float).round(2)
+    low = df["Low"].astype(float).round(2)
+    c = df["Close"].astype(float).round(2)
+    v = df["Volume"].fillna(0).astype("int64")
+    return [
+        {
+            "date": dt.isoformat(),
+            "open": oo,
+            "high": hh,
+            "low": ll,
+            "close": cc,
+            "volume": int(vv),
+        }
+        for dt, oo, hh, ll, cc, vv in zip(dates, o, h, low, c, v)
+    ]
 
 
 def _g(obj, key):
@@ -553,3 +617,8 @@ def _r(v):
 # Expose limiter to other modules (external_data.py) so they share quota
 def get_finnhub_limiter():
     return _finnhub_limiter
+
+
+# Expose the pooled HTTP session so other modules reuse connections (keep-alive)
+def get_http_session():
+    return _http

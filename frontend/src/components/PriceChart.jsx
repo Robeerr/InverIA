@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import {
   AreaChart,
   Area,
@@ -31,7 +31,7 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
-export default function PriceChart({
+function PriceChart({
   candles,
   timeframe,
   setTimeframe,
@@ -40,6 +40,20 @@ export default function PriceChart({
   signalEntry,
 }) {
   const data = candles || [];
+
+  // Dominio del eje Y recalculado solo cuando cambian las velas (no en cada tick WS).
+  const yDomain = useMemo(() => {
+    if (data.length === 0) return [0, 0];
+    let min = Infinity;
+    let max = -Infinity;
+    for (const d of data) {
+      if (d.close < min) min = d.close;
+      if (d.close > max) max = d.close;
+    }
+    const padding = (max - min) * 0.05;
+    return [min - padding, max + padding];
+  }, [data]);
+
   if (data.length === 0) {
     return (
       <div className="card-flat p-8 text-center text-[#5c6b66]">
@@ -47,12 +61,6 @@ export default function PriceChart({
       </div>
     );
   }
-
-  const closes = data.map((d) => d.close);
-  const min = Math.min(...closes);
-  const max = Math.max(...closes);
-  const padding = (max - min) * 0.05;
-  const yDomain = [min - padding, max + padding];
 
   const supports = (analysis?.key_levels?.support) || (indicators?.support_resistance?.supports) || [];
   const resistances = (analysis?.key_levels?.resistance) || (indicators?.support_resistance?.resistances) || [];
@@ -205,3 +213,7 @@ export default function PriceChart({
     </section>
   );
 }
+
+// Memoizado: el precio en vivo (quote) no se pasa como prop, así que el gráfico
+// solo se redibuja cuando cambian velas/timeframe/análisis, no en cada tick del WebSocket.
+export default React.memo(PriceChart);

@@ -220,14 +220,45 @@ async def signal_worker_loop(db, interval: int = 30):
             entries = await db.signal_entries.find(
                 {"active": True}, {"_id": 0}
             ).to_list(500)
+            if not entries:
+                await asyncio.sleep(interval)
+                continue
 
+            # Fase 1: traer precios en PARALELO (Finnhub-only, sin el .info lento), un
+            # fetch por símbolo único. Antes era un loop secuencial que con muchos
+            # símbolos no terminaba dentro del intervalo y saturaba la única CPU.
+            symbols = list({e["symbol"] for e in entries})
+            sem = asyncio.Semaphore(6)
+
+            async def _fetch_price(sym):
+                async with sem:
+                    quote = await asyncio.to_thread(market_data.get_quote_fast, sym)
+                    if not quote:
+                        quote = await asyncio.to_thread(market_data.get_quote, sym)
+                    ext = None
+                    # Pre/post solo fuera del horario regular (velas 1m, caro)
+                    if quote and not market_open:
+                        ext = await asyncio.to_thread(market_data.get_extended_quote, sym)
+                    return sym, quote, ext
+
+            fetched = await asyncio.gather(
+                *[_fetch_price(s) for s in symbols], return_exceptions=True
+            )
+            price_map: dict = {}
+            for res in fetched:
+                if isinstance(res, Exception) or not res:
+                    continue
+                sym, quote, ext = res
+                price_map[sym] = (quote, ext)
+
+            # Fase 2: detección de cruce + alertas. Secuencial pero sin red (solo DB).
             for entry in entries:
                 symbol = entry["symbol"]
                 # Precio de la comprobación anterior: solo alertamos en el CRUCE de nivel
                 # (antes fuera del nivel, ahora dentro), no por estar ya dentro de la zona.
                 prev_price = entry.get("last_price")
                 try:
-                    quote = market_data.get_quote(symbol)
+                    quote, ext = price_map.get(symbol, (None, None))
                     if not quote:
                         continue
                     price = float(
@@ -243,9 +274,8 @@ async def signal_worker_loop(db, interval: int = 30):
                         "post_market_price": None,
                         "updated_at": _now(),
                     }
-                    # Fuera del horario regular, obtener pre/post de las velas prepost
+                    # Fuera del horario regular, usar el pre/post ya obtenido en Fase 1
                     if not market_open:
-                        ext = market_data.get_extended_quote(symbol)
                         if ext:
                             upd["market_state"] = ext.get("market_state")
                             if ext.get("market_state") == "PRE":

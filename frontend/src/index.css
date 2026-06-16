@@ -1,5 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
-
+/* Las fuentes se cargan vía <link> en public/index.html para descubrirlas antes
+   y no bloquear el render con un @import dentro del CSS. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

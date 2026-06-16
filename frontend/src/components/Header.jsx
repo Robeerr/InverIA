@@ -22,7 +22,7 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
   const [backendOk, setBackendOk] = React.useState(null); // null=checking, true=ok, false=down
   const location = useLocation();
 
-  // Status check every 60 seconds
+  // Status check cada 2 min (el indicador Online/Offline no necesita más frecuencia)
   React.useEffect(() => {
     const check = async () => {
       try {
@@ -33,7 +33,7 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
       }
     };
     check();
-    const id = setInterval(check, 60000);
+    const id = setInterval(check, 120000);
     return () => clearInterval(id);
   }, []);
 

@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import QuoteHeader from "../components/QuoteHeader";
 import PriceChart from "../components/PriceChart";
@@ -8,8 +9,7 @@ import TradingLevels from "../components/TradingLevels";
 import AnalystConsensusCard from "../components/AnalystConsensus";
 import { NewsFeed, FundamentalsCard, RisksCatalystsCard, MarketSignalsCard, InvestmentThesisCard, PricePredictionCard } from "../components/InfoCards";
 import { api } from "../lib/api";
-
-const API = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
+import { useSignals } from "../hooks/useSignals";
 
 function MarketFuturesBar({ futures }) {
   if (!futures?.items?.length) return null;
@@ -40,12 +40,19 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const [analystData, setAnalystData] = useState(null);
   const [marketSignals, setMarketSignals] = useState(null);
   const [volumeProfile, setVolumeProfile] = useState(null);
-  const [futures, setFutures] = useState(null);
   const [news, setNews] = useState([]);
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [signalEntry, setSignalEntry] = useState(null);
-  const signalsCache = useRef(null); // session-level cache to avoid re-fetching all signals on every symbol change
+
+  // Señales (caché compartido entre páginas) y futuros (refresco 60s) vía react-query.
+  const { data: signals } = useSignals();
+  const { data: futures } = useQuery({
+    queryKey: ["market-futures"],
+    queryFn: api.marketFutures,
+    refetchInterval: 60_000,
+    staleTime: 60_000,
+  });
 
   const loadSymbolData = useCallback(async (sym, tf) => {
     setLoadingQuote(true);
@@ -129,30 +136,14 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
 
   useEffect(() => {
     loadSymbolData(symbol, timeframe);
-    const token = localStorage.getItem("inveria_token");
-    const findEntry = (entries) => {
-      const match = entries.find((e) => e.symbol === symbol.toUpperCase());
-      setSignalEntry(match || null);
-    };
-    if (signalsCache.current) {
-      findEntry(signalsCache.current);
-    } else {
-      fetch(`${API}/api/signals`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-        .then((r) => r.json())
-        .then((entries) => { signalsCache.current = entries; findEntry(entries); })
-        .catch(() => setSignalEntry(null));
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
 
-  // Index futures bar — refresh every 60s, independent of the selected symbol
+  // Marca la entrada de señal del símbolo actual a partir del caché compartido.
   useEffect(() => {
-    let id;
-    const load = () => api.marketFutures().then(setFutures).catch(() => {});
-    load();
-    id = setInterval(load, 60000);
-    return () => clearInterval(id);
-  }, []);
+    if (!symbol || !signals) { setSignalEntry(null); return; }
+    setSignalEntry(signals.find((e) => e.symbol === symbol.toUpperCase()) || null);
+  }, [symbol, signals]);
 
   // WebSocket for live price updates (~8s refresh). Falls back to 30s polling if WS fails.
   useEffect(() => {

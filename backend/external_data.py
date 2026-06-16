@@ -1,7 +1,6 @@
 """Finnhub & Alpha Vantage helpers — analyst recommendations, price targets, sentiment news."""
 import os
 import time
-import requests
 from typing import Optional
 
 import market_data as _md
@@ -16,12 +15,13 @@ def _finnhub_key():
 
 def _finnhub_get(path: str, params: dict, timeout: int = 10):
     """Wrapper that respects the shared Finnhub rate limiter (60/min free tier)."""
+    http = _md.get_http_session()
     _md.get_finnhub_limiter().acquire()
-    r = requests.get(f"{FINNHUB_BASE}{path}", params=params, timeout=timeout)
+    r = http.get(f"{FINNHUB_BASE}{path}", params=params, timeout=timeout)
     if r.status_code == 429:
         time.sleep(5)
         _md.get_finnhub_limiter().acquire()
-        r = requests.get(f"{FINNHUB_BASE}{path}", params=params, timeout=timeout)
+        r = http.get(f"{FINNHUB_BASE}{path}", params=params, timeout=timeout)
     return r
 
 
@@ -360,7 +360,7 @@ def alpha_sentiment_news(symbol: str, limit: int = 6):
     if not key:
         return None
     try:
-        r = requests.get(
+        r = _md.get_http_session().get(
             ALPHA_BASE,
             params={
                 "function": "NEWS_SENTIMENT",

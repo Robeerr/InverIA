@@ -367,28 +367,33 @@ def _cap_take_profits(result: dict, high_52w) -> dict:
 @api_router.post("/analyze")
 async def analyze(req: AnalyzeRequest):
     symbol = req.symbol.upper()
-    quote = market_data.get_quote(symbol)
+    loop = asyncio.get_running_loop()
+
+    # quote y df son operaciones bloqueantes e independientes: las sacamos del event
+    # loop y las corremos en paralelo (antes bloqueaban ~3-5s con 1 solo worker).
+    quote, df = await asyncio.gather(
+        loop.run_in_executor(None, market_data.get_quote, symbol),
+        loop.run_in_executor(None, market_data.get_full_indicator_history, symbol),
+    )
     if not quote:
         raise HTTPException(404, f"Símbolo no encontrado: {symbol}")
-
-    df = market_data.get_full_indicator_history(symbol)
     if df is None or df.empty:
         raise HTTPException(404, f"Sin datos suficientes para analizar {symbol}")
 
     indicators_data = ind.compute_all(df)
-    news = market_data.get_news(symbol, limit=5)
 
-    # Enrich with analyst consensus + Volume Profile + insider/earnings/financials (all in parallel)
-    loop = asyncio.get_running_loop()
-    trends, price_target, vp, insider, earnings_hist, basic_fin = await asyncio.gather(
+    # Enrich with analyst consensus + Volume Profile + insider/earnings/financials + news (all in parallel)
+    trends, price_target, vp, insider, earnings_hist, basic_fin, news = await asyncio.gather(
         loop.run_in_executor(None, external_data.finnhub_recommendation_trends, symbol),
         loop.run_in_executor(None, external_data.finnhub_price_target, symbol),
         loop.run_in_executor(None, polygon_data.get_volume_profile, symbol, 365),
         loop.run_in_executor(None, external_data.finnhub_insider_transactions, symbol),
         loop.run_in_executor(None, external_data.finnhub_earnings_surprises, symbol),
         loop.run_in_executor(None, external_data.finnhub_basic_financials, symbol),
+        loop.run_in_executor(None, market_data.get_news, symbol, 5),
         return_exceptions=True,
     )
+    news = news if isinstance(news, list) else []
     trends = trends if isinstance(trends, list) else []
     price_target = price_target if isinstance(price_target, dict) else {}
     vp = vp if isinstance(vp, dict) else {}
@@ -615,8 +620,11 @@ async def add_watchlist(item: WatchlistCreate):
     existing = await db.watchlist.find_one({"symbol": symbol})
     if existing:
         raise HTTPException(409, f"{symbol} ya está en la watchlist")
-    # validate symbol exists
-    q = market_data.get_quote(symbol)
+    # validate symbol exists (solo existencia → quote rápido sin fundamentales)
+    loop = asyncio.get_running_loop()
+    q = await loop.run_in_executor(None, market_data.get_quote_fast, symbol)
+    if not q:
+        q = await loop.run_in_executor(None, market_data.get_quote, symbol)
     if not q:
         raise HTTPException(404, f"Símbolo no válido: {symbol}")
     obj = WatchlistItem(symbol=symbol)
@@ -646,7 +654,10 @@ async def add_alert(item: PriceAlertCreate):
     if item.direction not in ("above", "below"):
         raise HTTPException(400, "direction debe ser 'above' o 'below'")
     symbol = item.symbol.upper().strip()
-    q = market_data.get_quote(symbol)
+    loop = asyncio.get_running_loop()
+    q = await loop.run_in_executor(None, market_data.get_quote_fast, symbol)
+    if not q:
+        q = await loop.run_in_executor(None, market_data.get_quote, symbol)
     if not q:
         raise HTTPException(404, f"Símbolo no válido: {symbol}")
     obj = PriceAlert(
@@ -1000,14 +1011,19 @@ class _QuoteManager:
         loop = asyncio.get_running_loop()
         while self._conns.get(symbol):
             try:
-                q = await loop.run_in_executor(None, market_data.get_quote, symbol)
+                # Solo precio: Finnhub directo, sin el .info de yfinance (lento) cada 8s.
+                q = await loop.run_in_executor(None, market_data.get_quote_fast, symbol)
+                if not q:
+                    q = await loop.run_in_executor(None, market_data.get_quote, symbol)
                 if q:
+                    # Claves alineadas con las que usa el frontend (quote.price/day_high/day_low),
+                    # para que el precio se actualice de verdad en vivo.
                     payload = {
-                        "current": q.get("current"),
+                        "price": q.get("price"),
                         "change": q.get("change"),
                         "change_percent": q.get("change_percent"),
-                        "high": q.get("high"),
-                        "low": q.get("low"),
+                        "day_high": q.get("day_high"),
+                        "day_low": q.get("day_low"),
                         "previous_close": q.get("previous_close"),
                     }
                     dead = []

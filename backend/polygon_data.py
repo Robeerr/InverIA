@@ -5,7 +5,7 @@ import math
 from datetime import date, timedelta
 from typing import Optional
 
-import requests
+import market_data as _md
 
 logger = logging.getLogger("polygon_data")
 
@@ -27,7 +27,7 @@ def get_aggregate_bars(symbol: str, days: int = 365, timespan: str = "day") -> l
 
     url = f"{BASE_URL}/v2/aggs/ticker/{symbol}/range/1/{timespan}/{start}/{end}"
     try:
-        resp = requests.get(url, params={"apiKey": key, "limit": 5000, "adjusted": "true"}, timeout=10)
+        resp = _md.get_http_session().get(url, params={"apiKey": key, "limit": 5000, "adjusted": "true"}, timeout=10)
         resp.raise_for_status()
         data = resp.json()
         return data.get("results") or []

@@ -1,7 +1,8 @@
 """Financial Modeling Prep integration — market movers (free tier, /stable API)."""
 import os
 import logging
-import requests
+
+import market_data as _md
 
 logger = logging.getLogger("fmp_data")
 BASE = "https://financialmodelingprep.com/stable"
@@ -16,7 +17,7 @@ def _fetch(path: str):
     if not key:
         return []
     try:
-        r = requests.get(f"{BASE}/{path}", params={"apikey": key}, timeout=12)
+        r = _md.get_http_session().get(f"{BASE}/{path}", params={"apikey": key}, timeout=12)
         if r.status_code != 200:
             return []
         data = r.json()

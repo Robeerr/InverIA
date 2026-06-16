@@ -1,8 +1,9 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { CalendarBlank, ArrowRight } from "@phosphor-icons/react";
-import { API } from "../lib/api";
-import axios from "axios";
+import { api } from "../lib/api";
+import { useSignals } from "../hooks/useSignals";
 
 function dayLabel(dateStr) {
   if (!dateStr) return "—";
@@ -18,41 +19,25 @@ function hourLabel(h) {
 
 export default function CalendarView({ setSymbol }) {
   const navigate = useNavigate();
-  const [data, setData] = React.useState(null);
-  const [loading, setLoading] = React.useState(false);
   const [days, setDays] = React.useState(14);
 
-  const load = React.useCallback(async () => {
-    setLoading(true);
-    try {
-      const token = localStorage.getItem("inveria_token");
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  // Señales desde el caché compartido (no se re-piden al cambiar "días").
+  const { data: signals } = useSignals();
+  const syms = React.useMemo(() => {
+    const entries = Array.isArray(signals) ? signals : (signals?.items || signals?.entries || []);
+    return [...new Set(entries.map((e) => e.symbol).filter(Boolean))];
+  }, [signals]);
 
-      // Fetch signals first (fast, cached 20s), then earnings filtered by symbols in parallel-per-symbol on backend
-      const sigRes = await axios.get(`${API}/signals`, { headers });
-      const raw = sigRes.data;
-      const entries = Array.isArray(raw) ? raw : (raw?.items || raw?.entries || []);
-      const syms = [...new Set(entries.map((e) => e.symbol).filter(Boolean))];
-
-      if (!syms.length) {
-        setData({ items: [] });
-        return;
-      }
-
-      // Pass symbols to backend — it fetches per-symbol in parallel (bypasses Finnhub free-tier cap)
-      const earningsRes = await axios.get(`${API}/calendar/earnings`, {
-        headers,
-        params: { days, symbols: syms.join(",") },
-      });
-      setData(earningsRes.data || { items: [] });
-    } catch (err) {
-      setData({ items: [] });
-    } finally {
-      setLoading(false);
-    }
-  }, [days]);
-
-  React.useEffect(() => { load(); }, [load]);
+  // Earnings de esos símbolos: el backend los trae en paralelo por símbolo.
+  const earningsQuery = useQuery({
+    queryKey: ["earnings", days, syms],
+    queryFn: () =>
+      syms.length ? api.calendar.earnings(days, syms.join(",")) : Promise.resolve({ items: [] }),
+    enabled: signals !== undefined,
+    staleTime: 5 * 60_000,
+  });
+  const data = earningsQuery.data;
+  const loading = signals === undefined || earningsQuery.isFetching;
 
   const grouped = React.useMemo(() => {
     if (!data?.items) return [];
