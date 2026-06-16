@@ -265,24 +265,34 @@ export default function SignalsView({ setSymbol }) {
   }, [entries]);
   const countOf = (g) => counts[g] || 0;
 
+  // Marca de la última mutación local (editar/añadir/borrar). Un poll que arrancó
+  // ANTES de una edición no debe pisar el estado local más nuevo.
+  const lastLocalEditRef = useRef(0);
+
   const fetchEntries = async () => {
     setLoading(true);
+    const startedAt = Date.now();
     try {
       const r = await fetch(`${API}/api/signals`, { headers: authHeaders() });
-      setEntries(await r.json());
+      const data = await r.json();
+      if (lastLocalEditRef.current <= startedAt) setEntries(data);
     } catch { toast.error("No se pudieron cargar las señales"); }
     finally { setLoading(false); }
   };
   useEffect(() => {
     fetchEntries();
-    // Refresh silencioso cada 30s para mantener precios actualizados
+    // Refresh silencioso cada 30s. Se salta si la pestaña está oculta (evita spam de
+    // requests a un backend dormido) y descarta respuestas anteriores a una edición local.
     const id = setInterval(() => {
+      if (document.hidden) return;
+      const startedAt = Date.now();
       fetch(`${API}/api/signals`, { headers: authHeaders() })
         .then((r) => r.json())
-        .then((data) => setEntries(data))
+        .then((data) => { if (lastLocalEditRef.current <= startedAt) setEntries(data); })
         .catch(() => {});
     }, 30000);
     return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Al cambiar de pestaña, cerrar paneles y resetear el formulario al esquema correcto
@@ -303,6 +313,7 @@ export default function SignalsView({ setSymbol }) {
       });
       if (!r.ok) throw new Error();
       const updated = await r.json();
+      lastLocalEditRef.current = Date.now();
       setEntries((prev) => prev.map((e) => e.id === id ? { ...e, ...updated } : e));
     } catch { toast.error("Error al guardar"); }
     finally { setSaving((s) => ({ ...s, [id]: false })); }
@@ -312,6 +323,7 @@ export default function SignalsView({ setSymbol }) {
     if (!window.confirm("¿Eliminar esta entrada?")) return;
     try {
       await fetch(`${API}/api/signals/${id}`, { method: "DELETE", headers: authHeaders() });
+      lastLocalEditRef.current = Date.now();
       setEntries((prev) => prev.filter((e) => e.id !== id));
       toast.success("Eliminado");
     } catch { toast.error("Error al eliminar"); }
@@ -331,6 +343,7 @@ export default function SignalsView({ setSymbol }) {
       const r = await fetch(`${API}/api/signals`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(payload) });
       if (!r.ok) throw new Error();
       const created = await r.json();
+      lastLocalEditRef.current = Date.now();
       setEntries((prev) => [...prev, created]);
       setShowAdd(false); setNewEntry(isCim ? EMPTY_CIM : EMPTY);
       toast.success(`${created.symbol} añadido`);

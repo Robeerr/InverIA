@@ -121,6 +121,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Snapshot hydrate failed: {e}")
 
+    # Aviso de seguridad no-bloqueante: si faltan secretos en producción, se usan
+    # defaults públicos del repo (cualquiera podría forjar un token). No rompe el arranque.
+    if not os.environ.get("JWT_SECRET"):
+        logger.warning("JWT_SECRET no configurada — usando secreto por defecto. Configúrala en Render.")
+    if not os.environ.get("APP_PASSWORD_HASH"):
+        logger.warning("APP_PASSWORD_HASH no configurada — usando contraseña por defecto. Configúrala en Render.")
+
     # Single alert system: the portfolio table (signal_table) worker.
     asyncio.create_task(signal_table.signal_worker_loop(db))
 
@@ -747,8 +754,16 @@ async def list_watchlist():
     if not items:
         return []
     loop = asyncio.get_running_loop()
+    # Límite de concurrencia: sin esto, una watchlist grande dispara N llamadas .info
+    # simultáneas que saturan el pool de yfinance y el rate-limiter de Finnhub.
+    sem = asyncio.Semaphore(5)
+
+    async def _q(sym):
+        async with sem:
+            return await loop.run_in_executor(None, market_data.get_quote, sym)
+
     quotes = await asyncio.gather(
-        *[loop.run_in_executor(None, market_data.get_quote, it["symbol"]) for it in items],
+        *[_q(it["symbol"]) for it in items],
         return_exceptions=True,
     )
     result = [
@@ -1191,10 +1206,21 @@ class _QuoteManager:
             task = self._rest_tasks.pop(symbol, None)
             if task:
                 task.cancel()
-            asyncio.create_task(self._fh_send({"type": "unsubscribe", "symbol": symbol}))
-            # No symbols left -> tear down the Finnhub stream to free resources.
+            # Defer the Finnhub unsubscribe / stream teardown to a lock-guarded coroutine
+            # so it can't race with a concurrent connect (which would spawn a 2nd stream).
+            asyncio.create_task(self._cleanup_symbol(symbol))
+
+    async def _cleanup_symbol(self, symbol: str):
+        async with self._lock:
+            await self._fh_send({"type": "unsubscribe", "symbol": symbol})
+            # No clients left at all -> tear down the shared Finnhub stream and wait for
+            # it to actually close before allowing a new one to be created.
             if not self._conns and self._fh_task and not self._fh_task.done():
                 self._fh_task.cancel()
+                try:
+                    await self._fh_task
+                except BaseException:
+                    pass
                 self._fh_task = None
 
     # ----- Finnhub trade stream (shared) -----
