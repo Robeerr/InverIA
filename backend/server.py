@@ -38,30 +38,53 @@ load_dotenv(ROOT_DIR / ".env")
 import time as _time
 
 class _TTLCache:
-    def __init__(self):
+    """Bounded TTL cache. Purges expired entries and evicts oldest (FIFO) past
+    maxsize so memory can't grow without limit on the free tier."""
+
+    def __init__(self, maxsize=500):
         self._store = {}
+        self._maxsize = maxsize
 
     def get(self, key):
         entry = self._store.get(key)
         if entry and (_time.time() - entry["ts"]) < entry["ttl"]:
             return entry["val"]
+        if entry:
+            self._store.pop(key, None)  # drop expired
         return None
 
     def set(self, key, val, ttl=30):
-        self._store[key] = {"val": val, "ts": _time.time(), "ttl": ttl}
+        now = _time.time()
+        # Opportunistic purge of expired entries.
+        if len(self._store) >= self._maxsize:
+            expired = [k for k, e in self._store.items() if (now - e["ts"]) >= e["ttl"]]
+            for k in expired:
+                self._store.pop(k, None)
+            # Still over budget -> evict oldest by insertion order.
+            while len(self._store) >= self._maxsize:
+                self._store.pop(next(iter(self._store)), None)
+        self._store[key] = {"val": val, "ts": now, "ttl": ttl}
 
     def clear(self):
         self._store.clear()
 
 _cache = _TTLCache()
 
-mongo_url = os.environ["MONGO_URL"]
-# For MongoDB Atlas (mongodb+srv://) use bundled CA certs to avoid SSL handshake errors
-_mongo_kwargs = {}
+mongo_url = os.environ.get("MONGO_URL")
+if not mongo_url:
+    raise RuntimeError("MONGO_URL no está configurada. Añádela en las variables de entorno de Render.")
+# For MongoDB Atlas (mongodb+srv://) use bundled CA certs to avoid SSL handshake errors.
+# Timeouts acotados: si Atlas M0 está dormido/lento, las queries fallan rápido en vez de
+# colgar la corrutina hasta 30s (el default de Motor) y congelar el endpoint.
+_mongo_kwargs = {
+    "serverSelectionTimeoutMS": 5000,
+    "connectTimeoutMS": 5000,
+    "socketTimeoutMS": 10000,
+}
 if "mongodb+srv://" in mongo_url or "mongodb.net" in mongo_url:
-    _mongo_kwargs = {"tls": True, "tlsCAFile": certifi.where()}
+    _mongo_kwargs.update({"tls": True, "tlsCAFile": certifi.where()})
 client = AsyncIOMotorClient(mongo_url, **_mongo_kwargs)
-db = client[os.environ["DB_NAME"]]
+db = client[os.environ.get("DB_NAME", "inveria")]
 
 
 def _clean_nans(v):
@@ -321,10 +344,12 @@ async def get_indicators(symbol: str):
     cached = _cache.get(f"indicators:{sym}")
     if cached:
         return cached
-    df = market_data.get_full_indicator_history(sym)
+    loop = asyncio.get_running_loop()
+    df = await loop.run_in_executor(None, market_data.get_full_indicator_history, sym)
     if df is None or df.empty:
         raise HTTPException(404, f"No hay datos para indicadores: '{sym}'")
-    result = ind.compute_all(df)
+    # compute_all es pandas pesado (RSI/MACD/Bollinger/SR sobre 2 años): fuera del loop.
+    result = await loop.run_in_executor(None, ind.compute_all, df)
     _cache.set(f"indicators:{sym}", result, ttl=300)  # 5 min
     return result
 
@@ -449,7 +474,7 @@ async def analyze(req: AnalyzeRequest):
     if df is None or df.empty:
         raise HTTPException(404, f"Sin datos suficientes para analizar {symbol}")
 
-    indicators_data = ind.compute_all(df)
+    indicators_data = await loop.run_in_executor(None, ind.compute_all, df)
 
     # Enrich with analyst consensus + Volume Profile + insider/earnings/financials + news (all in parallel)
     trends, price_target, vp, insider, earnings_hist, basic_fin, news = await asyncio.gather(
@@ -565,7 +590,7 @@ async def compare_stocks(req: CompareRequest):
             candles, indicators_data = [], None
             if dfi is not None and not dfi.empty:
                 try:
-                    indicators_data = ind.compute_all(dfi)
+                    indicators_data = await loop.run_in_executor(None, ind.compute_all, dfi)
                     candles = market_data.df_to_candles(dfi.tail(63))  # ~3 months
                 except Exception:
                     pass
@@ -671,7 +696,7 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y"):
     if df_ind is not None and not isinstance(df_ind, Exception):
         try:
             if not df_ind.empty:
-                indicators_data = ind.compute_all(df_ind)
+                indicators_data = await loop.run_in_executor(None, ind.compute_all, df_ind)
         except Exception:
             pass
 
@@ -821,9 +846,14 @@ async def analyst_data(symbol: str):
     cached = _cache.get(f"analyst:{sym}")
     if cached:
         return cached
-    trends = external_data.finnhub_recommendation_trends(sym)
+    loop = asyncio.get_running_loop()
+    # Estas llamadas usan requests (red) + posibles sleeps de rate-limit: NUNCA en el
+    # event loop, o con 0.1 CPU bloquean todas las demás peticiones.
+    trends, target = await asyncio.gather(
+        loop.run_in_executor(None, external_data.finnhub_recommendation_trends, sym),
+        loop.run_in_executor(None, external_data.finnhub_price_target, sym),
+    )
     consensus = external_data.aggregate_recommendation(trends)
-    target = external_data.finnhub_price_target(sym)
     result = {"symbol": sym, "consensus": consensus, "price_target": target}
     _cache.set(f"analyst:{sym}", result, ttl=604800)  # 7 días — Finnhub actualiza mensualmente
     return result
@@ -835,7 +865,8 @@ async def sentiment_news(symbol: str):
     cached = _cache.get(f"sentiment:{sym}")
     if cached:
         return cached
-    items = external_data.alpha_sentiment_news(sym) or []
+    loop = asyncio.get_running_loop()
+    items = await loop.run_in_executor(None, external_data.alpha_sentiment_news, sym) or []
     scores = [i["ticker_sentiment_score"] for i in items if i.get("ticker_sentiment_score") is not None]
     avg = round(sum(scores) / len(scores), 3) if scores else None
     label = None
@@ -867,12 +898,15 @@ async def earnings_calendar(days: int = 14, symbols: Optional[str] = None):
     cached = _cache.get(cache_key)
     if cached is None:
         sym_filter = set(sym_list) if sym_list else None
-        data = external_data.finnhub_earnings_calendar(days=60, symbols=sym_filter)
+        loop = asyncio.get_running_loop()
+        data = await loop.run_in_executor(
+            None, lambda: external_data.finnhub_earnings_calendar(days=60, symbols=sym_filter)
+        )
         cached = data or {"items": []}
         _cache.set(cache_key, cached, ttl=7200)  # 2h — earnings don't change intraday
 
     # Filter down to the requested day window
-    cutoff = (datetime.utcnow().date() + timedelta(days=days)).isoformat()
+    cutoff = (datetime.now(timezone.utc).date() + timedelta(days=days)).isoformat()
     filtered = [it for it in (cached.get("items") or []) if (it.get("date") or "") <= cutoff]
     return {"items": filtered}
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import QuoteHeader from "../components/QuoteHeader";
@@ -54,13 +54,28 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
     staleTime: 60_000,
   });
 
+  // Contador de petición: descarta respuestas que llegan tarde tras cambiar de símbolo
+  // (en Render free tier el primer request puede tardar mucho y pisar datos más nuevos).
+  const reqId = useRef(0);
+
   const loadSymbolData = useCallback(async (sym, tf) => {
+    const my = ++reqId.current;
     setLoadingQuote(true);
     setAnalysis(null);
     setMarketSignals(null);
     setVolumeProfile(null);
+    // 1 reintento ante cold start de Render (el primer request tras dormir suele fallar/tardar).
+    const fetchWithRetry = async () => {
+      try {
+        return await api.dashboard(sym, tf);
+      } catch (e) {
+        await new Promise((r) => setTimeout(r, 1500));
+        return await api.dashboard(sym, tf);
+      }
+    };
     try {
-      const data = await api.dashboard(sym, tf);
+      const data = await fetchWithRetry();
+      if (my !== reqId.current) return; // llegó tarde: ya cambiamos de símbolo
       if (!data?.quote) {
         toast.error(`No se encontró el símbolo ${sym}`);
         setQuote(null);
@@ -72,20 +87,23 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       setNews(data.news || []);
       setAnalystData(data.analyst);
     } catch (e) {
-      toast.error("Error al cargar datos");
+      if (my === reqId.current) toast.error("Error al cargar datos");
     } finally {
-      setLoadingQuote(false);
+      if (my === reqId.current) setLoadingQuote(false);
     }
   }, []);
 
+  const chartReqId = useRef(0);
   const refreshTimeframe = useCallback(
     async (tf) => {
+      const my = ++chartReqId.current;
       setTimeframe(tf);
       try {
         const c = await api.chart(symbol, tf);
+        if (my !== chartReqId.current) return; // respuesta obsoleta
         setCandles(c.candles || []);
       } catch (e) {
-        toast.error("Error al cargar el gráfico");
+        if (my === chartReqId.current) toast.error("Error al cargar el gráfico");
       }
     },
     [symbol]
@@ -150,13 +168,32 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   useEffect(() => {
     if (!symbol) return;
     let ws;
-    let fallbackId;
     let closed = false;
+    const fallbackRef = { id: null };
+    // Throttle de ticks: durante mercado abierto pueden llegar varios/segundo. Acumulamos
+    // el último valor y hacemos un único setState por frame (requestAnimationFrame) para
+    // no re-renderizar el dashboard decenas de veces por segundo.
+    const pending = { data: null };
+    let rafId = null;
+    const flush = () => {
+      rafId = null;
+      if (!pending.data) return;
+      const next = pending.data;
+      pending.data = null;
+      setQuote((prev) => (prev ? { ...prev, ...next } : prev));
+    };
+    const scheduleUpdate = (data) => {
+      pending.data = { ...(pending.data || {}), ...data };
+      if (rafId == null) rafId = requestAnimationFrame(flush);
+    };
 
     const startFallback = () => {
-      if (fallbackId) return;
-      fallbackId = setInterval(async () => {
-        try { setQuote(await api.quote(symbol)); } catch {}
+      if (fallbackRef.id) return;
+      fallbackRef.id = setInterval(async () => {
+        try {
+          const q = await api.quote(symbol);
+          if (!closed) setQuote(q);
+        } catch {}
       }, 30000);
     };
 
@@ -165,10 +202,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       const wsBase = base.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
       ws = new WebSocket(`${wsBase}/api/ws/quote/${symbol}`);
       ws.onmessage = (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          setQuote((prev) => prev ? { ...prev, ...data } : prev);
-        } catch {}
+        try { scheduleUpdate(JSON.parse(e.data)); } catch {}
       };
       ws.onerror = () => {};
       ws.onclose = () => { if (!closed) startFallback(); };
@@ -178,7 +212,8 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
 
     return () => {
       closed = true;
-      clearInterval(fallbackId);
+      if (rafId != null) cancelAnimationFrame(rafId);
+      if (fallbackRef.id) clearInterval(fallbackRef.id);
       if (ws) ws.close();
     };
   }, [symbol]);

@@ -299,7 +299,7 @@ async def _analyze_one(symbol: str):
         df = await asyncio.to_thread(market_data.get_full_indicator_history, symbol)
         if df is None or df.empty:
             return None
-        indicators_data = ind.compute_all(df)
+        indicators_data = await asyncio.to_thread(ind.compute_all, df)
         consensus_raw = await asyncio.to_thread(external_data.finnhub_recommendation_trends, symbol)
         consensus = external_data.aggregate_recommendation(consensus_raw)
 

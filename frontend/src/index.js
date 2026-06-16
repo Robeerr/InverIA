@@ -9,6 +9,9 @@ const queryClient = new QueryClient({
     queries: {
       staleTime: 60_000,
       refetchOnWindowFocus: false,
+      retry: 2,
+      // Backoff exponencial (1s, 2s, …, máx 30s) para los cold starts de Render free tier.
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30_000),
     },
   },
 });

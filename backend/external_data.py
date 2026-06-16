@@ -27,6 +27,9 @@ def _ext_cache_get(key: str, ttl: int):
 def _ext_cache_set(key: str, val):
     with _ext_lock:
         _ext_cache[key] = {"val": val, "ts": time.time()}
+        # Bound memory: evict oldest entries (FIFO) past the cap on the free tier.
+        while len(_ext_cache) > 500:
+            _ext_cache.pop(next(iter(_ext_cache)), None)
 
 
 def _finnhub_key():

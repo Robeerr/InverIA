@@ -133,6 +133,16 @@ _YAHOO_INTERVAL_MAP = {
 _history_cache: dict = {}
 _history_lock = threading.Lock()
 _HISTORY_TTL_SECONDS = 900  # 15 min — indicadores no necesitan precisión segundo a segundo
+# Cada entrada es un DataFrame de hasta 2 años (cientos de KB). Acotamos el número
+# de símbolos cacheados para que la RAM no crezca sin límite en el free tier.
+_HISTORY_MAXSIZE = 120
+
+
+def _evict_bounded(store: dict, maxsize: int, ts_key: str = "ts"):
+    """Purga expirados-o-no y evita crecer sin límite: si se supera maxsize, elimina
+    las entradas más antiguas (FIFO por orden de inserción de dict)."""
+    while len(store) > maxsize:
+        store.pop(next(iter(store)), None)
 
 
 def _cache_get(key: str):
@@ -140,12 +150,15 @@ def _cache_get(key: str):
         entry = _history_cache.get(key)
         if entry and (time.time() - entry["ts"]) < _HISTORY_TTL_SECONDS:
             return entry["df"]
+        if entry:
+            _history_cache.pop(key, None)
     return None
 
 
 def _cache_set(key: str, df):
     with _history_lock:
         _history_cache[key] = {"df": df, "ts": time.time()}
+        _evict_bounded(_history_cache, _HISTORY_MAXSIZE)
 
 
 # ---------- Fundamentals (.info) cache ----------
@@ -183,6 +196,7 @@ def _get_info_cached(ticker: str, t) -> dict:
     if info:
         with _info_lock:
             _info_cache[key] = {"info": info, "ts": time.time()}
+            _evict_bounded(_info_cache, 300)
     return info
 
 
@@ -523,7 +537,13 @@ def get_extended_quote(symbol: str):
     from datetime import time as _t
     try:
         t = _ticker(symbol)
-        df = t.history(period="2d", interval="1m", prepost=True)
+        # yfinance .history NO respeta timeouts y en cloud (Yahoo bloquea) puede colgarse
+        # indefinidamente, congelando el worker de señales. Tope duro vía el pool.
+        df = _call_with_timeout(
+            lambda: t.history(period="2d", interval="1m", prepost=True),
+            _HISTORY_FETCH_TIMEOUT,
+            None,
+        )
         if df is None or df.empty:
             return None
         try:
@@ -605,6 +625,7 @@ def _try_finnhub_quote(ticker: str):
         }
         with _fh_quote_lock:
             _fh_quote_cache[sym] = {"data": result, "ts": time.time()}
+            _evict_bounded(_fh_quote_cache, 500)
         return result
     except Exception:
         return None
