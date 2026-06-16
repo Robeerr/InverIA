@@ -521,23 +521,38 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y"):
 
     loop = asyncio.get_running_loop()
 
+    # Instrumentación: medimos cuánto tarda cada fuente para diagnosticar lentitud en Render.
+    _t_total = _time.time()
+
+    async def _timed(name, fn, *args):
+        t0 = _time.time()
+        try:
+            return await loop.run_in_executor(None, fn, *args)
+        finally:
+            dt = _time.time() - t0
+            if dt > 1.0:
+                logger.info("dashboard[%s] %s: %.1fs", sym, name, dt)
+
     # 6 llamadas bloqueantes en paralelo (thread pool)
     results = await asyncio.gather(
-        loop.run_in_executor(None, market_data.get_quote, sym),
-        loop.run_in_executor(None, partial(market_data.get_stock_data, sym, timeframe=timeframe)),
-        loop.run_in_executor(None, market_data.get_full_indicator_history, sym),
-        loop.run_in_executor(None, market_data.get_news, sym),
-        loop.run_in_executor(None, external_data.finnhub_recommendation_trends, sym),
-        loop.run_in_executor(None, external_data.finnhub_price_target, sym),
+        _timed("quote", market_data.get_quote, sym),
+        _timed("chart", partial(market_data.get_stock_data, sym, timeframe=timeframe)),
+        _timed("indicators", market_data.get_full_indicator_history, sym),
+        _timed("news", market_data.get_news, sym),
+        _timed("trends", external_data.finnhub_recommendation_trends, sym),
+        _timed("price_target", external_data.finnhub_price_target, sym),
         return_exceptions=True,
     )
     quote, df_chart, df_ind, news_items, trends, price_target = results
+    _dt_total = _time.time() - _t_total
+    if _dt_total > 2.0:
+        logger.info("dashboard[%s] TOTAL fetch: %.1fs", sym, _dt_total)
 
     if not quote or isinstance(quote, Exception):
         raise HTTPException(404, f"No se encontraron datos para '{sym}'")
 
     # Fill missing fundamentals from Finnhub if yfinance returned an incomplete quote
-    quote = await loop.run_in_executor(None, _enrich_quote_fundamentals, quote, sym)
+    quote = await _timed("enrich", _enrich_quote_fundamentals, quote, sym)
 
     candles = []
     if df_chart is not None and not isinstance(df_chart, Exception):
