@@ -32,28 +32,20 @@ _scan_lock = asyncio.Lock()
 # Not the whole market, but where real growth opportunities tend to live, and scannable
 # on a free-tier budget. The cheap filters discard most of these with no extra API calls.
 GROWTH_UNIVERSE = [
-    # Mega / large-cap tech
-    "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "ORCL", "CRM", "ADBE",
-    # Software / cloud
-    "NOW", "INTU", "SNOW", "DDOG", "NET", "CRWD", "ZS", "PANW", "FTNT", "MDB",
-    "TEAM", "WDAY", "HUBS", "PLTR", "SHOP", "TWLO", "OKTA", "GTLB", "S", "ESTC",
-    "CFLT", "PATH", "U", "DT", "APP", "DOCU", "ZM",
+    # Mega-cap tech
+    "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA",
+    # Software / cloud (top names)
+    "NOW", "CRWD", "DDOG", "NET", "PLTR", "APP", "SNOW", "ADBE", "CRM",
     # Semiconductors
-    "AMD", "AVGO", "QCOM", "MU", "LRCX", "KLAC", "AMAT", "MRVL", "ON", "ARM",
-    "SMCI", "NXPI", "MPWR", "ANET", "VRT",
+    "AMD", "AVGO", "ARM", "ANET", "MU", "MRVL",
     # Internet / consumer-tech
-    "NFLX", "UBER", "ABNB", "DASH", "BKNG", "MELI", "SE", "PINS", "SNAP", "RBLX",
-    "SPOT", "DUOL", "CHWY", "ETSY", "W",
+    "NFLX", "UBER", "MELI", "BKNG", "SPOT", "DUOL",
     # Fintech
-    "PYPL", "COIN", "SOFI", "AFRM", "HOOD", "NU", "TOST", "BILL", "UPST",
-    # EV / energy / clean-tech
-    "RIVN", "ENPH", "FSLR", "BE", "FLNC",
-    # Health / biotech growth
-    "MRNA", "VRTX", "REGN", "ISRG", "DXCM", "BIIB", "ALNY", "TMDX", "NTRA",
-    # Consumer growth
-    "CMG", "LULU", "CELH", "ELF", "MNST", "DKNG", "WING", "CAVA", "ANF",
-    # Industrial / other growth
-    "AXON", "RKLB", "IOT", "DELL", "URI", "PWR",
+    "COIN", "HOOD", "SOFI", "NU",
+    # Health / biotech
+    "VRTX", "ISRG", "MRNA",
+    # Consumer / industrial growth
+    "CMG", "LULU", "AXON", "RKLB", "CELH",
 ]
 
 # Human-readable labels for the filters (shown as chips in the UI). EPS-growth was

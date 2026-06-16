@@ -90,7 +90,7 @@ class _FinnhubLimiter:
             time.sleep(min(max(sleep_for, 0.05), 1.0))
 
 
-_finnhub_limiter = _FinnhubLimiter(max_per_min=50, bg_reserve=25)
+_finnhub_limiter = _FinnhubLimiter(max_per_min=50, bg_reserve=20)
 
 
 def _ticker(symbol: str):

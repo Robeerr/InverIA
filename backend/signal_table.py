@@ -224,34 +224,26 @@ async def signal_worker_loop(db, interval: int = 30):
                 await asyncio.sleep(interval)
                 continue
 
-            # Fase 1: traer precios en PARALELO (Finnhub-only, sin el .info lento), un
-            # fetch por símbolo único. Marcamos como background para no competir con
-            # las solicitudes del usuario (dashboard) en el rate limiter de Finnhub.
-            token = market_data.enter_finnhub_background()
+            # Fase 1: precios EN SERIE con sleep entre cada símbolo.
+            # Antes era paralelo con Semaphore, lo que creaba N hilos simultáneos
+            # bloqueados en el rate-limiter de Finnhub. Con bg_cap=25 y 30+ símbolos,
+            # los hilos esperaban 150-250s → thundering herd que ahoga el presupuesto bg.
+            # En serie con 2s de espera: tasa máx ~25 calls/min, sin hilos colgados.
+            market_data.enter_finnhub_background()
             symbols = list({e["symbol"] for e in entries})
-            sem = asyncio.Semaphore(4)
-
-            async def _fetch_price(sym):
-                async with sem:
+            price_map: dict = {}
+            for sym in symbols:
+                try:
                     quote = await asyncio.to_thread(market_data.get_quote_fast, sym)
                     if not quote:
                         quote = await asyncio.to_thread(market_data.get_quote, sym)
                     ext = None
-                    # Pre/post solo fuera del horario regular (velas 1m, caro)
                     if quote and not market_open:
                         ext = await asyncio.to_thread(market_data.get_extended_quote, sym)
-                    return sym, quote, ext
-
-            fetched = await asyncio.gather(
-                *[_fetch_price(s) for s in symbols], return_exceptions=True
-            )
-            market_data.reset_finnhub_background(token)
-            price_map: dict = {}
-            for res in fetched:
-                if isinstance(res, Exception) or not res:
-                    continue
-                sym, quote, ext = res
-                price_map[sym] = (quote, ext)
+                    price_map[sym] = (quote, ext)
+                except Exception:
+                    pass
+                await asyncio.sleep(2)  # espaciado natural: 1 llamada cada 2s ≈ 30/min
 
             # Fase 2: detección de cruce + alertas. Secuencial pero sin red (solo DB).
             for entry in entries:
