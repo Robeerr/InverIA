@@ -334,6 +334,10 @@ async def scan_daily_opportunities(force_refresh: bool = False):
         if not force_refresh and _cache["data"] and _cache["ts"] and (now - _cache["ts"]) < _CACHE_TTL:
             return _cache["data"]
 
+        # Escaneo masivo de fondo: marca sus llamadas Finnhub como background para que
+        # cedan cuota a las del usuario (dashboard) — igual que el screener.
+        market_data.enter_finnhub_background()
+
         # Run analyses with limited concurrency to respect Finnhub's 60 calls/min free tier.
         # Each symbol does ~2 Finnhub calls (quote + recommendation), so sem=3 keeps us
         # comfortably under the limit and the shared rate-limiter handles bursts.
