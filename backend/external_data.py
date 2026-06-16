@@ -339,7 +339,11 @@ def _fetch_earnings_for_symbol(sym: str, from_date: str, to_date: str, key: str)
 
 def finnhub_earnings_calendar(days: int = 14, symbols=None):
     """Upcoming earnings from Finnhub for next `days` days.
-    When symbols list provided, fetches per-symbol to bypass free-tier pagination limit."""
+
+    Uses a SINGLE bulk Finnhub call (1 API slot) and filters client-side.
+    Previously made 50 per-symbol calls that saturated the rate limiter.
+    Falls back to per-symbol only if bulk returns nothing useful.
+    """
     from datetime import datetime, timedelta
     from concurrent.futures import ThreadPoolExecutor, as_completed
     key = _finnhub_key()
@@ -349,25 +353,22 @@ def finnhub_earnings_calendar(days: int = 14, symbols=None):
     to = today + timedelta(days=days)
     from_str, to_str = today.isoformat(), to.isoformat()
 
-    if symbols:
-        # Per-symbol requests in parallel — avoids free-tier result cap on bulk queries
-        out = []
-        with ThreadPoolExecutor(max_workers=3) as ex:
-            futures = {ex.submit(_fetch_earnings_for_symbol, sym, from_str, to_str, key): sym for sym in symbols}
-            for future in as_completed(futures):
-                out.extend(future.result())
-        out.sort(key=lambda x: x.get("date") or "")
-        return {"items": out, "from": from_str, "to": to_str}
+    sym_set = set(symbols) if symbols else None
 
-    # No symbol filter — bulk request (may be capped by Finnhub free tier)
+    # Bulk call: 1 Finnhub API slot instead of N per-symbol calls.
+    # Finnhub free tier returns all events in the range (up to a few hundred).
     try:
         r = _finnhub_get("/calendar/earnings", {"from": from_str, "to": to_str, "token": key}, timeout=15)
         if r.status_code != 200:
             return None
         items = r.json().get("earningsCalendar") or []
-        out = [
-            {
-                "symbol": (it.get("symbol") or "").upper(),
+        out = []
+        for it in items:
+            sym = (it.get("symbol") or "").upper()
+            if sym_set and sym not in sym_set:
+                continue
+            out.append({
+                "symbol": sym,
                 "date": it.get("date"),
                 "hour": it.get("hour"),
                 "eps_estimate": it.get("epsEstimate"),
@@ -376,10 +377,16 @@ def finnhub_earnings_calendar(days: int = 14, symbols=None):
                 "revenue_actual": it.get("revenueActual"),
                 "quarter": it.get("quarter"),
                 "year": it.get("year"),
-            }
-            for it in items
-        ]
+            })
         out.sort(key=lambda x: x.get("date") or "")
+
+        # Fallback: if bulk returned nothing for our symbols, fetch individually (max 5)
+        if sym_set and not out:
+            fallback_syms = list(sym_set)[:5]
+            for sym in fallback_syms:
+                out.extend(_fetch_earnings_for_symbol(sym, from_str, to_str, key))
+            out.sort(key=lambda x: x.get("date") or "")
+
         return {"items": out, "from": from_str, "to": to_str}
     except Exception:
         return None
