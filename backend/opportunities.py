@@ -45,8 +45,13 @@ async def load_snapshots_into_cache():
             doc = await _db.scan_snapshots.find_one({"_id": kind})
             if doc and doc.get("data"):
                 cache["data"] = doc["data"]
-                cache["ts"] = doc.get("saved_at")
-                _log.info("Loaded %s snapshot from Mongo (saved %s)", kind, doc.get("saved_at"))
+                saved = doc.get("saved_at")
+                # pymongo devuelve datetimes naive (UTC): hazlos aware para poder
+                # restarlos contra datetime.now(timezone.utc) sin TypeError.
+                if saved is not None and saved.tzinfo is None:
+                    saved = saved.replace(tzinfo=timezone.utc)
+                cache["ts"] = saved
+                _log.info("Loaded %s snapshot from Mongo (saved %s)", kind, saved)
         except Exception as e:
             _log.warning("snapshot load failed (%s): %s", kind, e)
 
