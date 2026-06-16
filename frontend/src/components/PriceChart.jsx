@@ -39,7 +39,7 @@ function PriceChart({
   indicators,
   signalEntry,
 }) {
-  const data = candles || [];
+  const data = useMemo(() => candles || [], [candles]);
 
   // Dominio del eje Y recalculado solo cuando cambian las velas (no en cada tick WS).
   const yDomain = useMemo(() => {
