@@ -321,7 +321,7 @@ def finnhub_earnings_calendar(days: int = 14, symbols=None):
     if symbols:
         # Per-symbol requests in parallel — avoids free-tier result cap on bulk queries
         out = []
-        with ThreadPoolExecutor(max_workers=8) as ex:
+        with ThreadPoolExecutor(max_workers=3) as ex:
             futures = {ex.submit(_fetch_earnings_for_symbol, sym, from_str, to_str, key): sym for sym in symbols}
             for future in as_completed(futures):
                 out.extend(future.result())

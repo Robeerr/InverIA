@@ -800,7 +800,7 @@ async def earnings_calendar(days: int = 14, symbols: Optional[str] = None):
         sym_filter = set(sym_list) if sym_list else None
         data = external_data.finnhub_earnings_calendar(days=60, symbols=sym_filter)
         cached = data or {"items": []}
-        _cache.set(cache_key, cached, ttl=1800)  # 30 min — earnings don't change intraday
+        _cache.set(cache_key, cached, ttl=7200)  # 2h — earnings don't change intraday
 
     # Filter down to the requested day window
     cutoff = (datetime.utcnow().date() + timedelta(days=days)).isoformat()
