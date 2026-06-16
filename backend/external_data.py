@@ -1,5 +1,6 @@
 """Finnhub & Alpha Vantage helpers — analyst recommendations, price targets, sentiment news."""
 import os
+import threading
 import time
 from typing import Optional
 
@@ -7,6 +8,25 @@ import market_data as _md
 
 FINNHUB_BASE = "https://finnhub.io/api/v1"
 ALPHA_BASE = "https://www.alphavantage.co/query"
+
+# Caché en módulo para datos que cambian pocas veces al día. Compartido entre todas
+# las llamadas (dashboard, opportunities scanner, analyze) → drástica reducción de
+# llamadas Finnhub repetidas para el mismo símbolo.
+_ext_cache: dict = {}
+_ext_lock = threading.Lock()
+
+
+def _ext_cache_get(key: str, ttl: int):
+    with _ext_lock:
+        e = _ext_cache.get(key)
+        if e and (time.time() - e["ts"]) < ttl:
+            return e["val"], True
+    return None, False
+
+
+def _ext_cache_set(key: str, val):
+    with _ext_lock:
+        _ext_cache[key] = {"val": val, "ts": time.time()}
 
 
 def _finnhub_key():
@@ -30,22 +50,31 @@ def _alpha_key():
 
 
 def finnhub_recommendation_trends(symbol: str):
-    """Aggregated analyst recs by month (last 4 months)."""
+    """Aggregated analyst recs by month (last 4 months). Cached 4h."""
+    sym = symbol.upper()
+    cached, hit = _ext_cache_get(f"trends:{sym}", 14400)
+    if hit:
+        return cached
     key = _finnhub_key()
     if not key:
         return None
     try:
-        r = _finnhub_get("/stock/recommendation", {"symbol": symbol.upper(), "token": key})
+        r = _finnhub_get("/stock/recommendation", {"symbol": sym, "token": key})
         if r.status_code != 200:
             return None
-        data = r.json() or []
-        return data[:4]  # last 4 months
+        data = (r.json() or [])[:4]
+        _ext_cache_set(f"trends:{sym}", data)
+        return data
     except Exception:
         return None
 
 
 def finnhub_price_target(symbol: str):
-    """Analyst consensus price targets."""
+    """Analyst consensus price targets. Cached 4h."""
+    sym = symbol.upper()
+    cached, hit = _ext_cache_get(f"price_target:{sym}", 14400)
+    if hit:
+        return cached
     key = _finnhub_key()
     if not key:
         return None
@@ -56,7 +85,7 @@ def finnhub_price_target(symbol: str):
         d = r.json() or {}
         if not d.get("targetMean"):
             return None
-        return {
+        result = {
             "target_mean": d.get("targetMean"),
             "target_high": d.get("targetHigh"),
             "target_low": d.get("targetLow"),
@@ -64,6 +93,8 @@ def finnhub_price_target(symbol: str):
             "analysts_count": d.get("numberOfAnalysts"),
             "last_updated": d.get("lastUpdated"),
         }
+        _ext_cache_set(f"price_target:{sym}", result)
+        return result
     except Exception:
         return None
 

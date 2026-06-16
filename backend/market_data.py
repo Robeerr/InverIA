@@ -90,7 +90,7 @@ class _FinnhubLimiter:
             time.sleep(min(max(sleep_for, 0.05), 1.0))
 
 
-_finnhub_limiter = _FinnhubLimiter(max_per_min=50, bg_reserve=20)
+_finnhub_limiter = _FinnhubLimiter(max_per_min=50, bg_reserve=10)
 
 
 def _ticker(symbol: str):
@@ -559,11 +559,23 @@ def get_extended_quote(symbol: str):
         return None
 
 
+# Cache para quotes de Finnhub: 60s TTL. Evita que el signal worker (30 símbolos cada
+# 60s en serie) haga 30 llamadas Finnhub por ciclo cuando los precios ya son frescos.
+_fh_quote_cache: dict = {}
+_fh_quote_lock = threading.Lock()
+_FH_QUOTE_TTL = 60  # segundos
+
+
 def _try_finnhub_quote(ticker: str):
-    """Get a quote from Finnhub. Thread-safe rate-limited."""
+    """Get a quote from Finnhub. Thread-safe rate-limited, cached 60s."""
     key = os.environ.get("FINNHUB_API_KEY")
     if not key:
         return None
+    sym = ticker.upper()
+    with _fh_quote_lock:
+        entry = _fh_quote_cache.get(sym)
+        if entry and (time.time() - entry["ts"]) < _FH_QUOTE_TTL:
+            return entry["data"]
     _finnhub_limiter.acquire()
     try:
         r = _http.get(
@@ -584,13 +596,16 @@ def _try_finnhub_quote(ticker: str):
         d = r.json() or {}
         if not d.get("c"):
             return None
-        return {
+        result = {
             "current": d.get("c"),
             "high": d.get("h"),
             "low": d.get("l"),
             "open": d.get("o"),
             "previous_close": d.get("pc"),
         }
+        with _fh_quote_lock:
+            _fh_quote_cache[sym] = {"data": result, "ts": time.time()}
+        return result
     except Exception:
         return None
 
