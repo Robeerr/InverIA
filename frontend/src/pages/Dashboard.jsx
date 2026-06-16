@@ -145,7 +145,8 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
     setSignalEntry(signals.find((e) => e.symbol === symbol.toUpperCase()) || null);
   }, [symbol, signals]);
 
-  // WebSocket for live price updates (~8s refresh). Falls back to 30s polling if WS fails.
+  // WebSocket for live tick-by-tick price updates (Finnhub trade stream, instant
+  // while the market is open). Falls back to 30s polling if the WS fails.
   useEffect(() => {
     if (!symbol) return;
     let ws;

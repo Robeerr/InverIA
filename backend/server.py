@@ -1104,59 +1104,184 @@ async def hot_signals(limit: int = 5, _user: str = Depends(auth.get_current_user
 
 
 # ---------- WebSocket: live quote streaming ----------
+import websockets as _ws_client
+
+_FINNHUB_WS_URL = "wss://ws.finnhub.io"
+
+
 class _QuoteManager:
-    """Broadcasts real-time quote updates to all connected WebSocket clients.
-    One polling task per symbol shared across all subscribers — minimises Finnhub calls."""
+    """Streams live price updates to connected frontend WebSocket clients.
+
+    Hybrid design tuned for Render's free tier:
+      • A single shared Finnhub trade WebSocket pushes tick-by-tick prices the
+        instant a trade happens (no REST quota used while streaming).
+      • A light REST loop per symbol (every 15s) seeds the baseline — previous
+        close, day high/low — and acts as a fallback when the market is closed
+        or the Finnhub stream is unavailable, so the price is never stale/blank.
+      • The Finnhub stream auto-reconnects with exponential backoff and
+        re-subscribes every active symbol. If Finnhub WS can't be used at all
+        (no key, network), the REST loop alone keeps everything working.
+    """
 
     def __init__(self):
         self._conns: dict[str, list[WebSocket]] = {}
-        self._tasks: dict[str, asyncio.Task] = {}
+        self._baseline: dict[str, dict] = {}   # symbol -> {previous_close, day_high, day_low}
+        self._last: dict[str, dict] = {}        # symbol -> last payload sent (snapshot for new clients)
+        self._rest_tasks: dict[str, asyncio.Task] = {}
+        self._fh_task: asyncio.Task | None = None
+        self._fh_ws = None
+        self._lock = asyncio.Lock()
 
     async def connect(self, symbol: str, ws: WebSocket):
         await ws.accept()
         self._conns.setdefault(symbol, []).append(ws)
-        if symbol not in self._tasks or self._tasks[symbol].done():
-            self._tasks[symbol] = asyncio.create_task(self._push_loop(symbol))
+        # Send an immediate snapshot if we already have a recent price.
+        if self._last.get(symbol):
+            try:
+                await ws.send_json(self._last[symbol])
+            except Exception:
+                pass
+        # Start the per-symbol REST baseline loop (seeds baseline + fallback).
+        if symbol not in self._rest_tasks or self._rest_tasks[symbol].done():
+            self._rest_tasks[symbol] = asyncio.create_task(self._baseline_loop(symbol))
+        # Ensure the shared Finnhub trade stream is running and subscribe.
+        await self._ensure_fh_stream()
+        await self._fh_send({"type": "subscribe", "symbol": symbol})
 
     def disconnect(self, symbol: str, ws: WebSocket):
         conns = self._conns.get(symbol, [])
         if ws in conns:
             conns.remove(ws)
         if not conns:
-            task = self._tasks.pop(symbol, None)
+            self._conns.pop(symbol, None)
+            task = self._rest_tasks.pop(symbol, None)
             if task:
                 task.cancel()
+            asyncio.create_task(self._fh_send({"type": "unsubscribe", "symbol": symbol}))
+            # No symbols left -> tear down the Finnhub stream to free resources.
+            if not self._conns and self._fh_task and not self._fh_task.done():
+                self._fh_task.cancel()
+                self._fh_task = None
 
-    async def _push_loop(self, symbol: str):
+    # ----- Finnhub trade stream (shared) -----
+    async def _ensure_fh_stream(self):
+        async with self._lock:
+            if self._fh_task and not self._fh_task.done():
+                return
+            if not os.environ.get("FINNHUB_API_KEY"):
+                return  # no key -> REST-only mode (still fully functional)
+            self._fh_task = asyncio.create_task(self._fh_supervisor())
+
+    async def _fh_send(self, msg: dict):
+        ws = self._fh_ws
+        if ws is None:
+            return
+        try:
+            await ws.send(json.dumps(msg))
+        except Exception:
+            pass
+
+    async def _fh_supervisor(self):
+        """Maintain the Finnhub WS connection; reconnect with backoff and re-subscribe."""
+        key = os.environ.get("FINNHUB_API_KEY")
+        backoff = 1
+        while self._conns:
+            try:
+                async with _ws_client.connect(f"{_FINNHUB_WS_URL}?token={key}", ping_interval=20) as ws:
+                    self._fh_ws = ws
+                    backoff = 1  # connected -> reset backoff
+                    # Re-subscribe every active symbol.
+                    for sym in list(self._conns.keys()):
+                        await ws.send(json.dumps({"type": "subscribe", "symbol": sym}))
+                    async for raw in ws:
+                        try:
+                            msg = json.loads(raw)
+                        except Exception:
+                            continue
+                        if msg.get("type") != "trade":
+                            continue
+                        for tr in msg.get("data") or []:
+                            await self._on_trade(tr.get("s"), tr.get("p"))
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.warning("Finnhub WS dropped, reconnecting in %ds: %s", backoff, e)
+            finally:
+                self._fh_ws = None
+            if not self._conns:
+                break
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 30)
+
+    async def _on_trade(self, symbol: str, price):
+        if not symbol or price is None or symbol not in self._conns:
+            return
+        base = self._baseline.get(symbol) or {}
+        prev = base.get("previous_close")
+        change = round(price - prev, 4) if prev else None
+        change_pct = round((price - prev) / prev * 100, 4) if prev else None
+        # Track intraday high/low locally as trades stream in.
+        day_high = base.get("day_high")
+        day_low = base.get("day_low")
+        day_high = price if day_high is None else max(day_high, price)
+        day_low = price if day_low is None else min(day_low, price)
+        base["day_high"], base["day_low"] = day_high, day_low
+        self._baseline[symbol] = base
+        payload = {
+            "price": price,
+            "change": change,
+            "change_percent": change_pct,
+            "day_high": day_high,
+            "day_low": day_low,
+            "previous_close": prev,
+        }
+        await self._broadcast(symbol, payload)
+
+    # ----- REST baseline / fallback loop -----
+    async def _baseline_loop(self, symbol: str):
         loop = asyncio.get_running_loop()
         while self._conns.get(symbol):
             try:
-                # Solo precio: Finnhub directo, sin el .info de yfinance (lento) cada 8s.
                 q = await loop.run_in_executor(None, market_data.get_quote_fast, symbol)
                 if not q:
                     q = await loop.run_in_executor(None, market_data.get_quote, symbol)
-                if q:
-                    # Claves alineadas con las que usa el frontend (quote.price/day_high/day_low),
-                    # para que el precio se actualice de verdad en vivo.
+                if q and q.get("price") is not None:
+                    prev = q.get("previous_close")
+                    base = self._baseline.get(symbol) or {}
+                    base["previous_close"] = prev if prev is not None else base.get("previous_close")
+                    # Seed/raise day high-low from the REST snapshot.
+                    for k_src, k in (("day_high", "day_high"), ("day_low", "day_low")):
+                        v = q.get(k_src)
+                        if v is not None:
+                            cur = base.get(k)
+                            if cur is None:
+                                base[k] = v
+                            else:
+                                base[k] = max(cur, v) if k == "day_high" else min(cur, v)
+                    self._baseline[symbol] = base
                     payload = {
                         "price": q.get("price"),
                         "change": q.get("change"),
                         "change_percent": q.get("change_percent"),
-                        "day_high": q.get("day_high"),
-                        "day_low": q.get("day_low"),
-                        "previous_close": q.get("previous_close"),
+                        "day_high": base.get("day_high", q.get("day_high")),
+                        "day_low": base.get("day_low", q.get("day_low")),
+                        "previous_close": base.get("previous_close"),
                     }
-                    dead = []
-                    for ws in list(self._conns.get(symbol, [])):
-                        try:
-                            await ws.send_json(payload)
-                        except Exception:
-                            dead.append(ws)
-                    for ws in dead:
-                        self.disconnect(symbol, ws)
+                    await self._broadcast(symbol, payload)
             except Exception:
                 pass
-            await asyncio.sleep(8)  # ~7.5 Finnhub calls/min per symbol (limit: 60/min)
+            await asyncio.sleep(15)  # light: 4 REST calls/min per symbol
+
+    async def _broadcast(self, symbol: str, payload: dict):
+        self._last[symbol] = payload
+        dead = []
+        for ws in list(self._conns.get(symbol, [])):
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self.disconnect(symbol, ws)
 
 
 _quote_manager = _QuoteManager()
@@ -1164,7 +1289,8 @@ _quote_manager = _QuoteManager()
 
 @api_router.websocket("/ws/quote/{symbol}")
 async def ws_quote(websocket: WebSocket, symbol: str):
-    """Stream live price updates for a symbol. Pushes every ~8s."""
+    """Stream live price updates for a symbol — tick-by-tick via the Finnhub trade
+    stream while the market is open, with a 15s REST baseline as fallback."""
     sym = symbol.upper()
     await _quote_manager.connect(sym, websocket)
     try:
