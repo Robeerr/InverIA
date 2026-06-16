@@ -530,8 +530,9 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y"):
             return await loop.run_in_executor(None, fn, *args)
         finally:
             dt = _time.time() - t0
-            if dt > 1.0:
-                logger.info("dashboard[%s] %s: %.1fs", sym, name, dt)
+            # Silencioso en operación normal; solo avisa de fuentes anómalamente lentas.
+            if dt > 6.0:
+                logger.warning("dashboard[%s] %s LENTO: %.1fs", sym, name, dt)
 
     # 6 llamadas bloqueantes en paralelo (thread pool)
     results = await asyncio.gather(
@@ -545,8 +546,8 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y"):
     )
     quote, df_chart, df_ind, news_items, trends, price_target = results
     _dt_total = _time.time() - _t_total
-    if _dt_total > 2.0:
-        logger.info("dashboard[%s] TOTAL fetch: %.1fs", sym, _dt_total)
+    if _dt_total > 8.0:
+        logger.warning("dashboard[%s] TOTAL fetch LENTO: %.1fs", sym, _dt_total)
 
     if not quote or isinstance(quote, Exception):
         raise HTTPException(404, f"No se encontraron datos para '{sym}'")
