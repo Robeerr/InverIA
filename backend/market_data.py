@@ -8,6 +8,7 @@ Resiliente para entornos cloud (Render). Estrategia:
 - Rate limiter global para Finnhub (60 calls/min free tier).
 """
 import asyncio
+import concurrent.futures
 import io
 import logging
 import os
@@ -125,6 +126,23 @@ _info_cache: dict = {}
 _info_lock = threading.Lock()
 _INFO_TTL_SECONDS = 3600
 
+# yfinance `.info`/`.news` no aceptan timeout y en Render (Yahoo bloquea cloud) pueden
+# COLGARSE muchos segundos, bloqueando el dashboard. Los ejecutamos en un pool con un
+# tope duro: si Yahoo no responde a tiempo, seguimos con lo que tengamos (precio Finnhub).
+_yf_pool = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="yf")
+_INFO_FETCH_TIMEOUT = 4.0      # seg máx esperando a .info
+_NEWS_FETCH_TIMEOUT = 5.0      # seg máx esperando a .news
+_HISTORY_FETCH_TIMEOUT = 8.0   # seg máx esperando a .history antes de caer al fallback
+
+
+def _call_with_timeout(fn, timeout, default):
+    """Ejecuta fn() con un tope de tiempo. Si excede (o falla), devuelve default.
+    El hilo colgado sigue en background pero ya no bloquea al caller."""
+    try:
+        return _yf_pool.submit(fn).result(timeout=timeout)
+    except Exception:
+        return default
+
 
 def _get_info_cached(ticker: str, t) -> dict:
     key = ticker.upper()
@@ -132,10 +150,7 @@ def _get_info_cached(ticker: str, t) -> dict:
         entry = _info_cache.get(key)
         if entry and (time.time() - entry["ts"]) < _INFO_TTL_SECONDS:
             return entry["info"]
-    try:
-        info = t.info or {}
-    except Exception:
-        info = {}
+    info = _call_with_timeout(lambda: t.info or {}, _INFO_FETCH_TIMEOUT, {})
     if info:
         with _info_lock:
             _info_cache[key] = {"info": info, "ts": time.time()}
@@ -238,11 +253,14 @@ def get_stock_data(ticker: str, timeframe: str = "1Y"):
     if cached is not None:
         return cached
 
-    # Try yfinance high-level API first
+    # Try yfinance high-level API first (con tope de tiempo: en cloud puede colgarse)
     df = None
     try:
         t = _ticker(ticker)
-        df = t.history(period=period, interval=interval, auto_adjust=False)
+        df = _call_with_timeout(
+            lambda: t.history(period=period, interval=interval, auto_adjust=False),
+            _HISTORY_FETCH_TIMEOUT, None,
+        )
         if df is not None and not df.empty:
             df = df.reset_index()
             date_col = "Date" if "Date" in df.columns else "Datetime"
@@ -281,7 +299,10 @@ def get_full_indicator_history(ticker: str):
     df = None
     try:
         t = _ticker(ticker)
-        df = t.history(period="2y", interval="1d", auto_adjust=False)
+        df = _call_with_timeout(
+            lambda: t.history(period="2y", interval="1d", auto_adjust=False),
+            _HISTORY_FETCH_TIMEOUT, None,
+        )
         if df is not None and not df.empty:
             df = df.reset_index()
             date_col = "Date" if "Date" in df.columns else "Datetime"
@@ -547,9 +568,9 @@ def _try_finnhub_quote(ticker: str):
 
 def get_news(ticker: str, limit: int = 8):
     t = _ticker(ticker)
-    try:
-        items = t.news or []
-    except Exception:
+    # .news (scraping yfinance) puede colgarse en cloud → tope duro, si no responde []
+    items = _call_with_timeout(lambda: t.news or [], _NEWS_FETCH_TIMEOUT, [])
+    if not items:
         return []
     out = []
     for n in items[:limit]:
