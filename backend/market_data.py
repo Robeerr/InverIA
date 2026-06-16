@@ -9,6 +9,7 @@ Resiliente para entornos cloud (Render). Estrategia:
 """
 import asyncio
 import concurrent.futures
+import contextvars
 import io
 import logging
 import os
@@ -42,23 +43,44 @@ _http.mount("http://", _http_adapter)
 
 # ---------- Finnhub rate limiter ----------
 # Free tier = 60 calls/minute. We stay safely below that.
+#
+# Prioridad: las llamadas marcadas como "background" (el screener, que escanea 120
+# símbolos) solo usan hasta `bg_cap`, dejando margen reservado para las llamadas de
+# usuario (dashboard). Así un escaneo en segundo plano no atasca la cuota durante ~50s.
+_finnhub_bg_ctx = contextvars.ContextVar("finnhub_background", default=False)
+
+
+def enter_finnhub_background():
+    """Marca el contexto actual (y sus hijos vía to_thread) como background. Devuelve token."""
+    return _finnhub_bg_ctx.set(True)
+
+
+def reset_finnhub_background(token):
+    try:
+        _finnhub_bg_ctx.reset(token)
+    except Exception:
+        pass
+
+
 class _FinnhubLimiter:
-    def __init__(self, max_per_min: int = 50):
+    def __init__(self, max_per_min: int = 50, bg_reserve: int = 15):
         self.max_per_min = max_per_min
+        self.bg_cap = max(1, max_per_min - bg_reserve)  # tope para llamadas de fondo
         self.calls = []
         self.lock = threading.Lock()
 
     def acquire(self):
-        with self.lock:
-            now = time.time()
-            self.calls = [t for t in self.calls if now - t < 60]
-            if len(self.calls) >= self.max_per_min:
-                sleep_for = 60 - (now - self.calls[0]) + 0.05
-                if sleep_for > 0:
-                    time.sleep(sleep_for)
+        cap = self.bg_cap if _finnhub_bg_ctx.get() else self.max_per_min
+        while True:
+            with self.lock:
                 now = time.time()
                 self.calls = [t for t in self.calls if now - t < 60]
-            self.calls.append(now)
+                if len(self.calls) < cap:
+                    self.calls.append(now)
+                    return
+                sleep_for = 60 - (now - self.calls[0]) + 0.05
+            # Dormimos FUERA del lock para no serializar al resto de callers.
+            time.sleep(min(max(sleep_for, 0.05), 1.0))
 
 
 _finnhub_limiter = _FinnhubLimiter(max_per_min=50)
@@ -132,7 +154,7 @@ _INFO_TTL_SECONDS = 3600
 _yf_pool = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="yf")
 _INFO_FETCH_TIMEOUT = 4.0      # seg máx esperando a .info
 _NEWS_FETCH_TIMEOUT = 5.0      # seg máx esperando a .news
-_HISTORY_FETCH_TIMEOUT = 8.0   # seg máx esperando a .history antes de caer al fallback
+_HISTORY_FETCH_TIMEOUT = 5.0   # seg máx esperando a .history antes de caer al fallback
 
 
 def _call_with_timeout(fn, timeout, default):
@@ -201,7 +223,7 @@ def _fetch_yahoo_chart(ticker: str, interval: str, period: str) -> Optional[pd.D
             "includePrePost": "false",
             "events": "div,splits",
         }
-        r = _yf_session.get(url, params=params, timeout=10)
+        r = _yf_session.get(url, params=params, timeout=6)
         if r.status_code != 200:
             return None
         data = r.json() or {}

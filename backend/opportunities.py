@@ -102,6 +102,9 @@ async def _run_screener_scan():
     if _screener_lock.locked():
         return
     async with _screener_lock:
+        # Marca todas las llamadas Finnhub de este escaneo como background: reservan
+        # menos cuota y dejan pasar antes a las del usuario (dashboard).
+        market_data.enter_finnhub_background()
         try:
             # Phase 1 — quotes only, apply the 5 cheap filters (no extra API calls)
             sem = asyncio.Semaphore(8)
