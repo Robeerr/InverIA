@@ -392,11 +392,19 @@ def finnhub_earnings_calendar(days: int = 14, symbols=None):
         return None
 
 
+_ALPHA_SENTIMENT_TTL = 6 * 3600  # 6h — Alpha Vantage free tier allows only 25 calls/day
+
+
 def alpha_sentiment_news(symbol: str, limit: int = 6):
-    """Alpha Vantage news sentiment."""
+    """Alpha Vantage news sentiment. Cached 6h because the free tier only allows
+    25 requests/day — without caching a handful of tickers exhausts the quota."""
     key = _alpha_key()
     if not key:
         return None
+    cache_key = ("alpha_sentiment", symbol.upper(), limit)
+    cached, hit = _ext_cache_get(cache_key, _ALPHA_SENTIMENT_TTL)
+    if hit:
+        return cached
     try:
         r = _md.get_http_session().get(
             ALPHA_BASE,
@@ -411,7 +419,8 @@ def alpha_sentiment_news(symbol: str, limit: int = 6):
         if r.status_code != 200:
             return None
         d = r.json() or {}
-        # Alpha Vantage may return rate-limit "Information" key with no feed
+        # Alpha Vantage may return rate-limit "Information" key with no feed.
+        # Don't cache rate-limit responses — retry next time rather than caching empty.
         if d.get("Information") or d.get("Note"):
             return None
         feed = d.get("feed") or []
@@ -432,6 +441,7 @@ def alpha_sentiment_news(symbol: str, limit: int = 6):
                 "ticker_sentiment_score": float(ts.get("ticker_sentiment_score")) if ts and ts.get("ticker_sentiment_score") else None,
                 "ticker_sentiment_label": ts.get("ticker_sentiment_label") if ts else None,
             })
+        _ext_cache_set(cache_key, out)
         return out
     except Exception:
         return None

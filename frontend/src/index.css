@@ -79,6 +79,13 @@ body {
 .dark .bg-\[\#d85c41\]\/5 { background-color: rgba(248, 113, 113, 0.06) !important; }
 .dark .border-\[\#4a7c59\]\/30 { border-color: rgba(74, 222, 128, 0.3) !important; }
 .dark .border-\[\#d85c41\]\/30 { border-color: rgba(248, 113, 113, 0.3) !important; }
+/* Gold accent (warnings, "actualizando", highlights) — brighter on dark */
+.dark .text-\[\#c9a14a\] { color: #fbbf24 !important; }
+.dark .bg-\[\#c9a14a\] { background-color: #fbbf24 !important; color: #0a0e13 !important; }
+/* Blue accent (volume, "más negociadas") — brighter on dark */
+.dark .text-\[\#1F6FB5\] { color: #60a5fa !important; }
+.dark .bg-\[\#1F6FB5\]\/10 { background-color: rgba(96, 165, 250, 0.12) !important; }
+.dark .border-\[\#1F6FB5\]\/30 { border-color: rgba(96, 165, 250, 0.3) !important; }
 
 .font-heading {
     font-family: 'Manrope', sans-serif;
@@ -218,6 +225,9 @@ body {
     background-image: radial-gradient(rgba(0,0,0,0.04) 1px, transparent 1px);
     background-size: 3px 3px;
     opacity: 0.5;
+}
+.dark .grain::before {
+    background-image: radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px);
 }
 
 /* Hide debug wrapper */
