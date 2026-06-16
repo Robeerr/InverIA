@@ -13,6 +13,7 @@ import logging
 import uuid
 import certifi
 from pathlib import Path
+from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
@@ -79,7 +80,67 @@ class SafeJSONResponse(JSONResponse):
         return json.dumps(_clean_nans(content), ensure_ascii=False).encode("utf-8")
 
 
-app = FastAPI(title="InverIA API", default_response_class=SafeJSONResponse)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ----- Startup -----
+    # DB indexes
+    await db.signal_entries.create_index("symbol")
+    await db.signal_entries.create_index("active")
+    await db.analyses.create_index([("symbol", 1), ("created_at", -1)])
+    await db.watchlist.create_index("symbol")
+    await db.alerts.create_index("symbol")
+
+    # Single alert system: the portfolio table (signal_table) worker.
+    asyncio.create_task(signal_table.signal_worker_loop(db))
+
+    # Keep Render free tier awake: ping /health every 10 min.
+    async def _self_ping():
+        import httpx
+        await asyncio.sleep(30)
+        render_url = os.environ.get("RENDER_EXTERNAL_URL", "")
+        if not render_url:
+            return
+        url = f"{render_url.rstrip('/')}/api/health"
+        async with httpx.AsyncClient(timeout=10) as client_http:
+            while True:
+                try:
+                    await client_http.head(url)
+                except Exception:
+                    pass
+                await asyncio.sleep(600)  # 10 min
+
+    asyncio.create_task(_self_ping())
+
+    # Pre-warm daily opportunities so first user request hits a warm cache.
+    async def _prewarm_opportunities():
+        try:
+            await asyncio.sleep(3)  # give the app a moment to finish booting
+            await opportunities.scan_daily_opportunities(force_refresh=True)
+            logger.info("Opportunities pre-warm complete")
+        except Exception as e:
+            logger.warning(f"Opportunities pre-warm failed: {e}")
+
+    asyncio.create_task(_prewarm_opportunities())
+
+    # Pre-warm the growth screener, staggered after opportunities so we don't
+    # hammer the data sources with 150+ quote requests at boot.
+    async def _prewarm_screener():
+        try:
+            await asyncio.sleep(180)
+            await opportunities._run_screener_scan()
+            logger.info("Growth screener pre-warm complete")
+        except Exception as e:
+            logger.warning(f"Screener pre-warm failed: {e}")
+
+    asyncio.create_task(_prewarm_screener())
+
+    yield
+
+    # ----- Shutdown -----
+    client.close()
+
+
+app = FastAPI(title="InverIA API", default_response_class=SafeJSONResponse, lifespan=lifespan)
 api_router = APIRouter(prefix="/api")
 
 logger = logging.getLogger("inveria")
@@ -1141,73 +1202,4 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-@app.on_event("startup")
-async def create_db_indexes():
-    await db.signal_entries.create_index("symbol")
-    await db.signal_entries.create_index("active")
-    await db.analyses.create_index([("symbol", 1), ("created_at", -1)])
-    await db.watchlist.create_index("symbol")
-    await db.alerts.create_index("symbol")
-
-
-@app.on_event("startup")
-async def start_signal_worker():
-    # Single alert system: the portfolio table (signal_table). The old PriceAlert
-    # worker was removed — it had no UI and ran 24/7 (risk of phantom alerts).
-    asyncio.create_task(signal_table.signal_worker_loop(db))
-
-
-@app.on_event("startup")
-async def self_ping_loop():
-    """Ping /health every 10 min to prevent Render free tier from spinning down."""
-    import httpx
-
-    async def _run():
-        await asyncio.sleep(30)
-        render_url = os.environ.get("RENDER_EXTERNAL_URL", "")
-        if not render_url:
-            return
-        url = f"{render_url.rstrip('/')}/api/health"
-        async with httpx.AsyncClient(timeout=10) as client:
-            while True:
-                try:
-                    await client.head(url)
-                except Exception:
-                    pass
-                await asyncio.sleep(600)  # 10 min
-
-    asyncio.create_task(_run())
-
-
-@app.on_event("startup")
-async def prewarm_opportunities():
-    """Pre-cache the daily opportunities scan in background so the first user
-    request hits a warm cache (avoids cold-start timeouts on Render/proxy)."""
-    async def _run():
-        try:
-            await asyncio.sleep(3)  # give the app a moment to finish booting
-            await opportunities.scan_daily_opportunities(force_refresh=True)
-            logger.info("Opportunities pre-warm complete")
-        except Exception as e:
-            logger.warning(f"Opportunities pre-warm failed: {e}")
-    asyncio.create_task(_run())
-
-
-@app.on_event("startup")
-async def prewarm_screener():
-    """Pre-warm the growth screener in background, staggered after the opportunities
-    pre-warm so we don't hammer yfinance with 150+ quote requests at boot. Runs in a
-    background task (not tied to an HTTP request) to avoid proxy timeouts."""
-    async def _run():
-        try:
-            await asyncio.sleep(180)  # let the opportunities pre-warm finish first
-            await opportunities._run_screener_scan()  # blocking scan -> fills cache
-            logger.info("Growth screener pre-warm complete")
-        except Exception as e:
-            logger.warning(f"Screener pre-warm failed: {e}")
-    asyncio.create_task(_run())
-
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
+# Startup/shutdown logic lives in the `lifespan` handler above (FastAPI lifespan API).

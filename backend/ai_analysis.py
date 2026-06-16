@@ -14,11 +14,13 @@ except ImportError:
     UserMessage = None
 
 try:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types as genai_types
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
     genai = None
+    genai_types = None
 
 
 # (provider, model_id, is_free)
@@ -374,7 +376,7 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str) -> dict:
     """Google Gemini via the free AI Studio API (GEMINI_API_KEY)."""
     if not GEMINI_AVAILABLE:
         raise RuntimeError(
-            "La librería google-generativeai no está instalada en el servidor. "
+            "La librería google-genai no está instalada en el servidor. "
             "Añádela a requirements.txt y vuelve a desplegar."
         )
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -383,20 +385,22 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str) -> dict:
             "GEMINI_API_KEY no configurada. Crea una key gratis en "
             "https://aistudio.google.com/apikey y añádela en Render."
         )
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(
-        model_name=model_id,
+    client = genai.Client(api_key=api_key)
+    config = genai_types.GenerateContentConfig(
         system_instruction=SYSTEM_PROMPT,
-        generation_config={
-            "temperature": 0.3,
-            # Gemini 2.5 Flash spends part of the budget on internal "thinking",
-            # so give plenty of headroom for thinking + the full JSON answer.
-            "max_output_tokens": 16384,
-            "response_mime_type": "application/json",
-        },
+        temperature=0.3,
+        # Gemini 2.5 Flash spends part of the budget on internal "thinking",
+        # so give plenty of headroom for thinking + the full JSON answer.
+        max_output_tokens=16384,
+        response_mime_type="application/json",
     )
-    # SDK is synchronous — run off the event loop
-    response = await asyncio.to_thread(model.generate_content, user_msg)
+    # SDK call is synchronous — run off the event loop
+    response = await asyncio.to_thread(
+        client.models.generate_content,
+        model=model_id,
+        contents=user_msg,
+        config=config,
+    )
     text = getattr(response, "text", "") or ""
     if not text:
         raise RuntimeError(
