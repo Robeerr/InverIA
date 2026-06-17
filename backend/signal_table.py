@@ -262,24 +262,37 @@ async def signal_worker_loop(db, interval: int = 30):
                         continue
 
                     daily_chg = quote.get("change_percent")
+                    prev_close = quote.get("previous_close")
                     upd = {
                         "last_price": price,
                         "market_state": "REGULAR" if market_open else None,
                         "pre_market_price": None,
                         "post_market_price": None,
+                        "previous_close": round(float(prev_close), 2) if prev_close else None,
                         "daily_change_percent": round(float(daily_chg), 2) if daily_chg is not None else None,
+                        "extended_change_percent": None,
                         "updated_at": _now(),
                     }
-                    # Fuera del horario regular, usar el pre/post ya obtenido en Fase 1
-                    if not market_open:
-                        if ext:
-                            upd["market_state"] = ext.get("market_state")
-                            if ext.get("market_state") == "PRE":
-                                upd["pre_market_price"] = ext.get("extended_price")
-                            elif ext.get("market_state") == "POST":
-                                upd["post_market_price"] = ext.get("extended_price")
-                            if ext.get("regular_close"):
-                                upd["last_price"] = ext["regular_close"]
+                    # Fuera del horario regular, calcular el pre/post.
+                    if not market_open and ext:
+                        state = ext.get("market_state")
+                        ext_price = ext.get("extended_price")
+                        upd["market_state"] = state
+                        if state == "PRE":
+                            upd["pre_market_price"] = ext_price
+                        elif state == "POST":
+                            upd["post_market_price"] = ext_price
+                        # Base del % extendido = último cierre regular. El precio de
+                        # Finnhub (`price`) se congela en ese cierre fuera de horario y
+                        # es fiable; yfinance `regular_close` en el cloud llega desfasado
+                        # un día (de ahí el valor "pegado" tipo 599.80). Por eso NO
+                        # sobrescribimos last_price con regular_close: lo dejamos en el
+                        # valor de Finnhub y calculamos el % contra él en el servidor.
+                        base = price
+                        if ext_price and base:
+                            upd["extended_change_percent"] = round(
+                                (ext_price - base) / base * 100, 2
+                            )
                     await db.signal_entries.update_one({"id": entry["id"]}, {"$set": upd})
 
                     # Las alertas de nivel solo se disparan en horario regular

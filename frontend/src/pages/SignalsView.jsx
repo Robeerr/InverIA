@@ -51,8 +51,15 @@ function ExtendedBadge({ entry }) {
   // Daily change (regular session vs previous close) — always show when available
   const dailyPct = entry.daily_change_percent;
   if (!ext && dailyPct == null) return null;
+  // El % extendido lo calcula el backend contra el último cierre regular (fiable).
+  // Fallback al cálculo antiguo solo si el backend aún no lo trae.
   const base = entry.last_price;
-  const ahPct = ext && base ? ((ext.price - base) / base) * 100 : null;
+  const ahPct =
+    ext && entry.extended_change_percent != null
+      ? entry.extended_change_percent
+      : ext && base
+      ? ((ext.price - base) / base) * 100
+      : null;
   const ahUp = (ahPct ?? 0) >= 0;
   const dayUp = (dailyPct ?? 0) >= 0;
   return (
