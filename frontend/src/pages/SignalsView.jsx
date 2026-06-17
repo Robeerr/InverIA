@@ -48,16 +48,31 @@ function extendedInfo(e) {
 
 function ExtendedBadge({ entry }) {
   const ext = extendedInfo(entry);
-  if (!ext) return null;
+  // Daily change (regular session vs previous close) — always show when available
+  const dailyPct = entry.daily_change_percent;
+  if (!ext && dailyPct == null) return null;
   const base = entry.last_price;
-  const pct = base ? ((ext.price - base) / base) * 100 : null;
-  const up = (pct ?? 0) >= 0;
+  const ahPct = ext && base ? ((ext.price - base) / base) * 100 : null;
+  const ahUp = (ahPct ?? 0) >= 0;
+  const dayUp = (dailyPct ?? 0) >= 0;
   return (
-    <div
-      className={`text-[10px] font-mono ${up ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
-      title={ext.label === "PRE" ? "Pre-market" : "After-hours"}
-    >
-      {ext.label} ${Number(ext.price).toFixed(2)}{pct != null ? ` (${up ? "+" : ""}${pct.toFixed(2)}%)` : ""}
+    <div className="flex flex-col gap-0.5">
+      {dailyPct != null && (
+        <div
+          className={`text-[10px] font-mono ${dayUp ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+          title="Variación sesión regular vs cierre anterior"
+        >
+          {dayUp ? "+" : ""}{dailyPct.toFixed(2)}% hoy
+        </div>
+      )}
+      {ext && (
+        <div
+          className={`text-[10px] font-mono ${ahUp ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+          title={`${ext.label === "PRE" ? "Pre-market" : "After-hours"} vs cierre regular`}
+        >
+          {ext.label} ${Number(ext.price).toFixed(2)}{ahPct != null ? ` (${ahUp ? "+" : ""}${ahPct.toFixed(2)}%)` : ""}
+        </div>
+      )}
     </div>
   );
 }

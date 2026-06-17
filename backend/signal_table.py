@@ -261,11 +261,13 @@ async def signal_worker_loop(db, interval: int = 30):
                     if price <= 0:
                         continue
 
+                    daily_chg = quote.get("change_percent")
                     upd = {
                         "last_price": price,
                         "market_state": "REGULAR" if market_open else None,
                         "pre_market_price": None,
                         "post_market_price": None,
+                        "daily_change_percent": round(float(daily_chg), 2) if daily_chg is not None else None,
                         "updated_at": _now(),
                     }
                     # Fuera del horario regular, usar el pre/post ya obtenido en Fase 1
