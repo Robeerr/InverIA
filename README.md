@@ -146,10 +146,10 @@ App disponible en `http://localhost:3000`.
 ### 4️⃣ CORS
 En Render, pon `CORS_ORIGINS` con tu URL de Vercel y reinicia el backend.
 
-### 5️⃣ Mantenerlo despierto (evitar cold-starts)
-El repo incluye un GitHub Action (`.github/workflows/keep-warm.yml`) que hace ping a
-`/api/health` cada 5 minutos. También puedes usar [UptimeRobot](https://uptimerobot.com)
-apuntando a la misma URL. Esto mantiene vivo el worker de alertas y elimina los arranques en frío.
+### 5️⃣ Plan de Render
+El backend corre en el plan **Starter** de Render: siempre activo (sin suspensiones ni
+cold-starts) y con despliegues sin downtime, por lo que el worker de alertas y los
+escaneos en segundo plano corren 24/7 sin necesidad de pings externos.
 
 ## 🔧 API endpoints principales
 
