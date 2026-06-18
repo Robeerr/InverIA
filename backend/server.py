@@ -40,7 +40,7 @@ import time as _time
 
 class _TTLCache:
     """Bounded TTL cache. Purges expired entries and evicts oldest (FIFO) past
-    maxsize so memory can't grow without limit on the free tier."""
+    maxsize so memory can't grow without limit on the 512MB instance."""
 
     def __init__(self, maxsize=500):
         self._store = {}
@@ -280,8 +280,8 @@ async def root():
 
 @api_router.api_route("/health", methods=["GET", "HEAD"])
 async def health():
-    """Lightweight endpoint used by UptimeRobot / GitHub Actions to keep the
-    Render free tier instance warm. Accepts both GET and HEAD."""
+    """Lightweight liveness probe (Render health check / uptime monitoring).
+    Accepts both GET and HEAD."""
     return {"status": "ok", "ts": datetime.now(timezone.utc).isoformat()}
 
 
@@ -1228,7 +1228,7 @@ _FINNHUB_WS_URL = "wss://ws.finnhub.io"
 class _QuoteManager:
     """Streams live price updates to connected frontend WebSocket clients.
 
-    Hybrid design tuned for Render's free tier:
+    Hybrid design that minimises Finnhub REST quota:
       • A single shared Finnhub trade WebSocket pushes tick-by-tick prices the
         instant a trade happens (no REST quota used while streaming).
       • A light REST loop per symbol (every 15s) seeds the baseline — previous

@@ -57,7 +57,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   });
 
   // Contador de petición: descarta respuestas que llegan tarde tras cambiar de símbolo
-  // (en Render free tier el primer request puede tardar mucho y pisar datos más nuevos).
+  // (una petición lenta no debe pisar datos de un símbolo posterior).
   const reqId = useRef(0);
 
   const loadSymbolData = useCallback(async (sym, tf) => {
@@ -67,12 +67,12 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
     setMarketSignals(null);
     setVolumeProfile(null);
     setBuyLevels(null);
-    // 1 reintento ante cold start de Render (el primer request tras dormir suele fallar/tardar).
+    // 1 reintento rápido ante un fallo de red puntual.
     const fetchWithRetry = async () => {
       try {
         return await api.dashboard(sym, tf);
       } catch (e) {
-        await new Promise((r) => setTimeout(r, 1500));
+        await new Promise((r) => setTimeout(r, 600));
         return await api.dashboard(sym, tf);
       }
     };
