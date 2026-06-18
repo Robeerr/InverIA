@@ -1,5 +1,6 @@
 """Daily opportunities scanner — analyzes a universe of stocks and detects buy signals."""
 import asyncio
+import gc
 import logging
 from datetime import datetime, timezone, timedelta
 import market_data
@@ -160,6 +161,21 @@ _SCREENER_TTL = timedelta(hours=2)
 _screener_lock = asyncio.Lock()
 
 
+def daily_cache_is_fresh() -> bool:
+    """True si el snapshot de oportunidades en caché sigue dentro de su TTL.
+    Permite saltarse el precalentado al arrancar cuando el snapshot hidratado
+    desde Mongo aún es válido — evita el pico de memoria del escaneo en cada
+    redeploy (clave para que el plan Starter de 512 MB no se quede corto)."""
+    c = _cache
+    return bool(c["data"] and c["ts"] and (datetime.now(timezone.utc) - c["ts"]) < _CACHE_TTL)
+
+
+def screener_cache_is_fresh() -> bool:
+    """True si el snapshot del screener en caché sigue dentro de su TTL."""
+    c = _screener_cache
+    return bool(c["data"] and c["ts"] and (datetime.now(timezone.utc) - c["ts"]) < _SCREENER_TTL)
+
+
 def _passes_cheap_filters(q: dict) -> bool:
     """The 5 filters that need only the quote (no extra API calls)."""
     price = q.get("price")
@@ -264,6 +280,8 @@ async def _run_screener_scan():
             await _save_snapshot("screener", _screener_cache["data"])
         except Exception:
             pass
+        finally:
+            gc.collect()
 
 
 async def scan_growth_screener(force_refresh: bool = False):
@@ -435,10 +453,11 @@ async def scan_daily_opportunities(force_refresh: bool = False):
         # cedan cuota a las del usuario (dashboard) — igual que el screener.
         market_data.enter_finnhub_background()
 
-        # Run analyses with limited concurrency to respect Finnhub's 60 calls/min free tier.
-        # Each symbol does ~2 Finnhub calls (quote + recommendation), so sem=3 keeps us
-        # comfortably under the limit and the shared rate-limiter handles bursts.
-        sem = asyncio.Semaphore(3)
+        # Run analyses with limited concurrency. Each symbol loads ~2 años de datos en
+        # un DataFrame + compute_all (pandas), así que sem=2 limita cuántos DataFrames
+        # coexisten en memoria — pensado para que quepa holgado en 512 MB (plan Starter).
+        # También respeta el límite de 60 llamadas/min de Finnhub free.
+        sem = asyncio.Semaphore(2)
 
         async def bounded(s):
             async with sem:
@@ -463,4 +482,6 @@ async def scan_daily_opportunities(force_refresh: bool = False):
         _cache["data"] = data
         _cache["ts"] = now
         await _save_snapshot("daily", data)
+        # Devuelve al SO la memoria de los DataFrames del escaneo cuanto antes.
+        gc.collect()
         return data
