@@ -329,21 +329,20 @@ async def signal_worker_loop(db, interval: int = 10):
                             continue
                         if not entry.get(f"alert_{level_key}", True):
                             continue
-                        # Disparar cuando el precio entra en la zona = [target-∞, target*(1+margin)]
+                        # Disparar cuando el precio ENTRA en la zona [−∞, target*(1+margin)].
+                        # Requiere baseline anterior (prev_price>threshold) para detectar cruce.
                         threshold = round(target * (1 + _ALERT_MARGIN_PCT / 100), 4)
                         if price > threshold:
-                            continue
-                        if prev_price is None or prev_price > threshold:
-                            pass  # cruce legítimo (nuevo ingreso en zona)
-                        else:
-                            continue  # ya estaba dentro de la zona
+                            continue  # todavía por encima de la zona
+                        if prev_price is None or prev_price <= threshold:
+                            continue  # sin baseline aún, o ya estaba en zona (no es cruce nuevo)
                         cd_key = f"{symbol}_{level_key}_{today}"
                         if await _is_in_cooldown(db, cd_key):
                             continue
                         await _set_cooldown(db, cd_key)
                         diff_pct = round(((price - target) / target) * 100, 2)
                         level_num = level_key.replace("nivel", "Nivel ")
-                        approaching = price > target  # todavía por encima del nivel exacto
+                        approaching = price > target  # precio en zona pero aún sobre el nivel exacto
                         await _fire_alert(
                             entry, symbol, level_num, target, price, diff_pct, "COMPRA",
                             db=db, approaching=approaching,
@@ -354,14 +353,12 @@ async def signal_worker_loop(db, interval: int = 10):
                             continue
                         if not entry.get(f"alert_{level_key}", True):
                             continue
-                        # Disparar cuando el precio supera target*(1-margin)
+                        # Disparar cuando el precio SUPERA target*(1-margin) al alza.
                         threshold = round(target * (1 - _ALERT_MARGIN_PCT / 100), 4)
                         if price < threshold:
-                            continue
-                        if prev_price is None or prev_price < threshold:
-                            pass  # cruce legítimo
-                        else:
-                            continue
+                            continue  # todavía por debajo de la zona
+                        if prev_price is None or prev_price >= threshold:
+                            continue  # sin baseline o ya estaba en zona
                         cd_key = f"{symbol}_{level_key}_{today}"
                         if await _is_in_cooldown(db, cd_key):
                             continue
