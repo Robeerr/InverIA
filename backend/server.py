@@ -29,6 +29,7 @@ import fmp_data
 import alerts_worker
 import opportunities
 import signal_table
+import levels_engine
 import auth
 
 ROOT_DIR = Path(__file__).parent
@@ -507,6 +508,17 @@ async def analyze(req: AnalyzeRequest):
             quote[k] = v
     analyst_consensus = external_data.aggregate_recommendation(trends)
 
+    # Motor de confluencia: calcula deterministamente las zonas de compra
+    # (Volume Profile + Fibonacci del swing + pivotes + medias + nº redondos)
+    # rankeadas por fuerza, para anclar los niveles de la IA a estructura real.
+    buy_levels = []
+    try:
+        buy_levels = levels_engine.compute_buy_levels(
+            df, vp, quote.get("price"), (indicators_data or {}).get("sma")
+        )
+    except Exception:
+        logger.exception("compute_buy_levels failed")
+
     requested_model = req.model or ai_analysis.DEFAULT_MODEL
     analyze_kwargs = dict(
         analyst_consensus=analyst_consensus,
@@ -514,6 +526,7 @@ async def analyze(req: AnalyzeRequest):
         volume_profile=vp,
         insider=insider,
         earnings_history=earnings_hist,
+        buy_levels=buy_levels,
     )
     used_model = requested_model
     FALLBACK_MODEL = "gpt-oss-120b"  # Groq — higher free-tier limits, robust fallback
@@ -540,6 +553,12 @@ async def analyze(req: AnalyzeRequest):
 
     # Guarantee real support/resistance levels and realistic take-profits regardless
     # of how the model filled them (key_levels can come back empty -> NaN in the UI).
+    # Seed the supports with the confluence engine's zones so the floor is always solid.
+    if buy_levels and isinstance(result, dict):
+        kl = result.get("key_levels") if isinstance(result.get("key_levels"), dict) else {}
+        existing = kl.get("support") if isinstance(kl.get("support"), list) else []
+        kl["support"] = [z["price"] for z in buy_levels] + list(existing)
+        result["key_levels"] = kl
     result = _ensure_key_levels(result, indicators_data, vp, quote.get("price"))
     result = _cap_take_profits(result, quote.get("high_52w"))
 
@@ -569,6 +588,7 @@ async def analyze(req: AnalyzeRequest):
         "insider": insider,
         "earnings_history": earnings_hist,
         "volume_profile": vp or None,
+        "buy_levels": buy_levels or [],
     }
 
 

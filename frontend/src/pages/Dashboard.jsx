@@ -41,6 +41,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const [analystData, setAnalystData] = useState(null);
   const [marketSignals, setMarketSignals] = useState(null);
   const [volumeProfile, setVolumeProfile] = useState(null);
+  const [buyLevels, setBuyLevels] = useState(null);
   const [news, setNews] = useState([]);
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
@@ -65,6 +66,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
     setAnalysis(null);
     setMarketSignals(null);
     setVolumeProfile(null);
+    setBuyLevels(null);
     // 1 reintento ante cold start de Render (el primer request tras dormir suele fallar/tardar).
     const fetchWithRetry = async () => {
       try {
@@ -140,6 +142,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
         setMarketSignals({ insider: res.insider, earningsHistory: res.earnings_history });
       }
       if (res.volume_profile) setVolumeProfile(res.volume_profile);
+      if (res.buy_levels) setBuyLevels(res.buy_levels);
       if (res.fellback) {
         toast.warning(`${res.requested_model} no disponible (límite o error) — análisis hecho con ${res.model}`);
       } else {
@@ -238,6 +241,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
         analystConsensus={analystData?.consensus}
         priceTarget={analystData?.price_target}
         volumeProfile={volumeProfile}
+        buyLevels={buyLevels}
       />
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6">

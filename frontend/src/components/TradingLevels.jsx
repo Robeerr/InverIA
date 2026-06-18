@@ -39,6 +39,75 @@ function ConfluenceBadge({ match }) {
   );
 }
 
+// Color of the strength meter by score.
+function strengthTone(s) {
+  if (s >= 75) return { bar: "bg-[#4a7c59]", text: "text-[#4a7c59]", label: "Muy fuerte" };
+  if (s >= 50) return { bar: "bg-[#c9a14a]", text: "text-[#8a6508]", label: "Fuerte" };
+  return { bar: "bg-[#9aa39f]", text: "text-[#5c6b66]", label: "Moderado" };
+}
+
+// Confluence-engine buy zones: deterministic levels ranked by how many independent
+// methods (Volume Profile + Fibonacci + pivots + SMAs) agree, each with a 0-100 score.
+function SmartBuyLevels({ levels, current }) {
+  if (!levels || !levels.length) return null;
+  return (
+    <div data-testid="smart-buy-levels" className="mb-5 p-4 bg-[#4a7c59]/[0.04] border border-[#4a7c59]/25 rounded-md">
+      <div className="flex items-center gap-2 mb-3">
+        <Crosshair size={14} weight="bold" className="text-[#4a7c59]" />
+        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#4a7c59]">
+          Niveles de compra por confluencia · calculados sobre estructura real
+        </p>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {levels.map((z, i) => {
+          const tone = strengthTone(z.strength);
+          const dist = z.distance_pct != null ? z.distance_pct
+            : current && z.price ? ((z.price - current) / current) * 100 : null;
+          return (
+            <div key={i} data-testid={`smart-level-${i}`} className="bg-white border border-[#e5e0d8] rounded-md p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-baseline gap-2">
+                  <span className="font-mono text-[10px] font-semibold text-[#1a3a32] uppercase tracking-wider">{z.label}</span>
+                  <span className="font-mono font-bold text-lg text-[#0e1f1a]">${fmtPrice(z.price)}</span>
+                  {z.zone_low != null && z.zone_high != null && z.zone_low !== z.zone_high && (
+                    <span className="font-mono text-[10px] text-[#5c6b66]">(${fmtPrice(z.zone_low)}–${fmtPrice(z.zone_high)})</span>
+                  )}
+                </div>
+                {dist != null && (
+                  <span className="font-mono text-[11px] text-[#5c6b66]">{dist >= 0 ? "+" : ""}{dist.toFixed(1)}%</span>
+                )}
+              </div>
+
+              {/* Strength meter */}
+              <div className="flex items-center gap-2 mt-2">
+                <div className="flex-1 h-1.5 bg-[#e5e0d8] rounded-full overflow-hidden">
+                  <div className={`h-full ${tone.bar} transition-all`} style={{ width: `${Math.max(0, Math.min(100, z.strength))}%` }} />
+                </div>
+                <span className={`font-mono text-[11px] font-semibold ${tone.text}`}>{z.strength}/100</span>
+              </div>
+
+              {/* Confluence reasons */}
+              {Array.isArray(z.reasons) && z.reasons.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {z.reasons.map((r, j) => (
+                    <span key={j} className="inline-flex items-center text-[9px] font-medium px-1.5 py-0.5 rounded bg-[#1a3a32]/[0.06] text-[#3a4a44]">
+                      {r}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-[10px] text-[#5c6b66] mt-3 leading-relaxed">
+        La fuerza mide cuántos métodos independientes coinciden en la misma zona (volumen real, Fibonacci, soportes históricos, medias).
+        Cuantos más coinciden, más fiable es el nivel.
+      </p>
+    </div>
+  );
+}
+
 function RecBig({ rec }) {
   if (rec === "COMPRAR") {
     return (
@@ -92,7 +161,7 @@ function LevelCard({ icon, label, primary, sub, tone, testId }) {
   );
 }
 
-export default function TradingLevels({ quote, analysis, analystConsensus, priceTarget, volumeProfile }) {
+export default function TradingLevels({ quote, analysis, analystConsensus, priceTarget, volumeProfile, buyLevels }) {
   if (!analysis) {
     return (
       <section data-testid="trading-levels-empty" className="card-flat p-6 border-2 border-dashed">
@@ -144,6 +213,9 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
           <RecBig rec={analysis.recommendation} />
         </div>
       </div>
+
+      {/* Smart buy levels — confluence engine, ranked by strength */}
+      <SmartBuyLevels levels={buyLevels} current={current} />
 
       {/* Volume Profile bar — the real high-volume price levels */}
       {hasVp && (
