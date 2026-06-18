@@ -343,7 +343,9 @@ def _parse_model_json(content: str) -> dict:
     raise RuntimeError(f"No se pudo parsear el JSON del modelo. Inicio: {text[:100]}")
 
 
-async def _analyze_with_groq(model_id: str, user_msg: str) -> dict:
+async def _analyze_with_groq(model_id: str, user_msg: str,
+                             system_prompt: str = SYSTEM_PROMPT,
+                             max_tokens: int = 3000) -> dict:
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         raise RuntimeError("GROQ_API_KEY no configurada")
@@ -353,10 +355,10 @@ async def _analyze_with_groq(model_id: str, user_msg: str) -> dict:
         kwargs = dict(
             model=model_id,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_msg},
             ],
-            max_tokens=3000,
+            max_tokens=max_tokens,
             temperature=0.3,
         )
         if use_json_format:
@@ -372,7 +374,9 @@ async def _analyze_with_groq(model_id: str, user_msg: str) -> dict:
     return _parse_model_json(content)
 
 
-async def _analyze_with_gemini_free(model_id: str, user_msg: str) -> dict:
+async def _analyze_with_gemini_free(model_id: str, user_msg: str,
+                                    system_prompt: str = SYSTEM_PROMPT,
+                                    max_tokens: int = 16384) -> dict:
     """Google Gemini via the free AI Studio API (GEMINI_API_KEY)."""
     if not GEMINI_AVAILABLE:
         raise RuntimeError(
@@ -387,11 +391,11 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str) -> dict:
         )
     client = genai.Client(api_key=api_key)
     config = genai_types.GenerateContentConfig(
-        system_instruction=SYSTEM_PROMPT,
+        system_instruction=system_prompt,
         temperature=0.3,
         # Gemini 2.5 Flash spends part of the budget on internal "thinking",
         # so give plenty of headroom for thinking + the full JSON answer.
-        max_output_tokens=16384,
+        max_output_tokens=max_tokens,
         response_mime_type="application/json",
     )
     # SDK call is synchronous — run off the event loop
@@ -410,7 +414,8 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str) -> dict:
     return _parse_model_json(text)
 
 
-async def _analyze_with_emergent(provider: str, model_id: str, user_msg: str) -> dict:
+async def _analyze_with_emergent(provider: str, model_id: str, user_msg: str,
+                                 system_prompt: str = SYSTEM_PROMPT) -> dict:
     if not EMERGENT_AVAILABLE:
         raise RuntimeError(
             "Modelos premium no disponibles en este despliegue. "
@@ -422,10 +427,23 @@ async def _analyze_with_emergent(provider: str, model_id: str, user_msg: str) ->
     chat = LlmChat(
         api_key=api_key,
         session_id=f"stock-analysis-{uuid.uuid4()}",
-        system_message=SYSTEM_PROMPT,
+        system_message=system_prompt,
     ).with_model(provider, model_id)
     response = await chat.send_message(UserMessage(text=user_msg))
     return _parse_model_json(str(response))
+
+
+async def _run_model(model_key: str, system_prompt: str, user_msg: str,
+                     max_tokens: int = 3000) -> dict:
+    """Dispatch a single JSON-returning completion to whichever provider backs
+    `model_key`, using a custom system prompt. Shared by the full analysis and
+    the lightweight '¿por qué se mueve hoy?' explainer."""
+    provider, model_id, _is_free = MODEL_MAP.get(model_key, MODEL_MAP[DEFAULT_MODEL])
+    if provider == "groq":
+        return await _analyze_with_groq(model_id, user_msg, system_prompt, max_tokens)
+    if provider == "google_free":
+        return await _analyze_with_gemini_free(model_id, user_msg, system_prompt, max_tokens)
+    return await _analyze_with_emergent(provider, model_id, user_msg, system_prompt)
 
 
 async def analyze_stock(
@@ -440,12 +458,74 @@ async def analyze_stock(
     insider: dict = None,
     earnings_history: dict = None,
 ) -> dict:
-    provider, model_id, _is_free = MODEL_MAP.get(model_key, MODEL_MAP[DEFAULT_MODEL])
     user_msg = _build_payload(quote, indicators, news, analyst_consensus, price_target,
                               volume_profile, insider, earnings_history)
+    return await _run_model(model_key, SYSTEM_PROMPT, user_msg, max_tokens=3000)
 
-    if provider == "groq":
-        return await _analyze_with_groq(model_id, user_msg)
-    if provider == "google_free":
-        return await _analyze_with_gemini_free(model_id, user_msg)
-    return await _analyze_with_emergent(provider, model_id, user_msg)
+
+# ---------- "¿Por qué se mueve hoy?" — explicación ligera del movimiento diario ----------
+
+DAILY_MOVE_PROMPT = """Eres un analista de mercado que explica, en lenguaje claro y directo, POR QUÉ una acción se mueve HOY.
+Recibes el precio, el cambio del día y los titulares de noticias recientes. Tu trabajo es conectar el movimiento con sus causas probables.
+
+REGLAS ESTRICTAS:
+- Responde SIEMPRE en español, tono cercano pero riguroso.
+- Devuelve ÚNICAMENTE un objeto JSON válido (sin markdown, sin texto extra).
+- Básate en las noticias proporcionadas. Si NINGUNA noticia explica el movimiento, dilo con honestidad y baja la fiabilidad — NO inventes catalizadores.
+- Distingue entre causa específica de la empresa (resultados, upgrade, producto) y arrastre del mercado/sector (macro, tipos, todo el sector cae).
+
+ESTRUCTURA JSON EXACTA:
+{
+  "veredicto": "SUBE" | "BAJA" | "PLANO",
+  "titular": "Una frase corta (máx 12 palabras) que resuma la causa principal del movimiento de hoy.",
+  "factores": [
+    "Factor 1: causa concreta con el dato si lo hay",
+    "Factor 2: otra causa o contexto relevante",
+    "Factor 3: opcional"
+  ],
+  "resumen": "2-4 frases explicando el movimiento, enlazando precio + noticias + contexto de mercado.",
+  "tipo_movimiento": "ESPECÍFICO_EMPRESA" | "SECTOR_MERCADO" | "MIXTO" | "SIN_CATALIZADOR_CLARO",
+  "fiabilidad": "ALTA" | "MEDIA" | "BAJA"
+}
+
+La fiabilidad es ALTA solo si una noticia clara justifica el movimiento; MEDIA si es plausible pero indirecto; BAJA si no hay noticia que lo explique (movimiento técnico o ruido de mercado).
+"""
+
+
+def _build_daily_move_payload(quote: dict, news: list) -> str:
+    price = quote.get("price")
+    chg = quote.get("change")
+    chg_pct = quote.get("change_percent")
+    payload = {
+        "symbol": quote.get("symbol"),
+        "nombre_empresa": quote.get("name"),
+        "sector": quote.get("sector"),
+        "industria": quote.get("industry"),
+        "precio_actual": price,
+        "cambio_hoy_usd": chg,
+        "cambio_hoy_pct": chg_pct,
+        "cierre_anterior": quote.get("previous_close"),
+        "apertura": quote.get("open"),
+        "maximo_dia": quote.get("day_high"),
+        "minimo_dia": quote.get("day_low"),
+        "volumen_hoy": quote.get("volume"),
+        "volumen_promedio": quote.get("avg_volume"),
+        "noticias_recientes": [
+            {"titular": n.get("title"), "fuente": n.get("publisher")}
+            for n in (news or [])
+        ][:8],
+    }
+    return (
+        f"Explica por qué {quote.get('symbol')} se mueve hoy "
+        f"({'+' if (chg_pct or 0) >= 0 else ''}{chg_pct}%).\n\n"
+        f"DATOS:\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
+        f"Responde SOLO con el JSON pedido."
+    )
+
+
+async def explain_daily_move(quote: dict, news: list,
+                             model_key: str = DEFAULT_MODEL) -> dict:
+    """Lightweight, cheap explainer for the daily price move. Uses a small prompt
+    (~600 input tokens) so it costs a fraction of a full analysis."""
+    user_msg = _build_daily_move_payload(quote, news)
+    return await _run_model(model_key, DAILY_MOVE_PROMPT, user_msg, max_tokens=900)

@@ -6,6 +6,7 @@ import PriceChart from "../components/PriceChart";
 import RecommendationPanel from "../components/RecommendationPanel";
 import IndicatorsPanel from "../components/IndicatorsPanel";
 import TradingLevels from "../components/TradingLevels";
+import WhyMovingCard from "../components/WhyMovingCard";
 import AnalystConsensusCard from "../components/AnalystConsensus";
 import { NewsFeed, FundamentalsCard, RisksCatalystsCard, MarketSignalsCard, InvestmentThesisCard, PricePredictionCard } from "../components/InfoCards";
 import { api } from "../lib/api";
@@ -228,6 +229,8 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       ) : quote ? (
         <QuoteHeader quote={quote} />
       ) : null}
+
+      {quote && <WhyMovingCard symbol={symbol} model={model} />}
 
       <TradingLevels
         quote={quote}
