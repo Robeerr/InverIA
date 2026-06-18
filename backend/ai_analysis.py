@@ -166,7 +166,7 @@ IMPORTANTE: Si la acción está en tendencia BAJISTA en el CORTO plazo pero los 
 def _build_payload(quote: dict, indicators: dict, news: list,
                    analyst_consensus: dict = None, price_target: dict = None,
                    volume_profile: dict = None, insider: dict = None,
-                   earnings_history: dict = None) -> str:
+                   earnings_history: dict = None, buy_levels: list = None) -> str:
     ind = indicators or {}
     price = quote.get("price") or 0
     # Prefer yfinance 52w values; fallback to indicator-computed values
@@ -245,9 +245,34 @@ def _build_payload(quote: dict, indicators: dict, news: list,
         } if volume_profile else None,
     }
 
+    # Zonas de compra ya calculadas por el motor de confluencia (deterministas).
+    levels_block = ""
+    if buy_levels:
+        levels_block = (
+            "\n\nZONAS DE COMPRA YA CALCULADAS POR CONFLUENCIA (úsalas como BASE OBLIGATORIA "
+            "para entry_zones y key_levels.support — están ordenadas de más cercana a más "
+            "profunda y cada una trae su fuerza 0-100 y los métodos que coinciden):\n"
+            + json.dumps([
+                {
+                    "nivel": z.get("label"),
+                    "precio": z.get("price"),
+                    "zona": [z.get("zone_low"), z.get("zone_high")],
+                    "fuerza_0_100": z.get("strength"),
+                    "distancia_pct": z.get("distance_pct"),
+                    "confluencia": z.get("reasons"),
+                }
+                for z in buy_levels
+            ], ensure_ascii=False, indent=2)
+            + "\n\nINSTRUCCIÓN: respeta estos precios/zonas para las entradas (no los inventes "
+            "de nuevo). En el comment de cada entry_zone EXPLICA la confluencia indicada. "
+            "Si necesitas una entrada más profunda que las dadas, puedes añadirla, pero las "
+            "calculadas son la referencia principal."
+        )
+
     return (
         f"Analiza en profundidad la acción {quote.get('symbol')} con precio actual ${price}.\n\n"
-        f"DATOS COMPLETOS:\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
+        f"DATOS COMPLETOS:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
+        f"{levels_block}\n\n"
         f"Genera el análisis completo con todos los niveles operativos. "
         f"Usa los niveles Fibonacci y soportes técnicos proporcionados como base para los precios. "
         f"Rellena OBLIGATORIAMENTE risks (mínimo 4), catalysts (mínimo 3) y key_levels con valores reales. "
@@ -457,9 +482,10 @@ async def analyze_stock(
     volume_profile: dict = None,
     insider: dict = None,
     earnings_history: dict = None,
+    buy_levels: list = None,
 ) -> dict:
     user_msg = _build_payload(quote, indicators, news, analyst_consensus, price_target,
-                              volume_profile, insider, earnings_history)
+                              volume_profile, insider, earnings_history, buy_levels)
     return await _run_model(model_key, SYSTEM_PROMPT, user_msg, max_tokens=3000)
 
 
