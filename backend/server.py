@@ -150,10 +150,17 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_self_ping())
 
-    # Pre-warm daily opportunities so first user request hits a warm cache.
+    # Pre-warm daily opportunities so the first user request hits a warm cache —
+    # PERO solo si el snapshot hidratado desde Mongo ya está caducado. En la mayoría
+    # de redeploys el snapshot es reciente, así que nos saltamos el escaneo (pesado en
+    # memoria: carga DataFrames de 2 años) y evitamos el pico de RAM al arrancar. Si
+    # hace falta, se recalcula en segundo plano cuando un usuario llame al endpoint.
     async def _prewarm_opportunities():
         try:
-            await asyncio.sleep(3)  # give the app a moment to finish booting
+            await asyncio.sleep(20)  # deja terminar el arranque (índices, hidratación, worker)
+            if opportunities.daily_cache_is_fresh():
+                logger.info("Opportunities snapshot aún fresco — se omite el precalentado")
+                return
             await opportunities.scan_daily_opportunities(force_refresh=True)
             logger.info("Opportunities pre-warm complete")
         except Exception as e:
@@ -161,11 +168,15 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_prewarm_opportunities())
 
-    # Pre-warm the growth screener, staggered after opportunities so we don't
-    # hammer the data sources with 150+ quote requests at boot.
+    # Pre-warm the growth screener, bien escalonado tras las oportunidades para que
+    # los dos escaneos pesados NO coincidan en memoria. También se omite si el
+    # snapshot del screener sigue vigente.
     async def _prewarm_screener():
         try:
-            await asyncio.sleep(180)
+            await asyncio.sleep(240)
+            if opportunities.screener_cache_is_fresh():
+                logger.info("Screener snapshot aún fresco — se omite el precalentado")
+                return
             await opportunities._run_screener_scan()
             logger.info("Growth screener pre-warm complete")
         except Exception as e:
