@@ -36,6 +36,8 @@ export const api = {
   news: (symbol) => client.get(`/news/${symbol}`).then((r) => r.data),
   analyze: (symbol, model) =>
     client.post(`/analyze`, { symbol, model }, { timeout: 120000 }).then((r) => r.data),
+  whyMoving: (symbol, model) =>
+    client.get(`/why-moving/${symbol}`, { params: model ? { model } : {}, timeout: 60000 }).then((r) => r.data),
   popular: () => client.get(`/market/popular`).then((r) => r.data),
   analyst: (symbol) => client.get(`/analyst/${symbol}`).then((r) => r.data),
   sentiment: (symbol) => client.get(`/sentiment/${symbol}`).then((r) => r.data),

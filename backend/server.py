@@ -572,6 +572,60 @@ async def analyze(req: AnalyzeRequest):
     }
 
 
+# ---------- "¿Por qué se mueve hoy?" ----------
+@api_router.get("/why-moving/{symbol}")
+async def why_moving(symbol: str, model: Optional[str] = None):
+    """Explicación breve y barata de por qué la acción se mueve hoy: conecta el
+    cambio del día con los titulares recientes mediante IA. Cacheado 10 min."""
+    sym = symbol.upper()
+    model_key = model or ai_analysis.DEFAULT_MODEL
+    cache_key = f"why_moving:{sym}:{model_key}"
+    cached = _cache.get(cache_key)
+    if cached:
+        return cached
+
+    loop = asyncio.get_running_loop()
+    quote, news = await asyncio.gather(
+        loop.run_in_executor(None, market_data.get_quote, sym),
+        loop.run_in_executor(None, market_data.get_news, sym, 8),
+        return_exceptions=True,
+    )
+    if not isinstance(quote, dict) or not quote:
+        raise HTTPException(404, f"Símbolo no encontrado: {sym}")
+    news = news if isinstance(news, list) else []
+    quote = _enrich_quote_fundamentals(quote, sym)
+
+    FALLBACK_MODEL = "gpt-oss-120b"
+    used_model = model_key
+    try:
+        explanation = await ai_analysis.explain_daily_move(quote, news, model_key=model_key)
+    except Exception as e:
+        if model_key != FALLBACK_MODEL:
+            logger.warning(f"why-moving model '{model_key}' failed ({e}); fallback {FALLBACK_MODEL}")
+            try:
+                explanation = await ai_analysis.explain_daily_move(quote, news, model_key=FALLBACK_MODEL)
+                used_model = FALLBACK_MODEL
+            except Exception as e2:
+                logger.exception("why-moving failed (including fallback)")
+                raise HTTPException(500, f"Error al explicar el movimiento: {e2}")
+        else:
+            logger.exception("why-moving failed")
+            raise HTTPException(500, f"Error al explicar el movimiento: {e}")
+
+    result = {
+        "symbol": sym,
+        "model": used_model,
+        "fellback": used_model != model_key,
+        "change_percent": quote.get("change_percent"),
+        "price": quote.get("price"),
+        "explanation": explanation,
+        "news": news[:5],
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _cache.set(cache_key, result, ttl=600)  # 10 min — las noticias no cambian tan rápido
+    return result
+
+
 # ---------- Compare ----------
 @api_router.post("/compare")
 async def compare_stocks(req: CompareRequest):
