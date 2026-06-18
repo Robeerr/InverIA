@@ -132,24 +132,6 @@ async def lifespan(app: FastAPI):
     # Single alert system: the portfolio table (signal_table) worker.
     asyncio.create_task(signal_table.signal_worker_loop(db))
 
-    # Keep Render free tier awake: ping /health every 10 min.
-    async def _self_ping():
-        import httpx
-        await asyncio.sleep(30)
-        render_url = os.environ.get("RENDER_EXTERNAL_URL", "")
-        if not render_url:
-            return
-        url = f"{render_url.rstrip('/')}/api/health"
-        async with httpx.AsyncClient(timeout=10) as client_http:
-            while True:
-                try:
-                    await client_http.head(url)
-                except Exception:
-                    pass
-                await asyncio.sleep(600)  # 10 min
-
-    asyncio.create_task(_self_ping())
-
     # Pre-warm daily opportunities so the first user request hits a warm cache —
     # PERO solo si el snapshot hidratado desde Mongo ya está caducado. En la mayoría
     # de redeploys el snapshot es reciente, así que nos saltamos el escaneo (pesado en
