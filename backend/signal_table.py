@@ -10,8 +10,13 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone, time
+from time import perf_counter
 from zoneinfo import ZoneInfo
 from typing import Optional
+
+# Margen de alerta anticipada: disparar cuando el precio está dentro de este %
+# por encima del nivel de compra (o por debajo del de venta). Da tiempo de reacción.
+_ALERT_MARGIN_PCT = 0.5
 
 import market_data
 import telegram_notifier
@@ -201,14 +206,21 @@ async def _set_cooldown(db, cd_key: str):
     )
 
 
-async def signal_worker_loop(db, interval: int = 30):
-    """Background: cada `interval` seg comprueba precios vs niveles activos."""
+async def signal_worker_loop(db, interval: int = 10):
+    """Background: comprueba precios vs niveles activos lo más rápido posible.
+
+    El espaciado entre símbolos lo impone el rate-limiter de Finnhub (bg_cap=40/min
+    ≈ 1.5s/llamada) sin sleep artificial. Al acabar el ciclo dormimos sólo el tiempo
+    sobrante hasta `interval`, mínimo 3s. Con TTL de caché=8s y sin sleep manual la
+    latencia real de alerta baja de ~90s a ~20-40s (según número de símbolos).
+    """
     logger.info("Signal table worker started (interval=%ds)", interval)
 
     # Índice para búsquedas rápidas de cooldown
     await db.alert_cooldowns.create_index("key", unique=True)
 
     while True:
+        cycle_start = perf_counter()
         try:
             # Refrescar precios durante toda la sesión extendida (pre/regular/post);
             # las alertas, en cambio, solo se disparan en horario regular.
@@ -224,11 +236,9 @@ async def signal_worker_loop(db, interval: int = 30):
                 await asyncio.sleep(interval)
                 continue
 
-            # Fase 1: precios EN SERIE con sleep entre cada símbolo.
-            # Antes era paralelo con Semaphore, lo que creaba N hilos simultáneos
-            # bloqueados en el rate-limiter de Finnhub. Con bg_cap=25 y 30+ símbolos,
-            # los hilos esperaban 150-250s → thundering herd que ahoga el presupuesto bg.
-            # En serie con 2s de espera: tasa máx ~25 calls/min, sin hilos colgados.
+            # Fase 1: precios EN SERIE. El rate-limiter de Finnhub (bg_cap≈40/min)
+            # cadencia las llamadas a ~1.5s c/u sin necesidad de sleep explícito.
+            # TTL de caché=8s garantiza precios frescos en cada ciclo.
             market_data.enter_finnhub_background()
             symbols = list({e["symbol"] for e in entries})
             price_map: dict = {}
@@ -243,7 +253,8 @@ async def signal_worker_loop(db, interval: int = 30):
                     price_map[sym] = (quote, ext)
                 except Exception:
                     pass
-                await asyncio.sleep(2)  # espaciado natural: 1 llamada cada 2s ≈ 30/min
+                # Ceder el event loop brevemente para no bloquear otras corrutinas
+                await asyncio.sleep(0)
 
             # Fase 2: detección de cruce + alertas. Secuencial pero sin red (solo DB).
             for entry in entries:
@@ -299,7 +310,8 @@ async def signal_worker_loop(db, interval: int = 30):
                     if not market_open:
                         continue
 
-                    # Niveles de compra
+                    # Niveles de compra — disparo con margen anticipado (_ALERT_MARGIN_PCT)
+                    # para que la alerta llegue ligeramente ANTES de tocar el nivel exacto.
                     buy_levels = {
                         "nivel1": entry.get("nivel1"),
                         "nivel2": entry.get("nivel2"),
@@ -317,39 +329,49 @@ async def signal_worker_loop(db, interval: int = 30):
                             continue
                         if not entry.get(f"alert_{level_key}", True):
                             continue
-                        # Compra: disparar SOLO en el cruce a la baja (antes por encima del
-                        # nivel, ahora en/por debajo). Si el precio ya estaba dentro de la zona
-                        # —o es la primera lectura (sin baseline)— no se alerta.
-                        if price > target:
+                        # Disparar cuando el precio entra en la zona = [target-∞, target*(1+margin)]
+                        threshold = round(target * (1 + _ALERT_MARGIN_PCT / 100), 4)
+                        if price > threshold:
                             continue
-                        if prev_price is None or prev_price <= target:
-                            continue
+                        if prev_price is None or prev_price > threshold:
+                            pass  # cruce legítimo (nuevo ingreso en zona)
+                        else:
+                            continue  # ya estaba dentro de la zona
                         cd_key = f"{symbol}_{level_key}_{today}"
                         if await _is_in_cooldown(db, cd_key):
                             continue
                         await _set_cooldown(db, cd_key)
                         diff_pct = round(((price - target) / target) * 100, 2)
                         level_num = level_key.replace("nivel", "Nivel ")
-                        await _fire_alert(entry, symbol, level_num, target, price, diff_pct, "COMPRA", db=db)
+                        approaching = price > target  # todavía por encima del nivel exacto
+                        await _fire_alert(
+                            entry, symbol, level_num, target, price, diff_pct, "COMPRA",
+                            db=db, approaching=approaching,
+                        )
 
                     for level_key, target in sell_levels.items():
                         if target is None:
                             continue
                         if not entry.get(f"alert_{level_key}", True):
                             continue
-                        # Venta: disparar SOLO en el cruce al alza (antes por debajo del
-                        # objetivo, ahora en/por encima). Si ya estaba por encima —o es la
-                        # primera lectura (sin baseline)— no se alerta.
-                        if price < target:
+                        # Disparar cuando el precio supera target*(1-margin)
+                        threshold = round(target * (1 - _ALERT_MARGIN_PCT / 100), 4)
+                        if price < threshold:
                             continue
-                        if prev_price is None or prev_price >= target:
+                        if prev_price is None or prev_price < threshold:
+                            pass  # cruce legítimo
+                        else:
                             continue
                         cd_key = f"{symbol}_{level_key}_{today}"
                         if await _is_in_cooldown(db, cd_key):
                             continue
                         await _set_cooldown(db, cd_key)
                         diff_pct = round(((price - target) / target) * 100, 2)
-                        await _fire_alert(entry, symbol, "Deseado/Venta", target, price, diff_pct, "VENTA", db=db)
+                        approaching = price < target
+                        await _fire_alert(
+                            entry, symbol, "Deseado/Venta", target, price, diff_pct, "VENTA",
+                            db=db, approaching=approaching,
+                        )
 
                 except Exception as e:
                     logger.warning("Signal check error for %s: %s", symbol, e)
@@ -357,10 +379,12 @@ async def signal_worker_loop(db, interval: int = 30):
         except Exception as e:
             logger.error("Signal worker loop error: %s", e)
 
-        await asyncio.sleep(interval)
+        # Dormir solo el tiempo que falte hasta `interval` (mínimo 3s).
+        elapsed = perf_counter() - cycle_start
+        await asyncio.sleep(max(3.0, interval - elapsed))
 
 
-async def _fire_alert(entry, symbol, level_label, target, price, diff_pct, action, db=None):
+async def _fire_alert(entry, symbol, level_label, target, price, diff_pct, action, db=None, approaching=False):
     """Dispara alerta por Telegram y guarda en historial."""
     name = entry.get("name", "") or symbol
     sector = entry.get("sector", "")
@@ -368,17 +392,24 @@ async def _fire_alert(entry, symbol, level_label, target, price, diff_pct, actio
     mercado = entry.get("mercado", "")
     posibles = entry.get("posibles_ganancias")
 
-    logger.info("SIGNAL HIT: %s %s @ %.2f (target %.2f, %s)", symbol, level_label, price, target, action)
+    logger.info("SIGNAL HIT: %s %s @ %.2f (target %.2f, %s approaching=%s)",
+                symbol, level_label, price, target, action, approaching)
 
     e = telegram_notifier._esc_md
 
     if action == "COMPRA":
-        header = "🟢🟢🟢 *ALERTA DE COMPRA* 🟢🟢🟢"
+        if approaching:
+            header = "⚡⚡⚡ *ZONA DE COMPRA PRÓXIMA* ⚡⚡⚡"
+        else:
+            header = "🟢🟢🟢 *ALERTA DE COMPRA* 🟢🟢🟢"
         price_emoji = "💰"
         target_emoji = "🎯"
         extra = f"📈 Posible ganancia: *\\+{e(f'{posibles:.2f}')}%*\n" if posibles else ""
     else:
-        header = "🔴🔴🔴 *ALERTA DE VENTA* 🔴🔴🔴"
+        if approaching:
+            header = "⚡⚡⚡ *OBJETIVO DE VENTA PRÓXIMO* ⚡⚡⚡"
+        else:
+            header = "🔴🔴🔴 *ALERTA DE VENTA* 🔴🔴🔴"
         price_emoji = "💸"
         target_emoji = "🏁"
         extra = f"📈 Ganancia realizada: *\\+{e(f'{posibles:.2f}')}%*\n" if posibles else ""

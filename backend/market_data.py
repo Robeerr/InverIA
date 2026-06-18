@@ -579,11 +579,12 @@ def get_extended_quote(symbol: str):
         return None
 
 
-# Cache para quotes de Finnhub: 60s TTL. Evita que el signal worker (30 símbolos cada
-# 60s en serie) haga 30 llamadas Finnhub por ciclo cuando los precios ya son frescos.
+# Cache para quotes de Finnhub: TTL corto para alertas rápidas.
+# Con TTL=8s y bg_cap=40 calls/min el rate limiter cadencia ~1.5s/símbolo;
+# precios nunca tienen más de 8s de antigüedad → alertas en 1-2 ciclos (~20-40s).
 _fh_quote_cache: dict = {}
 _fh_quote_lock = threading.Lock()
-_FH_QUOTE_TTL = 60  # segundos
+_FH_QUOTE_TTL = 8  # segundos
 
 
 def _try_finnhub_quote(ticker: str):
