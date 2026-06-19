@@ -38,6 +38,113 @@ def ema(close: pd.Series, period: int) -> pd.Series:
     return close.ewm(span=period, adjust=False).mean()
 
 
+def true_range(df: pd.DataFrame) -> pd.Series:
+    """True Range: max(H-L, |H-prevC|, |L-prevC|). Base for ATR/ADX."""
+    high = df["High"].astype(float)
+    low = df["Low"].astype(float)
+    prev_close = df["Close"].astype(float).shift(1)
+    tr1 = high - low
+    tr2 = (high - prev_close).abs()
+    tr3 = (low - prev_close).abs()
+    return pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+
+def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """Average True Range (Wilder's smoothing). The professional unit for
+    measuring volatility — used to size stops, targets and zone tolerance."""
+    tr = true_range(df)
+    return tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+
+
+def adx(df: pd.DataFrame, period: int = 14):
+    """Average Directional Index (Wilder). Measures TREND STRENGTH (not direction):
+    ADX > 25 = trending, < 20 = ranging. Returns (adx, plus_di, minus_di).
+    Gates whether trend-following or mean-reversion level logic applies."""
+    high = df["High"].astype(float)
+    low = df["Low"].astype(float)
+    up_move = high.diff()
+    down_move = -low.diff()
+    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+    plus_dm = pd.Series(plus_dm, index=df.index)
+    minus_dm = pd.Series(minus_dm, index=df.index)
+    tr = true_range(df)
+    atr_s = tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    plus_di = 100 * plus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean() / atr_s.replace(0, np.nan)
+    minus_di = 100 * minus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean() / atr_s.replace(0, np.nan)
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)
+    adx_s = dx.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    return adx_s, plus_di, minus_di
+
+
+def obv(df: pd.DataFrame) -> pd.Series:
+    """On-Balance Volume: cumulative volume signed by close direction. Rising OBV
+    confirms accumulation behind a price level; falling OBV warns of distribution."""
+    close = df["Close"].astype(float)
+    vol = df["Volume"].astype(float) if "Volume" in df else pd.Series(0.0, index=df.index)
+    direction = np.sign(close.diff()).fillna(0.0)
+    return (direction * vol).cumsum()
+
+
+def anchored_vwap(df: pd.DataFrame, anchor_idx: int) -> pd.Series:
+    """Volume-Weighted Average Price anchored at a specific bar (typically a major
+    swing low/high or an event). The institutional 'fair value since X' line —
+    a dynamic support/resistance that pros defend. Uses typical price (H+L+C)/3."""
+    sub = df.iloc[anchor_idx:]
+    if sub.empty or "Volume" not in df:
+        return pd.Series(dtype=float)
+    tp = (sub["High"].astype(float) + sub["Low"].astype(float) + sub["Close"].astype(float)) / 3
+    vol = sub["Volume"].astype(float)
+    cum_vol = vol.cumsum().replace(0, np.nan)
+    return (tp * vol).cumsum() / cum_vol
+
+
+def market_regime(df: pd.DataFrame):
+    """Classify the current regime so level logic can adapt. Returns a dict with
+    trend strength (ADX), direction (vs SMA200 + SMA50 slope) and volatility band.
+    In a strong trend, mean-reversion-to-support is less reliable; in a range,
+    Value-Area edges bounce more. The best traders condition on this."""
+    if df is None or len(df) < 60:
+        return {"regime": "indeterminado", "adx": None, "trending": False, "direction": "lateral"}
+    close = df["Close"].astype(float)
+    adx_s, plus_di, minus_di = adx(df)
+    adx_val = _safe(adx_s.iloc[-1])
+    sma50 = sma(close, 50)
+    sma200 = sma(close, 200) if len(close) >= 200 else None
+    price = float(close.iloc[-1])
+
+    trending = adx_val is not None and adx_val >= 25
+    ranging = adx_val is not None and adx_val < 20
+
+    # Direction: price vs SMA200 + recent SMA50 slope.
+    direction = "lateral"
+    sma50_now = sma50.iloc[-1]
+    sma50_prev = sma50.iloc[-11] if len(sma50.dropna()) > 11 else sma50_now
+    slope_up = pd.notna(sma50_now) and pd.notna(sma50_prev) and sma50_now > sma50_prev
+    above_200 = sma200 is not None and pd.notna(sma200.iloc[-1]) and price > sma200.iloc[-1]
+    if above_200 and slope_up:
+        direction = "alcista"
+    elif (sma200 is not None and pd.notna(sma200.iloc[-1]) and price < sma200.iloc[-1]) and not slope_up:
+        direction = "bajista"
+
+    if trending:
+        regime = f"tendencia_{direction}"
+    elif ranging:
+        regime = "rango"
+    else:
+        regime = "transicion"
+
+    return {
+        "regime": regime,
+        "adx": adx_val,
+        "plus_di": _safe(plus_di.iloc[-1]),
+        "minus_di": _safe(minus_di.iloc[-1]),
+        "trending": bool(trending),
+        "ranging": bool(ranging),
+        "direction": direction,
+    }
+
+
 def fibonacci_levels(high: float, low: float):
     diff = high - low
     return {
@@ -140,6 +247,38 @@ def compute_all(df: pd.DataFrame):
     last = -1
     current_price = float(close.iloc[last])
 
+    # Volatility (ATR) — the professional unit for stops/targets/zone width.
+    atr_series = atr(df)
+    atr_val = _safe(atr_series.iloc[last])
+    atr_pct = round(atr_val / current_price * 100, 2) if atr_val and current_price else None
+
+    # Regime (ADX-based) so downstream logic can adapt level reliability.
+    regime = market_regime(df)
+
+    # Anchored VWAP from the most significant swing low of the last year — the
+    # institutional "fair value since the bottom" dynamic support.
+    avwap_val = None
+    try:
+        window = df.tail(252)
+        if not window.empty and "Volume" in df:
+            anchor_pos = df.index.get_loc(window["Low"].astype(float).idxmin())
+            av = anchored_vwap(df, anchor_pos)
+            if not av.empty:
+                avwap_val = _safe(av.iloc[-1])
+    except Exception:
+        avwap_val = None
+
+    # OBV trend (accumulation vs distribution behind the price).
+    obv_trend = None
+    try:
+        obv_series = obv(df)
+        if len(obv_series) >= 20:
+            obv_now = obv_series.iloc[-1]
+            obv_then = obv_series.iloc[-20]
+            obv_trend = "acumulacion" if obv_now > obv_then else "distribucion"
+    except Exception:
+        obv_trend = None
+
     return {
         "price": round(current_price, 2),
         "rsi": _safe(rsi_series.iloc[last]),
@@ -162,6 +301,12 @@ def compute_all(df: pd.DataFrame):
             "12": _safe(ema(close, 12).iloc[last]),
             "26": _safe(ema(close, 26).iloc[last]),
         },
+        "atr": atr_val,
+        "atr_pct": atr_pct,
+        "adx": regime.get("adx"),
+        "regime": regime,
+        "vwap_anchored": avwap_val,
+        "obv_trend": obv_trend,
         "fibonacci": fib,
         "support_resistance": sr,
         "patterns": patterns,

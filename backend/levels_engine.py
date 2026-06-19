@@ -1,72 +1,125 @@
-"""Motor de confluencia de niveles de compra.
+"""Motor de confluencia de niveles de compra/venta.
 
 En vez de pedirle a la IA que "adivine" los niveles, aquí se CALCULAN de forma
-determinista: se reúnen todos los soportes por debajo del precio actual desde
-métodos independientes (Volume Profile, Fibonacci sobre el swing real, pivotes
-de mínimos ponderados por toques, medias móviles, mínimo de 52s y números
-redondos), se agrupan los cercanos en zonas y se puntúa cada zona por
-CONFLUENCIA (cuántos métodos distintos coinciden). Cuantas más fuentes caen en
-la misma zona, más fuerte es el nivel.
+determinista: se reúnen candidatos de múltiples métodos independientes, se agrupan
+en zonas y se puntúa por CONFLUENCIA. Cuantas más fuentes caen en la misma zona,
+más fuerte es el nivel.
 
 La IA recibe estas zonas ya rankeadas y solo las explica/afina.
 """
 from __future__ import annotations
 
+import math
 from typing import List, Dict, Optional
 
 
-# Peso de cada fuente: cuánto "vale" que un método sitúe un soporte aquí.
-# El Volume Profile y el Fibonacci de la golden ratio pesan más porque son las
-# señales más fiables para zonas de acumulación.
+# ── Peso base por fuente ─────────────────────────────────────────────────────
+# Basado en evidencia empírica y uso profesional:
+# • Volume Profile (POC/VAL/HVN) — el nivel donde más dinero se intercambió;
+#   instituciones defienden estos niveles activamente.
+# • VWAP anclado — precio medio ponderado por volumen desde el swing bajo;
+#   las mesas institucionales usan esto como "fair value" dinámico.
+# • Fibonacci golden ratio (61.8%) — ratio más observado en retrocesos.
+# • SMA200 — el filtro de régimen más citado en la literatura (Faber 2007).
 _SOURCE_WEIGHTS = {
-    "poc": 3.0,        # Point of Control — precio más negociado, soporte más fuerte
-    "val": 3.0,        # Value Area Low — borde inferior del 70% del volumen
-    "hvn": 2.0,        # High Volume Node — zona donde el precio rebota
-    "fib_0.618": 2.5,  # golden ratio
-    "fib_0.5": 2.0,
-    "fib_0.786": 2.0,
-    "fib_0.382": 1.5,
-    "fib_0.236": 1.0,
-    "sma200": 2.0,     # soporte dinámico de largo plazo
-    "sma50": 1.5,
-    "pivot": 1.0,      # mínimo local (se suma un extra por nº de toques)
-    "low_52w": 1.5,
-    "round": 0.5,      # número psicológico redondo
+    "poc":          3.0,
+    "val":          3.0,
+    "hvn":          2.0,
+    "vwap_anchored": 2.5,  # Anchored VWAP — soporte/resistencia dinámico institucional
+    "fib_0.618":    2.5,
+    "fib_0.5":      2.0,
+    "fib_0.786":    2.0,
+    "fib_0.382":    1.5,
+    "fib_0.236":    1.0,
+    "camarilla_s3": 2.0,   # Camarilla S3 — nivel de retorno más fiable en rango
+    "camarilla_s4": 1.5,   # Camarilla S4 — ruptura significativa, suelo potente
+    "floor_s1":     1.2,   # Floor pivot S1 — soporte clásico de pit traders
+    "floor_s2":     1.0,
+    "sma200":       2.0,
+    "sma50":        1.5,
+    "pivot":        1.0,   # mínimo local (extra por toques con recency decay)
+    "low_52w":      1.5,
+    "round":        0.5,
 }
 
-# Etiqueta legible para el usuario por cada fuente.
 _SOURCE_LABELS = {
-    "poc": "POC (precio más negociado)",
-    "val": "Value Area Low",
-    "hvn": "Zona de alto volumen (HVN)",
-    "fib_0.618": "Fibonacci 61.8% (golden ratio)",
-    "fib_0.5": "Fibonacci 50%",
-    "fib_0.786": "Fibonacci 78.6%",
-    "fib_0.382": "Fibonacci 38.2%",
-    "fib_0.236": "Fibonacci 23.6%",
-    "sma200": "Media móvil SMA200",
-    "sma50": "Media móvil SMA50",
-    "pivot": "Soporte histórico",
-    "low_52w": "Mínimo de 52 semanas",
-    "round": "Número redondo psicológico",
+    "poc":           "POC (precio más negociado)",
+    "val":           "Value Area Low",
+    "hvn":           "Zona de alto volumen (HVN)",
+    "vwap_anchored": "VWAP anclado (soporte institucional dinámico)",
+    "fib_0.618":     "Fibonacci 61.8% (golden ratio)",
+    "fib_0.5":       "Fibonacci 50%",
+    "fib_0.786":     "Fibonacci 78.6%",
+    "fib_0.382":     "Fibonacci 38.2%",
+    "fib_0.236":     "Fibonacci 23.6%",
+    "camarilla_s3":  "Camarilla S3 (soporte intraday fiable)",
+    "camarilla_s4":  "Camarilla S4 (soporte ruptura)",
+    "floor_s1":      "Floor Pivot S1",
+    "floor_s2":      "Floor Pivot S2",
+    "sma200":        "Media móvil SMA200",
+    "sma50":         "Media móvil SMA50",
+    "pivot":         "Soporte histórico (swing low)",
+    "low_52w":       "Mínimo de 52 semanas",
+    "round":         "Número redondo psicológico",
 }
 
-# Tolerancia para agrupar candidatos en una misma zona (% del precio).
-_CLUSTER_TOL_PCT = 1.8
-# Divisor de normalización: con este peso acumulado se considera fuerza ~máxima.
-# Calibrado para que una zona de 1 sola fuente quede floja (~30-40), 2-3 fuentes
-# medio-fuerte (~60-80) y 4+ fuentes en confluencia llegue cerca de 100.
-_STRENGTH_DIVISOR = 9.5
+_STRENGTH_DIVISOR = 10.0
 
 
+# ── Camarilla Pivots ─────────────────────────────────────────────────────────
+def _camarilla_pivots(high: float, low: float, close: float) -> dict:
+    """Camarilla pivot points from the previous day/period OHLC.
+    S3 = close - (high - low) * 1.1/4  — the most-traded intraday support level.
+    S4 = close - (high - low) * 1.1/2  — breakout support (strong floor).
+    Used by professional day traders and algorithms worldwide."""
+    rng = high - low
+    return {
+        "s3": round(close - rng * 1.1 / 4, 2),
+        "s4": round(close - rng * 1.1 / 2, 2),
+        "r3": round(close + rng * 1.1 / 4, 2),
+        "r4": round(close + rng * 1.1 / 2, 2),
+    }
+
+
+def _floor_pivots(high: float, low: float, close: float) -> dict:
+    """Classic floor/pit trader pivot points.
+    PP = (H + L + C) / 3
+    S1 = 2*PP - H    S2 = PP - (H - L)"""
+    pp = (high + low + close) / 3
+    return {
+        "pp":  round(pp, 2),
+        "s1":  round(2 * pp - high, 2),
+        "s2":  round(pp - (high - low), 2),
+        "r1":  round(2 * pp - low, 2),
+        "r2":  round(pp + (high - low), 2),
+    }
+
+
+# ── Touch counting with recency decay ────────────────────────────────────────
+def _count_touches_weighted(df, level: float, tol_pct: float = 1.0) -> float:
+    """Count how many candles touched this level weighted by recency.
+    Recent touches are worth more than old touches. Returns a float weight
+    that is added as extra score to the pivot source."""
+    if level <= 0 or df is None or df.empty:
+        return 0.0
+    lows = df["Low"].astype(float)
+    band = level * tol_pct / 100.0
+    n = len(lows)
+    total = 0.0
+    for i, (idx, low_val) in enumerate(lows.items()):
+        if abs(low_val - level) <= band:
+            # Recency weight: bars closer to the end get more weight (1.0 at last, 0.3 at oldest)
+            recency = 0.3 + 0.7 * (i / max(n - 1, 1))
+            total += recency
+    return round(min(2.0, total * 0.4), 2)
+
+
+# ── Round levels ─────────────────────────────────────────────────────────────
 def _round_levels_near(values: List[float]) -> List[float]:
-    """Devuelve números redondos (decenas / múltiplos de 5) cercanos a los
-    candidatos existentes — solo cuentan si refuerzan una zona ya presente."""
     out = set()
     for v in values:
         if v <= 0:
             continue
-        # múltiplo de 10 y de 5 más cercanos
         for step in (10, 5):
             nearest = round(v / step) * step
             if nearest > 0 and abs(nearest - v) / v <= 0.02:
@@ -74,20 +127,8 @@ def _round_levels_near(values: List[float]) -> List[float]:
     return sorted(out)
 
 
-def _count_touches(df, level: float, tol_pct: float = 1.0) -> int:
-    """Cuántas velas tienen su mínimo a menos de tol_pct del nivel — un soporte
-    tocado muchas veces es más fiable que uno tocado una sola."""
-    if level <= 0 or df is None or df.empty:
-        return 0
-    lows = df["Low"].astype(float)
-    band = level * tol_pct / 100.0
-    return int(((lows - level).abs() <= band).sum())
-
-
+# ── Fibonacci retracements ────────────────────────────────────────────────────
 def _swing_fibonacci(df, current: float) -> Dict[str, float]:
-    """Retrocesos Fibonacci sobre el swing relevante reciente (último ~año),
-    no sobre un rango arbitrario. Solo se devuelven los que caen por debajo del
-    precio actual (zonas de compra)."""
     recent = df.tail(252) if len(df) > 252 else df
     if recent.empty:
         return {}
@@ -99,29 +140,75 @@ def _swing_fibonacci(df, current: float) -> Dict[str, float]:
     levels = {}
     for ratio in (0.236, 0.382, 0.5, 0.618, 0.786):
         price = swing_high - rng * ratio
-        if 0 < price < current:  # solo soportes por debajo del precio
+        if 0 < price < current:
             levels[f"fib_{ratio}"] = round(price, 2)
     return levels
 
 
+# ── ATR-based cluster tolerance ───────────────────────────────────────────────
+def _cluster_tol(current_price: float, atr_val: Optional[float]) -> float:
+    """ATR-relative tolerance for clustering nearby levels.
+    Fixed % tolerances are arbitrary; ATR-scaled tolerances adapt to volatility.
+    A zone within 1.0×ATR of another is likely the same structural level."""
+    if atr_val and atr_val > 0 and current_price > 0:
+        atr_pct = atr_val / current_price * 100
+        # Cap: very low-vol stocks → 1.0%, very high-vol → 3.5%
+        return max(1.0, min(3.5, atr_pct * 1.2))
+    return 1.8  # fallback fixed %
+
+
+# ── Regime scoring modifier ───────────────────────────────────────────────────
+def _regime_modifier(src: str, regime: Optional[dict]) -> float:
+    """In a strong trend, mean-reversion levels are less reliable; in a range,
+    Value Area edges are more reliable. Adjust source weights accordingly."""
+    if not regime:
+        return 1.0
+    trending = regime.get("trending", False)
+    ranging = regime.get("ranging", False)
+    direction = regime.get("direction", "lateral")
+
+    if trending:
+        # Trend mode: dynamic levels (SMA200, VWAP) more reliable; static pivots less
+        if src in ("sma200", "sma50", "vwap_anchored"):
+            return 1.3
+        if src in ("poc", "val", "fib_0.618", "fib_0.5"):
+            return 1.1
+        if src in ("camarilla_s3", "camarilla_s4", "floor_s1", "floor_s2"):
+            return 0.8  # intraday levels less meaningful in strong trends
+    if ranging:
+        # Range mode: Value Area edges and round numbers more reliable
+        if src in ("val", "poc", "hvn", "round", "camarilla_s3"):
+            return 1.3
+        if src in ("sma200", "sma50"):
+            return 0.9  # MAs less meaningful in ranging market
+    return 1.0
+
+
+# ── Main engine ───────────────────────────────────────────────────────────────
 def compute_buy_levels(
     df,
     volume_profile: Optional[dict],
     current_price: float,
     sma: Optional[dict] = None,
     max_levels: int = 4,
+    atr_val: Optional[float] = None,
+    regime: Optional[dict] = None,
+    vwap_anchored: Optional[float] = None,
 ) -> List[dict]:
-    """Calcula zonas de compra rankeadas por confluencia.
+    """Compute ranked buy zones by confluence.
 
-    Devuelve una lista (de más cercana a más profunda) de dicts:
+    Returns a list (closest to deepest) of dicts:
       {price, zone_low, zone_high, strength, label, distance_pct, reasons, sources}
     """
     if not current_price or current_price <= 0 or df is None or df.empty:
         return []
 
-    # ---- 1) Reunir candidatos (price, source) de cada método, por debajo del precio ----
+    tol_pct = _cluster_tol(current_price, atr_val)
+
+    # ── 1) Gather candidates from all methods ─────────────────────────────
     candidates: List[tuple] = []  # (price, source_key, extra_weight)
 
+    # Volume Profile
     vp = volume_profile or {}
     for key in ("poc", "val"):
         v = vp.get(key)
@@ -131,35 +218,61 @@ def compute_buy_levels(
         if isinstance(h, (int, float)) and 0 < h < current_price:
             candidates.append((float(h), "hvn", 0.0))
 
+    # Anchored VWAP — institutional dynamic support
+    if isinstance(vwap_anchored, (int, float)) and 0 < vwap_anchored < current_price:
+        candidates.append((float(vwap_anchored), "vwap_anchored", 0.0))
+
+    # Fibonacci retracements from 52-week swing
     for src, price in _swing_fibonacci(df, current_price).items():
         candidates.append((price, src, 0.0))
 
+    # SMAs
     sma = sma or {}
     for key, src in (("200", "sma200"), ("50", "sma50")):
         v = sma.get(key)
         if isinstance(v, (int, float)) and 0 < v < current_price:
             candidates.append((float(v), src, 0.0))
 
-    # Pivotes de mínimos locales, ponderados por nº de toques.
+    # Camarilla Pivots — from last 20 bars (use recent typical range)
+    try:
+        recent = df.tail(20)
+        cam_high = float(recent["High"].max())
+        cam_low = float(recent["Low"].min())
+        cam_close = float(df["Close"].iloc[-1])
+        cam = _camarilla_pivots(cam_high, cam_low, cam_close)
+        for src_key, cam_key in (("camarilla_s3", "s3"), ("camarilla_s4", "s4")):
+            v = cam.get(cam_key)
+            if isinstance(v, float) and 0 < v < current_price:
+                candidates.append((v, src_key, 0.0))
+        # Floor pivots
+        fp = _floor_pivots(cam_high, cam_low, cam_close)
+        for src_key, fp_key in (("floor_s1", "s1"), ("floor_s2", "s2")):
+            v = fp.get(fp_key)
+            if isinstance(v, float) and 0 < v < current_price:
+                candidates.append((v, src_key, 0.0))
+    except Exception:
+        pass
+
+    # Swing low pivots with recency-weighted touch count
     lows = df["Low"].astype(float)
     w = 11
     local_min = lows.rolling(w, center=True).min()
     pivots = lows[lows == local_min]
-    seen_pivots = set()
+    seen_pivots: set = set()
     for p in pivots:
         p = round(float(p), 2)
         if not (0 < p < current_price) or p in seen_pivots:
             continue
         seen_pivots.add(p)
-        touches = _count_touches(df, p)
-        extra = min(1.5, max(0, touches - 1) * 0.3)  # más toques → más peso (cap)
+        extra = _count_touches_weighted(df, p)
         candidates.append((p, "pivot", extra))
 
+    # 52-week low
     low_52w = float(df["Low"].tail(252).min()) if len(df) else None
     if low_52w and 0 < low_52w < current_price:
         candidates.append((low_52w, "low_52w", 0.0))
 
-    # Números redondos cercanos a candidatos ya presentes (solo refuerzan).
+    # Round numbers near existing candidates
     for rp in _round_levels_near([c[0] for c in candidates]):
         if 0 < rp < current_price:
             candidates.append((rp, "round", 0.0))
@@ -167,43 +280,42 @@ def compute_buy_levels(
     if not candidates:
         return []
 
-    # ---- 2) Agrupar candidatos cercanos en zonas ----
-    candidates.sort(key=lambda c: c[0], reverse=True)  # de más cerca a más lejos del precio
+    # ── 2) Cluster nearby candidates ─────────────────────────────────────
+    candidates.sort(key=lambda c: c[0], reverse=True)
     clusters: List[List[tuple]] = []
     for cand in candidates:
         price = cand[0]
         placed = False
         for cl in clusters:
             center = sum(c[0] for c in cl) / len(cl)
-            if abs(price - center) / center * 100 <= _CLUSTER_TOL_PCT:
+            if abs(price - center) / center * 100 <= tol_pct:
                 cl.append(cand)
                 placed = True
                 break
         if not placed:
             clusters.append([cand])
 
-    # ---- 3) Puntuar cada zona por confluencia ----
+    # ── 3) Score each zone by confluence (regime-adjusted) ────────────────
     zones = []
     for cl in clusters:
-        # Una misma fuente (p.ej. dos HVN) no debe inflar la nota: se queda el
-        # mayor peso por tipo de fuente, y se suman tipos DISTINTOS (confluencia).
         best_by_source: Dict[str, float] = {}
         for price, src, extra in cl:
-            weight = _SOURCE_WEIGHTS.get(src, 0.5) + extra
+            base_weight = _SOURCE_WEIGHTS.get(src, 0.5)
+            regime_adj = _regime_modifier(src, regime)
+            weight = (base_weight * regime_adj) + extra
             if weight > best_by_source.get(src, 0):
                 best_by_source[src] = weight
         raw = sum(best_by_source.values())
-        # Bonus por nº de tipos distintos FUERTES que coinciden (la esencia de la
-        # confluencia). Los números redondos no cuentan como confluencia real.
         distinct = len([s for s in best_by_source if s != "round"])
         if distinct >= 2:
-            raw += (distinct - 1) * 0.4
+            raw += (distinct - 1) * 0.5
+        if distinct >= 4:
+            raw += 1.0  # extra bonus for rare 4-source confluence
         strength = int(min(100, round(raw / _STRENGTH_DIVISOR * 100)))
 
-        prices = [c[0] for c in cl]
-        zone_low = round(min(prices), 2)
-        zone_high = round(max(prices), 2)
-        # Centro ponderado por peso de fuente.
+        prices_in_cl = [c[0] for c in cl]
+        zone_low = round(min(prices_in_cl), 2)
+        zone_high = round(max(prices_in_cl), 2)
         wsum = sum(_SOURCE_WEIGHTS.get(s, 0.5) for _, s, _ in cl) or 1
         center = round(sum(p * _SOURCE_WEIGHTS.get(s, 0.5) for p, s, _ in cl) / wsum, 2)
 
@@ -218,7 +330,7 @@ def compute_buy_levels(
             "sources": list(best_by_source.keys()),
         })
 
-    # ---- 4) Quedarnos con las mejores zonas, ordenadas de más cerca a más profunda ----
+    # ── 4) Return top zones sorted closest-to-deepest ─────────────────────
     zones.sort(key=lambda z: z["strength"], reverse=True)
     top = zones[:max_levels]
     top.sort(key=lambda z: z["price"], reverse=True)
