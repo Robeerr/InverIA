@@ -486,7 +486,7 @@ async def analyze_stock(
 ) -> dict:
     user_msg = _build_payload(quote, indicators, news, analyst_consensus, price_target,
                               volume_profile, insider, earnings_history, buy_levels)
-    return await _run_model(model_key, SYSTEM_PROMPT, user_msg, max_tokens=3000)
+    return await _run_model(model_key, SYSTEM_PROMPT, user_msg, max_tokens=5000)
 
 
 # ---------- "¿Por qué se mueve hoy?" — explicación ligera del movimiento diario ----------
