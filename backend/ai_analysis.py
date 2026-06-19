@@ -257,7 +257,8 @@ def _build_payload(quote: dict, indicators: dict, news: list,
         "atr": ind.get("atr"),
         "atr_pct": ind.get("atr_pct"),
         "adx": ind.get("adx"),
-        "regimen_mercado": ind.get("regime"),
+        "regimen_mercado": (ind.get("regime") or {}).get("regime"),
+        "regimen_trending": (ind.get("regime") or {}).get("trending"),
         "vwap_anclado": ind.get("vwap_anchored"),
         "obv_tendencia": ind.get("obv_trend"),
         "volumen_promedio": quote.get("avg_volume"),
@@ -276,17 +277,11 @@ def _build_payload(quote: dict, indicators: dict, news: list,
         "patrones_tecnicos_detectados": ind.get("patterns", []),
         "noticias_recientes": [n.get("title") for n in (news or [])][:6],
         "volume_profile": {
-            "POC_punto_de_control": (volume_profile or {}).get("poc"),
-            "VAH_value_area_high": (volume_profile or {}).get("vah"),
-            "VAL_value_area_low": (volume_profile or {}).get("val"),
-            "HVN_zonas_alto_volumen": (volume_profile or {}).get("hvn", []),
-            "LVN_zonas_bajo_volumen": (volume_profile or {}).get("lvn", []),
-            "descripcion": (
-                "El POC es el precio con mayor volumen negociado histórico — soporte/resistencia más fuerte. "
-                "Las HVN son zonas de alto volumen (el precio rebota). "
-                "Las LVN son zonas de bajo volumen (el precio las atraviesa rápido). "
-                "El Value Area (VAL-VAH) contiene el 70% del volumen total — zona de equilibrio."
-            ) if volume_profile else "No disponible",
+            "POC": (volume_profile or {}).get("poc"),
+            "VAH": (volume_profile or {}).get("vah"),
+            "VAL": (volume_profile or {}).get("val"),
+            "HVN": (volume_profile or {}).get("hvn", []),
+            "LVN": (volume_profile or {}).get("lvn", []),
         } if volume_profile else None,
     }
 
@@ -302,12 +297,12 @@ def _build_payload(quote: dict, indicators: dict, news: list,
                     "nivel": z.get("label"),
                     "precio": z.get("price"),
                     "zona": [z.get("zone_low"), z.get("zone_high")],
-                    "fuerza_0_100": z.get("strength"),
-                    "distancia_pct": z.get("distance_pct"),
+                    "fuerza": z.get("strength"),
+                    "dist_pct": z.get("distance_pct"),
                     "confluencia": z.get("reasons"),
                 }
                 for z in buy_levels
-            ], ensure_ascii=False, indent=2)
+            ], ensure_ascii=False, separators=(',', ':'))
             + "\n\nINSTRUCCIÓN: respeta estos precios/zonas para las entradas (no los inventes "
             "de nuevo). En el comment de cada entry_zone EXPLICA la confluencia indicada. "
             "Si necesitas una entrada más profunda que las dadas, puedes añadirla, pero las "
@@ -316,7 +311,7 @@ def _build_payload(quote: dict, indicators: dict, news: list,
 
     return (
         f"Analiza en profundidad la acción {quote.get('symbol')} con precio actual ${price}.\n\n"
-        f"DATOS COMPLETOS:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
+        f"DATOS:\n{json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}"
         f"{levels_block}\n\n"
         f"Genera el análisis completo con todos los niveles operativos. "
         f"Usa los niveles Fibonacci y soportes técnicos proporcionados como base para los precios. "
@@ -510,7 +505,9 @@ async def _run_model(model_key: str, system_prompt: str, user_msg: str,
     the lightweight '¿por qué se mueve hoy?' explainer."""
     provider, model_id, _is_free = MODEL_MAP.get(model_key, MODEL_MAP[DEFAULT_MODEL])
     if provider == "groq":
-        return await _analyze_with_groq(model_id, user_msg, system_prompt, max_tokens)
+        # Groq free tier: 8000 TPM limit (input + output combined). Cap output to leave
+        # enough room for the input payload (~5000 tokens after payload compaction).
+        return await _analyze_with_groq(model_id, user_msg, system_prompt, min(max_tokens, 2200))
     if provider == "google_free":
         return await _analyze_with_gemini_free(model_id, user_msg, system_prompt, max_tokens)
     return await _analyze_with_emergent(provider, model_id, user_msg, system_prompt)
