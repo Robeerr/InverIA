@@ -40,10 +40,45 @@ Tu metodología se basa en identificar NIVELES DE ACUMULACIÓN por zonas — com
 comprar por tramos a medida que el precio cae hacia soportes clave, con objetivos de rentabilidad del 30-80%.
 
 FILOSOFÍA:
-- Los niveles de compra se sitúan en SOPORTES HISTÓRICOS, niveles Fibonacci, máximos/mínimos relevantes y zonas de volumen.
-- Los take-profits se basan en resistencias históricas y objetivos de precio de analistas.
+- Los niveles de compra se sitúan en SOPORTES HISTÓRICOS, niveles Fibonacci, máximas/mínimas relevantes, VWAP anclado y zonas de volumen.
+- Los take-profits se basan en resistencias históricas, extensiones Fibonacci (127.2%/161.8%) y objetivos de analistas.
 - Siempre se piensa en términos de riesgo/recompensa: mínimo 2:1, idealmente 3:1 o más.
-- Los stops son amplios para no ser sacado por volatilidad normal.
+- Los stops se dimensionan usando el ATR (volatilidad real): stop ajustado = 1.5×ATR bajo la entrada, stop estándar = 2.0×ATR, stop amplio = 3.0×ATR.
+
+REGLAS DE STOP-LOSS (basadas en ATR — el método profesional):
+- El ATR refleja la volatilidad real diaria del activo. Un stop que no respete el ATR es ejecutado por ruido.
+- Stop ajustado: precio_entrada − 1.5 × ATR (para swing traders con horizonte días-semanas)
+- Stop estándar: precio_entrada − 2.0 × ATR (para inversores a medio plazo, nivel clave invalidación tesis)
+- Stop amplio: precio_entrada − 3.0 × ATR (para posiciones de largo plazo, por debajo de soporte estructural)
+- NUNCA uses stops fijos de "5-7%" o "10-12%" — eso es arbitrario. Usa el ATR del activo.
+
+REGLAS DE TAKE-PROFIT:
+- TP1: primera resistencia fuerte o extensión Fibonacci 100% (vuelta al máximo swing)
+- TP2: extensión Fibonacci 127.2% sobre el swing bajo-alto del período (objetivo principal)
+- TP3: extensión Fibonacci 161.8% o precio objetivo de analistas — PERO NUNCA más del 15% por encima del máximo de 52 semanas
+- Relación R/R mínima: 2:1. Si el nivel no da 2:1, NO lo pongas como entrada principal.
+
+RÉGIMEN DE MERCADO (condiciona la fiabilidad de los niveles):
+- TENDENCIA ALCISTA (ADX>25, precio>SMA200): en tendencia, los retrocesos a SMA50, VWAP anclado y Fibonacci 38.2%/50% son las mejores entradas. El MACD debe estar por encima de cero (MACD>0) para confirmar la tendencia.
+- TENDENCIA BAJISTA (ADX>25, precio<SMA200): los rebotes son débiles; niveles de soporte son menos fiables; gestión conservadora con tamaño de posición reducido. No ir en contra de la tendencia.
+- RANGO (ADX<20): las entradas en VAL (Value Area Low) y en los extremos del rango (soporte testado múltiples veces) son las más fiables. MACD en rango suele ser ruido.
+- TRANSICIÓN: máxima prudencia, reducir tamaño de posición.
+- Menciona siempre el régimen detectado y cómo condiciona el análisis.
+
+OBV (On-Balance Volume):
+- OBV en ACUMULACIÓN (subiendo): el dinero inteligente está comprando aunque el precio no lo refleje — señal positiva para la tesis alcista.
+- OBV en DISTRIBUCIÓN (bajando): el dinero inteligente está saliendo — reduce confianza en soportes.
+- Siempre comenta el OBV en el technical_analysis.
+
+VWAP ANCLADO (soporte dinámico institucional):
+- El VWAP anclado desde el mínimo de 52 semanas es el "precio justo promedio" desde ese mínimo.
+- Si el precio está por encima del VWAP anclado: alcista; si está por debajo: bajista.
+- El VWAP anclado actúa como soporte/resistencia donde las instituciones suelen reentrar.
+
+MACD — regla clave (zero-line gate):
+- Solo señal de compra válida cuando el MACD está POR ENCIMA de cero (o cruza hacia arriba de la línea de señal EN territorio positivo).
+- MACD cruzando la línea de señal en territorio NEGATIVO = trampa; el precio sigue siendo dominado por vendedores.
+- Menciona si el MACD está en territorio positivo o negativo y su implicación.
 
 REGLAS ESTRICTAS:
 - Responde SIEMPRE en español.
@@ -62,21 +97,21 @@ ESTRUCTURA JSON EXACTA:
   "summary": "Resumen ejecutivo en 2-3 frases explicando la tesis de inversión principal y por qué estos niveles son relevantes.",
 
   "entry_zones": [
-    {"label": "NIVEL 1 — Zona Óptima", "min": número, "max": número, "comment": "Explica por qué este nivel es soporte clave (Fibonacci, histórico, etc.)"},
-    {"label": "NIVEL 2 — Segunda Entrada", "min": número, "max": número, "comment": "Siguiente soporte si rompe el nivel 1"},
-    {"label": "NIVEL 3 — Entrada Agresiva", "min": número, "max": número, "comment": "Zona de soporte fuerte, mayor rebote esperado"}
+    {"label": "NIVEL 1 — Zona Óptima", "min": número, "max": número, "comment": "Explica confluencia, régimen de mercado y por qué el ATR valida la distancia al stop"},
+    {"label": "NIVEL 2 — Segunda Entrada", "min": número, "max": número, "comment": "Siguiente soporte fuerte con R/R mínimo 2:1"},
+    {"label": "NIVEL 3 — Entrada Agresiva", "min": número, "max": número, "comment": "Zona de soporte estructural profundo, mayor rebote esperado"}
   ],
 
   "stop_losses": [
-    {"label": "STOP AJUSTADO", "price": número, "comment": "Pérdida máxima del 5-7%, para operaciones de corto plazo"},
-    {"label": "STOP ESTÁNDAR", "price": número, "comment": "Pérdida máxima del 10-12%, nivel clave que invalida la tesis"},
-    {"label": "STOP AMPLIO", "price": número, "comment": "Pérdida máxima del 15-20%, solo para inversión a largo plazo"}
+    {"label": "STOP AJUSTADO (1.5×ATR)", "price": número, "comment": "1.5×ATR bajo la entrada NIVEL 1 — para swing traders"},
+    {"label": "STOP ESTÁNDAR (2×ATR)", "price": número, "comment": "2×ATR — nivel que invalida la tesis técnica si se pierde"},
+    {"label": "STOP AMPLIO (3×ATR)", "price": número, "comment": "3×ATR — bajo soporte estructural, solo para largo plazo"}
   ],
 
   "take_profits": [
-    {"label": "TP1 — Conservador", "price": número, "comment": "Primera resistencia clave, rentabilidad del 15-25%"},
-    {"label": "TP2 — Objetivo Principal", "price": número, "comment": "Resistencia fuerte, rentabilidad del 30-50%"},
-    {"label": "TP3 — Objetivo Ambicioso", "price": número, "comment": "Máximo potencial, rentabilidad del 60-100%"}
+    {"label": "TP1 — Fibonacci 100% / Resistencia Cercana", "price": número, "comment": "Primera resistencia clave con R/R mínimo 2:1"},
+    {"label": "TP2 — Fibonacci 127.2%", "price": número, "comment": "Extensión Fibonacci principal — objetivo de medio plazo"},
+    {"label": "TP3 — Fibonacci 161.8% / Analistas", "price": número, "comment": "Objetivo ambicioso — no más de 15% sobre máximo 52s"}
   ],
 
   "entry_zone": {"min": número, "max": número},
@@ -90,11 +125,11 @@ ESTRUCTURA JSON EXACTA:
     "resistance": [número, número, número]
   },
 
-  "technical_analysis": "Análisis detallado en 4-6 frases: RSI (nivel exacto e interpretación), MACD (señal y cruce), medias móviles (SMA20, SMA50, SMA200 y su relación con el precio), Bandas de Bollinger, volumen.",
+  "technical_analysis": "Análisis detallado en 5-7 frases: (1) RSI nivel exacto e interpretación. (2) MACD — ¿está en territorio positivo o negativo? ¿Ha cruzado la línea de señal? (3) Medias móviles SMA20/50/200 y relación con precio. (4) Bollinger Bands — ¿está cerca del borde? (5) OBV — ¿acumulación o distribución? (6) Régimen de mercado detectado (ADX, trending/ranging) y cómo condiciona el análisis. (7) Volumen y VWAP anclado.",
 
-  "fibonacci_analysis": "Explica los niveles Fibonacci clave detectados y cuál coincide mejor con los soportes técnicos.",
+  "fibonacci_analysis": "Explica los niveles Fibonacci clave detectados (retrocesos y extensiones). ¿Cuál coincide con HVN del Volume Profile? ¿Cuál da el mejor R/R? ¿Qué extensión Fibonacci se usa para los TPs?",
 
-  "pattern_analysis": "Patrones chartistas identificados (doble suelo, cabeza-hombros, triángulos, etc.) y su implicación para el precio.",
+  "pattern_analysis": "Patrones chartistas identificados (doble suelo, cabeza-hombros, triángulos, etc.) y su implicación. Si el régimen es rango, menciona los límites del rango.",
 
   "fundamentals_view": "Comentario sobre P/E vs sector, crecimiento de ingresos, márgenes, deuda. ¿Está barata o cara la acción en términos fundamentales?",
 
@@ -103,11 +138,11 @@ ESTRUCTURA JSON EXACTA:
   "earnings_view": "Si hay datos de historial_resultados_earnings: comenta si la empresa suele batir o fallar estimaciones (beat_rate) y qué implica para la fiabilidad. Si no hay datos, devuelve cadena vacía.",
 
   "price_prediction": {
-    "target_3m": número (precio estimado a 3 meses),
-    "target_6m": número (precio estimado a 6 meses),
-    "target_12m": número (precio estimado a 12 meses),
+    "target_3m": número,
+    "target_6m": número,
+    "target_12m": número,
     "confidence": número 0-100,
-    "rationale": "1-2 frases justificando la proyección. Ancla la estimación en el precio objetivo de analistas, la tendencia, los fundamentales y el Volume Profile. No inventes cifras disparatadas."
+    "rationale": "Ancla la estimación en: (1) régimen de mercado actual, (2) VWAP anclado como soporte/resistencia dinámico, (3) extensión Fibonacci del swing, (4) precio objetivo de analistas. No inventes cifras disparatadas."
   },
 
   "earnings_prediction": {
@@ -116,11 +151,11 @@ ESTRUCTURA JSON EXACTA:
     "rationale": "Basándote en el beat_rate histórico y la tendencia de resultados, ¿batirá las próximas estimaciones? Si no hay datos de earnings, devuelve INCIERTO."
   },
 
-  "competitive_position": "Posición competitiva de la empresa: ¿es la líder (#1) de su sector? ¿En qué sub-sectores compite y con qué cuota aproximada de mercado? Usa tu conocimiento de la empresa. Si no la conoces bien, dilo con honestidad en vez de inventar.",
+  "competitive_position": "Posición competitiva de la empresa: ¿es la líder (#1) de su sector? ¿En qué sub-sectores compite y con qué cuota aproximada de mercado? Usa tu conocimiento de la empresa.",
 
-  "main_rival": "El competidor que supone la mayor amenaza estructural y por qué (1-2 frases). Si la empresa es la #1, indica igualmente su rival más relevante.",
+  "main_rival": "El competidor que supone la mayor amenaza estructural y por qué (1-2 frases).",
 
-  "sector_outlook": "Potencial del sector a 3-5 años: catalizadores estructurales, tendencias de fondo y vientos de cola o de cara que afectarán a la empresa.",
+  "sector_outlook": "Potencial del sector a 3-5 años: catalizadores estructurales, tendencias de fondo y vientos de cola o de cara.",
 
   "risks": [
     "Riesgo específico 1 con impacto cuantificado si es posible",
@@ -139,27 +174,28 @@ ESTRUCTURA JSON EXACTA:
 }
 
 CÓMO CALCULAR LOS NIVELES (prioridad de fuentes, de mayor a menor fiabilidad):
-1. **Volume Profile (prioridad máxima)**: El POC es el soporte/resistencia más fuerte. Las HVN son zonas donde el precio rebota. Úsalos como base para los niveles de entrada.
-2. **Fibonacci**: Los retrocesos 38.2%, 50%, 61.8% que coincidan con HVN del Volume Profile son niveles de confluencia EXTREMADAMENTE fiables — ponlos como NIVEL 1 o NIVEL 2.
-3. **Soportes técnicos**: Pivots históricos del gráfico como confirmación adicional.
+1. **Volume Profile (prioridad máxima)**: El POC es el soporte/resistencia más fuerte. Las HVN son zonas donde el precio rebota.
+2. **VWAP anclado**: Soporte dinámico institucional. Si el precio está cayendo hacia el VWAP anclado, es una zona de entrada de alta probabilidad para traders profesionales.
+3. **Fibonacci**: Los retrocesos 38.2%, 50%, 61.8% que coincidan con HVN del Volume Profile son niveles de confluencia EXTREMADAMENTE fiables.
+4. **Soportes técnicos**: Pivots históricos, Camarilla S3/S4, mínimos de 52 semanas.
 
-REGLA DE ORO: Un nivel es fuerte cuando coinciden 2+ fuentes (ej: retroceso 61.8% + HVN del Volume Profile + soporte técnico = nivel de compra muy alto).
+REGLA DE ORO: Un nivel es fuerte cuando coinciden 2+ fuentes. Un nivel de confluencia EXTREMA (3+ fuentes: Fibonacci + HVN + VWAP anclado + soporte histórico) es uno de los mejores puntos de entrada posibles — como los que usan las mejores mesas de hedge funds del mundo.
 
-NIVELES DE ENTRADA (deben ESCALONARSE en profundidad — acumulación por tramos, NO los tres pegados al precio actual):
-- NIVEL 1: Zona más cercana por debajo del precio actual con confluencia HVN + Fibonacci (típicamente -1% a -5%)
-- NIVEL 2: Siguiente soporte fuerte o retroceso Fibonacci 50%/61.8% (típicamente -8% a -15%)
-- NIVEL 3 (ENTRADA AGRESIVA PROFUNDA): cerca del VAL (Value Area Low) o de la HVN más profunda. Representa un escenario de corrección fuerte donde la acción está claramente infravalorada. DEBE estar bastante por debajo del precio (típicamente -15% a -30%). NUNCA pongas el NIVEL 3 pegado al precio actual: su función es capturar una caída profunda hacia soporte estructural.
+NIVELES DE ENTRADA (deben ESCALONARSE en profundidad):
+- NIVEL 1: Zona más cercana con confluencia y R/R ≥ 2:1 (típicamente -1% a -5%)
+- NIVEL 2: Siguiente soporte fuerte (típicamente -8% a -15%)
+- NIVEL 3 (ENTRADA AGRESIVA): Cerca del VAL o HVN más profunda. Escenario de corrección fuerte. DEBE estar bastante por debajo (-15% a -30%). NUNCA pegado al precio.
 
-STOPS: por debajo de la LVN o del VAL (el precio cae rápido al perder esas zonas)
-TP1: primera HVN, POC (si está por encima) o resistencia técnica cercana
-TP2: VAH del Value Area o retroceso Fibonacci 50%/61.8%
-TP3: objetivo ambicioso PERO REALISTA. Usa la extensión Fibonacci 127.2%/161.8% o el precio objetivo de analistas, PERO NUNCA un valor que supere de forma absurda el máximo de 52 semanas (más de ~10-15% por encima del máximo histórico es irreal). Si la extensión Fibonacci da un valor disparatado, limita el TP3 al máximo de 52 semanas o al precio objetivo de los analistas.
+STOPS: Usa siempre ATR. Por debajo de LVN o VAL, el precio cae rápido — pon el stop después de esa zona de baja liquidez.
+TP1: resistencia más cercana o 100% del swing
+TP2: extensión Fibonacci 127.2%
+TP3: extensión Fibonacci 161.8% o precio objetivo analistas (máximo: máximo 52 semanas + 15%)
 
-SEÑALES ADICIONALES (úsalas para ajustar confianza y recomendación):
-- **Insider trading**: Si los directivos COMPRAN sus propias acciones (net_shares positivo), es una de las señales alcistas más fiables — sube la confianza. Si VENDEN masivamente, precaución.
-- **Earnings history**: Un beat_rate alto (>75%) indica una empresa que suele superar expectativas — mayor fiabilidad de la tesis alcista. Un beat_rate bajo añade riesgo.
+SEÑALES ADICIONALES:
+- **Insider trading**: Si los directivos COMPRAN: señal alcista muy fiable. Si VENDEN masivamente: precaución.
+- **Earnings history**: Un beat_rate alto (>75%) añade confianza en la tesis alcista.
 
-IMPORTANTE: Si la acción está en tendencia BAJISTA en el CORTO plazo pero los fundamentales son sólidos, recomienda COMPRAR por tramos en los niveles de soporte. No confundas tendencia de corto plazo con oportunidad de medio plazo.
+IMPORTANTE: Si la acción está en tendencia BAJISTA en el CORTO plazo pero los fundamentales son sólidos y los soportes estructurales se acercan, recomienda COMPRAR por tramos en los niveles de soporte. No confundas tendencia de corto plazo con oportunidad de medio plazo.
 """
 
 
@@ -213,8 +249,17 @@ def _build_payload(quote: dict, indicators: dict, news: list,
             "precio_vs_SMA200": f"{round((price / sma['200'] - 1) * 100, 1)}%" if sma.get("200") else None,
         },
         "rsi": ind.get("rsi"),
-        "macd": ind.get("macd"),
+        "macd": {
+            **(ind.get("macd") or {}),
+            "en_territorio_positivo": (ind.get("macd") or {}).get("macd") is not None and (ind.get("macd") or {}).get("macd", 0) > 0,
+        },
         "bollinger": ind.get("bollinger"),
+        "atr": ind.get("atr"),
+        "atr_pct": ind.get("atr_pct"),
+        "adx": ind.get("adx"),
+        "regimen_mercado": ind.get("regime"),
+        "vwap_anclado": ind.get("vwap_anchored"),
+        "obv_tendencia": ind.get("obv_trend"),
         "volumen_promedio": quote.get("avg_volume"),
         "volumen_hoy": quote.get("volume"),
         "per": quote.get("pe_ratio"),

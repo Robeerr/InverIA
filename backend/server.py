@@ -523,8 +523,12 @@ async def analyze(req: AnalyzeRequest):
     # rankeadas por fuerza, para anclar los niveles de la IA a estructura real.
     buy_levels = []
     try:
+        _ind = indicators_data or {}
         buy_levels = levels_engine.compute_buy_levels(
-            df, vp, quote.get("price"), (indicators_data or {}).get("sma")
+            df, vp, quote.get("price"), _ind.get("sma"),
+            atr_val=_ind.get("atr"),
+            regime=_ind.get("regime"),
+            vwap_anchored=_ind.get("vwap_anchored"),
         )
     except Exception:
         logger.exception("compute_buy_levels failed")
