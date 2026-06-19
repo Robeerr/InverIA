@@ -62,12 +62,18 @@ UNIVERSE = [
     "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA",
     # Large caps tech / growth
     "AMD", "AVGO", "ORCL", "CRM", "ADBE", "NFLX", "INTC", "QCOM",
+    # Semiconductors / AI infrastructure
+    "ARM", "SMCI", "ANET", "MRVL",
+    # Cloud / SaaS
+    "NOW", "SNOW", "DDOG", "NET",
     # Finance
-    "JPM", "V", "MA",
-    # Consumer
+    "JPM", "V", "MA", "GS",
+    # Consumer / Retail
     "WMT", "COST", "MCD", "KO", "NKE", "DIS",
     # Health
-    "JNJ", "UNH", "LLY",
+    "JNJ", "UNH", "LLY", "ABBV",
+    # Energy
+    "XOM", "CVX",
     # ETFs
     "SPY", "QQQ", "IWM",
 ]
