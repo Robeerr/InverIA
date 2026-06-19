@@ -57,6 +57,9 @@ export const api = {
       client.get(`/calendar/earnings`, { params: { days, symbols: symbols || undefined } }).then((r) => r.data),
   },
   alerts: {
+    create: (payload) => client.post(`/alerts`, payload).then((r) => r.data),
+    list: () => client.get(`/alerts`).then((r) => r.data),
+    delete: (id) => client.delete(`/alerts/${id}`).then((r) => r.data),
     testTelegram: (grupo) => client.post(`/alerts/test-telegram`, null, { params: grupo ? { grupo } : {} }).then((r) => r.data),
   },
 };

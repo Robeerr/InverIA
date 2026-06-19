@@ -167,16 +167,18 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
     setSignalEntry(signals.find((e) => e.symbol === symbol.toUpperCase()) || null);
   }, [symbol, signals]);
 
-  // WebSocket for live tick-by-tick price updates (Finnhub trade stream, instant
-  // while the market is open). Falls back to 30s polling if the WS fails.
+  // WebSocket for live tick-by-tick price updates (Finnhub trade stream).
+  // Reconnects with exponential backoff (2s→4s→8s→16s→32s) before falling
+  // back to 30s REST polling if all 5 attempts fail.
   useEffect(() => {
     if (!symbol) return;
     let ws;
     let closed = false;
+    let retries = 0;
+    const MAX_RETRIES = 5;
     const fallbackRef = { id: null };
-    // Throttle de ticks: durante mercado abierto pueden llegar varios/segundo. Acumulamos
-    // el último valor y hacemos un único setState por frame (requestAnimationFrame) para
-    // no re-renderizar el dashboard decenas de veces por segundo.
+
+    // Throttle ticks to one setState per animation frame.
     const pending = { data: null };
     let rafId = null;
     const flush = () => {
@@ -201,18 +203,33 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       }, 30000);
     };
 
-    try {
-      const base = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
-      const wsBase = base.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
-      ws = new WebSocket(`${wsBase}/api/ws/quote/${symbol}`);
-      ws.onmessage = (e) => {
-        try { scheduleUpdate(JSON.parse(e.data)); } catch {}
-      };
-      ws.onerror = () => {};
-      ws.onclose = () => { if (!closed) startFallback(); };
-    } catch {
-      startFallback();
-    }
+    const connect = () => {
+      if (closed) return;
+      try {
+        const base = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
+        const wsBase = base.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
+        ws = new WebSocket(`${wsBase}/api/ws/quote/${symbol}`);
+        ws.onopen = () => { retries = 0; };
+        ws.onmessage = (e) => {
+          try { scheduleUpdate(JSON.parse(e.data)); } catch {}
+        };
+        ws.onerror = () => {};
+        ws.onclose = () => {
+          if (closed) return;
+          if (retries < MAX_RETRIES) {
+            const delay = Math.min(2000 * 2 ** retries, 32000);
+            retries++;
+            setTimeout(connect, delay);
+          } else {
+            startFallback();
+          }
+        };
+      } catch {
+        startFallback();
+      }
+    };
+
+    connect();
 
     return () => {
       closed = true;
