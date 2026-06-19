@@ -1,7 +1,8 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ComposedChart,
   Bar,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -14,6 +15,52 @@ import { fmtPrice } from "../lib/format";
 
 const TIMEFRAMES = ["5M", "15M", "1H", "1D", "1W", "1M", "3M", "1Y", "5Y"];
 
+// ── Technical indicator calculations ───────────────────────────────────────
+function calcSMA(data, period) {
+  const out = [];
+  let sum = 0;
+  for (let i = 0; i < data.length; i++) {
+    sum += data[i].close;
+    if (i >= period) sum -= data[i - period].close;
+    out.push(i >= period - 1 ? sum / period : null);
+  }
+  return out;
+}
+
+function calcBB(data, period = 20, mult = 2) {
+  const sma = calcSMA(data, period);
+  return data.map((_, i) => {
+    if (sma[i] == null) return { bbU: null, bbL: null };
+    const slice = data.slice(Math.max(0, i - period + 1), i + 1).map((d) => d.close);
+    const variance = slice.reduce((acc, v) => acc + (v - sma[i]) ** 2, 0) / slice.length;
+    const std = Math.sqrt(variance);
+    return { bbU: sma[i] + mult * std, bbL: sma[i] - mult * std };
+  });
+}
+
+function calcRSI(data, period = 14) {
+  if (data.length < period + 1) return data.map(() => null);
+  const out = Array(data.length).fill(null);
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = data[i].close - data[i - 1].close;
+    if (d > 0) avgGain += d; else avgLoss -= d;
+  }
+  avgGain /= period;
+  avgLoss /= period;
+  out[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  for (let i = period + 1; i < data.length; i++) {
+    const d = data[i].close - data[i - 1].close;
+    const gain = d > 0 ? d : 0;
+    const loss = d < 0 ? -d : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+    out[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  }
+  return out;
+}
+
+// ── Tooltip ─────────────────────────────────────────────────────────────────
 function CustomTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
   const d = payload[0]?.payload;
@@ -39,12 +86,33 @@ function CustomTooltip({ active, payload }) {
   );
 }
 
+// ── Overlay toggle pill ──────────────────────────────────────────────────────
+function OverlayBtn({ label, color, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-mono border transition-all ${
+        active
+          ? "border-transparent text-white"
+          : "border-[#e5e0d8] text-[#5c6b66] bg-transparent hover:border-[#1a3a32]"
+      }`}
+      style={active ? { backgroundColor: color } : {}}
+    >
+      <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: color }} />
+      {label}
+    </button>
+  );
+}
+
+// ── Main component ───────────────────────────────────────────────────────────
 function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, signalEntry }) {
   const data = useMemo(() => candles || [], [candles]);
 
+  const [overlays, setOverlays] = useState({ sma20: false, sma50: true, sma200: true, bb: false, rsi: false });
+  const toggle = (k) => setOverlays((p) => ({ ...p, [k]: !p[k] }));
+
   const hasVolume = useMemo(() => data.some((d) => d.volume > 0), [data]);
 
-  // Price axis domain from real OHLC range with small padding.
   const priceDomain = useMemo(() => {
     if (!data.length) return [0, 100];
     let lo = Infinity, hi = -Infinity;
@@ -61,10 +129,28 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
     return Math.max(...data.map((d) => d.volume || 0), 1);
   }, [data, hasVolume]);
 
-  // CandleShape uses a closure over priceDomain.
-  // Recharts Bar always passes `background = {x, y, width, height}` to the shape,
-  // where background.y = top of chart plot area and background.height = full plot height.
-  // Combined with priceDomain we get the linear pixel scale for any price value.
+  // Compute indicator series only when their overlays are active.
+  const chartData = useMemo(() => {
+    if (!data.length) return [];
+    const sma20v = overlays.sma20 ? calcSMA(data, 20) : null;
+    const sma50v = overlays.sma50 ? calcSMA(data, 50) : null;
+    const sma200v = overlays.sma200 ? calcSMA(data, 200) : null;
+    const bbv = overlays.bb ? calcBB(data, 20, 2) : null;
+    const rsiv = overlays.rsi ? calcRSI(data, 14) : null;
+    return data.map((d, i) => ({
+      ...d,
+      sma20: sma20v?.[i] ?? undefined,
+      sma50: sma50v?.[i] ?? undefined,
+      sma200: sma200v?.[i] ?? undefined,
+      bbU: bbv?.[i]?.bbU ?? undefined,
+      bbL: bbv?.[i]?.bbL ?? undefined,
+      rsi: rsiv?.[i] ?? undefined,
+    }));
+  }, [data, overlays]);
+
+  // CandleShape: closure over priceDomain for coordinate math.
+  // Recharts Bar always passes background = {x, y, width, height} to shape,
+  // where background.y = chart top and background.height = full plot height.
   const CandleShape = useMemo(() => {
     const [dMin, dMax] = priceDomain;
     const dRange = dMax - dMin || 1;
@@ -80,20 +166,14 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
       const color = isUp ? "#4a7c59" : "#d85c41";
       const bw = Math.max((width || 4) * 0.72, 1.5);
       const cx = (x || 0) + (width || 4) / 2;
-      const yH = py(high);
-      const yL = py(low);
-      const yO = py(open);
-      const yC = py(close);
       return (
         <g>
-          {/* Wick */}
-          <line x1={cx} y1={yH} x2={cx} y2={yL} stroke={color} strokeWidth={1} />
-          {/* Body */}
+          <line x1={cx} y1={py(high)} x2={cx} y2={py(low)} stroke={color} strokeWidth={1} />
           <rect
             x={cx - bw / 2}
-            y={Math.min(yO, yC)}
+            y={Math.min(py(open), py(close))}
             width={bw}
-            height={Math.max(Math.abs(yC - yO), 1)}
+            height={Math.max(Math.abs(py(close) - py(open)), 1)}
             fill={color}
           />
         </g>
@@ -111,9 +191,17 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
   const tp1 = analysis?.take_profit_1;
   const tp2 = analysis?.take_profit_2;
 
+  const xTickFmt = (d) => {
+    const dt = new Date(d);
+    return ["5M", "15M", "1H", "1D", "1W"].includes(timeframe)
+      ? dt.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
+      : dt.toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
+  };
+
   return (
     <section data-testid="price-chart" className="card-flat p-4 md:p-6 animate-fade-up">
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+      {/* Header row: title + timeframe buttons */}
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div>
           <h3 className="font-heading font-semibold text-lg text-[#0e1f1a]">Gráfico de Precio</h3>
           <p className="text-xs text-[#5c6b66] mt-0.5">
@@ -138,19 +226,24 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
         </div>
       </div>
 
-      <div className="h-[460px] w-full">
+      {/* Indicator overlay toggles */}
+      <div className="flex gap-1.5 flex-wrap mb-3">
+        <OverlayBtn label="SMA20" color="#f59e0b" active={overlays.sma20} onClick={() => toggle("sma20")} />
+        <OverlayBtn label="SMA50" color="#3b82f6" active={overlays.sma50} onClick={() => toggle("sma50")} />
+        <OverlayBtn label="SMA200" color="#8b5cf6" active={overlays.sma200} onClick={() => toggle("sma200")} />
+        <OverlayBtn label="Bollinger" color="#9ca3af" active={overlays.bb} onClick={() => toggle("bb")} />
+        <OverlayBtn label="RSI" color="#f59e0b" active={overlays.rsi} onClick={() => toggle("rsi")} />
+      </div>
+
+      {/* Main price chart */}
+      <div style={{ height: overlays.rsi ? 360 : 460 }} className="w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 8, right: 64, left: 0, bottom: 4 }}>
+          <ComposedChart data={chartData} margin={{ top: 8, right: 64, left: 0, bottom: 4 }} syncId="inveria-chart">
             <CartesianGrid stroke="#e5e0d8" strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="date"
               tick={{ fontSize: 10, fill: "#5c6b66", fontFamily: "IBM Plex Mono" }}
-              tickFormatter={(d) => {
-                const dt = new Date(d);
-                return ["5M", "15M", "1H", "1D", "1W"].includes(timeframe)
-                  ? dt.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
-                  : dt.toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
-              }}
+              tickFormatter={xTickFmt}
               minTickGap={40}
             />
             <YAxis
@@ -168,25 +261,32 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
               cursor={{ stroke: "#5c6b66", strokeWidth: 1, strokeDasharray: "3 3" }}
             />
 
-            {/* Volume bars — domain trick keeps them in the bottom ~20% of the chart */}
+            {/* Volume */}
             {hasVolume && (
-              <Bar
-                yAxisId="vol"
-                dataKey="volume"
-                fill="#1a3a32"
-                fillOpacity={0.18}
-                isAnimationActive={false}
-                maxBarSize={20}
-              />
+              <Bar yAxisId="vol" dataKey="volume" fill="#1a3a32" fillOpacity={0.18} isAnimationActive={false} maxBarSize={20} />
             )}
 
-            {/* Candlesticks (wicks + bodies via custom shape with coordinate closure) */}
-            <Bar
-              yAxisId="price"
-              dataKey="high"
-              shape={CandleShape}
-              isAnimationActive={false}
-            />
+            {/* Candlesticks */}
+            <Bar yAxisId="price" dataKey="high" shape={CandleShape} isAnimationActive={false} />
+
+            {/* SMA overlays */}
+            {overlays.sma20 && (
+              <Line yAxisId="price" type="monotone" dataKey="sma20" stroke="#f59e0b" strokeWidth={1.5} dot={false} isAnimationActive={false} connectNulls={false} />
+            )}
+            {overlays.sma50 && (
+              <Line yAxisId="price" type="monotone" dataKey="sma50" stroke="#3b82f6" strokeWidth={1.5} dot={false} isAnimationActive={false} connectNulls={false} />
+            )}
+            {overlays.sma200 && (
+              <Line yAxisId="price" type="monotone" dataKey="sma200" stroke="#8b5cf6" strokeWidth={1.5} dot={false} isAnimationActive={false} connectNulls={false} />
+            )}
+
+            {/* Bollinger Bands */}
+            {overlays.bb && (
+              <>
+                <Line yAxisId="price" type="monotone" dataKey="bbU" stroke="#9ca3af" strokeWidth={1} strokeDasharray="4 2" dot={false} isAnimationActive={false} connectNulls={false} />
+                <Line yAxisId="price" type="monotone" dataKey="bbL" stroke="#9ca3af" strokeWidth={1} strokeDasharray="4 2" dot={false} isAnimationActive={false} connectNulls={false} />
+              </>
+            )}
 
             {/* IA entry zone */}
             {entryMin != null && entryMax != null && (
@@ -202,8 +302,6 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
                 label={{ value: "Zona entrada", position: "insideTopLeft", fill: "#4a7c59", fontSize: 10 }}
               />
             )}
-
-            {/* IA stop loss */}
             {stopLoss && (
               <ReferenceLine
                 yAxisId="price"
@@ -213,8 +311,6 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
                 label={{ value: `SL $${stopLoss}`, position: "right", fill: "#d85c41", fontSize: 11, fontWeight: "bold", fontFamily: "IBM Plex Mono" }}
               />
             )}
-
-            {/* IA take profits */}
             {tp1 && (
               <ReferenceLine
                 yAxisId="price"
@@ -234,8 +330,6 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
                 label={{ value: `TP2 $${tp2}`, position: "right", fill: "#4a7c59", fontSize: 10, fontFamily: "IBM Plex Mono" }}
               />
             )}
-
-            {/* Signal buy levels */}
             {signalEntry &&
               ["nivel1", "nivel2", "nivel3", "nivel4", "nivel5"].map((lk, i) => {
                 const val = signalEntry[lk];
@@ -252,8 +346,6 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
                   />
                 );
               })}
-
-            {/* Signal sell / deseado level */}
             {signalEntry?.deseado && (
               <ReferenceLine
                 yAxisId="price"
@@ -267,6 +359,47 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+
+      {/* RSI subplot */}
+      {overlays.rsi && (
+        <div className="mt-2 border-t border-[#e5e0d8] pt-2">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] uppercase tracking-[0.15em] text-[#5c6b66] font-mono">RSI 14</span>
+            <span className="text-[10px] text-[#5c6b66] font-mono">— sobrecompra &gt;70 · sobreventa &lt;30</span>
+          </div>
+          <div style={{ height: 110 }} className="w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={chartData} margin={{ top: 4, right: 64, left: 0, bottom: 4 }} syncId="inveria-chart">
+                <CartesianGrid stroke="#e5e0d8" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="date" hide />
+                <YAxis
+                  yAxisId="rsi"
+                  domain={[0, 100]}
+                  ticks={[30, 50, 70]}
+                  tick={{ fontSize: 9, fill: "#5c6b66", fontFamily: "IBM Plex Mono" }}
+                  tickFormatter={(v) => `${v}`}
+                  width={60}
+                  orientation="right"
+                />
+                <Tooltip content={<></>} cursor={{ stroke: "#5c6b66", strokeWidth: 1, strokeDasharray: "3 3" }} />
+                <ReferenceLine yAxisId="rsi" y={70} stroke="#d85c41" strokeDasharray="3 3" strokeWidth={1} />
+                <ReferenceLine yAxisId="rsi" y={30} stroke="#4a7c59" strokeDasharray="3 3" strokeWidth={1} />
+                <ReferenceLine yAxisId="rsi" y={50} stroke="#e5e0d8" strokeWidth={1} />
+                <Line
+                  yAxisId="rsi"
+                  type="monotone"
+                  dataKey="rsi"
+                  stroke="#f59e0b"
+                  strokeWidth={1.5}
+                  dot={false}
+                  isAnimationActive={false}
+                  connectNulls={false}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

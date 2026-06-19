@@ -1,12 +1,36 @@
-import React from "react";
-import { TrendUp, TrendDown, Buildings } from "@phosphor-icons/react";
+import React, { useState } from "react";
+import { TrendUp, TrendDown, Buildings, Bell, X, Check } from "@phosphor-icons/react";
 import { fmtPrice, fmtPct, fmtNum } from "../lib/format";
+import { api } from "../lib/api";
+import { toast } from "sonner";
 
 export default function QuoteHeader({ quote }) {
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertPrice, setAlertPrice] = useState("");
+  const [alertDir, setAlertDir] = useState("below");
+  const [saving, setSaving] = useState(false);
+
   if (!quote) return null;
   const up = (quote.change ?? 0) >= 0;
   const Color = up ? "text-[#4a7c59]" : "text-[#d85c41]";
   const TrendIcon = up ? TrendUp : TrendDown;
+
+  const createAlert = async (e) => {
+    e.preventDefault();
+    const price = parseFloat(alertPrice);
+    if (!price || price <= 0) { toast.error("Introduce un precio válido"); return; }
+    setSaving(true);
+    try {
+      await api.alerts.create({ symbol: quote.symbol, target_price: price, direction: alertDir });
+      toast.success(`Alerta creada: ${quote.symbol} ${alertDir === "below" ? "≤" : "≥"} $${fmtPrice(price)}`);
+      setAlertOpen(false);
+      setAlertPrice("");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Error al crear la alerta");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <section data-testid="quote-header" className="card-flat p-6 animate-fade-up">
@@ -39,18 +63,85 @@ export default function QuoteHeader({ quote }) {
           </div>
         </div>
 
-        <div className="text-right">
+        <div className="text-right flex flex-col items-end gap-2">
           <p data-testid="quote-price" className="font-mono font-semibold text-3xl md:text-4xl text-[#0e1f1a] leading-none">
             ${fmtPrice(quote.price)}
           </p>
-          <div className={`mt-2 font-mono text-sm flex items-center justify-end gap-1 ${Color}`}>
+          <div className={`font-mono text-sm flex items-center justify-end gap-1 ${Color}`}>
             <TrendIcon size={14} weight="bold" />
             <span data-testid="quote-change">
               {up ? "+" : ""}{fmtPrice(quote.change)} ({fmtPct(quote.change_percent)})
             </span>
           </div>
+          {/* Quick alert button */}
+          <button
+            onClick={() => { setAlertOpen((o) => !o); setAlertPrice(fmtPrice(quote.price)); }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-mono border transition-all ${
+              alertOpen
+                ? "bg-[#1a3a32] text-[#f5f3ef] border-[#1a3a32]"
+                : "border-[#e5e0d8] text-[#5c6b66] hover:border-[#1a3a32] hover:text-[#0e1f1a]"
+            }`}
+          >
+            <Bell size={12} weight={alertOpen ? "fill" : "regular"} />
+            Alerta de precio
+          </button>
         </div>
       </div>
+
+      {/* Inline alert form */}
+      {alertOpen && (
+        <form onSubmit={createAlert} className="mt-4 p-4 bg-[#f5f3ef] rounded-lg border border-[#e5e0d8] flex flex-wrap items-end gap-3">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.15em] text-[#5c6b66] font-mono mb-1.5">Dirección</p>
+            <div className="flex gap-1">
+              {[{ v: "below", label: "≤ cae a" }, { v: "above", label: "≥ sube a" }].map(({ v, label }) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setAlertDir(v)}
+                  className={`px-3 py-1.5 text-xs font-mono rounded border transition-all ${
+                    alertDir === v
+                      ? "bg-[#1a3a32] text-[#f5f3ef] border-[#1a3a32]"
+                      : "border-[#e5e0d8] text-[#5c6b66] hover:border-[#1a3a32]"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.15em] text-[#5c6b66] font-mono mb-1.5">Precio objetivo</p>
+            <input
+              type="number"
+              step="0.01"
+              min="0.01"
+              value={alertPrice}
+              onChange={(e) => setAlertPrice(e.target.value)}
+              className="w-32 bg-white border border-[#e5e0d8] rounded-md px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a32]"
+              placeholder="0.00"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-[#1a3a32] text-[#f5f3ef] rounded-md text-xs font-mono hover:bg-[#0e1f1a] transition-colors disabled:opacity-50"
+            >
+              <Check size={12} />
+              {saving ? "Guardando…" : "Crear alerta"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setAlertOpen(false)}
+              className="flex items-center gap-1 px-3 py-1.5 border border-[#e5e0d8] text-[#5c6b66] rounded-md text-xs font-mono hover:border-[#1a3a32] transition-colors"
+            >
+              <X size={12} />
+              Cancelar
+            </button>
+          </div>
+        </form>
+      )}
 
       <div className="divider-soft mt-6 mb-4" />
 

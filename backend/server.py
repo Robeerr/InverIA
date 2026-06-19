@@ -166,6 +166,23 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_prewarm_screener())
 
+    # Auto-refresh daily opportunities during US market hours so signals are always
+    # fresh without user interaction. Runs every 45 min; only refreshes if stale
+    # and within the market trading window (13:00-21:30 UTC covers EDT + EST).
+    async def _auto_refresh_opportunities():
+        while True:
+            try:
+                await asyncio.sleep(2700)  # 45 min
+                now = datetime.now(timezone.utc)
+                in_window = now.weekday() < 5 and 13 <= now.hour < 22
+                if in_window and not opportunities.daily_cache_is_fresh():
+                    await opportunities.scan_daily_opportunities(force_refresh=True)
+                    logger.info("Auto-refreshed daily opportunities (market hours)")
+            except Exception as e:
+                logger.warning(f"Auto-refresh opportunities failed: {e}")
+
+    asyncio.create_task(_auto_refresh_opportunities())
+
     yield
 
     # ----- Shutdown -----
