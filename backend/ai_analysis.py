@@ -194,6 +194,7 @@ TP3: extensión Fibonacci 161.8% o precio objetivo analistas (máximo: máximo 5
 SEÑALES ADICIONALES:
 - **Insider trading**: Si los directivos COMPRAN: señal alcista muy fiable. Si VENDEN masivamente: precaución.
 - **Earnings history**: Un beat_rate alto (>75%) añade confianza en la tesis alcista.
+- **Proximidad de resultados (dias_hasta_resultados)**: Si faltan ≤7 días para los próximos resultados, ADVIÉRTELO en el summary y en risks: es un RIESGO BINARIO (la acción puede saltar ±10% de golpe). Recomienda esperar al post-earnings o reducir la entrada inicial y reservar pólvora. Si faltan muchas semanas o no hay dato, no es factor.
 
 IMPORTANTE: Si la acción está en tendencia BAJISTA en el CORTO plazo pero los fundamentales son sólidos y los soportes estructurales se acercan, recomienda COMPRAR por tramos en los niveles de soporte. No confundas tendencia de corto plazo con oportunidad de medio plazo.
 """
@@ -202,7 +203,8 @@ IMPORTANTE: Si la acción está en tendencia BAJISTA en el CORTO plazo pero los 
 def _build_payload(quote: dict, indicators: dict, news: list,
                    analyst_consensus: dict = None, price_target: dict = None,
                    volume_profile: dict = None, insider: dict = None,
-                   earnings_history: dict = None, buy_levels: list = None) -> str:
+                   earnings_history: dict = None, buy_levels: list = None,
+                   next_earnings_date: str = None, days_to_earnings: int = None) -> str:
     ind = indicators or {}
     price = quote.get("price") or 0
     # Prefer yfinance 52w values; fallback to indicator-computed values
@@ -274,6 +276,8 @@ def _build_payload(quote: dict, indicators: dict, news: list,
         "precio_objetivo_analistas": price_target,
         "insider_trading_directivos": insider,
         "historial_resultados_earnings": earnings_history,
+        "proxima_fecha_resultados": next_earnings_date,
+        "dias_hasta_resultados": days_to_earnings,
         "patrones_tecnicos_detectados": ind.get("patterns", []),
         "noticias_recientes": [n.get("title") for n in (news or [])][:6],
         "volume_profile": {
@@ -505,9 +509,10 @@ async def _run_model(model_key: str, system_prompt: str, user_msg: str,
     the lightweight '¿por qué se mueve hoy?' explainer."""
     provider, model_id, _is_free = MODEL_MAP.get(model_key, MODEL_MAP[DEFAULT_MODEL])
     if provider == "groq":
-        # Groq free tier: 8000 TPM limit (input + output combined). Cap output to leave
-        # enough room for the input payload (~5000 tokens after payload compaction).
-        return await _analyze_with_groq(model_id, user_msg, system_prompt, min(max_tokens, 2200))
+        # Groq free tier: 8000 TPM (input + output combined, max_tokens cuenta como
+        # "requested"). Input real ≈ 3700-4300 tokens (prompt + payload compacto), así
+        # que 3000 de salida deja margen (~7300) y permite el JSON completo sin truncar.
+        return await _analyze_with_groq(model_id, user_msg, system_prompt, min(max_tokens, 3000))
     if provider == "google_free":
         return await _analyze_with_gemini_free(model_id, user_msg, system_prompt, max_tokens)
     return await _analyze_with_emergent(provider, model_id, user_msg, system_prompt)
@@ -525,9 +530,12 @@ async def analyze_stock(
     insider: dict = None,
     earnings_history: dict = None,
     buy_levels: list = None,
+    next_earnings_date: str = None,
+    days_to_earnings: int = None,
 ) -> dict:
     user_msg = _build_payload(quote, indicators, news, analyst_consensus, price_target,
-                              volume_profile, insider, earnings_history, buy_levels)
+                              volume_profile, insider, earnings_history, buy_levels,
+                              next_earnings_date, days_to_earnings)
     return await _run_model(model_key, SYSTEM_PROMPT, user_msg, max_tokens=5000)
 
 

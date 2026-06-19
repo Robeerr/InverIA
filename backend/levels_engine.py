@@ -37,7 +37,8 @@ _SOURCE_WEIGHTS = {
     "floor_s2":     1.0,
     "sma200":       2.0,
     "sma50":        1.5,
-    "pivot":        1.0,   # mínimo local (extra por toques con recency decay)
+    "weekly_pivot": 2.2,   # swing low en gráfico SEMANAL — soporte de timeframe alto
+    "pivot":        1.0,   # mínimo local diario (extra por toques con recency decay)
     "low_52w":      1.5,
     "round":        0.5,
 }
@@ -58,12 +59,29 @@ _SOURCE_LABELS = {
     "floor_s2":      "Floor Pivot S2",
     "sma200":        "Media móvil SMA200",
     "sma50":         "Media móvil SMA50",
+    "weekly_pivot":  "Soporte semanal (timeframe alto)",
     "pivot":         "Soporte histórico (swing low)",
     "low_52w":       "Mínimo de 52 semanas",
     "round":         "Número redondo psicológico",
 }
 
-_STRENGTH_DIVISOR = 10.0
+_STRENGTH_DIVISOR = 12.0
+
+# Familia metodológica de cada fuente. La confluencia REAL es que metodologías
+# DISTINTAS coincidan (volumen + fibonacci + media + pivote), no que 3 variantes
+# de la misma idea (POC+VAL+HVN = todas "volumen") sumen como si fueran 3 pruebas
+# independientes. Al puntuar se toma el mejor peso POR FAMILIA, no por fuente.
+_SOURCE_FAMILY = {
+    "poc": "volumen", "val": "volumen", "hvn": "volumen",
+    "vwap_anchored": "vwap",
+    "fib_0.236": "fibonacci", "fib_0.382": "fibonacci", "fib_0.5": "fibonacci",
+    "fib_0.618": "fibonacci", "fib_0.786": "fibonacci",
+    "camarilla_s3": "pivot_points", "camarilla_s4": "pivot_points",
+    "floor_s1": "pivot_points", "floor_s2": "pivot_points",
+    "pivot": "swing", "weekly_pivot": "swing", "low_52w": "swing",
+    "sma200": "media", "sma50": "media",
+    "round": "round",
+}
 
 
 # ── Camarilla Pivots ─────────────────────────────────────────────────────────
@@ -111,7 +129,35 @@ def _count_touches_weighted(df, level: float, tol_pct: float = 1.0) -> float:
             # Recency weight: bars closer to the end get more weight (1.0 at last, 0.3 at oldest)
             recency = 0.3 + 0.7 * (i / max(n - 1, 1))
             total += recency
-    return round(min(2.0, total * 0.4), 2)
+    # Cap moderado: los toques refuerzan, pero no deben dominar la confluencia.
+    return round(min(1.2, total * 0.3), 2)
+
+
+# ── Multi-timeframe: weekly swing lows ───────────────────────────────────────
+def _weekly_pivots(df, current_price: float) -> List[float]:
+    """Higher-timeframe (weekly) swing lows. Un soporte que aguanta en el gráfico
+    SEMANAL es mucho más significativo que un mínimo diario aislado — es el filtro
+    multi-timeframe que usa todo profesional para separar niveles reales del ruido.
+    Se construye agregando las velas diarias en velas ~semanales (5 sesiones)."""
+    if df is None or len(df) < 30:
+        return []
+    lows = df["Low"].astype(float).tolist()
+    n = len(lows)
+    # Agregar mínimos diarios en cubos semanales (5 sesiones de bolsa por semana)
+    weekly_lows = [min(lows[i:i + 5]) for i in range(0, n, 5)]
+    m = len(weekly_lows)
+    out: List[float] = []
+    seen: List[float] = []
+    # Swing low SEMANAL SIGNIFICATIVO = el mínimo de una ventana de ±2 velas
+    # semanales (un suelo que aguantó ~5 semanas). Filtra el ruido y deja solo los
+    # soportes estructurales reales del timeframe alto, sin duplicados cercanos.
+    for j in range(2, m - 2):
+        if weekly_lows[j] == min(weekly_lows[j - 2:j + 3]):
+            p = round(float(weekly_lows[j]), 2)
+            if 0 < p < current_price and all(abs(p - s) / p > 0.015 for s in seen):
+                out.append(p)
+                seen.append(p)
+    return out
 
 
 # ── Round levels ─────────────────────────────────────────────────────────────
@@ -171,7 +217,7 @@ def _regime_modifier(src: str, regime: Optional[dict]) -> float:
         # Trend mode: dynamic levels (SMA200, VWAP) more reliable; static pivots less
         if src in ("sma200", "sma50", "vwap_anchored"):
             return 1.3
-        if src in ("poc", "val", "fib_0.618", "fib_0.5"):
+        if src in ("poc", "val", "fib_0.618", "fib_0.5", "weekly_pivot"):
             return 1.1
         if src in ("camarilla_s3", "camarilla_s4", "floor_s1", "floor_s2"):
             return 0.8  # intraday levels less meaningful in strong trends
@@ -267,6 +313,13 @@ def compute_buy_levels(
         extra = _count_touches_weighted(df, p)
         candidates.append((p, "pivot", extra))
 
+    # Multi-timeframe: weekly swing lows (timeframe alto = soporte más fiable).
+    # Cuando coinciden con un nivel diario, refuerzan la confluencia; cuando no,
+    # añaden zonas estructurales profundas que el gráfico diario por sí solo pierde.
+    # Sin extra por toques: ya pesa alto y los toques se cuentan en el pivote diario.
+    for wp in _weekly_pivots(df, current_price):
+        candidates.append((wp, "weekly_pivot", 0.0))
+
     # 52-week low
     low_52w = float(df["Low"].tail(252).min()) if len(df) else None
     if low_52w and 0 < low_52w < current_price:
@@ -305,12 +358,19 @@ def compute_buy_levels(
             weight = (base_weight * regime_adj) + extra
             if weight > best_by_source.get(src, 0):
                 best_by_source[src] = weight
-        raw = sum(best_by_source.values())
-        distinct = len([s for s in best_by_source if s != "round"])
-        if distinct >= 2:
-            raw += (distinct - 1) * 0.5
-        if distinct >= 4:
-            raw += 1.0  # extra bonus for rare 4-source confluence
+        # Puntuar por FAMILIA, no por fuente: se toma el mejor peso de cada familia
+        # metodológica presente en la zona. Así POC+VAL+HVN cuenta como una prueba
+        # de "volumen" fuerte, y la nota alta exige metodologías DISTINTAS.
+        best_by_family: Dict[str, float] = {}
+        for src, wt in best_by_source.items():
+            fam = _SOURCE_FAMILY.get(src, "otro")
+            if wt > best_by_family.get(fam, 0):
+                best_by_family[fam] = wt
+        raw = sum(best_by_family.values())
+        # Bonus por nº de familias DISTINTAS que coinciden (la esencia de la confluencia).
+        n_families = len([f for f in best_by_family if f != "round"])
+        if n_families >= 2:
+            raw += (n_families - 1) * 0.6
         strength = int(min(100, round(raw / _STRENGTH_DIVISOR * 100)))
 
         prices_in_cl = [c[0] for c in cl]

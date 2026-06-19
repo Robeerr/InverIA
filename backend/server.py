@@ -495,7 +495,7 @@ async def analyze(req: AnalyzeRequest):
     indicators_data = await loop.run_in_executor(None, ind.compute_all, df)
 
     # Enrich with analyst consensus + Volume Profile + insider/earnings/financials + news (all in parallel)
-    trends, price_target, vp, insider, earnings_hist, basic_fin, news = await asyncio.gather(
+    trends, price_target, vp, insider, earnings_hist, basic_fin, news, earnings_cal = await asyncio.gather(
         loop.run_in_executor(None, external_data.finnhub_recommendation_trends, symbol),
         loop.run_in_executor(None, external_data.finnhub_price_target, symbol),
         loop.run_in_executor(None, polygon_data.get_volume_profile, symbol, 365),
@@ -503,6 +503,7 @@ async def analyze(req: AnalyzeRequest):
         loop.run_in_executor(None, external_data.finnhub_earnings_surprises, symbol),
         loop.run_in_executor(None, external_data.finnhub_basic_financials, symbol),
         loop.run_in_executor(None, market_data.get_news, symbol, 5),
+        loop.run_in_executor(None, lambda: external_data.finnhub_earnings_calendar(90, [symbol])),
         return_exceptions=True,
     )
     news = news if isinstance(news, list) else []
@@ -512,6 +513,24 @@ async def analyze(req: AnalyzeRequest):
     insider = insider if isinstance(insider, dict) else None
     earnings_hist = earnings_hist if isinstance(earnings_hist, dict) else None
     basic_fin = basic_fin if isinstance(basic_fin, dict) else {}
+
+    # Próxima fecha de resultados → riesgo binario si está cerca (los pros evitan
+    # abrir posición justo antes de earnings: la acción puede saltar ±10% de golpe).
+    next_earnings_date, days_to_earnings = None, None
+    if isinstance(earnings_cal, dict):
+        _today = datetime.now(timezone.utc).date()
+        for _it in (earnings_cal.get("items") or []):
+            _d = _it.get("date")
+            if not _d:
+                continue
+            try:
+                _ed = datetime.strptime(_d, "%Y-%m-%d").date()
+            except Exception:
+                continue
+            if _ed >= _today:
+                next_earnings_date = _d
+                days_to_earnings = (_ed - _today).days
+                break  # items vienen ordenados por fecha ascendente
     # Fill missing quote fundamentals + add growth metrics (revenue/EPS YoY) from Finnhub
     for k, v in basic_fin.items():
         if quote.get(k) is None and v is not None:
@@ -541,6 +560,8 @@ async def analyze(req: AnalyzeRequest):
         insider=insider,
         earnings_history=earnings_hist,
         buy_levels=buy_levels,
+        next_earnings_date=next_earnings_date,
+        days_to_earnings=days_to_earnings,
     )
     used_model = requested_model
     FALLBACK_MODEL = "gpt-oss-120b"  # Groq — higher free-tier limits, robust fallback
