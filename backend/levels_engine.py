@@ -390,10 +390,67 @@ def compute_buy_levels(
             "sources": list(best_by_source.keys()),
         })
 
-    # ── 4) Return top zones sorted closest-to-deepest ─────────────────────
+    # ── 4) Select the strongest structural zones as the ladder backbone ───
     zones.sort(key=lambda z: z["strength"], reverse=True)
-    top = zones[:max_levels]
-    top.sort(key=lambda z: z["price"], reverse=True)
-    for i, z in enumerate(top, 1):
+    backbone = zones[:max_levels]
+    leftover = zones[max_levels:]
+    backbone.sort(key=lambda z: z["price"], reverse=True)
+
+    # ── 4b) Hybrid tactical gap-fill (ATR-based) ──────────────────────────
+    # Los acumuladores profesionales (scaling-in institucional, pirámide de
+    # O'Neil) evitan dejar huecos mayores de ~1×ATR entre peldaños. Cuando un
+    # hueco supera ese umbral insertamos UN relleno táctico: anclado al mejor
+    # soporte estructural sobrante DENTRO del hueco si existe, o a un número
+    # redondo cerca del punto medio si no hay estructura. Los rellenos llevan
+    # flag `tactical` y fuerza reducida — sirven para suavizar el drawdown y
+    # subir la tasa de llenado, NO para mejorar el retorno (evidencia: el CAGR
+    # apenas cambia pero el drawdown baja). Núcleo fuerte + relleno oportunista.
+    gap_threshold = (atr_val * 1.0) if (atr_val and atr_val > 0) else current_price * 0.04
+    boundaries = [current_price] + [z["price"] for z in backbone]
+    gaps = []  # (gap_size, hi, lo)
+    for i in range(len(boundaries) - 1):
+        hi, lo = boundaries[i], boundaries[i + 1]
+        if hi - lo > gap_threshold:
+            gaps.append((hi - lo, hi, lo))
+    gaps.sort(reverse=True)  # rellena primero los huecos más grandes
+
+    fillers: List[dict] = []
+    for _, hi, lo in gaps[:2]:  # como mucho 2 rellenos tácticos
+        inside = [z for z in leftover if lo < z["price"] < hi and not z.get("_used")]
+        if inside:
+            best = max(inside, key=lambda z: z["strength"])
+            best["_used"] = True
+            best["tactical"] = True
+            if "Entrada táctica" not in best["reasons"]:
+                best["reasons"] = ["Entrada táctica"] + best["reasons"]
+            fillers.append(best)
+            continue
+        # Sin estructura sobrante: número redondo cerca del punto medio.
+        mid = (hi + lo) / 2.0
+        rp = None
+        for step in (5, 10):
+            cand = round(mid / step) * step
+            if lo < cand < hi:
+                rp = float(cand)
+                break
+        if rp is None:
+            rp = round(mid, 2)
+        fillers.append({
+            "price": rp,
+            "zone_low": rp,
+            "zone_high": rp,
+            "strength": 20,
+            "distance_pct": round((rp - current_price) / current_price * 100, 2),
+            "reasons": ["Entrada táctica (rellena hueco)"],
+            "sources": ["tactical"],
+            "tactical": True,
+        })
+
+    # ── 4c) Merge backbone + tactical fillers, re-label closest-to-deepest ─
+    combined = backbone + fillers
+    combined.sort(key=lambda z: z["price"], reverse=True)
+    for i, z in enumerate(combined, 1):
         z["label"] = f"NIVEL {i}"
-    return top
+        z.setdefault("tactical", False)
+        z.pop("_used", None)
+    return combined

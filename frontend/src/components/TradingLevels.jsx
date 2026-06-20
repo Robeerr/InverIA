@@ -64,10 +64,13 @@ function SmartBuyLevels({ levels, current }) {
           const dist = z.distance_pct != null ? z.distance_pct
             : current && z.price ? ((z.price - current) / current) * 100 : null;
           return (
-            <div key={i} data-testid={`smart-level-${i}`} className="bg-white border border-[#e5e0d8] rounded-md p-3">
+            <div key={i} data-testid={`smart-level-${i}`} className={`bg-white border rounded-md p-3 ${z.tactical ? "border-dashed border-[#b8860b]/50" : "border-[#e5e0d8]"}`}>
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-baseline gap-2">
                   <span className="font-mono text-[10px] font-semibold text-[#1a3a32] uppercase tracking-wider">{z.label}</span>
+                  {z.tactical && (
+                    <span title="Entrada táctica: rellena un hueco grande entre niveles fuertes. Tamaño de posición menor — sirve para suavizar la entrada, no es un soporte estructural de roca." className="inline-flex items-center bg-[#b8860b]/15 text-[#8a6508] rounded px-1.5 py-0.5 text-[9px] font-mono font-semibold uppercase tracking-wider">Táctico</span>
+                  )}
                   <span className="font-mono font-bold text-lg text-[#0e1f1a]">${fmtPrice(z.price)}</span>
                   {z.zone_low != null && z.zone_high != null && z.zone_low !== z.zone_high && (
                     <span className="font-mono text-[10px] text-[#5c6b66]">(${fmtPrice(z.zone_low)}–${fmtPrice(z.zone_high)})</span>
