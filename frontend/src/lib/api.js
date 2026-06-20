@@ -50,6 +50,8 @@ export const api = {
   opportunitiesScreener: (refresh = false) =>
     client.get(`/opportunities/screener`, { params: refresh ? { refresh: true } : {} }).then((r) => r.data),
   marketMovers: () => client.get(`/market/movers`).then((r) => r.data),
+  backtest: (symbol, window = 60) =>
+    client.get(`/backtest/${symbol}`, { params: { window }, timeout: 120000 }).then((r) => r.data),
   marketFutures: () => client.get(`/market/futures`).then((r) => r.data),
   signals: () => client.get(`/signals`).then((r) => r.data),
   calendar: {

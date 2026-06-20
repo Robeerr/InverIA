@@ -28,6 +28,7 @@ import polygon_data
 import fmp_data
 import alerts_worker
 import opportunities
+import backtest
 import signal_table
 import levels_engine
 import auth
@@ -1099,6 +1100,33 @@ async def growth_screener(refresh: bool = False):
     near 52w high, revenue growth, EPS growth) over a curated growth universe."""
     data = await opportunities.scan_growth_screener(force_refresh=refresh)
     return data
+
+
+_backtest_cache: dict = {}
+
+
+@api_router.get("/backtest/{symbol}")
+async def backtest_levels(symbol: str, window: int = 60):
+    """Walk-forward backtest of the confluence buy-levels engine for one symbol.
+    Returns empirical hold rates by strength bucket (how often price actually
+    bounced at each level type, with no lookahead). Cached 6h per symbol."""
+    sym = symbol.upper()
+    ck = f"{sym}:{window}"
+    cached = _backtest_cache.get(ck)
+    if cached and (datetime.now(timezone.utc) - cached["ts"]).total_seconds() < 21600:
+        return cached["data"]
+
+    loop = asyncio.get_event_loop()
+    df = await loop.run_in_executor(None, market_data.get_full_indicator_history, sym)
+    if df is None or df.empty:
+        raise HTTPException(status_code=404, detail="No hay histórico suficiente para esta acción.")
+
+    result = await loop.run_in_executor(
+        None, lambda: backtest.backtest_symbol(df, forward_window=window)
+    )
+    result["symbol"] = sym
+    _backtest_cache[ck] = {"data": result, "ts": datetime.now(timezone.utc)}
+    return result
 
 
 @api_router.get("/market/futures")

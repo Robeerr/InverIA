@@ -7,6 +7,7 @@ import RecommendationPanel from "../components/RecommendationPanel";
 import IndicatorsPanel from "../components/IndicatorsPanel";
 import TradingLevels from "../components/TradingLevels";
 import WhyMovingCard from "../components/WhyMovingCard";
+import BacktestCard from "../components/BacktestCard";
 import AnalystConsensusCard from "../components/AnalystConsensus";
 import { NewsFeed, FundamentalsCard, RisksCatalystsCard, MarketSignalsCard, InvestmentThesisCard, PricePredictionCard } from "../components/InfoCards";
 import { api } from "../lib/api";
@@ -260,6 +261,8 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
         volumeProfile={volumeProfile}
         buyLevels={buyLevels}
       />
+
+      {quote && <BacktestCard symbol={symbol} />}
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6">
         <PriceChart
