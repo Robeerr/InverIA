@@ -1,5 +1,5 @@
 import React from "react";
-import { ChartLineUp, ShieldCheck, Spinner } from "@phosphor-icons/react";
+import { ChartLineUp, ShieldCheck, Spinner, CaretDown } from "@phosphor-icons/react";
 import { Button } from "./ui/button";
 import { api } from "../lib/api";
 
@@ -36,6 +36,7 @@ export default function BacktestCard({ symbol }) {
   const [loading, setLoading] = React.useState(false);
   const [err, setErr] = React.useState(null);
   const [scope, setScope] = React.useState("symbol"); // "symbol" | "universe"
+  const [showDetail, setShowDetail] = React.useState(false);
 
   // Reset when symbol changes so stale results don't show under a new ticker.
   React.useEffect(() => { if (scope === "symbol") { setData(null); setErr(null); } }, [symbol, scope]);
@@ -129,34 +130,47 @@ export default function BacktestCard({ symbol }) {
             </div>
           </div>
 
-          <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#5c6b66] mb-2">Estructural vs táctico</p>
-            <div className="space-y-2">
-              <RateRow label="Estructural" stat={data.by_kind?.estructural} />
-              <RateRow label="Táctico" stat={data.by_kind?.tactico} />
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowDetail((v) => !v)}
+            className="flex items-center gap-1.5 text-[11px] font-mono text-[#5c6b66] hover:text-[#1a3a32] transition-colors"
+          >
+            <CaretDown size={12} weight="bold" className={`transition-transform ${showDetail ? "rotate-180" : ""}`} />
+            {showDetail ? "Ocultar detalle técnico" : "Ver detalle técnico (por metodología)"}
+          </button>
 
-          {data.by_source && Object.keys(data.by_source).length > 0 && (
-            <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#5c6b66] mb-2">
-                Edge real por metodología (ordenado por durabilidad)
-              </p>
-              <div className="space-y-1">
-                {Object.entries(data.by_source).map(([src, st]) => (
-                  <div key={src} className="flex items-center gap-3 text-[11px] font-mono">
-                    <span className="text-[#3a4a44] w-32 shrink-0 truncate">{src}</span>
-                    <div className="flex-1 h-1.5 bg-[#e5e0d8] rounded-full overflow-hidden">
-                      <div className={`h-full ${rateTone(st.clean_hold_rate).bar}`} style={{ width: `${st.clean_hold_rate ?? 0}%` }} />
-                    </div>
-                    <span className={`w-28 text-right ${rateTone(st.clean_hold_rate).text}`}>
-                      limpio {st.clean_hold_rate}%
-                    </span>
-                    <span className="text-[#5c6b66] w-24 text-right">{st.avg_bounce_atr}×ATR</span>
-                    <span className="text-[#9aa39f] w-12 text-right">({st.n})</span>
-                  </div>
-                ))}
+          {showDetail && (
+            <div className="space-y-4 pt-1">
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#5c6b66] mb-2">Estructural vs táctico</p>
+                <div className="space-y-2">
+                  <RateRow label="Estructural" stat={data.by_kind?.estructural} />
+                  <RateRow label="Táctico" stat={data.by_kind?.tactico} />
+                </div>
               </div>
+
+              {data.by_source && Object.keys(data.by_source).length > 0 && (
+                <div>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#5c6b66] mb-2">
+                    Edge real por metodología (ordenado por durabilidad)
+                  </p>
+                  <div className="space-y-1">
+                    {Object.entries(data.by_source).map(([src, st]) => (
+                      <div key={src} className="flex items-center gap-3 text-[11px] font-mono">
+                        <span className="text-[#3a4a44] w-32 shrink-0 truncate">{src}</span>
+                        <div className="flex-1 h-1.5 bg-[#e5e0d8] rounded-full overflow-hidden">
+                          <div className={`h-full ${rateTone(st.clean_hold_rate).bar}`} style={{ width: `${st.clean_hold_rate ?? 0}%` }} />
+                        </div>
+                        <span className={`w-28 text-right ${rateTone(st.clean_hold_rate).text}`}>
+                          limpio {st.clean_hold_rate}%
+                        </span>
+                        <span className="text-[#5c6b66] w-24 text-right">{st.avg_bounce_atr}×ATR</span>
+                        <span className="text-[#9aa39f] w-12 text-right">({st.n})</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
