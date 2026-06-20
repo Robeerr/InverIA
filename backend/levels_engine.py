@@ -28,6 +28,14 @@ from typing import List, Dict, Optional
 # floor_s1(37.6%) < round(38.3%) < val(39.1%) < pivot(39.4%) < camarilla_s4(39.7%) <
 # sma50(40.2%) < sma200(40.7%) < floor_s2(41.8%) < fib_0.236(44.3%) < fib_0.786(44.7%) <
 # vwap_anchored(44.7%) < fib_0.382(50.7%).
+#
+# NOTA (probado y descartado): ensanchar el rango a 0.5–3.0 vía
+# peso = k·max(rate−25,0) NO mejoró la discriminación del bucket de fuerza
+# (en backtest dio media > fuerte) y daba pesos extremos a fuentes con muestra
+# pequeña (fib_0.618 n=52, low_52w n=30) = sobreajuste de ruido. El bucket de
+# fuerza está limitado por ruido (SE≈3.5pts con n≈190): fuerte≈media≈débil en
+# durabilidad porque los niveles ultra-obvios concentran stops. La señal REAL y
+# estable es el ranking por fuente, que estos pesos moderados ya capturan.
 _SOURCE_WEIGHTS = {
     "fib_0.382":    3.0,   # best empirical edge: 50.7% clean hold
     "vwap_anchored": 2.6,  # 44.7% clean hold
