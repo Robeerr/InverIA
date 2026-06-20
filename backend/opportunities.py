@@ -61,21 +61,27 @@ UNIVERSE = [
     # Mega caps
     "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA",
     # Large caps tech / growth
-    "AMD", "AVGO", "ORCL", "CRM", "ADBE", "NFLX", "INTC", "QCOM",
+    "AMD", "AVGO", "ORCL", "CRM", "ADBE", "NFLX", "INTC", "QCOM", "TXN", "IBM", "CSCO", "AMAT",
     # Semiconductors / AI infrastructure
-    "ARM", "SMCI", "ANET", "MRVL",
-    # Cloud / SaaS
-    "NOW", "SNOW", "DDOG", "NET",
+    "ARM", "SMCI", "ANET", "MRVL", "MU", "LRCX", "KLAC", "ON", "TSM", "ASML",
+    # Cloud / SaaS / software
+    "NOW", "SNOW", "DDOG", "NET", "PLTR", "CRWD", "PANW", "FTNT", "SHOP", "TEAM", "WDAY", "ZS", "MDB", "APP",
+    # Internet / consumer-tech
+    "UBER", "ABNB", "MELI", "BKNG", "SPOT", "PYPL", "SQ",
+    # Fintech / brokers
+    "COIN", "HOOD", "SOFI", "NU",
     # Finance
-    "JPM", "V", "MA", "GS",
+    "JPM", "V", "MA", "GS", "BAC", "MS", "AXP", "SCHW", "BLK",
     # Consumer / Retail
-    "WMT", "COST", "MCD", "KO", "NKE", "DIS",
-    # Health
-    "JNJ", "UNH", "LLY", "ABBV",
+    "WMT", "COST", "MCD", "KO", "NKE", "DIS", "SBUX", "TGT", "HD", "LOW", "CMG", "LULU",
+    # Health / biotech
+    "JNJ", "UNH", "LLY", "ABBV", "MRK", "PFE", "TMO", "ISRG", "VRTX", "MRNA", "AMGN",
+    # Industrial / EV / mobility
+    "CAT", "DE", "BA", "GE", "RIVN", "RKLB",
     # Energy
-    "XOM", "CVX",
+    "XOM", "CVX", "COP", "SLB",
     # ETFs
-    "SPY", "QQQ", "IWM",
+    "SPY", "QQQ", "IWM", "DIA",
 ]
 
 
@@ -125,7 +131,7 @@ def _build_opportunity_reason(category, signals, rsi, change_pct, analyst_consen
 
 
 _cache = {"data": None, "ts": None}
-_CACHE_TTL = timedelta(minutes=60)
+_CACHE_TTL = timedelta(minutes=20)
 _scan_lock = asyncio.Lock()
 
 
@@ -385,8 +391,12 @@ async def _analyze_one(symbol: str):
             signals.append("MACD bullish")
             score += 10
 
-        # 7) Analyst consensus
-        if consensus and consensus.get("score", 0) >= 65:
+        # 7) Analyst consensus — más peso cuanto más fuerte (respaldo profesional).
+        cons_score = consensus.get("score", 0) if consensus else 0
+        if cons_score >= 80:  # Comprar fuerte
+            signals.append(f"Consenso analistas: {consensus['consensus']} ({consensus['total_analysts']} analistas)")
+            score += 28
+        elif cons_score >= 65:  # Comprar
             signals.append(f"Consenso analistas: {consensus['consensus']} ({consensus['total_analysts']} analistas)")
             score += 15
 
@@ -422,6 +432,7 @@ async def _analyze_one(symbol: str):
             "nearest_resistance": resistances[0] if resistances else None,
             "analyst_consensus": cons_label,
             "analysts_count": consensus["total_analysts"] if consensus else None,
+            "consensus_score": cons_score or None,
             "market_cap": quote.get("market_cap"),
             "sector": quote.get("sector"),
         }
@@ -471,7 +482,8 @@ async def scan_daily_opportunities(force_refresh: bool = False):
 
         results = await asyncio.gather(*[bounded(s) for s in UNIVERSE])
         items = [r for r in results if r is not None]
-        items.sort(key=lambda x: x["score"], reverse=True)
+        # Ordena por score técnico y, a igualdad, por respaldo de analistas.
+        items.sort(key=lambda x: (x["score"], x.get("consensus_score") or 0), reverse=True)
 
         # Group by category
         by_category = {}

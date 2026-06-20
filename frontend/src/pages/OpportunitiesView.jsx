@@ -76,7 +76,23 @@ function OpportunityCard({ op, onPick }) {
       </div>
 
       <div className="flex items-center justify-between text-[10px] text-[#5c6b66]">
-        <span>{op.analyst_consensus ? `${op.analyst_consensus}` : "—"}</span>
+        {op.analyst_consensus ? (
+          <span
+            className={`font-mono font-semibold ${
+              (op.consensus_score ?? 0) >= 80
+                ? "text-[#4a7c59]"
+                : (op.consensus_score ?? 0) >= 65
+                ? "text-[#8a6508]"
+                : "text-[#5c6b66]"
+            }`}
+            title={op.analysts_count ? `${op.analysts_count} analistas` : undefined}
+          >
+            {op.analyst_consensus}
+            {op.analysts_count ? ` · ${op.analysts_count}` : ""}
+          </span>
+        ) : (
+          <span>—</span>
+        )}
         <span className="flex items-center gap-1 text-[#1a3a32] font-mono">
           Analizar <ArrowRight size={10} weight="bold" />
         </span>
