@@ -153,6 +153,7 @@ def _walk_forward_records(
                 "held": held,
                 "bounce_atr": bounce_real,
                 "clean": (not broke_ever),
+                "sources": list(z.get("sources") or []),
             })
 
         i += anchor_step
@@ -216,10 +217,31 @@ def _aggregate(records: List[dict], forward_window: int) -> dict:
         "estructural": rate([r for r in records if not r["tactical"]]),
         "tactico": rate([r for r in records if r["tactical"]]),
     }
+
+    # Desglose por FUENTE: para cada metodología, mide su edge real cuando está
+    # presente en un nivel tocado. Un nivel puede tener varias fuentes, así que
+    # un toque cuenta para todas las que lo componen. Esto es lo que permite
+    # recalibrar los pesos del score con datos en vez de a ojo.
+    all_sources = set()
+    for r in records:
+        all_sources.update(r.get("sources") or [])
+    by_source = {}
+    for src in all_sources:
+        st = rate([r for r in records if src in (r.get("sources") or [])])
+        if st["n"] >= 8:  # ignora fuentes con muestra ridícula
+            by_source[src] = st
+    # ordena por durabilidad (clean) desc — el ranking empírico de fiabilidad
+    by_source = dict(sorted(
+        by_source.items(),
+        key=lambda kv: (kv[1].get("clean_hold_rate") or 0),
+        reverse=True,
+    ))
+
     return {
         "overall": rate(records),
         "by_strength": by_bucket,
         "by_kind": by_kind,
+        "by_source": by_source,
         "forward_window_days": forward_window,
         "samples": len(records),
     }

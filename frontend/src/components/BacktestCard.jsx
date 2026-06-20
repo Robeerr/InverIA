@@ -137,6 +137,29 @@ export default function BacktestCard({ symbol }) {
             </div>
           </div>
 
+          {data.by_source && Object.keys(data.by_source).length > 0 && (
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#5c6b66] mb-2">
+                Edge real por metodología (ordenado por durabilidad)
+              </p>
+              <div className="space-y-1">
+                {Object.entries(data.by_source).map(([src, st]) => (
+                  <div key={src} className="flex items-center gap-3 text-[11px] font-mono">
+                    <span className="text-[#3a4a44] w-32 shrink-0 truncate">{src}</span>
+                    <div className="flex-1 h-1.5 bg-[#e5e0d8] rounded-full overflow-hidden">
+                      <div className={`h-full ${rateTone(st.clean_hold_rate).bar}`} style={{ width: `${st.clean_hold_rate ?? 0}%` }} />
+                    </div>
+                    <span className={`w-28 text-right ${rateTone(st.clean_hold_rate).text}`}>
+                      limpio {st.clean_hold_rate}%
+                    </span>
+                    <span className="text-[#5c6b66] w-24 text-right">{st.avg_bounce_atr}×ATR</span>
+                    <span className="text-[#9aa39f] w-12 text-right">({st.n})</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <p className="text-[10px] text-[#5c6b66] leading-relaxed">
             «Aguantó» = rebotó ≥1×ATR antes de romperse (tasa de rebote). «Limpio» = nunca se rompió por cierre en
             toda la ventana (durabilidad). «×ATR» = tamaño medio del rebote. La fuerza del nivel debería notarse
