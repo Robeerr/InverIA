@@ -224,7 +224,7 @@ class PriceAlertCreate(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     symbol: str
-    model: Optional[str] = "gpt-oss-120b"
+    model: Optional[str] = "gemini-2.5-flash"
 
 
 class CompareRequest(BaseModel):
@@ -320,7 +320,8 @@ async def me(current_user: str = Depends(auth.get_current_user)):
 async def available_models():
     return {
         "models": [
-            {"value": "gpt-oss-120b", "label": "GPT-OSS 120B (Gratis · Recomendado)", "free": True, "available": True},
+            {"value": "gemini-2.5-flash", "label": "Gemini 2.5 Flash (Gratis · Recomendado)", "free": True, "available": True},
+            {"value": "gpt-oss-120b", "label": "GPT-OSS 120B (Gratis)", "free": True, "available": True},
             {"value": "gpt-5.2", "label": "GPT-5.2 (Premium)", "free": False, "available": ai_analysis.EMERGENT_AVAILABLE},
         ],
         "premium_available": ai_analysis.EMERGENT_AVAILABLE,
@@ -564,7 +565,7 @@ async def analyze(req: AnalyzeRequest):
         days_to_earnings=days_to_earnings,
     )
     used_model = requested_model
-    FALLBACK_MODEL = "gpt-oss-120b"  # Groq — higher free-tier limits, robust fallback
+    FALLBACK_MODEL = "gemini-2.5-flash"  # 250K TPM — no 413, robust fallback
     try:
         result = await ai_analysis.analyze_stock(
             quote, indicators_data, news, model_key=requested_model, **analyze_kwargs

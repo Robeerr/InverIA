@@ -4,9 +4,9 @@ import { Button } from "../components/ui/button";
 import { fmtPrice } from "../lib/format";
 
 const FREE_MODELS = [
+  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash (Recomendado)" },
   { id: "gpt-oss-120b", label: "GPT-OSS 120B" },
   { id: "llama-3.3-70b", label: "Llama 3.3 70B" },
-  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
 ];
 
 function modelLabel(id) {

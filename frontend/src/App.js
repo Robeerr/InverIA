@@ -24,10 +24,10 @@ const PageLoader = () => (
 function AppInner() {
   const { isAuth, loading } = useAuth();
   const [symbol, setSymbol] = useState("AAPL");
-  const [model, setModel] = useState(() => localStorage.getItem("inveria-model-v2") || "gpt-oss-120b");
+  const [model, setModel] = useState(() => localStorage.getItem("inveria-model-v3") || "gemini-2.5-flash");
 
   useEffect(() => {
-    localStorage.setItem("inveria-model-v2", model);
+    localStorage.setItem("inveria-model-v3", model);
   }, [model]);
   const [darkMode, setDarkMode] = useState(() => {
     return localStorage.getItem("inveria-dark") === "1";
