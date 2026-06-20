@@ -789,9 +789,10 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y"):
         _timed("news", market_data.get_news, sym),
         _timed("trends", _cached_trends, sym),
         _timed("price_target", _cached_price_target, sym),
+        _timed("vp", partial(polygon_data.get_volume_profile, sym, 365)),
         return_exceptions=True,
     )
-    quote, df_chart, df_ind, news_items, trends, price_target = results
+    quote, df_chart, df_ind, news_items, trends, price_target, vp = results
     _dt_total = _time.time() - _t_total
     if _dt_total > 8.0:
         logger.warning("dashboard[%s] TOTAL fetch LENTO: %.1fs", sym, _dt_total)
@@ -833,6 +834,26 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y"):
 
     analyst = {"symbol": sym, "consensus": analyst_consensus, "price_target": pt}
 
+    # Motor de confluencia: los niveles son DETERMINISTAS (no dependen de la IA), así que
+    # se calculan ya al cargar la acción. Así el gráfico y la tarjeta muestran siempre los
+    # niveles del motor sin necesidad de pulsar "Generar análisis".
+    vp_dict = vp if isinstance(vp, dict) else {}
+    buy_levels = []
+    if indicators_data and df_ind is not None and not isinstance(df_ind, Exception):
+        try:
+            buy_levels = await loop.run_in_executor(
+                None,
+                partial(
+                    levels_engine.compute_buy_levels,
+                    df_ind, vp_dict, quote.get("price"), indicators_data.get("sma"),
+                    atr_val=indicators_data.get("atr"),
+                    regime=indicators_data.get("regime"),
+                    vwap_anchored=indicators_data.get("vwap_anchored"),
+                ),
+            )
+        except Exception:
+            logger.exception("dashboard[%s] compute_buy_levels failed", sym)
+
     # Actualizar cachés individuales para que los endpoints separados también sean rápidos
     _cache.set(f"quote:{sym}", quote, ttl=60)
     _cache.set(f"chart:{sym}:{timeframe}", {"symbol": sym, "timeframe": timeframe, "candles": candles}, ttl=3600)
@@ -850,6 +871,8 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y"):
         "indicators": indicators_data,
         "news": news_list,
         "analyst": analyst,
+        "buy_levels": buy_levels or [],
+        "volume_profile": vp_dict or None,
     }
     _cache.set(cache_key, result, ttl=300)
     return result

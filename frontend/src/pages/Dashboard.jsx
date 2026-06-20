@@ -90,6 +90,9 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       setIndicators(data.indicators);
       setNews(data.news || []);
       setAnalystData(data.analyst);
+      // Niveles del motor (deterministas): disponibles ya al cargar, sin esperar a la IA.
+      if (data.buy_levels) setBuyLevels(data.buy_levels);
+      if (data.volume_profile) setVolumeProfile(data.volume_profile);
     } catch (e) {
       if (my === reqId.current) toast.error("Error al cargar datos");
     } finally {
