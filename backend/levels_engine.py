@@ -21,26 +21,33 @@ from typing import List, Dict, Optional
 #   las mesas institucionales usan esto como "fair value" dinámico.
 # • Fibonacci golden ratio (61.8%) — ratio más observado en retrocesos.
 # • SMA200 — el filtro de régimen más citado en la literatura (Faber 2007).
+# Weights calibrated empirically from walk-forward universe backtest (641 touches, 30 stocks).
+# Values proportional to clean_hold_rate (% where level was never broken by close in 60d window),
+# normalized so top source ≈ 3.0. Sources ranked worst→best: low_52w(30%) < poc(30.4%) <
+# fib_0.618(31.5%) < camarilla_s3(32.4%) < hvn(33.6%) < weekly_pivot(34.5%) < fib_0.5(36.7%) <
+# floor_s1(37.6%) < round(38.3%) < val(39.1%) < pivot(39.4%) < camarilla_s4(39.7%) <
+# sma50(40.2%) < sma200(40.7%) < floor_s2(41.8%) < fib_0.236(44.3%) < fib_0.786(44.7%) <
+# vwap_anchored(44.7%) < fib_0.382(50.7%).
 _SOURCE_WEIGHTS = {
-    "poc":          3.0,
-    "val":          3.0,
-    "hvn":          2.0,
-    "vwap_anchored": 2.5,  # Anchored VWAP — soporte/resistencia dinámico institucional
-    "fib_0.618":    2.5,
-    "fib_0.5":      2.0,
-    "fib_0.786":    2.0,
-    "fib_0.382":    1.5,
-    "fib_0.236":    1.0,
-    "camarilla_s3": 2.0,   # Camarilla S3 — nivel de retorno más fiable en rango
-    "camarilla_s4": 1.5,   # Camarilla S4 — ruptura significativa, suelo potente
-    "floor_s1":     1.2,   # Floor pivot S1 — soporte clásico de pit traders
-    "floor_s2":     1.0,
-    "sma200":       2.0,
-    "sma50":        1.5,
-    "weekly_pivot": 2.2,   # swing low en gráfico SEMANAL — soporte de timeframe alto
-    "pivot":        1.0,   # mínimo local diario (extra por toques con recency decay)
-    "low_52w":      1.5,
-    "round":        0.5,
+    "fib_0.382":    3.0,   # best empirical edge: 50.7% clean hold
+    "vwap_anchored": 2.6,  # 44.7% clean hold
+    "fib_0.786":    2.6,   # 44.7% clean hold
+    "fib_0.236":    2.6,   # 44.3% clean hold
+    "floor_s2":     2.5,   # 41.8% clean hold
+    "sma200":       2.4,   # 40.7% clean hold
+    "sma50":        2.4,   # 40.2% clean hold
+    "camarilla_s4": 2.3,   # 39.7% clean hold (stronger than S3)
+    "pivot":        2.3,   # 39.4% clean hold
+    "val":          2.3,   # 39.1% clean hold
+    "round":        2.2,   # 38.3% clean hold (underestimated before)
+    "floor_s1":     2.2,   # 37.6% clean hold
+    "fib_0.5":      2.1,   # 36.7% clean hold
+    "weekly_pivot": 2.0,   # 34.5% clean hold
+    "hvn":          1.9,   # 33.6% clean hold
+    "camarilla_s3": 1.8,   # 32.4% clean hold (weaker than S4)
+    "fib_0.618":    1.8,   # 31.5% clean hold (overrated before)
+    "poc":          1.7,   # 30.4% clean hold (overrated before at 3.0)
+    "low_52w":      1.7,   # 30.0% clean hold
 }
 
 _SOURCE_LABELS = {
