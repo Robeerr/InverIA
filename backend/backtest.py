@@ -137,11 +137,22 @@ def _walk_forward_records(
             if held is None:
                 continue
 
+            # Magnitud y durabilidad del rebote (aquí es donde la confluencia
+            # debería pagar, aunque la tasa de rebote sea parecida):
+            #  • bounce_atr_real = máximo recorrido favorable tras el toque, en ATR
+            #  • clean = el nivel NUNCA se rompió por cierre en toda la ventana
+            post_high = fwd_high[touch_at:]
+            mfe = (float(post_high.max()) - L) if len(post_high) else 0.0
+            bounce_real = round(mfe / atr_val, 3) if atr_val else 0.0
+            broke_ever = bool((fwd_close[touch_at:] <= (L - break_amt)).any())
+
             records.append({
                 "strength": int(z.get("strength", 0)),
                 "bucket": _bucket(int(z.get("strength", 0))),
                 "tactical": bool(z.get("tactical", False)),
                 "held": held,
+                "bounce_atr": bounce_real,
+                "clean": (not broke_ever),
             })
 
         i += anchor_step
@@ -187,7 +198,18 @@ def _aggregate(records: List[dict], forward_window: int) -> dict:
         if not resolved:
             return {"n": 0, "hold_rate": None}
         held = sum(1 for r in resolved if r["held"])
-        return {"n": len(resolved), "hold_rate": round(held / len(resolved) * 100, 1)}
+        bounces = [r["bounce_atr"] for r in resolved if r.get("bounce_atr") is not None]
+        cleans = [r for r in resolved if r.get("clean") is not None]
+        n_clean = sum(1 for r in cleans if r.get("clean"))
+        avg_bounce = round(sum(bounces) / len(bounces), 2) if bounces else None
+        med_bounce = round(sorted(bounces)[len(bounces) // 2], 2) if bounces else None
+        return {
+            "n": len(resolved),
+            "hold_rate": round(held / len(resolved) * 100, 1),
+            "clean_hold_rate": round(n_clean / len(cleans) * 100, 1) if cleans else None,
+            "avg_bounce_atr": avg_bounce,
+            "median_bounce_atr": med_bounce,
+        }
 
     by_bucket = {b: rate([r for r in records if r["bucket"] == b]) for b in ("fuerte", "media", "debil")}
     by_kind = {

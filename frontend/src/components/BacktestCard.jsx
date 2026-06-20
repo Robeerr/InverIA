@@ -23,6 +23,10 @@ function RateRow({ label, stat }) {
         {rate != null ? `${rate}%` : "s/datos"}
         {stat?.n ? <span className="text-[#9aa39f] font-normal"> ({stat.n})</span> : null}
       </span>
+      <span className="font-mono text-[10px] text-[#5c6b66] w-32 text-right shrink-0">
+        {stat?.clean_hold_rate != null ? `limpio ${stat.clean_hold_rate}%` : ""}
+        {stat?.avg_bounce_atr != null ? ` · ${stat.avg_bounce_atr}×ATR` : ""}
+      </span>
     </div>
   );
 }
@@ -134,8 +138,9 @@ export default function BacktestCard({ symbol }) {
           </div>
 
           <p className="text-[10px] text-[#5c6b66] leading-relaxed">
-            «Aguantó» = tras tocar el nivel, el precio rebotó ≥1×ATR antes de que un cierre lo rompiera por debajo.
-            El número entre paréntesis es la muestra. Pocas muestras = menos fiable estadísticamente.
+            «Aguantó» = rebotó ≥1×ATR antes de romperse (tasa de rebote). «Limpio» = nunca se rompió por cierre en
+            toda la ventana (durabilidad). «×ATR» = tamaño medio del rebote. La fuerza del nivel debería notarse
+            sobre todo en «limpio» y en el tamaño del rebote, no tanto en la tasa de rebote simple.
           </p>
         </div>
       )}
