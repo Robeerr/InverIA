@@ -1129,6 +1129,39 @@ async def backtest_levels(symbol: str, window: int = 60):
     return result
 
 
+_universe_bt_cache: dict = {}
+_universe_bt_lock = asyncio.Lock()
+
+
+@api_router.get("/backtest")
+async def backtest_universe_endpoint(window: int = 60, limit: int = 30):
+    """Aggregate walk-forward backtest across the opportunities universe. Pools
+    hundreds of point-in-time touches so the hold-rate-by-strength is statistically
+    meaningful (single symbols give too few samples). Heavy: cached 24h."""
+    ck = f"{window}:{limit}"
+    cached = _universe_bt_cache.get(ck)
+    if cached and (datetime.now(timezone.utc) - cached["ts"]).total_seconds() < 86400:
+        return cached["data"]
+
+    if _universe_bt_lock.locked():
+        if cached:
+            return cached["data"]
+        return {"status": "running", "message": "Backtest del universo en curso, vuelve en un minuto."}
+
+    async with _universe_bt_lock:
+        symbols = opportunities.UNIVERSE[:limit]
+        loop = asyncio.get_event_loop()
+
+        def _load(sym):
+            return market_data.get_full_indicator_history(sym)
+
+        result = await loop.run_in_executor(
+            None, lambda: backtest.backtest_universe(_load, symbols, forward_window=window)
+        )
+        _universe_bt_cache[ck] = {"data": result, "ts": datetime.now(timezone.utc)}
+        return result
+
+
 @api_router.get("/market/futures")
 async def market_futures():
     """Index futures (S&P 500, Nasdaq 100, Dow) — trade ~24h, so they show where the

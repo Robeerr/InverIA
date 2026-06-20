@@ -47,27 +47,20 @@ def _bucket(strength: int) -> str:
     return "debil"
 
 
-def backtest_symbol(
+def _walk_forward_records(
     df: pd.DataFrame,
     *,
-    forward_window: int = FORWARD_WINDOW,
-    anchor_step: int = ANCHOR_STEP,
-    touch_tol_atr: float = 0.5,
-    bounce_atr: float = 1.0,
-    break_atr: float = 1.0,
-) -> dict:
-    """Run the walk-forward backtest over a single symbol's price history.
-
-    A level (a support BELOW the anchor price) is:
-      • *touched* if, within the forward window, the Low reaches within
-        touch_tol_atr*ATR of the level;
-      • *held* if, after the first touch, price rebounds by >= bounce_atr*ATR
-        BEFORE a daily Close breaks break_atr*ATR below the level;
-      • *broken* if it touches but a Close breaks below before bouncing.
-    Untouched levels are ignored (we can't judge them).
-    """
+    forward_window: int,
+    anchor_step: int,
+    touch_tol_atr: float,
+    bounce_atr: float,
+    break_atr: float,
+) -> Optional[List[dict]]:
+    """Core walk-forward loop. Returns the raw per-touch records, or None if the
+    history is too short. Shared by single-symbol and universe backtests so the
+    aggregation is identical and lossless."""
     if df is None or df.empty or len(df) < WARMUP_BARS + forward_window + 5:
-        return {"error": "insufficient_history", "bars": 0 if df is None else len(df)}
+        return None
 
     df = df.copy()
     for col in ("High", "Low", "Close"):
@@ -131,9 +124,9 @@ def backtest_symbol(
                     touch_at = t
                     break
             if touch_at is None:
-                continue  # never reached — can't judge
+                continue
 
-            held = None  # True=bounced, False=broke
+            held = None
             for t in range(touch_at, len(fwd_low)):
                 if fwd_close[t] <= L - break_amt:
                     held = False
@@ -142,7 +135,6 @@ def backtest_symbol(
                     held = True
                     break
             if held is None:
-                # touched but neither bounced nor broke within window → unresolved
                 continue
 
             records.append({
@@ -154,6 +146,38 @@ def backtest_symbol(
 
         i += anchor_step
 
+    return records
+
+
+def backtest_symbol(
+    df: pd.DataFrame,
+    *,
+    forward_window: int = FORWARD_WINDOW,
+    anchor_step: int = ANCHOR_STEP,
+    touch_tol_atr: float = 0.5,
+    bounce_atr: float = 1.0,
+    break_atr: float = 1.0,
+) -> dict:
+    """Run the walk-forward backtest over a single symbol's price history.
+
+    A level (a support BELOW the anchor price) is:
+      • *touched* if, within the forward window, the Low reaches within
+        touch_tol_atr*ATR of the level;
+      • *held* if, after the first touch, price rebounds by >= bounce_atr*ATR
+        BEFORE a daily Close breaks break_atr*ATR below the level;
+      • *broken* if it touches but a Close breaks below before bouncing.
+    Untouched levels are ignored (we can't judge them).
+    """
+    records = _walk_forward_records(
+        df,
+        forward_window=forward_window,
+        anchor_step=anchor_step,
+        touch_tol_atr=touch_tol_atr,
+        bounce_atr=bounce_atr,
+        break_atr=break_atr,
+    )
+    if records is None:
+        return {"error": "insufficient_history", "bars": 0 if df is None else len(df)}
     return _aggregate(records, forward_window)
 
 
@@ -180,9 +204,13 @@ def _aggregate(records: List[dict], forward_window: int) -> dict:
 
 
 def backtest_universe(load_history, symbols: List[str], **kwargs) -> dict:
-    """Aggregate the backtest across many symbols. `load_history(sym)` must return
-    a price DataFrame (Open/High/Low/Close/Volume). Runs sequentially to keep the
-    memory footprint low (one 2-3yr DataFrame at a time)."""
+    """Aggregate the backtest across many symbols for statistical power. A single
+    symbol gives only ~10-35 touches (too few, and uptrend names inflate to 100%);
+    pooling the raw per-touch records across the universe yields hundreds.
+
+    `load_history(sym)` must return a price DataFrame (Open/High/Low/Close/Volume).
+    Runs sequentially to keep the memory footprint low (one DataFrame at a time)."""
+    fw = kwargs.get("forward_window", FORWARD_WINDOW)
     all_records: List[dict] = []
     per_symbol: Dict[str, dict] = {}
     for sym in symbols:
@@ -190,17 +218,18 @@ def backtest_universe(load_history, symbols: List[str], **kwargs) -> dict:
             df = load_history(sym)
         except Exception:
             continue
-        res = backtest_symbol(df, **kwargs)
-        if res.get("samples"):
-            per_symbol[sym] = res["overall"]
-            # rebuild records weighted by reported counts is lossy; instead re-run
-            # is wasteful — so we re-derive from buckets below using counts.
-            for bucket, st in res["by_strength"].items():
-                if st["n"] and st["hold_rate"] is not None:
-                    held = round(st["n"] * st["hold_rate"] / 100)
-                    all_records += [{"bucket": bucket, "tactical": False, "held": True}] * held
-                    all_records += [{"bucket": bucket, "tactical": False, "held": False}] * (st["n"] - held)
-    agg = _aggregate(all_records, kwargs.get("forward_window", FORWARD_WINDOW))
+        recs = _walk_forward_records(
+            df,
+            forward_window=fw,
+            anchor_step=kwargs.get("anchor_step", ANCHOR_STEP),
+            touch_tol_atr=kwargs.get("touch_tol_atr", 0.5),
+            bounce_atr=kwargs.get("bounce_atr", 1.0),
+            break_atr=kwargs.get("break_atr", 1.0),
+        )
+        if recs:
+            all_records.extend(recs)
+            per_symbol[sym] = _aggregate(recs, fw)["overall"]
+    agg = _aggregate(all_records, fw)
     agg["per_symbol"] = per_symbol
     agg["symbols_tested"] = len(per_symbol)
     return agg

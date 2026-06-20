@@ -31,17 +31,26 @@ export default function BacktestCard({ symbol }) {
   const [data, setData] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
   const [err, setErr] = React.useState(null);
+  const [scope, setScope] = React.useState("symbol"); // "symbol" | "universe"
 
   // Reset when symbol changes so stale results don't show under a new ticker.
-  React.useEffect(() => { setData(null); setErr(null); }, [symbol]);
+  React.useEffect(() => { if (scope === "symbol") { setData(null); setErr(null); } }, [symbol, scope]);
 
-  const run = async () => {
+  const run = async (which) => {
+    setScope(which);
     setLoading(true);
     setErr(null);
+    setData(null);
     try {
-      const res = await api.backtest(symbol);
-      if (res?.error || !res?.samples) {
-        setErr("Histórico insuficiente para backtestear esta acción.");
+      const res = which === "universe"
+        ? await api.backtestUniverse()
+        : await api.backtest(symbol);
+      if (res?.status === "running") {
+        setErr("Backtest del universo en curso (es pesado). Vuelve a pulsar en un minuto.");
+      } else if (res?.error || !res?.samples) {
+        setErr(which === "universe"
+          ? "No se pudo agregar el backtest del universo."
+          : "Histórico insuficiente para backtestear esta acción.");
       } else {
         setData(res);
       }
@@ -59,16 +68,28 @@ export default function BacktestCard({ symbol }) {
           <ShieldCheck size={20} weight="bold" className="text-[#1a3a32]" />
           <h3 className="font-heading font-bold text-xl text-[#0e1f1a]">Fiabilidad histórica de los niveles</h3>
         </div>
-        <Button
-          data-testid="run-backtest"
-          onClick={run}
-          disabled={loading || !symbol}
-          variant="outline"
-          className="border-[#e5e0d8] font-mono text-xs"
-        >
-          {loading ? <Spinner size={14} weight="bold" className="mr-1 animate-spin" /> : <ChartLineUp size={14} weight="bold" className="mr-1" />}
-          {loading ? "Backtesteando…" : data ? "Recalcular" : "Ejecutar backtest"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            data-testid="run-backtest"
+            onClick={() => run("symbol")}
+            disabled={loading || !symbol}
+            variant="outline"
+            className="border-[#e5e0d8] font-mono text-xs"
+          >
+            {loading && scope === "symbol" ? <Spinner size={14} weight="bold" className="mr-1 animate-spin" /> : <ChartLineUp size={14} weight="bold" className="mr-1" />}
+            {loading && scope === "symbol" ? "Backtesteando…" : `Backtest ${symbol}`}
+          </Button>
+          <Button
+            data-testid="run-backtest-universe"
+            onClick={() => run("universe")}
+            disabled={loading}
+            variant="outline"
+            className="border-[#1a3a32]/30 bg-[#1a3a32]/5 font-mono text-xs"
+          >
+            {loading && scope === "universe" ? <Spinner size={14} weight="bold" className="mr-1 animate-spin" /> : <ChartLineUp size={14} weight="bold" className="mr-1" />}
+            {loading && scope === "universe" ? "Agregando…" : "Backtest del universo"}
+          </Button>
+        </div>
       </div>
 
       <p className="text-sm text-[#5c6b66] mb-4">
@@ -80,7 +101,8 @@ export default function BacktestCard({ symbol }) {
 
       {!data && !err && !loading && (
         <p className="text-xs text-[#5c6b66] italic">
-          Pulsa «Ejecutar backtest» para validar empíricamente los niveles de {symbol}. Tarda unos segundos.
+          «Backtest {symbol}» valida los niveles de esta acción (pocas muestras). «Backtest del universo» agrega
+          ~30 acciones para una cifra estadísticamente sólida (tarda 1-2 min, se cachea 24h).
         </p>
       )}
 
@@ -89,7 +111,8 @@ export default function BacktestCard({ symbol }) {
           <div className="flex items-baseline gap-2">
             <span className="font-mono text-3xl font-bold text-[#0e1f1a]">{data.overall?.hold_rate ?? "—"}%</span>
             <span className="text-sm text-[#5c6b66]">
-              de los niveles tocados aguantaron · {data.samples} pruebas · ventana {data.forward_window_days} días
+              de los niveles tocados aguantaron · {data.samples} pruebas
+              {data.symbols_tested ? ` · ${data.symbols_tested} acciones` : ""} · ventana {data.forward_window_days} días
             </span>
           </div>
 
