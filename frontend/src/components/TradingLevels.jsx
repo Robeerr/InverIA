@@ -241,12 +241,18 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
               <div className="flex items-baseline gap-1.5">
                 <span className="text-[10px] uppercase tracking-wider text-[#5c6b66]">VAH</span>
                 <span className="font-mono text-sm font-semibold text-[#0e1f1a]">${fmtPrice(volumeProfile.vah)}</span>
+                {current && Math.abs((volumeProfile.vah - current) / current) > 0.15 && (
+                  <span className="text-[9px] text-[#5c6b66]" title="Volumen acumulado hace meses, lejos del precio actual — contexto, no nivel accionable a corto plazo.">(histórico)</span>
+                )}
               </div>
             )}
             {volumeProfile.val != null && (
               <div className="flex items-baseline gap-1.5">
                 <span className="text-[10px] uppercase tracking-wider text-[#5c6b66]">VAL</span>
                 <span className="font-mono text-sm font-semibold text-[#0e1f1a]">${fmtPrice(volumeProfile.val)}</span>
+                {current && Math.abs((volumeProfile.val - current) / current) > 0.15 && (
+                  <span className="text-[9px] text-[#5c6b66]" title="Volumen acumulado hace meses, lejos del precio actual — contexto, no nivel accionable a corto plazo.">(histórico)</span>
+                )}
               </div>
             )}
           </div>
