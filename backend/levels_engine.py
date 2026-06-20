@@ -21,41 +21,33 @@ from typing import List, Dict, Optional
 #   las mesas institucionales usan esto como "fair value" dinámico.
 # • Fibonacci golden ratio (61.8%) — ratio más observado en retrocesos.
 # • SMA200 — el filtro de régimen más citado en la literatura (Faber 2007).
-# Weights calibrated empirically from walk-forward universe backtest (676 touches, 30 stocks).
-# Each weight is proportional to the source's EDGE ABOVE A NO-SKILL FLOOR:
-#     weight = k · max(clean_hold_rate − 25, 0)
-# where 25% is the durability a worthless support shows by chance (a 60-day window almost
-# always sees *some* close-below), and k≈0.101 normalizes the best source (fib_0.382, 54.7%)
-# to 3.0. Floored at 0.5 so even a weak source still contributes its candidate price.
-# This widens the dynamic range (0.5 → 3.0) so the confluence score discriminates HARD:
-# levels built from durable methodologies score high, levels built from noise score low —
-# instead of everything clustering in a narrow 1.7–3.0 band where the label meant little.
-# Source durability (clean_hold_rate, n): fib_0.382 54.7%(75), vwap_anchored 46.2%(78),
-# fib_0.236 44.4%(72), sma200 41.7%(60), fib_0.786 41%(39), floor_s2 39.8%(93),
-# pivot 39.2%(401), camarilla_s4 39.2%(158), round 38.7%(483), sma50 37.9%(87),
-# floor_s1 37.4%(171), val 36.1%(61), fib_0.5 35.1%(57), hvn 34.5%(255),
-# camarilla_s3 34.2%(196), weekly_pivot 32.7%(254), poc 31.1%(45), low_52w 29%(31),
-# fib_0.618 28.8%(52).
+# Weights calibrated empirically from walk-forward universe backtest (641 touches, 30 stocks).
+# Values proportional to clean_hold_rate (% where level was never broken by close in 60d window),
+# normalized so top source ≈ 3.0. Sources ranked worst→best: low_52w(30%) < poc(30.4%) <
+# fib_0.618(31.5%) < camarilla_s3(32.4%) < hvn(33.6%) < weekly_pivot(34.5%) < fib_0.5(36.7%) <
+# floor_s1(37.6%) < round(38.3%) < val(39.1%) < pivot(39.4%) < camarilla_s4(39.7%) <
+# sma50(40.2%) < sma200(40.7%) < floor_s2(41.8%) < fib_0.236(44.3%) < fib_0.786(44.7%) <
+# vwap_anchored(44.7%) < fib_0.382(50.7%).
 _SOURCE_WEIGHTS = {
-    "fib_0.382":    3.0,   # 54.7% clean — best empirical edge by a wide margin
-    "vwap_anchored": 2.1,  # 46.2% clean — institutional dynamic support, strong
-    "fib_0.236":    2.0,   # 44.4% clean
-    "sma200":       1.7,   # 41.7% clean
-    "fib_0.786":    1.6,   # 41.0% clean
-    "floor_s2":     1.5,   # 39.8% clean
-    "pivot":        1.4,   # 39.2% clean (huge sample, n=401)
-    "camarilla_s4": 1.4,   # 39.2% clean (clearly stronger than S3)
-    "round":        1.4,   # 38.7% clean (huge sample, n=483)
-    "sma50":        1.3,   # 37.9% clean
-    "floor_s1":     1.3,   # 37.4% clean
-    "val":          1.1,   # 36.1% clean
-    "fib_0.5":      1.0,   # 35.1% clean
-    "hvn":          1.0,   # 34.5% clean
-    "camarilla_s3": 0.9,   # 34.2% clean (weaker than S4)
-    "weekly_pivot": 0.8,   # 32.7% clean
-    "poc":          0.6,   # 31.1% clean — the "most-traded price" myth, near the floor
-    "low_52w":      0.5,   # 29.0% clean — floored
-    "fib_0.618":    0.5,   # 28.8% clean — the "golden ratio" is the WORST; floored
+    "fib_0.382":    3.0,   # best empirical edge: 50.7% clean hold
+    "vwap_anchored": 2.6,  # 44.7% clean hold
+    "fib_0.786":    2.6,   # 44.7% clean hold
+    "fib_0.236":    2.6,   # 44.3% clean hold
+    "floor_s2":     2.5,   # 41.8% clean hold
+    "sma200":       2.4,   # 40.7% clean hold
+    "sma50":        2.4,   # 40.2% clean hold
+    "camarilla_s4": 2.3,   # 39.7% clean hold (stronger than S3)
+    "pivot":        2.3,   # 39.4% clean hold
+    "val":          2.3,   # 39.1% clean hold
+    "round":        2.2,   # 38.3% clean hold (underestimated before)
+    "floor_s1":     2.2,   # 37.6% clean hold
+    "fib_0.5":      2.1,   # 36.7% clean hold
+    "weekly_pivot": 2.0,   # 34.5% clean hold
+    "hvn":          1.9,   # 33.6% clean hold
+    "camarilla_s3": 1.8,   # 32.4% clean hold (weaker than S4)
+    "fib_0.618":    1.8,   # 31.5% clean hold (overrated before)
+    "poc":          1.7,   # 30.4% clean hold (overrated before at 3.0)
+    "low_52w":      1.7,   # 30.0% clean hold
 }
 
 _SOURCE_LABELS = {
