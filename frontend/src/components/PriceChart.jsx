@@ -105,7 +105,7 @@ function OverlayBtn({ label, color, active, onClick }) {
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
-function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, signalEntry }) {
+function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, signalEntry, buyLevels }) {
   const data = useMemo(() => candles || [], [candles]);
 
   const [overlays, setOverlays] = useState({ sma20: false, sma50: true, sma200: true, bb: false, rsi: false });
@@ -205,8 +205,8 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
         <div>
           <h3 className="font-heading font-semibold text-lg text-[#0e1f1a]">Gráfico de Precio</h3>
           <p className="text-xs text-[#5c6b66] mt-0.5">
-            {signalEntry
-              ? "Niveles de compra (azul) y venta (morado) · IA: zona entrada, SL y TPs"
+            {(Array.isArray(buyLevels) && buyLevels.length > 0) || signalEntry
+              ? "Niveles de compra del motor (azul · tácticos en dorado) · IA: zona entrada, SL y TPs"
               : "Zona de entrada, SL y Take Profits sugeridos por IA"}
           </p>
         </div>
@@ -330,22 +330,42 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
                 label={{ value: `TP2 $${tp2}`, position: "right", fill: "#4a7c59", fontSize: 10, fontFamily: "IBM Plex Mono" }}
               />
             )}
-            {signalEntry &&
-              ["nivel1", "nivel2", "nivel3", "nivel4", "nivel5"].map((lk, i) => {
-                const val = signalEntry[lk];
-                if (!val) return null;
-                return (
-                  <ReferenceLine
-                    key={lk}
-                    yAxisId="price"
-                    y={val}
-                    stroke="#2563eb"
-                    strokeWidth={1.5}
-                    strokeDasharray="4 3"
-                    label={{ value: `N${i + 1} $${val}`, position: "insideTopRight", fill: "#2563eb", fontSize: 10, fontFamily: "IBM Plex Mono" }}
-                  />
-                );
-              })}
+            {/* Niveles de compra del MOTOR de confluencia (los mismos que la tarjeta).
+                Coherencia total gráfico↔tarjeta. Los tácticos se pintan más tenues y
+                punteados. Si no hay análisis cargado, cae al sistema de señales antiguo. */}
+            {Array.isArray(buyLevels) && buyLevels.length > 0
+              ? buyLevels.map((z, i) => {
+                  const val = z?.price;
+                  if (val == null) return null;
+                  const tac = z?.tactical;
+                  return (
+                    <ReferenceLine
+                      key={`bl-${i}`}
+                      yAxisId="price"
+                      y={val}
+                      stroke={tac ? "#b8860b" : "#2563eb"}
+                      strokeWidth={tac ? 1 : 1.5}
+                      strokeDasharray={tac ? "2 4" : "4 3"}
+                      label={{ value: `N${i + 1} $${val}${tac ? " ·táct" : ""}`, position: "insideTopRight", fill: tac ? "#b8860b" : "#2563eb", fontSize: 10, fontFamily: "IBM Plex Mono" }}
+                    />
+                  );
+                })
+              : signalEntry &&
+                ["nivel1", "nivel2", "nivel3", "nivel4", "nivel5"].map((lk, i) => {
+                  const val = signalEntry[lk];
+                  if (!val) return null;
+                  return (
+                    <ReferenceLine
+                      key={lk}
+                      yAxisId="price"
+                      y={val}
+                      stroke="#2563eb"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 3"
+                      label={{ value: `N${i + 1} $${val}`, position: "insideTopRight", fill: "#2563eb", fontSize: 10, fontFamily: "IBM Plex Mono" }}
+                    />
+                  );
+                })}
             {signalEntry?.deseado && (
               <ReferenceLine
                 yAxisId="price"

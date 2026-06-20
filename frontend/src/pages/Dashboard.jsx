@@ -272,6 +272,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
           analysis={analysis}
           indicators={indicators}
           signalEntry={signalEntry}
+          buyLevels={buyLevels}
         />
         <RecommendationPanel
           analysis={analysis}
