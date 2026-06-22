@@ -462,14 +462,21 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
             "https://aistudio.google.com/apikey y añádela en Render."
         )
     client = genai.Client(api_key=api_key)
-    config = genai_types.GenerateContentConfig(
+    config_kwargs = dict(
         system_instruction=system_prompt,
         temperature=0.3,
-        # Gemini 2.5 Flash spends part of the budget on internal "thinking",
-        # so give plenty of headroom for thinking + the full JSON answer.
         max_output_tokens=max_tokens,
         response_mime_type="application/json",
     )
+    # Gemini 2.5 Flash gasta tokens en "thinking" interno ANTES de escribir; en una
+    # extracción estructurada a JSON ese thinking no aporta y se comía el presupuesto,
+    # truncando el JSON a mitad. Lo desactivamos (budget=0) para que TODOS los tokens
+    # vayan a la respuesta. Try/except por si la versión del SDK no soporta ThinkingConfig.
+    try:
+        config_kwargs["thinking_config"] = genai_types.ThinkingConfig(thinking_budget=0)
+    except Exception:
+        pass
+    config = genai_types.GenerateContentConfig(**config_kwargs)
     # SDK call is synchronous — run off the event loop
     response = await asyncio.to_thread(
         client.models.generate_content,
