@@ -468,12 +468,14 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
         max_output_tokens=max_tokens,
         response_mime_type="application/json",
     )
-    # Gemini 2.5 Flash gasta tokens en "thinking" interno ANTES de escribir; en una
-    # extracción estructurada a JSON ese thinking no aporta y se comía el presupuesto,
-    # truncando el JSON a mitad. Lo desactivamos (budget=0) para que TODOS los tokens
-    # vayan a la respuesta. Try/except por si la versión del SDK no soporta ThinkingConfig.
+    # Gemini 2.5 Flash gasta tokens en "thinking" interno ANTES de escribir. Por defecto
+    # ese presupuesto es DINÁMICO (ilimitado) y se comía todo el espacio, truncando el
+    # JSON a mitad. Lo ACOTAMOS a 2048: suficiente para razonar bien la tesis/recomendación
+    # (los niveles ya los da el motor determinista, no la IA), pero dejando holgura de sobra
+    # para el JSON completo dentro de max_output_tokens. Mejor que 0 (no pierde calidad de
+    # razonamiento) y mejor que ilimitado (no trunca). Try/except por compatibilidad del SDK.
     try:
-        config_kwargs["thinking_config"] = genai_types.ThinkingConfig(thinking_budget=0)
+        config_kwargs["thinking_config"] = genai_types.ThinkingConfig(thinking_budget=2048)
     except Exception:
         pass
     config = genai_types.GenerateContentConfig(**config_kwargs)
