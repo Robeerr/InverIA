@@ -633,13 +633,22 @@ def _try_finnhub_quote(ticker: str):
 
 
 def get_news(ticker: str, limit: int = 8):
+    # 1) Noticias ESPECÍFICAS de la empresa vía Finnhub (capturan catalizadores
+    #    propios —fichajes, salidas, demandas, lanzamientos— que yfinance suele
+    #    perder y que son justo los que explican movimientos sin causa macro).
+    #    Import perezoso para evitar el ciclo external_data ↔ market_data.
+    company = []
+    try:
+        import external_data
+        company = external_data.finnhub_company_news(ticker) or []
+    except Exception:
+        company = []
+
+    # 2) yfinance como complemento/respaldo (puede colgarse en cloud → tope duro)
     t = _ticker(ticker)
-    # .news (scraping yfinance) puede colgarse en cloud → tope duro, si no responde []
     items = _call_with_timeout(lambda: t.news or [], _NEWS_FETCH_TIMEOUT, [])
-    if not items:
-        return []
-    out = []
-    for n in items[:limit]:
+    yf_out = []
+    for n in (items or []):
         content = n.get("content") or n
         title = content.get("title") or n.get("title")
         url = (content.get("canonicalUrl") or {}).get("url") or n.get("link") or content.get("clickThroughUrl", {}).get("url")
@@ -647,13 +656,23 @@ def get_news(ticker: str, limit: int = 8):
         pub_date = content.get("pubDate") or n.get("providerPublishTime")
         if not title:
             continue
-        out.append({
+        yf_out.append({
             "title": title,
             "url": url,
             "publisher": publisher,
             "published": pub_date,
         })
-    return out
+
+    # Mezcla priorizando Finnhub (empresa) y deduplicando por título normalizado.
+    seen = set()
+    merged = []
+    for n in company + yf_out:
+        key = (n.get("title") or "").strip().lower()[:80]
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        merged.append(n)
+    return merged[:limit]
 
 
 def df_to_candles(df: pd.DataFrame):

@@ -72,6 +72,45 @@ def finnhub_recommendation_trends(symbol: str):
         return None
 
 
+def finnhub_company_news(symbol: str, days: int = 7, limit: int = 10):
+    """Company-SPECIFIC news (last `days` days) from Finnhub's /company-news.
+    Mucho mejor que yfinance para capturar catalizadores propios de la empresa
+    (fichajes/salidas, lanzamientos, demandas, guidance) que mueven el precio sin
+    ser ruido macro. Cacheado 30 min. Devuelve [] si no hay clave o falla."""
+    from datetime import datetime, timedelta
+    sym = symbol.upper()
+    cached, hit = _ext_cache_get(f"company_news:{sym}", 1800)
+    if hit:
+        return cached
+    key = _finnhub_key()
+    if not key:
+        return []
+    try:
+        today = datetime.utcnow().date()
+        frm = (today - timedelta(days=days)).isoformat()
+        r = _finnhub_get("/company-news", {
+            "symbol": sym, "from": frm, "to": today.isoformat(), "token": key,
+        })
+        if r.status_code != 200:
+            return []
+        items = r.json() or []
+        out = []
+        for n in items[:limit]:
+            title = n.get("headline")
+            if not title:
+                continue
+            out.append({
+                "title": title,
+                "url": n.get("url"),
+                "publisher": n.get("source"),
+                "published": n.get("datetime"),  # epoch seconds
+            })
+        _ext_cache_set(f"company_news:{sym}", out)
+        return out
+    except Exception:
+        return []
+
+
 def finnhub_price_target(symbol: str):
     """Analyst consensus price targets. Cached 4h."""
     sym = symbol.upper()
