@@ -101,6 +101,10 @@ def finnhub_company_news(symbol: str, days: int = 7, limit: int = 10):
                 continue
             out.append({
                 "title": title,
+                # El resumen suele nombrar el catalizador concreto (p. ej. "John Jumper
+                # deja DeepMind por Anthropic") que el titular generaliza ("AI talent
+                # exodus"). Lo pasamos al modelo para que cite el hecho exacto, no algo vago.
+                "summary": n.get("summary"),
                 "url": n.get("url"),
                 "publisher": n.get("source"),
                 "published": n.get("datetime"),  # epoch seconds

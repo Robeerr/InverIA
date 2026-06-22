@@ -561,6 +561,7 @@ REGLAS ESTRICTAS:
 - Devuelve ÚNICAMENTE un objeto JSON válido (sin markdown, sin texto extra).
 - Básate en las noticias proporcionadas. Si NINGUNA noticia explica el movimiento, dilo con honestidad y baja la fiabilidad — NO inventes catalizadores.
 - Distingue entre causa específica de la empresa (resultados, upgrade, producto) y arrastre del mercado/sector (macro, tipos, todo el sector cae).
+- SÉ CONCRETO: si el "resumen" de una noticia nombra el hecho exacto (una PERSONA, una cifra, un producto, una demanda), CÍTALO por su nombre. Ejemplo: NO digas "éxodo de talento en IA"; di "el científico jefe de IA John Jumper deja DeepMind por Anthropic". El titular generaliza; el resumen tiene el detalle — usa el detalle.
 
 ESTRUCTURA JSON EXACTA:
 {
@@ -625,6 +626,9 @@ def _build_daily_move_payload(quote: dict, news: list) -> str:
         "noticias_recientes": [
             {
                 "titular": n.get("title"),
+                # El resumen suele nombrar el catalizador concreto (persona, cifra,
+                # producto) que el titular generaliza. Lo recortamos para no inflar tokens.
+                "resumen": (n.get("summary") or "")[:400] or None,
                 "fuente": n.get("publisher"),
                 "fecha": _news_date_str(n.get("published")),
                 "es_de_hoy": _is_today(n.get("published")),
