@@ -566,27 +566,30 @@ async def analyze(req: AnalyzeRequest):
         days_to_earnings=days_to_earnings,
     )
     used_model = requested_model
-    FALLBACK_MODEL = "gemini-2.5-flash"  # 250K TPM — no 413, robust fallback
-    try:
-        result = await ai_analysis.analyze_stock(
-            quote, indicators_data, news, model_key=requested_model, **analyze_kwargs
-        )
-    except Exception as e:
-        # The chosen model failed (rate limit, timeout, transient API error).
-        # Retry once with a robust free model so the user still gets an analysis.
-        if requested_model != FALLBACK_MODEL:
-            logger.warning(f"Model '{requested_model}' failed ({e}); falling back to {FALLBACK_MODEL}")
-            try:
-                result = await ai_analysis.analyze_stock(
-                    quote, indicators_data, news, model_key=FALLBACK_MODEL, **analyze_kwargs
-                )
-                used_model = FALLBACK_MODEL
-            except Exception as e2:
-                logger.exception("AI analysis failed (including fallback)")
-                raise HTTPException(500, f"Error de análisis IA: {e2}")
-        else:
-            logger.exception("AI analysis failed")
-            raise HTTPException(500, f"Error de análisis IA: {e}")
+    # Cadena de fallback en orden de preferencia, ENTRE PROVEEDORES distintos: si Gemini
+    # da un 503/limite transitorio, probamos con Groq (otro proveedor) en vez de reintentar
+    # el mismo Gemini. Antes el fallback era el propio gemini-2.5-flash, así que cuando el
+    # modelo por defecto (Gemini) fallaba, la condición "distinto" era falsa y NO había
+    # fallback real → el 503 llegaba directo al usuario.
+    FALLBACK_CHAIN = ["gemini-2.5-flash", "gpt-oss-120b", "llama-3.3-70b"]
+    candidates = [requested_model] + [m for m in FALLBACK_CHAIN if m != requested_model]
+    result = None
+    last_err = None
+    for cand in candidates:
+        try:
+            result = await ai_analysis.analyze_stock(
+                quote, indicators_data, news, model_key=cand, **analyze_kwargs
+            )
+            used_model = cand
+            if cand != requested_model:
+                logger.warning(f"Model '{requested_model}' failed; served with fallback '{cand}'")
+            break
+        except Exception as e:
+            last_err = e
+            logger.warning(f"Model '{cand}' failed ({e}); trying next fallback")
+    if result is None:
+        logger.exception("AI analysis failed (all models in fallback chain)")
+        raise HTTPException(503, f"Los modelos de IA están saturados ahora mismo. Inténtalo en unos minutos. ({last_err})")
 
     # Guarantee real support/resistance levels and realistic take-profits regardless
     # of how the model filled them (key_levels can come back empty -> NaN in the UI).
