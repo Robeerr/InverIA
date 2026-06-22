@@ -470,12 +470,12 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
     )
     # Gemini 2.5 Flash gasta tokens en "thinking" interno ANTES de escribir. Por defecto
     # ese presupuesto es DINÁMICO (ilimitado) y se comía todo el espacio, truncando el
-    # JSON a mitad. Lo ACOTAMOS a 2048: suficiente para razonar bien la tesis/recomendación
-    # (los niveles ya los da el motor determinista, no la IA), pero dejando holgura de sobra
-    # para el JSON completo dentro de max_output_tokens. Mejor que 0 (no pierde calidad de
-    # razonamiento) y mejor que ilimitado (no trunca). Try/except por compatibilidad del SDK.
+    # JSON a mitad. Lo ACOTAMOS a min(2048, max_tokens//2) para garantizar que queda al
+    # menos la mitad del presupuesto para la respuesta. Para análisis completo (8000) esto
+    # da 2048; para el daily-move (2000) da 1000. Try/except por compatibilidad del SDK.
     try:
-        config_kwargs["thinking_config"] = genai_types.ThinkingConfig(thinking_budget=2048)
+        budget = min(2048, max_tokens // 2)
+        config_kwargs["thinking_config"] = genai_types.ThinkingConfig(thinking_budget=budget)
     except Exception:
         pass
     config = genai_types.GenerateContentConfig(**config_kwargs)
@@ -647,4 +647,4 @@ async def explain_daily_move(quote: dict, news: list,
     """Lightweight, cheap explainer for the daily price move. Uses a small prompt
     (~600 input tokens) so it costs a fraction of a full analysis."""
     user_msg = _build_daily_move_payload(quote, news)
-    return await _run_model(model_key, DAILY_MOVE_PROMPT, user_msg, max_tokens=900)
+    return await _run_model(model_key, DAILY_MOVE_PROMPT, user_msg, max_tokens=2000)
