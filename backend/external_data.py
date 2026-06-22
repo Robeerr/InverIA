@@ -138,7 +138,7 @@ def fmp_company_news(symbol: str, limit: int = 15):
         r = http.get(
             f"{FMP_BASE}/api/v3/stock_news",
             params={"tickers": sym, "limit": limit, "apikey": key},
-            timeout=10,
+            timeout=4,
         )
         if r.status_code != 200:
             return []

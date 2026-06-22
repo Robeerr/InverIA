@@ -637,20 +637,38 @@ def get_news(ticker: str, limit: int = 8):
     #    propios —fichajes, salidas, demandas, lanzamientos— que yfinance suele
     #    perder y que son justo los que explican movimientos sin causa macro).
     #    Import perezoso para evitar el ciclo external_data ↔ market_data.
-    company = []
-    fmp = []
-    try:
-        import external_data
-        company = external_data.finnhub_company_news(ticker) or []
-        # FMP complementa a Finnhub: suele traer el cuerpo del artículo (campo `text`)
-        # con el catalizador concreto que el titular generaliza.
-        fmp = external_data.fmp_company_news(ticker) or []
-    except Exception:
-        company = company or []
+    # Las tres fuentes son independientes → se lanzan EN PARALELO para no sumar
+    # latencias en serie (antes Finnhub + FMP + yfinance se encadenaban y hacían
+    # lenta la carga al cambiar de ticker, cuando no hay caché todavía).
+    def _finnhub_news():
+        try:
+            import external_data
+            return external_data.finnhub_company_news(ticker) or []
+        except Exception:
+            return []
 
-    # 2) yfinance como complemento/respaldo (puede colgarse en cloud → tope duro)
+    def _fmp_news():
+        try:
+            import external_data
+            # FMP complementa a Finnhub: suele traer el cuerpo del artículo (campo `text`)
+            # con el catalizador concreto que el titular generaliza.
+            return external_data.fmp_company_news(ticker) or []
+        except Exception:
+            return []
+
     t = _ticker(ticker)
-    items = _call_with_timeout(lambda: t.news or [], _NEWS_FETCH_TIMEOUT, [])
+    def _yf_news():
+        return _call_with_timeout(lambda: t.news or [], _NEWS_FETCH_TIMEOUT, [])
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        f_company = ex.submit(_finnhub_news)
+        f_fmp = ex.submit(_fmp_news)
+        f_yf = ex.submit(_yf_news)
+        company = f_company.result()
+        fmp = f_fmp.result()
+        items = f_yf.result()
+
     yf_out = []
     for n in (items or []):
         content = n.get("content") or n
