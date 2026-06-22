@@ -409,7 +409,10 @@ def _parse_model_json(content: str) -> dict:
             return json.loads(repaired)
         except json.JSONDecodeError:
             pass
-    raise RuntimeError(f"No se pudo parsear el JSON del modelo. Inicio: {text[:100]}")
+    raise RuntimeError(
+        "La respuesta del modelo se cortó a mitad (límite de tokens alcanzado). "
+        "Intenta otra vez — normalmente funciona al segundo intento."
+    )
 
 
 async def _analyze_with_groq(model_id: str, user_msg: str,
@@ -536,7 +539,7 @@ async def analyze_stock(
     user_msg = _build_payload(quote, indicators, news, analyst_consensus, price_target,
                               volume_profile, insider, earnings_history, buy_levels,
                               next_earnings_date, days_to_earnings)
-    return await _run_model(model_key, SYSTEM_PROMPT, user_msg, max_tokens=5000)
+    return await _run_model(model_key, SYSTEM_PROMPT, user_msg, max_tokens=8000)
 
 
 # ---------- "¿Por qué se mueve hoy?" — explicación ligera del movimiento diario ----------
