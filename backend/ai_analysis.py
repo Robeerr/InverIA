@@ -571,6 +571,30 @@ La fiabilidad es ALTA solo si una noticia clara justifica el movimiento; MEDIA s
 """
 
 
+def _news_to_datetime(published):
+    """Normaliza la fecha de una noticia (epoch o ISO) a datetime UTC, o None."""
+    if published is None:
+        return None
+    from datetime import datetime, timezone
+    try:
+        if isinstance(published, (int, float)):
+            return datetime.fromtimestamp(float(published), tz=timezone.utc)
+        return datetime.fromisoformat(str(published).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _news_date_str(published) -> str:
+    dt = _news_to_datetime(published)
+    return dt.strftime("%Y-%m-%d") if dt else "fecha desconocida"
+
+
+def _is_today(published) -> bool:
+    from datetime import datetime, timezone
+    dt = _news_to_datetime(published)
+    return bool(dt and dt.date() == datetime.now(timezone.utc).date())
+
+
 def _build_daily_move_payload(quote: dict, news: list) -> str:
     price = quote.get("price")
     chg = quote.get("change")
@@ -590,7 +614,12 @@ def _build_daily_move_payload(quote: dict, news: list) -> str:
         "volumen_hoy": quote.get("volume"),
         "volumen_promedio": quote.get("avg_volume"),
         "noticias_recientes": [
-            {"titular": n.get("title"), "fuente": n.get("publisher")}
+            {
+                "titular": n.get("title"),
+                "fuente": n.get("publisher"),
+                "fecha": _news_date_str(n.get("published")),
+                "es_de_hoy": _is_today(n.get("published")),
+            }
             for n in (news or [])
         ][:8],
     }
@@ -598,6 +627,8 @@ def _build_daily_move_payload(quote: dict, news: list) -> str:
         f"Explica por qué {quote.get('symbol')} se mueve hoy "
         f"({'+' if (chg_pct or 0) >= 0 else ''}{chg_pct}%).\n\n"
         f"DATOS:\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
+        f"PRIORIZA las noticias con \"es_de_hoy\": true — son las que explican el "
+        f"movimiento de hoy. Las antiguas son solo contexto.\n"
         f"Responde SOLO con el JSON pedido."
     )
 

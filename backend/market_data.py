@@ -672,6 +672,21 @@ def get_news(ticker: str, limit: int = 8):
             continue
         seen.add(key)
         merged.append(n)
+
+    # Ordena por fecha de publicación DESC para que lo MÁS RECIENTE (idealmente de hoy)
+    # encabece la lista. "published" puede venir como epoch (Finnhub/yfinance) o ISO.
+    def _epoch(n):
+        p = n.get("published")
+        if p is None:
+            return 0
+        if isinstance(p, (int, float)):
+            return float(p)
+        try:
+            from datetime import datetime
+            return datetime.fromisoformat(str(p).replace("Z", "+00:00")).timestamp()
+        except Exception:
+            return 0
+    merged.sort(key=_epoch, reverse=True)
     return merged[:limit]
 
 
