@@ -638,11 +638,15 @@ def get_news(ticker: str, limit: int = 8):
     #    perder y que son justo los que explican movimientos sin causa macro).
     #    Import perezoso para evitar el ciclo external_data ↔ market_data.
     company = []
+    fmp = []
     try:
         import external_data
         company = external_data.finnhub_company_news(ticker) or []
+        # FMP complementa a Finnhub: suele traer el cuerpo del artículo (campo `text`)
+        # con el catalizador concreto que el titular generaliza.
+        fmp = external_data.fmp_company_news(ticker) or []
     except Exception:
-        company = []
+        company = company or []
 
     # 2) yfinance como complemento/respaldo (puede colgarse en cloud → tope duro)
     t = _ticker(ticker)
@@ -663,10 +667,11 @@ def get_news(ticker: str, limit: int = 8):
             "published": pub_date,
         })
 
-    # Mezcla priorizando Finnhub (empresa) y deduplicando por título normalizado.
+    # Mezcla priorizando noticias de empresa (Finnhub + FMP) y deduplicando por
+    # título normalizado. yfinance queda de respaldo al final.
     seen = set()
     merged = []
-    for n in company + yf_out:
+    for n in company + fmp + yf_out:
         key = (n.get("title") or "").strip().lower()[:80]
         if not key or key in seen:
             continue

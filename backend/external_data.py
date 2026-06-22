@@ -8,6 +8,7 @@ import market_data as _md
 
 FINNHUB_BASE = "https://finnhub.io/api/v1"
 ALPHA_BASE = "https://www.alphavantage.co/query"
+FMP_BASE = "https://financialmodelingprep.com"
 
 # Caché en módulo para datos que cambian pocas veces al día. Compartido entre todas
 # las llamadas (dashboard, opportunities scanner, analyze) → drástica reducción de
@@ -110,6 +111,61 @@ def finnhub_company_news(symbol: str, days: int = 7, limit: int = 10):
                 "published": n.get("datetime"),  # epoch seconds
             })
         _ext_cache_set(f"company_news:{sym}", out)
+        return out
+    except Exception:
+        return []
+
+
+def _fmp_key():
+    return os.environ.get("FMP_API_KEY")
+
+
+def fmp_company_news(symbol: str, limit: int = 15):
+    """Company-SPECIFIC news from Financial Modeling Prep (stock_news endpoint).
+    Complementa a Finnhub: FMP suele traer un campo `text` con el cuerpo del
+    artículo, donde aparece el catalizador concreto (persona, cifra, producto)
+    que el titular generaliza. Cacheado 30 min. Devuelve [] si no hay clave o falla."""
+    from datetime import datetime, timezone
+    sym = symbol.upper()
+    cached, hit = _ext_cache_get(f"fmp_news:{sym}", 1800)
+    if hit:
+        return cached
+    key = _fmp_key()
+    if not key:
+        return []
+    try:
+        http = _md.get_http_session()
+        r = http.get(
+            f"{FMP_BASE}/api/v3/stock_news",
+            params={"tickers": sym, "limit": limit, "apikey": key},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            return []
+        items = r.json() or []
+        out = []
+        for n in items[:limit]:
+            title = n.get("title")
+            if not title:
+                continue
+            # FMP da fecha ISO "YYYY-MM-DD HH:MM:SS" (UTC); la pasamos a epoch.
+            published = None
+            raw = n.get("publishedDate")
+            if raw:
+                try:
+                    published = datetime.fromisoformat(
+                        str(raw).replace("Z", "+00:00")
+                    ).replace(tzinfo=timezone.utc).timestamp()
+                except Exception:
+                    published = None
+            out.append({
+                "title": title,
+                "summary": n.get("text"),
+                "url": n.get("url"),
+                "publisher": n.get("site"),
+                "published": published,
+            })
+        _ext_cache_set(f"fmp_news:{sym}", out)
         return out
     except Exception:
         return []
