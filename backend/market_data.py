@@ -667,19 +667,20 @@ def get_news(ticker: str, limit: int = 8):
             "published": pub_date,
         })
 
-    # Mezcla priorizando noticias de empresa (Finnhub + FMP) y deduplicando por
-    # título normalizado. yfinance queda de respaldo al final.
+    # Mezcla deduplicando por título normalizado. Etiquetamos la fuente: Finnhub y FMP
+    # son ESPECÍFICAS de empresa (capturan el catalizador real —una salida, una demanda);
+    # yfinance suele traer macro/sector. Marcamos cada origen para poder priorizar.
     seen = set()
     merged = []
-    for n in company + fmp + yf_out:
-        key = (n.get("title") or "").strip().lower()[:80]
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        merged.append(n)
+    for src, lst in (("company", company), ("company", fmp), ("macro", yf_out)):
+        for n in lst:
+            key = (n.get("title") or "").strip().lower()[:80]
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            n = {**n, "_src": src}
+            merged.append(n)
 
-    # Ordena por fecha de publicación DESC para que lo MÁS RECIENTE (idealmente de hoy)
-    # encabece la lista. "published" puede venir como epoch (Finnhub/yfinance) o ISO.
     def _epoch(n):
         p = n.get("published")
         if p is None:
@@ -691,7 +692,13 @@ def get_news(ticker: str, limit: int = 8):
             return datetime.fromisoformat(str(p).replace("Z", "+00:00")).timestamp()
         except Exception:
             return 0
-    merged.sort(key=_epoch, reverse=True)
+
+    # Orden compuesto: las noticias de EMPRESA van primero (su catalizador explica el
+    # movimiento mucho mejor que una macro genérica), y dentro de cada grupo, lo más
+    # reciente arriba. Así una salida/fichaje de ayer NO queda sepultado bajo titulares
+    # macro de hoy — que era justo por lo que el modelo generalizaba ("éxodo de talento"
+    # en vez de nombrar el hecho concreto).
+    merged.sort(key=lambda n: (0 if n.get("_src") == "company" else 1, -_epoch(n)))
     return merged[:limit]
 
 
