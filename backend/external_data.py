@@ -450,6 +450,15 @@ def finnhub_basic_financials(symbol: str):
                 if m.get("epsGrowthQuarterlyYoy") is not None
                 else m.get("epsGrowth3Y")
             ),
+            # Momentum / tendencia (retorno de precio, ya en %) — para detectar "sectores
+            # muertos" / value traps: una empresa que crece pero cuya acción lleva meses
+            # cayendo NO es buena idea a corto/medio plazo.
+            "return_13w": m.get("13WeekPriceReturnDaily"),
+            "return_26w": m.get("26WeekPriceReturnDaily"),
+            "return_52w": m.get("52WeekPriceReturnDaily"),
+            # Fuerza relativa vs S&P500 a 52s: >0 bate al mercado, <0 lo hace peor
+            # (síntoma de sector rezagado). Finnhub la reporta en %.
+            "rel_strength_52w": m.get("priceRelativeToS&P50052Week"),
         }
         return {k: v for k, v in out.items() if v is not None}
     except Exception:

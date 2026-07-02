@@ -151,6 +151,20 @@ function ScreenerCard({ row, onPick }) {
           {row.valuation}{row.pe_ratio ? ` · PER ${row.pe_ratio}` : ""}
         </p>
       )}
+      {row.momentum && row.momentum !== "neutra" && (
+        <p
+          className="text-[10px] font-mono mb-1"
+          style={{ color: row.momentum.startsWith("⚠") ? "#d85c41" : "#4a7c59" }}
+        >
+          {row.momentum}{row.return_52w != null ? ` · ${row.return_52w > 0 ? "+" : ""}${row.return_52w}% 1a` : ""}
+        </p>
+      )}
+      {row.analyst_consensus && (
+        <p className="text-[10px] font-mono mb-1 text-[#5c6b66]">
+          Analistas: <span className="text-[#1a3a32] font-semibold">{row.analyst_consensus}</span>
+          {row.consensus_score != null ? ` (${row.consensus_score})` : ""}
+        </p>
+      )}
       {row.reason && (
         <p className="text-[11px] text-[#5c6b66] italic mb-2 leading-snug">{row.reason}</p>
       )}
