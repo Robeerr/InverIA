@@ -152,6 +152,12 @@ async def bulk_upsert(db, rows: list) -> dict:
         existing = await db.signal_entries.find_one({"symbol": symbol})
         if existing:
             fields = {k: row[k] for k in ALLOWED_UPDATE if k in row and row[k] is not None}
+            # NUNCA sobrescribir el estado que el usuario gestiona A MANO al reimportar:
+            # las campanas (una campana apagada = ese nivel YA lo compró) ni el flag
+            # activo/inactivo de la fila. El Excel solo aporta precios/niveles, no ese estado.
+            for protected in ("alert_deseado", "alert_nivel1", "alert_nivel2",
+                              "alert_nivel3", "alert_nivel4", "alert_nivel5", "active"):
+                fields.pop(protected, None)
             fields["updated_at"] = _now()
             await db.signal_entries.update_one({"symbol": symbol}, {"$set": fields})
             updated += 1

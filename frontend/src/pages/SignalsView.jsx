@@ -175,8 +175,11 @@ function parseExcelText(text) {
   const headers = lines[0].split(sep).map((h) => h.trim().toLowerCase().replace(/[\s\-\/áéíóú]+/g, "_"));
 
   const map = {
-    symbol: ["symbol", "ticker", "ticker_isin", "simbolo", "accion"],
-    name:   ["name", "nombre", "empresa", "accion"],
+    // OJO: "accion" va SOLO en name, no en symbol. En el Excel la columna "Acción"
+    // es el NOMBRE (ORACLE) y "Ticker/ISIN" es el SÍMBOLO (ORCL). Si "accion" estuviera
+    // también en symbol, al ser la primera columna se cogería "ORACLE" como ticker.
+    symbol: ["ticker_isin", "ticker", "symbol", "simbolo"],
+    name:   ["name", "nombre", "empresa", "accion", "acci_n"],
     mercado: ["mercado", "market", "bolsa"],
     deseado: ["deseado", "objetivo", "target", "nivel_deseado", "nivel_deseado_venta"],
     nivel1:  ["nivel1", "nivel_1", "nivel 1", "n1", "compra1"],
