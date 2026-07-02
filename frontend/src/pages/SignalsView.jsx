@@ -443,7 +443,6 @@ export default function SignalsView({ setSymbol }) {
                 ref={imageInputRef}
                 type="file"
                 accept="image/*"
-                capture="environment"
                 className="hidden"
                 onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; doImportImage(f); }}
               />
