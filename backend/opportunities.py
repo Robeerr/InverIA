@@ -238,10 +238,9 @@ GROWTH_UNIVERSE = [
 SCREENER_FILTERS = [
     "Market Cap > $2B",
     "Precio > $9",
-    "Sin dividendo",
     "Vol. medio > 200K",
-    "A < 20% del máx. 52 sem.",
-    "Ventas YoY > 20%",
+    "A < 45% del máx. 52 sem.",
+    "Ventas YoY > 12%",
 ]
 
 _screener_cache = {"data": None, "ts": None}
@@ -295,24 +294,25 @@ def screener_cache_is_fresh() -> bool:
 
 
 def _passes_cheap_filters(q: dict) -> bool:
-    """The 5 filters that need only the quote (no extra API calls)."""
+    """Filtros BARATOS (solo cotización, sin llamadas extra). Deliberadamente laxos: el
+    ranking fino lo hace el score de potencial (que ya penaliza caras y value traps), así
+    que aquí solo descartamos lo claramente no invertible y dejamos entrar MÁS candidatas.
+    Nota: ya NO excluimos por dividendo (grandes compounders pagan uno pequeño) ni exigimos
+    estar pegado a máximos (los retrocesos sanos son justo las mejores entradas)."""
     price = q.get("price")
     mcap = q.get("market_cap")
-    dy = q.get("dividend_yield")
     avgvol = q.get("avg_volume")
     high52 = q.get("high_52w")
     if not price or price <= 9:
         return False
     if not mcap or mcap <= 2_000_000_000:
         return False
-    if dy and dy >= 0.001:  # pays a dividend -> excluded
-        return False
     if not avgvol or avgvol <= 200_000:
         return False
     if not high52 or high52 <= 0:
         return False
-    # within 20% of the 52-week high
-    if (price - high52) / high52 * 100 <= -20:
+    # descarta solo lo muy roto: a más de 45% bajo su máximo de 52s (posible ruina)
+    if (price - high52) / high52 * 100 <= -45:
         return False
     return True
 
@@ -367,7 +367,7 @@ async def _run_screener_scan():
                 # Revenue-growth filter is best-effort: exclude only when the metric IS
                 # available and fails. If Finnhub doesn't return it, keep the stock (it
                 # already passed the 5 quality/momentum filters) rather than dropping all.
-                if rev_g is not None and rev_g <= 20:    # Ventas YoY > 20%
+                if rev_g is not None and rev_g <= 12:    # Ventas YoY > 12% (medio plazo)
                     continue
                 price = q.get("price")
                 high52 = q.get("high_52w")
