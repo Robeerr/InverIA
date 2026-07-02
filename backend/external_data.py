@@ -204,6 +204,41 @@ def fmp_market_movers(kind: str = "actives", limit: int = 30):
         return []
 
 
+def fmp_company_profile(symbol: str):
+    """Perfil de la empresa vía FMP: descripción del negocio, sector, industria, CEO,
+    país, web. Sirve para que el análisis explique QUÉ HACE la empresa y QUÉ PRODUCTO
+    ofrece con datos reales (no alucinados). Cacheado 24h (casi nunca cambia). None si falla."""
+    sym = symbol.upper()
+    cached, hit = _ext_cache_get(f"fmp_profile:{sym}", 86400)
+    if hit:
+        return cached
+    key = _fmp_key()
+    if not key:
+        return None
+    try:
+        http = _md.get_http_session()
+        r = http.get(f"{FMP_BASE}/api/v3/profile/{sym}", params={"apikey": key}, timeout=8)
+        if r.status_code != 200:
+            return None
+        items = r.json() or []
+        if not items:
+            return None
+        p = items[0]
+        out = {
+            "descripcion": p.get("description"),
+            "sector": p.get("sector"),
+            "industria": p.get("industry"),
+            "ceo": p.get("ceo"),
+            "pais": p.get("country"),
+            "web": p.get("website"),
+            "empleados": p.get("fullTimeEmployees"),
+        }
+        _ext_cache_set(f"fmp_profile:{sym}", out)
+        return out
+    except Exception:
+        return None
+
+
 def fmp_company_news(symbol: str, limit: int = 15):
     """Company-SPECIFIC news from Financial Modeling Prep (stock_news endpoint).
     Complementa a Finnhub: FMP suele traer un campo `text` con el cuerpo del

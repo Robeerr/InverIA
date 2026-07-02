@@ -554,6 +554,13 @@ async def analyze(req: AnalyzeRequest):
     except Exception:
         logger.exception("compute_buy_levels failed")
 
+    # Perfil de empresa (FMP): descripción del negocio/productos para el "qué hace".
+    company_profile = None
+    try:
+        company_profile = await asyncio.to_thread(external_data.fmp_company_profile, symbol)
+    except Exception:
+        company_profile = None
+
     requested_model = req.model or ai_analysis.DEFAULT_MODEL
     analyze_kwargs = dict(
         analyst_consensus=analyst_consensus,
@@ -564,6 +571,7 @@ async def analyze(req: AnalyzeRequest):
         buy_levels=buy_levels,
         next_earnings_date=next_earnings_date,
         days_to_earnings=days_to_earnings,
+        company_profile=company_profile,
     )
     used_model = requested_model
     # Cadena de fallback en orden de preferencia, ENTRE PROVEEDORES distintos: si Gemini

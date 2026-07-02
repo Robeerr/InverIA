@@ -96,6 +96,10 @@ ESTRUCTURA JSON EXACTA:
   "horizon": "MEDIO_PLAZO (3-12 meses)",
   "summary": "Resumen ejecutivo en 2-3 frases explicando la tesis de inversión principal y por qué estos niveles son relevantes.",
 
+  "business_overview": "Explica en lenguaje LLANO (para alguien que no conoce la empresa) QUÉ HACE y de qué gana dinero: sus productos/servicios principales, su modelo de negocio y qué la diferencia de su competencia. 3-5 frases. Usa la 'descripcion_negocio' del perfil_empresa si está disponible; si no, tu conocimiento. Concreto, sin marketing vacío.",
+
+  "investment_case": "El argumento DECISIVO de por qué invertir en ESTA empresa AHORA y no en otra: la combinación concreta (crecimiento + valoración + momento técnico + catalizador) que la hace una oportunidad hoy. 2-4 frases directas, como si se lo explicaras a un amigo que pregunta '¿por qué esta?'. Si la recomendación NO es COMPRAR, explica honestamente por qué esperar.",
+
   "entry_zones": [
     {"label": "NIVEL 1 — Zona Óptima", "min": número, "max": número, "comment": "Explica confluencia, régimen de mercado y por qué el ATR valida la distancia al stop"},
     {"label": "NIVEL 2 — Segunda Entrada", "min": número, "max": número, "comment": "Siguiente soporte fuerte con R/R mínimo 2:1"},
@@ -204,7 +208,8 @@ def _build_payload(quote: dict, indicators: dict, news: list,
                    analyst_consensus: dict = None, price_target: dict = None,
                    volume_profile: dict = None, insider: dict = None,
                    earnings_history: dict = None, buy_levels: list = None,
-                   next_earnings_date: str = None, days_to_earnings: int = None) -> str:
+                   next_earnings_date: str = None, days_to_earnings: int = None,
+                   company_profile: dict = None) -> str:
     ind = indicators or {}
     price = quote.get("price") or 0
     # Prefer yfinance 52w values; fallback to indicator-computed values
@@ -230,12 +235,25 @@ def _build_payload(quote: dict, indicators: dict, news: list,
     sr = ind.get("support_resistance") or {}
     sma = ind.get("sma") or {}
 
+    # Perfil real de la empresa (FMP): descripción del negocio y productos. Se recorta
+    # para no inflar tokens. Ancla el "qué hace / qué vende" en datos, no en memoria.
+    perfil = None
+    if company_profile:
+        desc = (company_profile.get("descripcion") or "")[:1200] or None
+        perfil = {
+            "descripcion_negocio": desc,
+            "ceo": company_profile.get("ceo"),
+            "empleados": company_profile.get("empleados"),
+            "pais": company_profile.get("pais"),
+        }
+
     payload = {
         "symbol": quote.get("symbol"),
         "precio_actual": price,
         "nombre_empresa": quote.get("name"),
         "sector": quote.get("sector"),
         "industria": quote.get("industry"),
+        "perfil_empresa": perfil,
         "rango_52_semanas": {"maximo": high_52w, "minimo": low_52w},
         "posicion_en_rango_52s": f"{round((price - low_52w) / rng * 100, 1)}% desde mínimo" if rng > 0 else "N/A",
         "fibonacci_retrocesos": fib_levels,
@@ -544,10 +562,11 @@ async def analyze_stock(
     buy_levels: list = None,
     next_earnings_date: str = None,
     days_to_earnings: int = None,
+    company_profile: dict = None,
 ) -> dict:
     user_msg = _build_payload(quote, indicators, news, analyst_consensus, price_target,
                               volume_profile, insider, earnings_history, buy_levels,
-                              next_earnings_date, days_to_earnings)
+                              next_earnings_date, days_to_earnings, company_profile)
     return await _run_model(model_key, SYSTEM_PROMPT, user_msg, max_tokens=8000)
 
 

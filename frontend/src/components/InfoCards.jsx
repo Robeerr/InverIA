@@ -251,8 +251,8 @@ export function MarketSignalsCard({ insider, earningsHistory }) {
 
 export function InvestmentThesisCard({ analysis }) {
   if (!analysis) return null;
-  const { competitive_position, main_rival, sector_outlook } = analysis;
-  if (!competitive_position && !main_rival && !sector_outlook) return null;
+  const { business_overview, investment_case, competitive_position, main_rival, sector_outlook } = analysis;
+  if (!business_overview && !investment_case && !competitive_position && !main_rival && !sector_outlook) return null;
   return (
     <section data-testid="investment-thesis" className="card-flat p-6 animate-fade-up">
       <div className="flex items-center gap-2 mb-3">
@@ -260,6 +260,21 @@ export function InvestmentThesisCard({ analysis }) {
         <h3 className="font-heading font-semibold text-lg text-[#0e1f1a]">Tesis de Inversión</h3>
       </div>
       <div className="space-y-3">
+        {investment_case && (
+          <div className="p-4 bg-[#1a3a32]/[0.06] border-l-2 border-[#1a3a32] rounded">
+            <p className="label-small mb-1 flex items-center gap-1.5">
+              <Target size={13} weight="bold" className="text-[#1a3a32]" />
+              ¿Por qué esta empresa?
+            </p>
+            <p className="text-sm text-[#0e1f1a] leading-relaxed font-medium">{investment_case}</p>
+          </div>
+        )}
+        {business_overview && (
+          <div className="p-3 bg-[#f5f3ef] border border-[#e5e0d8] rounded">
+            <p className="label-small mb-1">Qué hace y cómo gana dinero</p>
+            <p className="text-xs text-[#0e1f1a] leading-relaxed">{business_overview}</p>
+          </div>
+        )}
         {competitive_position && (
           <div className="p-3 bg-[#f5f3ef] border-l-2 border-[#1a3a32] rounded">
             <p className="label-small mb-1">Posición competitiva</p>
