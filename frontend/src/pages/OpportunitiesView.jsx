@@ -104,6 +104,9 @@ function OpportunityCard({ op, onPick }) {
 function ScreenerCard({ row, onPick }) {
   const dist = row.dist_52w_high;
   const distColor = dist == null ? "#5c6b66" : dist >= -5 ? "#4a7c59" : dist >= -12 ? "#c9a14a" : "#d85c41";
+  // Score de potencial: verde fuerte ≥70, ámbar 45-70, gris <45.
+  const ps = row.potential_score;
+  const psColor = ps == null ? "#5c6b66" : ps >= 70 ? "#4a7c59" : ps >= 45 ? "#c9a14a" : "#5c6b66";
   return (
     <div
       data-testid={`screener-${row.symbol}`}
@@ -120,6 +123,22 @@ function ScreenerCard({ row, onPick }) {
             <p className="text-[10px] text-[#5c6b66] truncate max-w-[140px]">{row.name}</p>
           </div>
         </div>
+        {ps != null && (
+          <div className="flex flex-col items-end shrink-0">
+            <span
+              className="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold"
+              style={{ background: `${psColor}18`, color: psColor, border: `1px solid ${psColor}40` }}
+              title="Potencial a medio plazo: crecimiento + valoración + punto de entrada"
+            >
+              {ps} pts
+            </span>
+            <span className="text-[9px] text-[#5c6b66] mt-0.5">potencial</span>
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-baseline justify-between mb-2">
+        <p className="font-mono font-bold text-lg text-[#0e1f1a]">${fmtPrice(row.price)}</p>
         <span
           className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold"
           style={{ background: `${distColor}15`, color: distColor, border: `1px solid ${distColor}40` }}
@@ -127,19 +146,23 @@ function ScreenerCard({ row, onPick }) {
           {dist != null ? `${dist}% máx.` : "—"}
         </span>
       </div>
-
-      <div className="flex items-baseline justify-between mb-2">
-        <p className="font-mono font-bold text-lg text-[#0e1f1a]">${fmtPrice(row.price)}</p>
-        <p className="text-[10px] text-[#5c6b66] font-mono">${fmtNum(row.market_cap)} cap</p>
-      </div>
+      {row.valuation && (
+        <p className="text-[10px] font-mono mb-1" style={{ color: psColor }}>
+          {row.valuation}{row.pe_ratio ? ` · PER ${row.pe_ratio}` : ""}
+        </p>
+      )}
       {row.reason && (
         <p className="text-[11px] text-[#5c6b66] italic mb-2 leading-snug">{row.reason}</p>
       )}
 
-      <div className="grid grid-cols-2 gap-1 text-center mb-3 text-[10px] font-mono">
+      <div className="grid grid-cols-3 gap-1 text-center mb-3 text-[10px] font-mono">
         <div className="bg-[#4a7c59]/10 border border-[#4a7c59]/30 rounded px-1 py-1.5">
           <p className="text-[#5c6b66] uppercase text-[9px]">Ventas YoY</p>
           <p className="text-[#4a7c59] font-semibold">{row.revenue_growth != null ? `+${row.revenue_growth}%` : "—"}</p>
+        </div>
+        <div className="bg-[#4a7c59]/10 border border-[#4a7c59]/30 rounded px-1 py-1.5">
+          <p className="text-[#5c6b66] uppercase text-[9px]">EPS YoY</p>
+          <p className="text-[#4a7c59] font-semibold">{row.eps_growth != null ? `${row.eps_growth > 0 ? "+" : ""}${row.eps_growth}%` : "—"}</p>
         </div>
         <div className="bg-[#1F6FB5]/10 border border-[#1F6FB5]/30 rounded px-1 py-1.5">
           <p className="text-[#5c6b66] uppercase text-[9px]">Vol. medio</p>
@@ -414,7 +437,7 @@ export default function OpportunitiesView({ setSymbol }) {
                   <h2 className="font-heading font-bold text-2xl text-[#0e1f1a]">Screener de Crecimiento</h2>
                 </div>
                 <p className="text-sm text-[#5c6b66]">
-                  Universo de {screener?.universe_size || 120} acciones filtrado por calidad, momentum y crecimiento.
+                  {screener?.universe_size || 120} acciones del mercado, ordenadas por <span className="font-semibold text-[#1a3a32]">potencial</span> (crecimiento + valoración + punto de entrada).
                 </p>
               </div>
               <Button

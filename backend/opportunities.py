@@ -85,6 +85,53 @@ UNIVERSE = [
 ]
 
 
+def _potential_score(rev_g, eps_g, pe, dist_52w):
+    """Score 0-100 de POTENCIAL a medio plazo. Combina, como haría un gestor:
+    crecimiento (¿crece rápido?), valoración/PEG (¿está barata para lo que crece?) y
+    punto de entrada (¿hay margen desde máximos o ya está agotada?). Cada bloque suma;
+    un valor que crece MUCHO, a PEG razonable y con recorrido desde máximos, puntúa alto.
+    Devuelve (score, etiqueta_valoracion)."""
+    score = 0.0
+
+    # 1) Crecimiento de ventas — el motor del medio plazo. Hasta 38 pts (saturado a 60%).
+    if rev_g is not None and rev_g > 0:
+        score += min(rev_g, 60) / 60 * 38
+
+    # 2) Crecimiento de EPS — que el crecimiento llegue al beneficio. Hasta 15 pts.
+    if eps_g is not None and eps_g > 0:
+        score += min(eps_g, 50) / 50 * 15
+
+    # 3) Valoración vía PEG (PER / crecimiento). El "santo grial": barata PARA lo que crece.
+    val_label = "sin datos"
+    if pe is not None and pe > 0 and rev_g and rev_g > 0:
+        peg = pe / rev_g
+        if peg < 1:
+            score += 27; val_label = "infravalorada (PEG<1)"
+        elif peg < 1.5:
+            score += 20; val_label = "precio atractivo (PEG<1.5)"
+        elif peg < 2.5:
+            score += 12; val_label = "valoración razonable"
+        elif peg < 4:
+            score += 5; val_label = "algo cara"
+        else:
+            val_label = "cara (PEG>4)"
+    elif pe is not None and pe <= 0:
+        val_label = "sin beneficios (PER negativo)"
+
+    # 4) Punto de entrada según distancia a máximos de 52s (dist_52w es negativo si está
+    #    por debajo). El punto dulce es un retroceso sano, no comprar en el pico ni algo roto.
+    if dist_52w is not None:
+        if -20 <= dist_52w <= -8:
+            score += 20   # retroceso sano: mejor relación riesgo/recompensa
+        elif -8 < dist_52w <= 0:
+            score += 11    # cerca de máximos, momentum pero menos margen
+        elif -35 <= dist_52w < -20:
+            score += 14    # corrección profunda: más recorrido si la tesis aguanta
+        else:
+            score += 5     # muy lejos de máximos: posible problema estructural
+    return round(min(score, 100), 1), val_label
+
+
 def _build_screener_reason(rev_g, dist_52w, change_pct, market_cap):
     """Generate a short human-readable explanation for a screener result."""
     parts = []
@@ -292,8 +339,13 @@ async def _run_screener_scan():
                 dist = ((price - high52) / high52 * 100) if (high52 and price) else None
                 dist_r = round(dist, 1) if dist is not None else None
                 rev_r = round(rev_g, 1) if rev_g is not None else None
+                eps_g = m.get("eps_growth")
+                eps_r = round(eps_g, 1) if eps_g is not None else None
+                pe = q.get("pe_ratio") or m.get("pe_ratio")
                 cp = q.get("change_percent")
                 mc = q.get("market_cap")
+                # Score de potencial (medio plazo): crecimiento + valoración (PEG) + entrada.
+                pot_score, val_label = _potential_score(rev_g, eps_g, pe, dist)
                 reason = _build_screener_reason(rev_r, dist_r, cp, mc)
                 results.append({
                     "symbol": s,
@@ -302,17 +354,19 @@ async def _run_screener_scan():
                     "market_cap": mc,
                     "avg_volume": q.get("avg_volume"),
                     "revenue_growth": rev_r,
+                    "eps_growth": eps_r,
+                    "pe_ratio": round(pe, 1) if pe else None,
                     "dist_52w_high": dist_r,
                     "sector": q.get("sector"),
                     "change_percent": cp,
+                    "potential_score": pot_score,
+                    "valuation": val_label,
                     "reason": reason,
                 })
 
-            # Known-growth names first (highest revenue growth), then the rest
-            results.sort(
-                key=lambda x: (x.get("revenue_growth") is not None, x.get("revenue_growth") or 0),
-                reverse=True,
-            )
+            # Ordena por SCORE DE POTENCIAL (mejores oportunidades arriba): combina
+            # crecimiento, valoración y punto de entrada — no solo el crecimiento bruto.
+            results.sort(key=lambda x: x.get("potential_score") or 0, reverse=True)
 
             _screener_cache["data"] = {
                 "generated_at": datetime.now(timezone.utc).isoformat(),
