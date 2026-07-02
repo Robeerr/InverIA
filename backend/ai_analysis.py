@@ -570,6 +570,98 @@ async def analyze_stock(
     return await _run_model(model_key, SYSTEM_PROMPT, user_msg, max_tokens=8000)
 
 
+# ---------- OCR de tabla de watchlist desde una FOTO (Gemini visión) ----------
+
+_WATCHLIST_OCR_PROMPT = """Eres un extractor de datos. Recibes la FOTO de una tabla de acciones (watchlist)
+con niveles de compra y venta. Extrae CADA fila y devuelve SÓLO un JSON válido, sin markdown.
+
+La tabla tiene estas columnas (los nombres pueden variar un poco):
+- "Acción" = nombre de la empresa (ej: ORACLE)
+- "Mercado" = bolsa (NYSE, NASDAQ, EPA...)
+- "Ticker/ISIN" = el SÍMBOLO (ej: ORCL) — ESTE es el identificador, no el nombre
+- "Precio actual" = ignóralo
+- "Nivel deseado venta" = precio objetivo de VENTA
+- "Nivel 1..4" = precios de COMPRA (zonas de acumulación)
+- "Nivel 5 extra" = compra extra; si pone "NO" o está vacío, devuélvelo como null
+- "Riesgo" = texto (ALTO/MEDIO/BAJO...) si existe la columna
+- "Sector" = texto si existe la columna
+- "Posibles Ganancias" = porcentaje como número (ej "78,28%" → 78.28) si existe la columna
+
+REGLAS:
+- Devuelve los números como número (punto decimal). "228,9" → 228.9. Celda vacía o "NO" → null.
+- El "symbol" SIEMPRE de la columna Ticker/ISIN, en mayúsculas. Si una fila no tiene símbolo claro, omítela.
+- No inventes filas ni valores. Si no ves un nivel, ponlo a null.
+- Ignora filas de cabecera o notas (ej "ACCIONES EN CARTERA", "En azul significa comprada").
+
+FORMATO EXACTO:
+{
+  "rows": [
+    {"symbol": "ORCL", "name": "ORACLE", "mercado": "NYSE", "deseado": 250,
+     "nivel1": 220, "nivel2": 180, "nivel3": 160, "nivel4": 149, "nivel5": 132,
+     "riesgo": "MEDIO", "sector": "TECH", "posibles_ganancias": 78.28}
+  ]
+}
+"""
+
+
+async def extract_watchlist_from_image(image_bytes: bytes, mime_type: str = "image/jpeg") -> list:
+    """Lee una FOTO de la tabla de watchlist con Gemini visión y devuelve la lista de filas
+    normalizadas (mismo formato que el parser de Excel) para pasársela a bulk_upsert.
+    Solo Gemini soporta visión aquí; si falla o no hay clave, lanza para que el endpoint avise."""
+    if not GEMINI_AVAILABLE:
+        raise RuntimeError("google-genai no está instalada en el servidor.")
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY no configurada — necesaria para leer la foto.")
+    client = genai.Client(api_key=api_key)
+    config = genai_types.GenerateContentConfig(
+        temperature=0.0,
+        max_output_tokens=8000,
+        response_mime_type="application/json",
+    )
+    image_part = genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+    response = await asyncio.to_thread(
+        client.models.generate_content,
+        model="gemini-2.5-flash",
+        contents=[image_part, _WATCHLIST_OCR_PROMPT],
+        config=config,
+    )
+    text = getattr(response, "text", "") or ""
+    if not text:
+        raise RuntimeError("Gemini no devolvió texto al leer la foto.")
+    data = _parse_model_json(text)
+    rows = data.get("rows") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        raise RuntimeError("No se pudo interpretar la tabla de la foto.")
+    # Normaliza: symbol en mayúsculas, niveles numéricos o None, y descarta filas sin símbolo.
+    out = []
+    for r in rows:
+        sym = (r.get("symbol") or "").strip().upper()
+        if not sym or len(sym) > 10:
+            continue
+        def _num(k):
+            v = r.get(k)
+            try:
+                return float(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+        out.append({
+            "symbol": sym,
+            "name": (r.get("name") or "").strip(),
+            "mercado": (r.get("mercado") or "").strip().upper(),
+            "deseado": _num("deseado"),
+            "nivel1": _num("nivel1"),
+            "nivel2": _num("nivel2"),
+            "nivel3": _num("nivel3"),
+            "nivel4": _num("nivel4"),
+            "nivel5": _num("nivel5"),
+            "riesgo": (r.get("riesgo") or "").strip().upper(),
+            "sector": (r.get("sector") or "").strip(),
+            "posibles_ganancias": _num("posibles_ganancias"),
+        })
+    return out
+
+
 # ---------- "¿Por qué se mueve hoy?" — explicación ligera del movimiento diario ----------
 
 DAILY_MOVE_PROMPT = """Eres un analista de mercado que explica, en lenguaje claro y directo, POR QUÉ una acción se mueve HOY.

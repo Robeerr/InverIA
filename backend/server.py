@@ -1283,6 +1283,36 @@ async def bulk_import_signals(payload: SignalBulkImport, _user: str = Depends(au
     return result
 
 
+@api_router.post("/signals/import-image")
+async def import_signals_from_image(
+    file: UploadFile = File(...),
+    dry_run: bool = False,
+    _user: str = Depends(auth.get_current_user),
+):
+    """Lee una FOTO de la tabla de watchlist (Gemini visión), la convierte en filas y las
+    upserta. Con dry_run=true solo devuelve las filas leídas para previsualizar sin guardar.
+    Respeta el estado manual (campanas/activo) igual que la importación por texto."""
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Imagen vacía")
+    if len(data) > 8 * 1024 * 1024:
+        raise HTTPException(413, "La imagen es demasiado grande (máx. 8 MB)")
+    mime = file.content_type or "image/jpeg"
+    try:
+        rows = await ai_analysis.extract_watchlist_from_image(data, mime)
+    except Exception as e:
+        logger.exception("import-image OCR failed")
+        raise HTTPException(502, f"No se pudo leer la tabla de la foto: {e}")
+    if not rows:
+        raise HTTPException(422, "No se detectó ninguna fila con símbolo en la foto.")
+    if dry_run:
+        return {"rows": rows, "count": len(rows), "saved": False}
+    result = await signal_table.bulk_upsert(db, rows)
+    _cache._store.pop("signals_list", None)
+    _cache._store.pop("signals_hot", None)
+    return {**result, "rows": rows, "saved": True}
+
+
 # ---------- Alert History ----------
 @api_router.get("/alerts/history")
 async def get_alert_history(limit: int = 50, _user: str = Depends(auth.get_current_user)):

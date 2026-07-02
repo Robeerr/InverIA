@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { Bell, BellSlash, Trash, Plus, X, UploadSimple, ArrowClockwise, Lightning, Bank } from "@phosphor-icons/react";
+import { Bell, BellSlash, Trash, Plus, X, UploadSimple, ArrowClockwise, Lightning, Bank, Camera } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 const API = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
@@ -278,6 +278,7 @@ export default function SignalsView({ setSymbol }) {
   const [importing, setImporting] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [newEntry, setNewEntry] = useState(EMPTY);
+  const imageInputRef = useRef(null);
 
   const isCim = grupo === "cimientos";
   // Memoizado: el polling de 30s reescribe `entries`; sin esto, filtrar y contar se
@@ -389,6 +390,27 @@ export default function SignalsView({ setSymbol }) {
     finally { setImporting(false); }
   };
 
+  // Importar desde FOTO: sube la imagen, Gemini lee la tabla y hace el upsert.
+  // Respeta el estado manual (campanas/activo) igual que la importación por texto.
+  const doImportImage = async (file) => {
+    if (!file) return;
+    setImporting(true);
+    toast.info("Leyendo la foto… (puede tardar unos segundos)");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await fetch(`${API}/api/signals/import-image`, { method: "POST", headers: { ...authHeaders() }, body: fd });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.detail || "Error al leer la foto");
+      }
+      const { created, updated } = await r.json();
+      toast.success(`Foto importada: ${created} nuevas, ${updated} actualizadas`);
+      setShowImport(false); fetchEntries();
+    } catch (e) { toast.error(e.message || "No se pudo leer la foto"); }
+    finally { setImporting(false); }
+  };
+
   // ── render ──────────────────────────────────────────────────────────────────
   return (
     <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
@@ -410,9 +432,22 @@ export default function SignalsView({ setSymbol }) {
             <ArrowClockwise size={14} /> Refrescar
           </button>
           {!isCim && (
-            <button onClick={() => setShowImport(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors">
-              <UploadSimple size={14} /> Importar Excel
-            </button>
+            <>
+              <button onClick={() => setShowImport(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors">
+                <UploadSimple size={14} /> Importar Excel
+              </button>
+              <button onClick={() => imageInputRef.current?.click()} disabled={importing} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50">
+                <Camera size={14} /> {importing ? "Leyendo…" : "Importar foto"}
+              </button>
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; doImportImage(f); }}
+              />
+            </>
           )}
           <button onClick={() => { setNewEntry(isCim ? EMPTY_CIM : EMPTY); setShowAdd(true); }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1a3a32] hover:bg-[#0e2820] text-white text-sm font-medium transition-colors">
             <Plus size={14} weight="bold" /> Añadir acción
