@@ -120,6 +120,90 @@ def _fmp_key():
     return os.environ.get("FMP_API_KEY")
 
 
+def fmp_stock_screener(
+    market_cap_more_than: int = 2_000_000_000,
+    price_more_than: float = 9,
+    volume_more_than: int = 300_000,
+    limit: int = 250,
+    exchanges: str = "NASDAQ,NYSE",
+):
+    """Candidatos de TODO el mercado US vía el stock-screener de FMP, pre-filtrados por
+    fundamentales BARATOS en UNA sola llamada (market cap, precio, volumen, exchange).
+    Es la fuente de descubrimiento: en vez de una lista fija, deja que cualquier empresa
+    del mercado entre si cumple el mínimo de calidad. El cribado fino (crecimiento,
+    valoración, técnico) lo hace después el motor de scoring sobre estos finalistas.
+    Cacheado 6h (el universo cambia poco intradía). Devuelve [] si no hay clave o falla."""
+    cached, hit = _ext_cache_get("fmp_screener_universe", 21600)
+    if hit:
+        return cached
+    key = _fmp_key()
+    if not key:
+        return []
+    try:
+        http = _md.get_http_session()
+        r = http.get(
+            f"{FMP_BASE}/api/v3/stock-screener",
+            params={
+                "marketCapMoreThan": market_cap_more_than,
+                "priceMoreThan": price_more_than,
+                "volumeMoreThan": volume_more_than,
+                "isActivelyTrading": "true",
+                "isEtf": "false",
+                "isFund": "false",
+                "exchange": exchanges,
+                "limit": limit,
+                "apikey": key,
+            },
+            timeout=10,
+        )
+        if r.status_code != 200:
+            return []
+        items = r.json() or []
+        out = []
+        for n in items:
+            sym = n.get("symbol")
+            if not sym or "." in sym or "-" in sym:  # descarta clases raras / preferentes
+                continue
+            out.append(sym.upper())
+        _ext_cache_set("fmp_screener_universe", out)
+        return out
+    except Exception:
+        return []
+
+
+def fmp_market_movers(kind: str = "actives", limit: int = 30):
+    """Movimientos del día (kind: 'actives' | 'gainers' | 'losers') vía FMP. Capturan
+    empresas que se mueven HOY y que quizá no estén en ninguna lista curada — justo el
+    tipo de descubrimiento oportuno para el corto plazo. Cacheado 15 min. [] si falla."""
+    endpoint = {
+        "actives": "/api/v3/stock_market/actives",
+        "gainers": "/api/v3/stock_market/gainers",
+        "losers": "/api/v3/stock_market/losers",
+    }.get(kind, "/api/v3/stock_market/actives")
+    cached, hit = _ext_cache_get(f"fmp_movers:{kind}", 900)
+    if hit:
+        return cached
+    key = _fmp_key()
+    if not key:
+        return []
+    try:
+        http = _md.get_http_session()
+        r = http.get(f"{FMP_BASE}{endpoint}", params={"apikey": key}, timeout=8)
+        if r.status_code != 200:
+            return []
+        items = r.json() or []
+        out = []
+        for n in items[:limit]:
+            sym = n.get("symbol")
+            if not sym or "." in sym or "-" in sym:
+                continue
+            out.append(sym.upper())
+        _ext_cache_set(f"fmp_movers:{kind}", out)
+        return out
+    except Exception:
+        return []
+
+
 def fmp_company_news(symbol: str, limit: int = 15):
     """Company-SPECIFIC news from Financial Modeling Prep (stock_news endpoint).
     Complementa a Finnhub: FMP suele traer un campo `text` con el cuerpo del

@@ -172,6 +172,36 @@ _screener_cache = {"data": None, "ts": None}
 _SCREENER_TTL = timedelta(hours=2)
 _screener_lock = asyncio.Lock()
 
+# Tope de finalistas a puntuar (fase cara). El screener de FMP puede devolver cientos;
+# enriquecer cada uno cuesta llamadas, así que acotamos el universo total tras mezclar.
+_MAX_DYNAMIC_UNIVERSE = 160
+
+
+async def _build_dynamic_universe():
+    """Universo DINÁMICO de candidatos = screener de mercado (FMP) + movers del día,
+    con la lista curada como base/fallback. Así el buscador descubre empresas de TODO
+    el mercado, no solo las que metimos a mano, pero degrada con elegancia si FMP falla.
+    Deduplicado y acotado a _MAX_DYNAMIC_UNIVERSE para no disparar el coste de la fase cara."""
+    try:
+        screener = await asyncio.to_thread(external_data.fmp_stock_screener) or []
+    except Exception:
+        screener = []
+    try:
+        actives = await asyncio.to_thread(external_data.fmp_market_movers, "gainers", 30) or []
+    except Exception:
+        actives = []
+
+    # La lista curada va PRIMERO: son nombres de calidad conocida y garantizan que el
+    # buscador nunca queda vacío aunque FMP no responda.
+    seen = set()
+    universe = []
+    for src in (GROWTH_UNIVERSE, screener, actives):
+        for sym in src:
+            if sym and sym not in seen:
+                seen.add(sym)
+                universe.append(sym)
+    return universe[:_MAX_DYNAMIC_UNIVERSE]
+
 
 def daily_cache_is_fresh() -> bool:
     """True si el snapshot de oportunidades en caché sigue dentro de su TTL.
@@ -221,6 +251,9 @@ async def _run_screener_scan():
         # menos cuota y dejan pasar antes a las del usuario (dashboard).
         market_data.enter_finnhub_background()
         try:
+            # Fase 0 — DESCUBRIR: universo dinámico de todo el mercado (FMP) + curada.
+            universe = await _build_dynamic_universe()
+
             # Phase 1 — quotes only, apply the 5 cheap filters (no extra API calls)
             sem = asyncio.Semaphore(8)
 
@@ -231,7 +264,7 @@ async def _run_screener_scan():
                     except Exception:
                         return s, None
 
-            quote_results = await asyncio.gather(*[_get_quote(s) for s in GROWTH_UNIVERSE])
+            quote_results = await asyncio.gather(*[_get_quote(s) for s in universe])
             finalists = [(s, q) for s, q in quote_results if q and _passes_cheap_filters(q)]
 
             # Phase 2 — enrich only finalists with growth metrics, apply the 2 growth filters
@@ -283,7 +316,7 @@ async def _run_screener_scan():
 
             _screener_cache["data"] = {
                 "generated_at": datetime.now(timezone.utc).isoformat(),
-                "universe_size": len(GROWTH_UNIVERSE),
+                "universe_size": len(universe),
                 "matches": len(results),
                 "results": results,
                 "filters": SCREENER_FILTERS,
@@ -440,6 +473,30 @@ async def _analyze_one(symbol: str):
         return None
 
 
+_MAX_DAILY_UNIVERSE = 130
+
+
+async def _build_daily_universe():
+    """Universo del escaneo DIARIO (corto plazo) = lista curada + movers del día (gainers,
+    losers y más activos de FMP). Los movers son descubrimiento oportuno: capturan la
+    empresa que se mueve HOY aunque no esté en ninguna lista. Cada mover es una sola
+    llamada barata; el análisis caro se acota a _MAX_DAILY_UNIVERSE símbolos en total."""
+    movers = []
+    for kind in ("gainers", "losers", "actives"):
+        try:
+            movers += await asyncio.to_thread(external_data.fmp_market_movers, kind, 20) or []
+        except Exception:
+            pass
+    seen = set()
+    universe = []
+    for src in (UNIVERSE, movers):
+        for sym in src:
+            if sym and sym not in seen:
+                seen.add(sym)
+                universe.append(sym)
+    return universe[:_MAX_DAILY_UNIVERSE]
+
+
 async def scan_daily_opportunities(force_refresh: bool = False):
     now = datetime.now(timezone.utc)
     if not force_refresh and _cache["data"] and _cache["ts"] and (now - _cache["ts"]) < _CACHE_TTL:
@@ -474,13 +531,14 @@ async def scan_daily_opportunities(force_refresh: bool = False):
         # un DataFrame + compute_all (pandas), así que sem=2 limita cuántos DataFrames
         # coexisten en memoria — pensado para que quepa holgado en 512 MB (plan Starter).
         # También respeta el límite de 60 llamadas/min de Finnhub free.
+        universe = await _build_daily_universe()
         sem = asyncio.Semaphore(2)
 
         async def bounded(s):
             async with sem:
                 return await _analyze_one(s)
 
-        results = await asyncio.gather(*[bounded(s) for s in UNIVERSE])
+        results = await asyncio.gather(*[bounded(s) for s in universe])
         items = [r for r in results if r is not None]
         # Ordena por score técnico y, a igualdad, por respaldo de analistas.
         items.sort(key=lambda x: (x["score"], x.get("consensus_score") or 0), reverse=True)
@@ -492,7 +550,7 @@ async def scan_daily_opportunities(force_refresh: bool = False):
 
         data = {
             "generated_at": now.isoformat(),
-            "universe_size": len(UNIVERSE),
+            "universe_size": len(universe),
             "opportunities_found": len(items),
             "top": items[:15],
             "by_category": by_category,
