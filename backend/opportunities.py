@@ -238,6 +238,7 @@ GROWTH_UNIVERSE = [
 SCREENER_FILTERS = [
     "Market Cap > $2B",
     "Precio > $9",
+    "Dividendo < 2% (crecimiento, no renta)",
     "Vol. medio > 200K",
     "A < 45% del máx. 52 sem.",
     "Ventas YoY > 12%",
@@ -297,15 +298,21 @@ def _passes_cheap_filters(q: dict) -> bool:
     """Filtros BARATOS (solo cotización, sin llamadas extra). Deliberadamente laxos: el
     ranking fino lo hace el score de potencial (que ya penaliza caras y value traps), así
     que aquí solo descartamos lo claramente no invertible y dejamos entrar MÁS candidatas.
-    Nota: ya NO excluimos por dividendo (grandes compounders pagan uno pequeño) ni exigimos
-    estar pegado a máximos (los retrocesos sanos son justo las mejores entradas)."""
+    Sobre el dividendo: NO excluimos por pagarlo, sino por pagarlo ALTO. Un dividendo alto
+    (>2%) delata a una empresa madura que ya no reinvierte en crecer (Coca-Cola, Exxon) —
+    poco recorrido a medio plazo. Pero un dividendo simbólico (Microsoft ~0.7%, Broadcom
+    ~1.2%) es compatible con crecimiento fuerte, así que esas SÍ entran. Tampoco exigimos
+    estar pegado a máximos: los retrocesos sanos son justo las mejores entradas."""
     price = q.get("price")
     mcap = q.get("market_cap")
+    dy = q.get("dividend_yield")
     avgvol = q.get("avg_volume")
     high52 = q.get("high_52w")
     if not price or price <= 9:
         return False
     if not mcap or mcap <= 2_000_000_000:
+        return False
+    if dy and dy >= 0.02:  # dividendo alto (≥2%) -> empresa madura, fuera
         return False
     if not avgvol or avgvol <= 200_000:
         return False
