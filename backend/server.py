@@ -31,6 +31,7 @@ import opportunities
 import backtest
 import signal_table
 import daily_analyst
+import newsletter_ingest
 import levels_engine
 import auth
 
@@ -1157,6 +1158,43 @@ async def analyst_scan(notify: bool = False, _user: str = Depends(auth.get_curre
     """Lanza un barrido manual del Analista Institucional. Con notify=false solo devuelve
     las candidatas (para probar sin enviar Telegram); con notify=true además avisa."""
     return await daily_analyst.scan(db, notify=notify)
+
+
+# ---------- Newsletter (Capa 3): buzón de entrada ----------
+def _newsletter_body_from(payload: dict) -> tuple:
+    """Extrae (subject, html, text, sender) de los formatos comunes de servicios de
+    email entrante (Mailgun, SendGrid, Cloudflare, o un JSON genérico)."""
+    subject = payload.get("subject") or payload.get("Subject") or ""
+    html = (payload.get("html") or payload.get("body-html") or payload.get("HtmlBody")
+            or payload.get("body_html") or "")
+    text = (payload.get("text") or payload.get("body-plain") or payload.get("TextBody")
+            or payload.get("body_text") or payload.get("body") or "")
+    sender = (payload.get("from") or payload.get("sender") or payload.get("From") or "")
+    return subject, html, text, sender
+
+
+@api_router.post("/inbound/newsletter")
+async def inbound_newsletter(request: Request, token: str = ""):
+    """Buzón que recibe una newsletter reenviada y devuelve un resumen destilado por email.
+    Protegido con un secreto (?token=... o cabecera X-Inbound-Token) para que solo el
+    conector de email autorizado pueda dispararlo. Acepta JSON o form-urlencoded."""
+    secret = os.environ.get("INBOUND_SECRET")
+    if not secret:
+        raise HTTPException(503, "INBOUND_SECRET no configurado en el servidor.")
+    provided = token or request.headers.get("x-inbound-token") or ""
+    if provided != secret:
+        raise HTTPException(401, "Token de entrada inválido.")
+
+    ctype = request.headers.get("content-type", "")
+    if "application/json" in ctype:
+        payload = await request.json()
+    else:
+        form = await request.form()
+        payload = {k: v for k, v in form.items()}
+
+    subject, html, text, sender = _newsletter_body_from(payload)
+    result = await newsletter_ingest.process_newsletter(db, subject, html, text, sender)
+    return result
 
 
 _backtest_cache: dict = {}
