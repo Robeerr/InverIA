@@ -286,11 +286,14 @@ async def scan(db, universe=None, notify: bool = True) -> dict:
         import ai_analysis  # perezoso: evita acoplar la carga del módulo a groq/gemini
         for c in fresh:
             try:
-                c["research"] = await ai_analysis.research_stock_web(
+                informe, fuente = await ai_analysis.research_stock(
                     c["symbol"], c.get("name") or "", "; ".join(c.get("reasons") or []))
+                c["research"] = informe or None
+                c["research_source"] = fuente
             except Exception as e:
-                logger.warning(f"daily_analyst: investigación web falló para {c['symbol']}: {e}")
+                logger.warning(f"daily_analyst: investigación falló para {c['symbol']}: {e}")
                 c["research"] = None
+                c["research_source"] = "ninguna"
 
         for c in fresh:
             await db.analyst_ideas.insert_one({**c})

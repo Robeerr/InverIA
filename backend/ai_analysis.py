@@ -561,6 +561,71 @@ async def research_stock_web(symbol: str, name: str = "", catalysts: str = "") -
     return text.strip()
 
 
+_RESEARCH_NEWS_PROMPT = """Eres un analista financiero senior. A partir de las NOTICIAS RECIENTES
+que te doy sobre {symbol} ({name}), escribe un informe BREVE y accionable en ESPAÑOL. Ya sabemos
+que destaca por: {catalysts}.
+
+Devuelve SOLO un JSON válido con un único campo "informe" (texto plano, sin markdown), con esta
+estructura dentro del texto (secciones separadas por saltos de línea):
+QUÉ HACE: 1-2 frases del negocio.
+POR QUÉ AHORA: 2-3 frases con el catalizador reciente basándote en las noticias. Cita hechos.
+RIESGOS: 1-2 riesgos concretos.
+VEREDICTO: una frase honesta — oportunidad sólida o esperar.
+
+Si las noticias no aportan nada relevante, dilo en POR QUÉ AHORA en vez de inventar.
+{"informe": "..."}"""
+
+
+async def _research_from_news(symbol: str, name: str, catalysts: str) -> str:
+    """Fallback SIN Gemini: resume con Groq las noticias que ya descargamos (FMP/Finnhub).
+    No navega la web, pero fundamenta con noticias reales y recientes. Groq casi nunca falla."""
+    import market_data
+    news = await asyncio.to_thread(market_data.get_news, symbol, 6)
+    items = []
+    for n in (news or [])[:6]:
+        title = n.get("title")
+        if not title:
+            continue
+        summary = (n.get("summary") or "")[:300]
+        items.append(f"- {title}" + (f" — {summary}" if summary else ""))
+    if not items:
+        raise RuntimeError("sin noticias para fundamentar la investigación")
+    prompt = _RESEARCH_NEWS_PROMPT.format(symbol=symbol, name=name or symbol,
+                                          catalysts=catalysts or "señales técnicas positivas")
+    user_msg = prompt + "\n\nNOTICIAS RECIENTES:\n" + "\n".join(items)
+    data = await _run_model("gpt-oss-120b", "Eres un analista financiero senior.", user_msg, max_tokens=1200)
+    informe = (data or {}).get("informe") if isinstance(data, dict) else None
+    if not informe:
+        raise RuntimeError("Groq no devolvió informe")
+    return informe.strip()
+
+
+async def research_stock(symbol: str, name: str = "", catalysts: str = "") -> tuple:
+    """Investigación robusta con CADENA DE RESPALDO. Devuelve (informe, fuente):
+      1) Gemini + búsqueda web (mejor)  -> fuente 'web'
+      2) Groq sobre noticias reales     -> fuente 'noticias'
+      3) titulares en crudo             -> fuente 'titulares'
+    Así la investigación casi nunca falla aunque Gemini esté sin cuota."""
+    try:
+        return await research_stock_web(symbol, name, catalysts), "web"
+    except Exception:
+        pass
+    try:
+        return await _research_from_news(symbol, name, catalysts), "noticias"
+    except Exception:
+        pass
+    # Último recurso: titulares recientes sin procesar.
+    try:
+        import market_data
+        news = await asyncio.to_thread(market_data.get_news, symbol, 5)
+        titulares = [f"• {n.get('title')}" for n in (news or []) if n.get("title")][:5]
+        if titulares:
+            return "NOTICIAS RECIENTES:\n" + "\n".join(titulares), "titulares"
+    except Exception:
+        pass
+    return "", "ninguna"
+
+
 async def _analyze_with_emergent(provider: str, model_id: str, user_msg: str,
                                  system_prompt: str = SYSTEM_PROMPT) -> dict:
     if not EMERGENT_AVAILABLE:
