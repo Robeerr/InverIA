@@ -296,6 +296,80 @@ async def scan(db, universe=None, notify: bool = True) -> dict:
         }
 
 
+def _build_digest_html(ideas: list, market_date: str) -> str:
+    """Email del RESUMEN DIARIO: recopila las ideas detectadas hoy. Si no hubo ninguna,
+    lo dice con honestidad (mejor 'hoy nada destacable' que inventar señales)."""
+    if not ideas:
+        return f"""
+        <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:600px;margin:0 auto;padding:24px;">
+          <p style="font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#5c6b66;margin:0 0 4px 0;">InverIA · Resumen diario</p>
+          <h1 style="font-size:22px;color:#0e1f1a;margin:0 0 12px 0;">📊 {market_date}</h1>
+          <p style="font-size:15px;color:#0e1f1a;">Hoy el Analista <b>no ha detectado ninguna acción</b> con confluencia de catalizadores de alta convicción.</p>
+          <p style="font-size:13px;color:#5c6b66;">Ninguna señal fuerte es también información: no fuerza operaciones donde no las hay.</p>
+        </div>"""
+    # Reutiliza las tarjetas del email de ideas, con cabecera de resumen diario.
+    body = _build_email_html(ideas)
+    return body.replace("🎯", f"📊 Resumen diario · {market_date} —", 1)
+
+
+async def send_daily_digest(db) -> dict:
+    """Envía el resumen diario: todas las ideas detectadas HOY (hora del Este)."""
+    today = datetime.now(EASTERN).date().isoformat()
+    start = f"{today}T00:00:00+00:00"
+    ideas = await db.analyst_ideas.find(
+        {"detected_at": {"$gte": start}}, {"_id": 0}
+    ).sort("conviction", -1).to_list(20)
+    ok, err = await _send_email_digest(ideas, today)
+    return {"date": today, "ideas": len(ideas), "sent": ok, "error": err}
+
+
+async def _send_email_digest(ideas: list, market_date: str) -> tuple:
+    if resend is None:
+        return False, "librería resend no instalada"
+    api_key = os.environ.get("RESEND_API_KEY")
+    recipient = os.environ.get("ANALYST_RECIPIENT_EMAIL") or os.environ.get("ALERT_RECIPIENT_EMAIL")
+    if not api_key or not recipient:
+        return False, "RESEND_API_KEY o email de destino no configurados"
+    resend.api_key = api_key
+    sender = os.environ.get("ALERT_FROM_EMAIL") or os.environ.get("SENDER_EMAIL") or "onboarding@resend.dev"
+    try:
+        await asyncio.to_thread(resend.Emails.send, {
+            "from": f"InverIA Analista <{sender}>",
+            "to": [recipient],
+            "subject": f"InverIA · Resumen diario ({len(ideas)} ideas) · {market_date}",
+            "html": _build_digest_html(ideas, market_date),
+        })
+        return True, None
+    except Exception as e:
+        return False, str(e)[:200]
+
+
+async def digest_loop(db):
+    """Envía el resumen diario UNA vez al día, tras el cierre de mercado US (~16:10 ET
+    ≈ 22:10 hora España). Comprueba cada 30 min y marca el día ya enviado para no repetir."""
+    logger.info("Digest diario del Analista arrancado")
+    last_sent_date = None
+    while True:
+        try:
+            now = datetime.now(EASTERN)
+            past_close = now.hour * 60 + now.minute >= 16 * 60 + 10  # 16:10 ET
+            is_weekday = now.weekday() < 5
+            today = now.date().isoformat()
+            if is_weekday and past_close and last_sent_date != today:
+                res = await send_daily_digest(db)
+                if res.get("sent"):
+                    last_sent_date = today
+                    logger.info(f"Digest diario enviado: {res['ideas']} ideas")
+                else:
+                    logger.warning(f"Digest diario no enviado: {res.get('error')}")
+            await asyncio.sleep(30 * 60)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("digest_loop: error")
+            await asyncio.sleep(30 * 60)
+
+
 async def worker_loop(db):
     """Corre durante el horario de mercado y hace un barrido cada ~2h. Fuera de mercado
     duerme. Diseñado para 'avisar cuando se vea una acción buena', sin spam."""

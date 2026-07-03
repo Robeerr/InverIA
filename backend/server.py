@@ -136,8 +136,10 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(signal_table.signal_worker_loop(db))
 
     # Analista Institucional: vigía que busca confluencia de catalizadores (insiders,
-    # upgrades, earnings, score) y avisa por Telegram cuando algo destaca de verdad.
+    # upgrades, earnings, score) y avisa cuando algo destaca de verdad.
     asyncio.create_task(daily_analyst.worker_loop(db))
+    # Resumen diario por email tras el cierre de mercado.
+    asyncio.create_task(daily_analyst.digest_loop(db))
 
     # Pre-warm daily opportunities so the first user request hits a warm cache —
     # PERO solo si el snapshot hidratado desde Mongo ya está caducado. En la mayoría
