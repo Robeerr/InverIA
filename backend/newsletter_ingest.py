@@ -1,0 +1,145 @@
+"""Capa 3 — Ingesta de newsletters premium.
+
+El usuario se suscribe (con su tarjeta) a una newsletter de pago y reenvía esos correos
+a un buzón que POSTea aquí. Este módulo LEE el correo, extrae con IA lo accionable
+(acciones recomendadas, dirección compra/venta, niveles, tesis, lo importante) y le
+reenvía al usuario un RESUMEN destilado a su email — para que no tenga que leer nada.
+
+Legal: solo procesamos correos que el propio usuario recibe y reenvía (contenido al que
+está suscrito legítimamente). No rascamos webs de pago.
+"""
+import asyncio
+import logging
+import os
+import re
+from datetime import datetime, timezone
+
+logger = logging.getLogger("inveria.newsletter")
+
+try:
+    import resend
+except ImportError:
+    resend = None
+
+
+_EXTRACT_PROMPT = """Eres un analista financiero senior. Te doy el TEXTO de una newsletter de bolsa
+a la que el usuario está suscrito. Extrae SOLO lo accionable y devuelve un JSON válido (sin markdown).
+
+Estructura EXACTA:
+{
+  "titulo": "título o tema principal de la newsletter (1 frase)",
+  "resumen": "3-5 frases con lo MÁS importante que dice, en español claro",
+  "acciones": [
+    {"ticker": "AAPL", "nombre": "Apple", "accion": "COMPRAR|VENDER|VIGILAR|MANTENER",
+     "niveles": "precios/zonas que menciona si los hay, o null",
+     "motivo": "por qué lo dice, 1 frase"}
+  ],
+  "ideas_clave": ["idea o consejo relevante 1", "idea 2"]
+}
+
+REGLAS:
+- Solo incluye acciones que la newsletter mencione EXPLÍCITAMENTE. No inventes tickers ni niveles.
+- Si no recomienda ninguna acción concreta, deja "acciones" como lista vacía.
+- Sé fiel al contenido: resume, no opines por tu cuenta."""
+
+
+def _html_to_text(body: str) -> str:
+    """Convierte HTML de email a texto plano legible (suficiente para la IA)."""
+    if not body:
+        return ""
+    text = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", body)
+    text = re.sub(r"(?i)<br\s*/?>", "\n", text)
+    text = re.sub(r"(?i)</p>", "\n", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"&nbsp;", " ", text)
+    text = re.sub(r"&amp;", "&", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n\s*\n\s*\n+", "\n\n", text)
+    return text.strip()
+
+
+async def _extract(subject: str, text: str) -> dict:
+    """Extrae lo accionable con Groq (robusto, sin depender de Gemini). Devuelve dict."""
+    import ai_analysis
+    body = (text or "")[:12000]  # acota tokens de entrada
+    user_msg = f"ASUNTO: {subject}\n\nTEXTO DE LA NEWSLETTER:\n{body}"
+    return await ai_analysis._run_model("gpt-oss-120b", _EXTRACT_PROMPT, user_msg, max_tokens=1800)
+
+
+def _build_email_html(data: dict, subject: str) -> str:
+    acciones = data.get("acciones") or []
+    ideas = data.get("ideas_clave") or []
+    acc_rows = ""
+    color = {"COMPRAR": "#4a7c59", "VENDER": "#d85c41", "VIGILAR": "#c9a14a", "MANTENER": "#5c6b66"}
+    for a in acciones:
+        c = color.get((a.get("accion") or "").upper(), "#5c6b66")
+        niveles = f" · Niveles: {a['niveles']}" if a.get("niveles") else ""
+        acc_rows += f"""
+        <div style="border-left:3px solid {c};padding:8px 12px;margin:8px 0;background:#faf9f6;border-radius:4px;">
+          <b style="color:#0e1f1a;">{a.get('ticker','')}</b> <span style="color:#5c6b66;">{a.get('nombre','')}</span>
+          <span style="color:{c};font-weight:600;font-size:12px;"> · {a.get('accion','')}</span>{niveles}
+          <p style="margin:4px 0 0 0;font-size:13px;color:#0e1f1a;">{a.get('motivo','')}</p>
+        </div>"""
+    ideas_html = "".join(f'<li style="margin:4px 0;font-size:13px;color:#0e1f1a;">{i}</li>' for i in ideas)
+    return f"""
+    <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:600px;margin:0 auto;padding:24px;">
+      <p style="font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#5c6b66;margin:0 0 4px 0;">InverIA · Resumen de newsletter</p>
+      <h1 style="font-size:20px;color:#0e1f1a;margin:0 0 12px 0;">📩 {data.get('titulo') or subject}</h1>
+      <p style="font-size:14px;color:#0e1f1a;line-height:1.5;">{data.get('resumen','')}</p>
+      {'<p style="margin:16px 0 6px 0;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#1a3a32;">Acciones mencionadas</p>' + acc_rows if acc_rows else ''}
+      {'<p style="margin:16px 0 6px 0;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#1a3a32;">Ideas clave</p><ul style="margin:0;padding-left:18px;">' + ideas_html + '</ul>' if ideas_html else ''}
+      <p style="font-size:11px;color:#5c6b66;margin:20px 0 0 0;border-top:1px solid #e5e0d8;padding-top:8px;">
+        Resumen automático de una newsletter a la que estás suscrito. Fuente: {subject}. Verifica antes de operar.
+      </p>
+    </div>"""
+
+
+async def _send_summary(data: dict, subject: str) -> tuple:
+    if resend is None:
+        return False, "resend no instalada"
+    api_key = os.environ.get("RESEND_API_KEY")
+    recipient = os.environ.get("ANALYST_RECIPIENT_EMAIL") or os.environ.get("ALERT_RECIPIENT_EMAIL")
+    if not api_key or not recipient:
+        return False, "RESEND_API_KEY o destino no configurados"
+    resend.api_key = api_key
+    sender = os.environ.get("ALERT_FROM_EMAIL") or os.environ.get("SENDER_EMAIL") or "onboarding@resend.dev"
+    n = len(data.get("acciones") or [])
+    try:
+        await asyncio.to_thread(resend.Emails.send, {
+            "from": f"InverIA Newsletter <{sender}>",
+            "to": [recipient],
+            "subject": f"📩 Resumen newsletter · {data.get('titulo') or subject}"[:120],
+            "html": _build_email_html(data, subject),
+        })
+        return True, None
+    except Exception as e:
+        return False, str(e)[:200]
+
+
+async def process_newsletter(db, subject: str, body_html: str, body_text: str = "",
+                             sender: str = "") -> dict:
+    """Procesa un correo de newsletter entrante: extrae lo accionable, lo guarda y
+    reenvía el resumen destilado al usuario. Devuelve el resultado."""
+    text = body_text.strip() if body_text and body_text.strip() else _html_to_text(body_html)
+    if not text or len(text) < 40:
+        return {"ok": False, "error": "cuerpo del email vacío o demasiado corto"}
+    try:
+        data = await _extract(subject, text)
+    except Exception as e:
+        logger.exception("newsletter: extracción falló")
+        return {"ok": False, "error": f"extracción falló: {e}"}
+
+    doc = {
+        "subject": subject,
+        "sender": sender,
+        "extracted": data,
+        "received_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        await db.newsletter_summaries.insert_one({**doc})
+    except Exception:
+        logger.warning("newsletter: no se pudo guardar en Mongo")
+
+    ok, err = await _send_summary(data, subject)
+    return {"ok": ok, "error": err, "acciones": len(data.get("acciones") or []),
+            "titulo": data.get("titulo")}
