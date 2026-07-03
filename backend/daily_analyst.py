@@ -159,16 +159,33 @@ async def _in_cooldown(db, symbol) -> bool:
     return doc is not None
 
 
-def _research_block(research) -> str:
-    """Bloque HTML con el informe de investigación web (si existe)."""
-    if not research:
+# Etiqueta legible + fiabilidad de cada fuente de investigación, para que sepas de dónde
+# sale el análisis y cuánto fiarte.
+_SOURCE_LABEL = {
+    "web": ("🌐 Gemini + búsqueda web en vivo", "máxima — datos de internet en tiempo real"),
+    "noticias": ("🤖 Groq sobre noticias reales (FMP/Finnhub)", "alta — noticias recientes, sin navegar la web"),
+    "titulares": ("📰 Titulares recientes (sin análisis IA)", "básica — solo los titulares en crudo"),
+    "ninguna": ("— sin investigación disponible", "—"),
+}
+
+
+def _research_block(research, source=None) -> str:
+    """Bloque HTML con el informe de investigación y, sobre todo, DE QUÉ FUENTE viene
+    (Gemini web / Groq+noticias / titulares) y su fiabilidad, para que sepas cuánto fiarte."""
+    if not research and source in (None, "ninguna"):
         return ""
     import html as _html
-    safe = _html.escape(research).replace("\n", "<br>")
+    label, reliability = _SOURCE_LABEL.get(source or "ninguna", _SOURCE_LABEL["ninguna"])
+    body = ""
+    if research:
+        safe = _html.escape(research).replace("\n", "<br>")
+        body = f'<p style="margin:0 0 8px 0;font-size:13px;color:#0e1f1a;line-height:1.5;">{safe}</p>'
     return (
         '<div style="margin-top:12px;padding:12px;background:#eef2f0;border-radius:8px;">'
         '<p style="margin:0 0 6px 0;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#1a3a32;">🔎 Investigación</p>'
-        f'<p style="margin:0;font-size:13px;color:#0e1f1a;line-height:1.5;">{safe}</p>'
+        f'{body}'
+        f'<p style="margin:0;font-size:11px;color:#5c6b66;border-top:1px solid #dfe5e2;padding-top:6px;">'
+        f'<b>Fuente:</b> {_html.escape(label)} · <b>Fiabilidad:</b> {_html.escape(reliability)}</p>'
         '</div>'
     )
 
@@ -196,7 +213,7 @@ def _build_email_html(ideas: list) -> str:
           </p>
           <p style="margin:0 0 6px 0;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#5c6b66;">Por qué destaca hoy</p>
           <ul style="margin:0;padding-left:18px;">{reasons_html}</ul>
-          {_research_block(idea.get('research'))}
+          {_research_block(idea.get('research'), idea.get('research_source'))}
         </div>""")
     return f"""
     <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:600px;margin:0 auto;padding:24px;">
