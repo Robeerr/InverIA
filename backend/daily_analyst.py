@@ -19,10 +19,17 @@ import logging
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
+import os
+
 import external_data
 import market_data
 import opportunities
 import telegram_notifier
+
+try:
+    import resend
+except ImportError:
+    resend = None
 
 logger = logging.getLogger("inveria.daily_analyst")
 
@@ -152,6 +159,66 @@ async def _in_cooldown(db, symbol) -> bool:
     return doc is not None
 
 
+def _build_email_html(ideas: list) -> str:
+    """Email HTML con las ideas del analista (una o varias en un solo correo)."""
+    cards = []
+    for idea in ideas:
+        cp = idea.get("change_percent")
+        chg = f"{'+' if (cp or 0) >= 0 else ''}{cp}%" if cp is not None else "—"
+        chg_color = "#4a7c59" if (cp or 0) >= 0 else "#d85c41"
+        reasons_html = "".join(
+            f'<li style="margin:4px 0;color:#0e1f1a;font-size:14px;">{r}</li>'
+            for r in idea["reasons"]
+        )
+        cards.append(f"""
+        <div style="border:1px solid #e5e0d8;border-radius:10px;padding:20px;margin:0 0 16px 0;background:#faf9f6;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;">
+            <span style="font-size:20px;font-weight:700;color:#0e1f1a;">{idea['symbol']}</span>
+            <span style="font-size:12px;color:#5c6b66;">Convicción {idea['conviction']}/100</span>
+          </div>
+          <p style="margin:2px 0 12px 0;color:#5c6b66;font-size:13px;">{idea.get('name') or ''}</p>
+          <p style="margin:0 0 12px 0;font-size:16px;color:#0e1f1a;">
+            ${idea['price']} <span style="color:{chg_color};font-size:13px;">({chg})</span>
+          </p>
+          <p style="margin:0 0 6px 0;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#5c6b66;">Por qué destaca hoy</p>
+          <ul style="margin:0;padding-left:18px;">{reasons_html}</ul>
+        </div>""")
+    return f"""
+    <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:600px;margin:0 auto;padding:24px;">
+      <p style="font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#5c6b66;margin:0 0 4px 0;">InverIA · Analista Institucional</p>
+      <h1 style="font-size:22px;color:#0e1f1a;margin:0 0 20px 0;">🎯 {len(ideas)} idea{'s' if len(ideas) != 1 else ''} destaca{'n' if len(ideas) != 1 else ''} hoy</h1>
+      {''.join(cards)}
+      <p style="font-size:12px;color:#5c6b66;margin:16px 0 0 0;">
+        Candidatas para tu análisis — revísalas en InverIA antes de decidir. No es una recomendación de compra.
+      </p>
+    </div>"""
+
+
+async def _send_email(ideas: list) -> tuple:
+    """Envía las ideas por email (Resend). Devuelve (ok, error)."""
+    if resend is None:
+        return False, "librería resend no instalada"
+    api_key = os.environ.get("RESEND_API_KEY")
+    recipient = os.environ.get("ANALYST_RECIPIENT_EMAIL") or os.environ.get("ALERT_RECIPIENT_EMAIL")
+    if not api_key or not recipient:
+        return False, "RESEND_API_KEY o email de destino no configurados"
+    resend.api_key = api_key
+    sender = os.environ.get("ALERT_FROM_EMAIL") or os.environ.get("SENDER_EMAIL") or "onboarding@resend.dev"
+    n = len(ideas)
+    subject = (f"InverIA · {ideas[0]['symbol']} destaca (convicción {ideas[0]['conviction']})"
+               if n == 1 else f"InverIA · {n} ideas del Analista hoy")
+    try:
+        await asyncio.to_thread(resend.Emails.send, {
+            "from": f"InverIA Analista <{sender}>",
+            "to": [recipient],
+            "subject": subject,
+            "html": _build_email_html(ideas),
+        })
+        return True, None
+    except Exception as e:
+        return False, str(e)[:200]
+
+
 def _format_telegram(idea) -> str:
     esc = telegram_notifier._esc_md
     cp = idea.get("change_percent")
@@ -198,17 +265,28 @@ async def scan(db, universe=None, notify: bool = True) -> dict:
             if len(fresh) >= _MAX_ALERTS_PER_SCAN:
                 break
 
-        sent = 0
         for c in fresh:
             await db.analyst_ideas.insert_one({**c})
-            if notify:
-                ok, err = await telegram_notifier.send_message(_format_telegram(c))
-                if ok:
-                    sent += 1
-                else:
-                    logger.warning(f"daily_analyst: Telegram falló para {c['symbol']}: {err}")
+
+        # Entrega por EMAIL (canal preferido): un solo correo con todas las ideas nuevas.
+        # Telegram queda como respaldo si el email no está configurado o falla.
+        sent = 0
+        email_ok = False
+        if notify and fresh:
+            email_ok, email_err = await _send_email(fresh)
+            if email_ok:
+                sent = len(fresh)
+            else:
+                logger.warning(f"daily_analyst: email falló ({email_err}); intento Telegram")
+                for c in fresh:
+                    ok, err = await telegram_notifier.send_message(_format_telegram(c))
+                    if ok:
+                        sent += 1
+                    else:
+                        logger.warning(f"daily_analyst: Telegram falló para {c['symbol']}: {err}")
 
         return {
+            "channel": "email" if email_ok else "telegram",
             "scanned": len(universe),
             "candidates": len(candidates),
             "new_ideas": len(fresh),
