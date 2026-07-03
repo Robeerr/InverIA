@@ -359,18 +359,77 @@ def _build_digest_html(ideas: list, market_date: str) -> str:
     return body.replace("🎯", f"📊 Resumen diario · {market_date} —", 1)
 
 
+async def _top_screener_ideas(db, n: int, exclude: set):
+    """Top-N del screener de crecimiento (mejor score), YA investigadas. Garantiza que el
+    briefing diario SIEMPRE tenga investigación profunda, aunque no haya catalizadores hoy."""
+    data = opportunities._screener_cache.get("data") or {}
+    results = [r for r in (data.get("results") or []) if r.get("symbol") not in exclude]
+    results = results[:n]
+    if not results:
+        return []
+    import ai_analysis
+    out = []
+    for r in results:
+        reasons = []
+        if r.get("valuation"):
+            reasons.append(f"⭐ Score {r.get('potential_score')} · {r['valuation']}")
+        if r.get("momentum") and r["momentum"] != "neutra":
+            reasons.append(r["momentum"])
+        if r.get("analyst_consensus"):
+            reasons.append(f"Analistas: {r['analyst_consensus']}")
+        idea = {
+            "symbol": r["symbol"], "name": r.get("name"), "price": r.get("price"),
+            "change_percent": r.get("change_percent"), "conviction": r.get("potential_score"),
+            "reasons": reasons or ["Destaca en el screener de crecimiento"],
+        }
+        try:
+            informe, fuente = await ai_analysis.research_stock(
+                idea["symbol"], idea.get("name") or "", "; ".join(reasons))
+            idea["research"] = informe or None
+            idea["research_source"] = fuente
+        except Exception:
+            idea["research"] = None
+            idea["research_source"] = "ninguna"
+        out.append(idea)
+    return out
+
+
+async def _recent_newsletters(db, hours: int = 48):
+    """Resúmenes de newsletters recibidas en las últimas `hours` horas."""
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        return await db.newsletter_summaries.find(
+            {"received_at": {"$gte": cutoff}}, {"_id": 0}
+        ).sort("received_at", -1).to_list(10)
+    except Exception:
+        return []
+
+
 async def send_daily_digest(db) -> dict:
-    """Envía el resumen diario: todas las ideas detectadas HOY (hora del Este)."""
+    """Briefing diario COMPLETO: (A) ideas con catalizador de hoy, (B) top del screener
+    investigadas para que siempre haya análisis profundo, (C) lo extraído de tus
+    newsletters recientes. Todo en un solo email."""
     today = datetime.now(EASTERN).date().isoformat()
     start = f"{today}T00:00:00+00:00"
-    ideas = await db.analyst_ideas.find(
+    catalyst = await db.analyst_ideas.find(
         {"detected_at": {"$gte": start}}, {"_id": 0}
     ).sort("conviction", -1).to_list(20)
-    ok, err = await _send_email_digest(ideas, today)
-    return {"date": today, "ideas": len(ideas), "sent": ok, "error": err}
+
+    # Garantiza investigación profunda diaria: si hay pocas ideas con catalizador,
+    # completa con las mejores del screener (investigadas).
+    exclude = {c["symbol"] for c in catalyst}
+    screener = []
+    if len(catalyst) < 3:
+        screener = await _top_screener_ideas(db, 3 - len(catalyst), exclude)
+
+    newsletters = await _recent_newsletters(db, hours=48)
+
+    ok, err = await _send_briefing_email(catalyst, screener, newsletters, today)
+    return {"date": today, "catalyst": len(catalyst), "screener": len(screener),
+            "newsletters": len(newsletters), "sent": ok, "error": err}
 
 
-async def _send_email_digest(ideas: list, market_date: str) -> tuple:
+async def _send_briefing_email(catalyst, screener, newsletters, market_date) -> tuple:
     if resend is None:
         return False, "librería resend no instalada"
     api_key = os.environ.get("RESEND_API_KEY")
@@ -379,16 +438,91 @@ async def _send_email_digest(ideas: list, market_date: str) -> tuple:
         return False, "RESEND_API_KEY o email de destino no configurados"
     resend.api_key = api_key
     sender = os.environ.get("ALERT_FROM_EMAIL") or os.environ.get("SENDER_EMAIL") or "onboarding@resend.dev"
+    total = len(catalyst) + len(screener)
     try:
         await asyncio.to_thread(resend.Emails.send, {
             "from": f"InverIA Analista <{sender}>",
             "to": [recipient],
-            "subject": f"InverIA · Resumen diario ({len(ideas)} ideas) · {market_date}",
-            "html": _build_digest_html(ideas, market_date),
+            "subject": f"InverIA · Briefing diario ({total} ideas) · {market_date}",
+            "html": _build_briefing_html(catalyst, screener, newsletters, market_date),
         })
         return True, None
     except Exception as e:
         return False, str(e)[:200]
+
+
+def _build_briefing_html(catalyst, screener, newsletters, market_date) -> str:
+    def section(title, ideas):
+        if not ideas:
+            return ""
+        return (f'<p style="margin:20px 0 8px 0;font-size:12px;text-transform:uppercase;'
+                f'letter-spacing:0.12em;color:#1a3a32;font-weight:700;">{title}</p>'
+                + _cards_html(ideas))
+    nl_html = _newsletters_html(newsletters)
+    has_any = catalyst or screener or newsletters
+    intro = ("Hoy sin catalizadores fuertes, pero aquí tienes lo mejor del screener y tus newsletters."
+             if not catalyst and has_any else
+             "Tu resumen de hoy: ideas con catalizador, mejores del screener y tus newsletters.")
+    if not has_any:
+        intro = "Hoy no hay nada destacable ni newsletters nuevas. Ninguna señal también es información."
+    return f"""
+    <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:600px;margin:0 auto;padding:24px;">
+      <p style="font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#5c6b66;margin:0 0 4px 0;">InverIA · Briefing diario</p>
+      <h1 style="font-size:22px;color:#0e1f1a;margin:0 0 8px 0;">📊 {market_date}</h1>
+      <p style="font-size:14px;color:#5c6b66;margin:0 0 4px 0;">{intro}</p>
+      {section('🎯 Ideas con catalizador', catalyst)}
+      {section('⭐ Mejores del screener (investigadas)', screener)}
+      {nl_html}
+      <p style="font-size:11px;color:#5c6b66;margin:24px 0 0 0;border-top:1px solid #e5e0d8;padding-top:8px;">
+        Candidatas para tu análisis — no es recomendación de compra. Verifica en InverIA antes de operar.
+      </p>
+    </div>"""
+
+
+def _newsletters_html(newsletters) -> str:
+    if not newsletters:
+        return ""
+    blocks = []
+    for nl in newsletters:
+        d = nl.get("extracted") or {}
+        acciones = d.get("acciones") or []
+        acc = ", ".join(f"{a.get('ticker','')} ({a.get('accion','')})" for a in acciones) if acciones else "—"
+        blocks.append(
+            f'<div style="border-left:3px solid #6b5b95;padding:8px 12px;margin:8px 0;background:#faf9f6;border-radius:4px;">'
+            f'<b style="color:#0e1f1a;font-size:13px;">{d.get("titulo") or nl.get("subject") or "Newsletter"}</b>'
+            f'<p style="margin:4px 0;font-size:13px;color:#0e1f1a;">{d.get("resumen","")}</p>'
+            f'<p style="margin:0;font-size:12px;color:#5c6b66;">Acciones: {acc}</p></div>'
+        )
+    return ('<p style="margin:20px 0 8px 0;font-size:12px;text-transform:uppercase;letter-spacing:0.12em;'
+            'color:#6b5b95;font-weight:700;">📩 De tus newsletters</p>' + "".join(blocks))
+
+
+def _cards_html(ideas) -> str:
+    """Reutiliza el render de tarjetas del email de ideas."""
+    # _build_email_html envuelve las tarjetas en un contenedor; extraemos solo las tarjetas
+    # reusando la misma plantilla por idea.
+    cards = []
+    for idea in ideas:
+        cp = idea.get("change_percent")
+        chg = f"{'+' if (cp or 0) >= 0 else ''}{cp}%" if cp is not None else "—"
+        chg_color = "#4a7c59" if (cp or 0) >= 0 else "#d85c41"
+        reasons_html = "".join(
+            f'<li style="margin:4px 0;color:#0e1f1a;font-size:14px;">{r}</li>' for r in idea["reasons"])
+        cards.append(f"""
+        <div style="border:1px solid #e5e0d8;border-radius:10px;padding:20px;margin:0 0 16px 0;background:#faf9f6;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;">
+            <span style="font-size:20px;font-weight:700;color:#0e1f1a;">{idea['symbol']}</span>
+            <span style="font-size:12px;color:#5c6b66;">Convicción {idea.get('conviction')}/100</span>
+          </div>
+          <p style="margin:2px 0 12px 0;color:#5c6b66;font-size:13px;">{idea.get('name') or ''}</p>
+          <p style="margin:0 0 12px 0;font-size:16px;color:#0e1f1a;">
+            ${idea.get('price')} <span style="color:{chg_color};font-size:13px;">({chg})</span>
+          </p>
+          <p style="margin:0 0 6px 0;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#5c6b66;">Por qué destaca</p>
+          <ul style="margin:0;padding-left:18px;">{reasons_html}</ul>
+          {_research_block(idea.get('research'), idea.get('research_source'))}
+        </div>""")
+    return "".join(cards)
 
 
 async def digest_loop(db):
