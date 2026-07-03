@@ -513,6 +513,54 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
     return _parse_model_json(text)
 
 
+_RESEARCH_PROMPT = """Eres un analista financiero senior. Investiga en internet (usa la búsqueda)
+la acción {symbol} ({name}) y escribe un informe BREVE y accionable en ESPAÑOL. Ya sabemos que
+destaca por estas señales cuantitativas: {catalysts}. Tu trabajo es FUNDAMENTAR o MATIZAR eso
+con lo que encuentres hoy en la web.
+
+Estructura EXACTA (texto plano, sin markdown, secciones separadas por saltos de línea):
+
+QUÉ HACE: 1-2 frases sobre el negocio y de qué gana dinero.
+POR QUÉ AHORA: 2-3 frases con el catalizador o tesis reciente (noticias, resultados, contratos,
+producto). Cita hechos concretos y fechas si los encuentras.
+RIESGOS: 1-2 riesgos reales y concretos.
+VEREDICTO: una frase — ¿es una oportunidad sólida a medio plazo o hay que esperar? Sé honesto.
+
+Sé concreto y basado en hechos reales que encuentres. Si no encuentras nada relevante reciente,
+dilo claramente en POR QUÉ AHORA en vez de inventar."""
+
+
+async def research_stock_web(symbol: str, name: str = "", catalysts: str = "") -> str:
+    """Investigación web profunda de una acción con Gemini + búsqueda de Google (grounding).
+    Devuelve un informe en texto (qué hace, por qué ahora, riesgos, veredicto) fundamentado
+    en resultados de búsqueda reales. Best-effort: lanza si falla para que el llamador degrade."""
+    if not GEMINI_AVAILABLE:
+        raise RuntimeError("google-genai no instalada.")
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY no configurada.")
+    client = genai.Client(api_key=api_key)
+    # Herramienta de búsqueda de Google: permite a Gemini consultar la web en tiempo real.
+    tools = [genai_types.Tool(google_search=genai_types.GoogleSearch())]
+    config = genai_types.GenerateContentConfig(
+        tools=tools,
+        temperature=0.3,
+        max_output_tokens=1200,
+    )
+    prompt = _RESEARCH_PROMPT.format(
+        symbol=symbol, name=name or symbol, catalysts=catalysts or "señales técnicas positivas")
+    response = await asyncio.to_thread(
+        client.models.generate_content,
+        model="gemini-2.5-flash",
+        contents=prompt,
+        config=config,
+    )
+    text = getattr(response, "text", "") or ""
+    if not text:
+        raise RuntimeError("Gemini no devolvió texto en la investigación web.")
+    return text.strip()
+
+
 async def _analyze_with_emergent(provider: str, model_id: str, user_msg: str,
                                  system_prompt: str = SYSTEM_PROMPT) -> dict:
     if not EMERGENT_AVAILABLE:

@@ -159,6 +159,20 @@ async def _in_cooldown(db, symbol) -> bool:
     return doc is not None
 
 
+def _research_block(research) -> str:
+    """Bloque HTML con el informe de investigación web (si existe)."""
+    if not research:
+        return ""
+    import html as _html
+    safe = _html.escape(research).replace("\n", "<br>")
+    return (
+        '<div style="margin-top:12px;padding:12px;background:#eef2f0;border-radius:8px;">'
+        '<p style="margin:0 0 6px 0;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#1a3a32;">🔎 Investigación</p>'
+        f'<p style="margin:0;font-size:13px;color:#0e1f1a;line-height:1.5;">{safe}</p>'
+        '</div>'
+    )
+
+
 def _build_email_html(ideas: list) -> str:
     """Email HTML con las ideas del analista (una o varias en un solo correo)."""
     cards = []
@@ -182,6 +196,7 @@ def _build_email_html(ideas: list) -> str:
           </p>
           <p style="margin:0 0 6px 0;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#5c6b66;">Por qué destaca hoy</p>
           <ul style="margin:0;padding-left:18px;">{reasons_html}</ul>
+          {_research_block(idea.get('research'))}
         </div>""")
     return f"""
     <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:600px;margin:0 auto;padding:24px;">
@@ -264,6 +279,18 @@ async def scan(db, universe=None, notify: bool = True) -> dict:
             fresh.append(c)
             if len(fresh) >= _MAX_ALERTS_PER_SCAN:
                 break
+
+        # Capa 2 — INVESTIGACIÓN WEB PROFUNDA de cada candidata (best-effort). Fundamenta
+        # los datos-señal con lo que hay HOY en internet (tesis, riesgos, catalizadores).
+        # Si falla (p. ej. cuota de Gemini), la idea sale igual con sus razones cuantitativas.
+        import ai_analysis  # perezoso: evita acoplar la carga del módulo a groq/gemini
+        for c in fresh:
+            try:
+                c["research"] = await ai_analysis.research_stock_web(
+                    c["symbol"], c.get("name") or "", "; ".join(c.get("reasons") or []))
+            except Exception as e:
+                logger.warning(f"daily_analyst: investigación web falló para {c['symbol']}: {e}")
+                c["research"] = None
 
         for c in fresh:
             await db.analyst_ideas.insert_one({**c})
