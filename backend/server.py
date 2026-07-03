@@ -30,6 +30,7 @@ import alerts_worker
 import opportunities
 import backtest
 import signal_table
+import daily_analyst
 import levels_engine
 import auth
 
@@ -114,6 +115,7 @@ async def lifespan(app: FastAPI):
     await db.analyses.create_index([("symbol", 1), ("created_at", -1)])
     await db.watchlist.create_index("symbol")
     await db.alerts.create_index("symbol")
+    await db.analyst_ideas.create_index([("symbol", 1), ("detected_at", -1)])
 
     # Wire the persistent snapshot cache and hydrate in-memory caches from the last
     # saved scan so the first request returns data instantly (no "warming" screen).
@@ -132,6 +134,10 @@ async def lifespan(app: FastAPI):
 
     # Single alert system: the portfolio table (signal_table) worker.
     asyncio.create_task(signal_table.signal_worker_loop(db))
+
+    # Analista Institucional: vigía que busca confluencia de catalizadores (insiders,
+    # upgrades, earnings, score) y avisa por Telegram cuando algo destaca de verdad.
+    asyncio.create_task(daily_analyst.worker_loop(db))
 
     # Pre-warm daily opportunities so the first user request hits a warm cache —
     # PERO solo si el snapshot hidratado desde Mongo ya está caducado. En la mayoría
@@ -1134,6 +1140,21 @@ async def growth_screener(refresh: bool = False):
     near 52w high, revenue growth, EPS growth) over a curated growth universe."""
     data = await opportunities.scan_growth_screener(force_refresh=refresh)
     return data
+
+
+# ---------- Analista Institucional ----------
+@api_router.get("/analyst/ideas")
+async def analyst_ideas(limit: int = 30):
+    """Histórico de ideas que el Analista Institucional ha detectado (más recientes primero)."""
+    items = await db.analyst_ideas.find({}, {"_id": 0}).sort("detected_at", -1).limit(limit).to_list(limit)
+    return {"ideas": items}
+
+
+@api_router.post("/analyst/scan")
+async def analyst_scan(notify: bool = False, _user: str = Depends(auth.get_current_user)):
+    """Lanza un barrido manual del Analista Institucional. Con notify=false solo devuelve
+    las candidatas (para probar sin enviar Telegram); con notify=true además avisa."""
+    return await daily_analyst.scan(db, notify=notify)
 
 
 _backtest_cache: dict = {}
