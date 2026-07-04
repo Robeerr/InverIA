@@ -66,6 +66,43 @@ async def _extract(subject: str, text: str) -> dict:
     return await ai_analysis._run_model("gpt-oss-120b", _EXTRACT_PROMPT, user_msg, max_tokens=1800)
 
 
+async def _score_ticker(symbol: str):
+    """Cruza un ticker que menciona la newsletter con TU motor: calcula el score de
+    potencial y devuelve un veredicto (verde/amarillo/rojo). Así no te fías de lo que
+    diga la newsletter a ciegas, sino de si coincide con tus datos. None si no hay datos."""
+    import asyncio
+    import external_data
+    import market_data
+    import opportunities
+    try:
+        quote = await asyncio.to_thread(market_data.get_quote, symbol)
+        if not quote or not quote.get("price"):
+            return None
+        m = await asyncio.to_thread(external_data.finnhub_basic_financials, symbol) or {}
+        trends = await asyncio.to_thread(external_data.finnhub_recommendation_trends, symbol)
+        cons = external_data.aggregate_recommendation(trends)
+        price = quote.get("price")
+        high52 = quote.get("high_52w") or m.get("high_52w")
+        dist = ((price - high52) / high52 * 100) if (high52 and price) else None
+        pot, val_label, mom_label = opportunities._potential_score(
+            m.get("revenue_growth"), m.get("eps_growth"),
+            quote.get("pe_ratio") or m.get("pe_ratio"), dist,
+            cons.get("score") if cons else None,
+            m.get("return_26w"), m.get("return_52w"), m.get("rel_strength_52w"),
+        )
+        if mom_label.startswith("⚠"):
+            verdict = "🔴 Tu motor la EVITA (tendencia bajista / peor que el mercado)"
+        elif pot >= 65:
+            verdict = "🟢 Coincide con tu motor (score alto)"
+        elif pot >= 45:
+            verdict = "🟡 Neutral para tu motor"
+        else:
+            verdict = "🟠 Floja para tu motor (score bajo)"
+        return {"score": pot, "valuation": val_label, "momentum": mom_label, "verdict": verdict}
+    except Exception:
+        return None
+
+
 def _build_email_html(data: dict, subject: str) -> str:
     acciones = data.get("acciones") or []
     ideas = data.get("ideas_clave") or []
@@ -74,11 +111,21 @@ def _build_email_html(data: dict, subject: str) -> str:
     for a in acciones:
         c = color.get((a.get("accion") or "").upper(), "#5c6b66")
         niveles = f" · Niveles: {a['niveles']}" if a.get("niveles") else ""
+        inv = a.get("inveria")
+        veredicto_html = ""
+        if inv and inv.get("verdict"):
+            extra = f" · score {inv.get('score')}" if inv.get("score") is not None else ""
+            veredicto_html = (
+                f'<p style="margin:6px 0 0 0;font-size:12px;font-weight:600;color:#1a3a32;'
+                f'background:#eef2f0;padding:4px 8px;border-radius:4px;display:inline-block;">'
+                f'{inv["verdict"]}{extra}</p>'
+            )
         acc_rows += f"""
         <div style="border-left:3px solid {c};padding:8px 12px;margin:8px 0;background:#faf9f6;border-radius:4px;">
           <b style="color:#0e1f1a;">{a.get('ticker','')}</b> <span style="color:#5c6b66;">{a.get('nombre','')}</span>
           <span style="color:{c};font-weight:600;font-size:12px;"> · {a.get('accion','')}</span>{niveles}
           <p style="margin:4px 0 0 0;font-size:13px;color:#0e1f1a;">{a.get('motivo','')}</p>
+          {veredicto_html}
         </div>"""
     ideas_html = "".join(f'<li style="margin:4px 0;font-size:13px;color:#0e1f1a;">{i}</li>' for i in ideas)
     return f"""
@@ -128,6 +175,14 @@ async def process_newsletter(db, subject: str, body_html: str, body_text: str = 
     except Exception as e:
         logger.exception("newsletter: extracción falló")
         return {"ok": False, "error": f"extracción falló: {e}"}
+
+    # CRUCE CON TU MOTOR: cada acción mencionada se pasa por el score + guardián de
+    # tendencia, para que sepas si fiarte o no (verde/amarillo/rojo). Acotado a 6 tickers.
+    acciones = data.get("acciones") or []
+    for a in acciones[:6]:
+        ticker = (a.get("ticker") or "").strip().upper()
+        if ticker:
+            a["inveria"] = await _score_ticker(ticker)
 
     doc = {
         "subject": subject,
