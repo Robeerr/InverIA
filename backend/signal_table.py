@@ -17,6 +17,9 @@ from typing import Optional
 # Margen de alerta anticipada: disparar cuando el precio está dentro de este %
 # por encima del nivel de compra (o por debajo del de venta). Da tiempo de reacción.
 _ALERT_MARGIN_PCT = 0.5
+# Anti-pánico: caída diaria (%) a partir de la cual recordamos la tesis ANTES de que el
+# usuario venda por impulso. Una vez al día por símbolo (cooldown).
+_PANIC_DROP_PCT = -7.0
 
 import market_data
 import telegram_notifier
@@ -316,6 +319,16 @@ async def signal_worker_loop(db, interval: int = 10):
                     if not market_open:
                         continue
 
+                    # ── ANTI-PÁNICO ──────────────────────────────────────────
+                    # Si una acción de la cartera cae fuerte HOY, recordamos la tesis
+                    # ANTES de que el usuario venda por impulso (opera en DeGiro, así que
+                    # el aviso proactivo es la única forma de frenarle a tiempo). 1/día.
+                    if daily_chg is not None and float(daily_chg) <= _PANIC_DROP_PCT:
+                        cd_key = f"{symbol}_panic_{today}"
+                        if not await _is_in_cooldown(db, cd_key):
+                            await _set_cooldown(db, cd_key)
+                            await _fire_panic_alert(entry, symbol, price, float(daily_chg), db=db)
+
                     # Niveles de compra — disparo con margen anticipado (_ALERT_MARGIN_PCT)
                     # para que la alerta llegue ligeramente ANTES de tocar el nivel exacto.
                     buy_levels = {
@@ -385,6 +398,51 @@ async def signal_worker_loop(db, interval: int = 10):
         # Dormir solo el tiempo que falte hasta `interval` (mínimo 3s).
         elapsed = perf_counter() - cycle_start
         await asyncio.sleep(max(3.0, interval - elapsed))
+
+
+async def _fire_panic_alert(entry, symbol, price, daily_chg, db=None):
+    """Recordatorio de DISCIPLINA cuando una acción de la cartera cae fuerte: devuelve al
+    usuario a su tesis fría ANTES de que venda por pánico. No le dice qué hacer — le hace
+    parar y comprobar si la tesis ha cambiado de verdad o es solo ruido."""
+    name = entry.get("name") or symbol
+    notes = (entry.get("notes") or "").strip()
+    sector = entry.get("sector", "")
+    e = telegram_notifier._esc_md
+
+    logger.info("PANIC REMINDER: %s cae %.1f%% @ %.2f", symbol, daily_chg, price)
+
+    tg = (
+        "🧭 *RESPIRA — antes de vender*\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📌 *{e(name)} \\({e(symbol)}\\)* cae *{e(f'{daily_chg:.1f}')}%* hoy\n"
+        f"💰 Precio: \\${e(f'{price:.2f}')}\n\n"
+    )
+    if notes:
+        tg += f"📝 *Por qué la tienes:* {e(notes)}\n\n"
+    tg += (
+        "Antes de vender por impulso, pregúntate:\n"
+        "• ¿Ha cambiado la TESIS, o es solo ruido de mercado\\?\n"
+        "• ¿Cae por la EMPRESA o por TODO el mercado\\?\n"
+        "• Vender en una caída sin motivo real es el error más caro\\.\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "🧭 _InverIA · Recordatorio de disciplina_"
+    )
+    await telegram_notifier.send_message(tg, grupo=entry.get("grupo", "ideas_javi"))
+
+    if db is not None:
+        try:
+            await db.alert_history.insert_one({
+                "id": str(uuid.uuid4()),
+                "symbol": symbol,
+                "name": name,
+                "sector": sector,
+                "type": "PANICO",
+                "price": round(price, 2),
+                "daily_change_percent": round(daily_chg, 2),
+                "fired_at": _now(),
+            })
+        except Exception:
+            pass
 
 
 async def _fire_alert(entry, symbol, level_label, target, price, diff_pct, action, db=None, approaching=False):
