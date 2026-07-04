@@ -10,8 +10,6 @@ const Dashboard        = React.lazy(() => import("./pages/Dashboard"));
 const OpportunitiesView = React.lazy(() => import("./pages/OpportunitiesView"));
 const CalendarView     = React.lazy(() => import("./pages/CalendarView"));
 const SignalsView      = React.lazy(() => import("./pages/SignalsView"));
-const CompareView      = React.lazy(() => import("./pages/CompareView"));
-const HistoryView      = React.lazy(() => import("./pages/HistoryView"));
 
 const PageLoader = () => (
   <div className="min-h-[60vh] flex items-center justify-center">
@@ -77,8 +75,6 @@ function AppInner() {
           <Route path="/oportunidades" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><OpportunitiesView setSymbol={setSymbol} /></div>} />
           <Route path="/calendario" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><CalendarView setSymbol={setSymbol} /></div>} />
           <Route path="/signals" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><SignalsView setSymbol={setSymbol} /></div>} />
-          <Route path="/comparar" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><CompareView /></div>} />
-          <Route path="/historial" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><HistoryView setSymbol={setSymbol} /></div>} />
           <Route path="*" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><Dashboard symbol={symbol} setSymbol={setSymbol} model={model} setModel={setModel} /></div>} />
         </Routes>
       </Suspense>
