@@ -60,12 +60,17 @@ def _fit_trendline(idxs, prices, want: str):
                 best = {"span": span, "i1": i1, "p1": p1, "i2": i2, "p2": p2, "slope": slope}
     if not best:
         return None
+    # Proyecta la directriz hasta la ÚLTIMA vela (el "ahora"), para que la línea llegue al
+    # borde derecho y el usuario vea dónde está el soporte/resistencia HOY, no dónde acabó
+    # el último pivote.
+    last = len(prices) - 1
+    end_price = best["p1"] + best["slope"] * (last - best["i1"])
     return {
         "type": "trendline",
         "kind": want,
         "points": [
             {"index": int(best["i1"]), "price": round(float(best["p1"]), 2)},
-            {"index": int(best["i2"]), "price": round(float(best["p2"]), 2)},
+            {"index": int(last), "price": round(float(end_price), 2)},
         ],
         "direction": "alcista" if best["slope"] > 0 else "bajista",
     }
