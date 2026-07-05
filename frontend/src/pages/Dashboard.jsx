@@ -33,6 +33,27 @@ function MarketFuturesBar({ futures }) {
   );
 }
 
+function MarketRegimeBar({ regime }) {
+  if (!regime || regime.light === "desconocido") return null;
+  const styles = {
+    verde:    { dot: "#4a7c59", bg: "bg-[#4a7c59]/8",  border: "border-[#4a7c59]/30", text: "text-[#4a7c59]" },
+    amarillo: { dot: "#c9a14a", bg: "bg-[#c9a14a]/8",  border: "border-[#c9a14a]/30", text: "text-[#c9a14a]" },
+    rojo:     { dot: "#d85c41", bg: "bg-[#d85c41]/10", border: "border-[#d85c41]/40", text: "text-[#d85c41]" },
+  }[regime.light] || {};
+  return (
+    <div className={`card-flat px-4 py-2.5 flex items-center gap-3 flex-wrap ${regime.light === "rojo" ? "border " + styles.border : ""}`}>
+      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: styles.dot }} />
+      <span className="text-[10px] uppercase tracking-[0.2em] text-[#5c6b66] font-mono">Mercado</span>
+      <span className={`text-xs font-semibold ${styles.text}`}>{regime.label}</span>
+      {regime.spy_price != null && (
+        <span className="text-[11px] text-[#5c6b66] font-mono ml-auto">
+          S&P {regime.dist_sma200_pct >= 0 ? "+" : ""}{regime.dist_sma200_pct}% vs SMA200
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const [timeframe, setTimeframe] = useState("1Y");
   const [quote, setQuote] = useState(null);
@@ -43,6 +64,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const [marketSignals, setMarketSignals] = useState(null);
   const [volumeProfile, setVolumeProfile] = useState(null);
   const [buyLevels, setBuyLevels] = useState(null);
+  const [marketRegime, setMarketRegime] = useState(null);
   const [news, setNews] = useState([]);
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
@@ -93,6 +115,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       // Niveles del motor (deterministas): disponibles ya al cargar, sin esperar a la IA.
       if (data.buy_levels) setBuyLevels(data.buy_levels);
       if (data.volume_profile) setVolumeProfile(data.volume_profile);
+      if (data.market_regime) setMarketRegime(data.market_regime);
     } catch (e) {
       if (my === reqId.current) toast.error("Error al cargar datos");
     } finally {
@@ -247,6 +270,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   return (
     <main data-testid="main-dashboard" className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
       <MarketFuturesBar futures={futures} />
+      <MarketRegimeBar regime={marketRegime} />
 
       {loadingQuote && !quote ? (
         <div className="card-flat p-8 text-center text-[#5c6b66]">Cargando datos...</div>

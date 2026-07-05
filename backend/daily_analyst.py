@@ -169,6 +169,33 @@ _SOURCE_LABEL = {
 }
 
 
+def _earnings_warning_html(ew) -> str:
+    """Chip de aviso de resultados próximos (riesgo binario)."""
+    if not ew or ew.get("days") is None:
+        return ""
+    d = ew["days"]
+    when = "HOY" if d == 0 else ("mañana" if d == 1 else f"en {d} días")
+    return (
+        '<p style="margin:8px 0 0 0;font-size:12px;font-weight:600;color:#d85c41;'
+        'background:#d85c41/10;padding:4px 8px;border-radius:4px;display:inline-block;'
+        'background-color:#fbe9e4;">'
+        f'⚠ Resultados {when} — riesgo binario (gap ±10%). Considera esperar al post-earnings.</p>'
+    )
+
+
+def _regime_banner_html(regime) -> str:
+    """Banner del estado del mercado al inicio del email."""
+    if not regime or regime.get("light") in (None, "desconocido"):
+        return ""
+    colors = {"verde": ("#4a7c59", "#eef5f0"), "amarillo": ("#c9a14a", "#fbf5e7"), "rojo": ("#d85c41", "#fbe9e4")}
+    fg, bg = colors.get(regime["light"], ("#5c6b66", "#f0f0f0"))
+    return (
+        f'<div style="background:{bg};border-left:3px solid {fg};padding:10px 12px;border-radius:6px;margin:0 0 16px 0;">'
+        f'<b style="color:{fg};font-size:13px;">{regime.get("label","")}</b>'
+        f'<p style="margin:4px 0 0 0;font-size:12px;color:#0e1f1a;">{regime.get("advice","")}</p></div>'
+    )
+
+
 def _research_block(research, source=None) -> str:
     """Bloque HTML con el informe de investigación y, sobre todo, DE QUÉ FUENTE viene
     (Gemini web / Groq+noticias / titulares) y su fiabilidad, para que sepas cuánto fiarte."""
@@ -213,12 +240,14 @@ def _build_email_html(ideas: list) -> str:
           </p>
           <p style="margin:0 0 6px 0;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#5c6b66;">Por qué destaca hoy</p>
           <ul style="margin:0;padding-left:18px;">{reasons_html}</ul>
+          {_earnings_warning_html(idea.get('earnings_warning'))}
           {_research_block(idea.get('research'), idea.get('research_source'))}
         </div>""")
     return f"""
     <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:600px;margin:0 auto;padding:24px;">
       <p style="font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#5c6b66;margin:0 0 4px 0;">InverIA · Analista Institucional</p>
-      <h1 style="font-size:22px;color:#0e1f1a;margin:0 0 20px 0;">🎯 {len(ideas)} idea{'s' if len(ideas) != 1 else ''} destaca{'n' if len(ideas) != 1 else ''} hoy</h1>
+      <h1 style="font-size:22px;color:#0e1f1a;margin:0 0 16px 0;">🎯 {len(ideas)} idea{'s' if len(ideas) != 1 else ''} destaca{'n' if len(ideas) != 1 else ''} hoy</h1>
+      {_regime_banner_html((ideas[0] or {}).get('market_regime') if ideas else None)}
       {''.join(cards)}
       <p style="font-size:12px;color:#5c6b66;margin:16px 0 0 0;">
         Candidatas para tu análisis — revísalas en InverIA antes de decidir. No es una recomendación de compra.
@@ -289,13 +318,56 @@ async def scan(db, universe=None, notify: bool = True) -> dict:
         candidates = [r for r in results if r]
         candidates.sort(key=lambda x: x["conviction"], reverse=True)
 
+        # FILTRO DE RÉGIMEN DE MERCADO: en un mercado bajista (semáforo rojo) las compras
+        # fallan más, así que somos más selectivos — menos ideas y solo las de máxima
+        # convicción. En verde, comportamiento normal.
+        try:
+            import market_regime
+            regime = market_regime.get_market_regime()
+        except Exception:
+            regime = None
+        light = (regime or {}).get("light")
+        max_alerts = _MAX_ALERTS_PER_SCAN
+        min_conv = _CONVICTION_THRESHOLD
+        if light == "rojo":
+            max_alerts = 2
+            min_conv = 80  # solo lo excepcional cuando el mercado está en riesgo
+        elif light == "amarillo":
+            max_alerts = 3
+
         fresh = []
         for c in candidates:
+            if c["conviction"] < min_conv:
+                continue
             if await _in_cooldown(db, c["symbol"]):
                 continue
+            c["market_regime"] = regime
             fresh.append(c)
-            if len(fresh) >= _MAX_ALERTS_PER_SCAN:
+            if len(fresh) >= max_alerts:
                 break
+
+        # AVISO DE EARNINGS: resultados próximos = riesgo binario (gap ±10% que salta
+        # cualquier soporte). Una sola llamada bulk para todos los candidatos.
+        if fresh:
+            try:
+                cal = await asyncio.to_thread(
+                    external_data.finnhub_earnings_calendar, 21, [c["symbol"] for c in fresh])
+                by_sym = {}
+                for it in ((cal or {}).get("items") or []):
+                    by_sym.setdefault(it.get("symbol"), it.get("date"))
+                from datetime import date as _date
+                today_d = datetime.now(timezone.utc).date()
+                for c in fresh:
+                    d = by_sym.get(c["symbol"])
+                    if d:
+                        try:
+                            days = (_date.fromisoformat(d) - today_d).days
+                            if 0 <= days <= 14:
+                                c["earnings_warning"] = {"date": d, "days": days}
+                        except Exception:
+                            pass
+            except Exception:
+                pass
 
         # Capa 2 — INVESTIGACIÓN WEB PROFUNDA de cada candidata (best-effort). Fundamenta
         # los datos-señal con lo que hay HOY en internet (tesis, riesgos, catalizadores).

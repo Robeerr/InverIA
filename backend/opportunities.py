@@ -421,12 +421,42 @@ async def _run_screener_scan():
             # crecimiento, valoración y punto de entrada — no solo el crecimiento bruto.
             results.sort(key=lambda x: x.get("potential_score") or 0, reverse=True)
 
+            # AVISO DE EARNINGS en el top: resultados próximos = riesgo binario. Una sola
+            # llamada bulk para los mejores 25 (donde el usuario mira de verdad).
+            try:
+                top_syms = [r["symbol"] for r in results[:25]]
+                cal = await asyncio.to_thread(external_data.finnhub_earnings_calendar, 21, top_syms)
+                edates = {}
+                for it in ((cal or {}).get("items") or []):
+                    edates.setdefault(it.get("symbol"), it.get("date"))
+                from datetime import date as _date
+                today_d = datetime.now(timezone.utc).date()
+                for r in results[:25]:
+                    d = edates.get(r["symbol"])
+                    if d:
+                        try:
+                            days = (_date.fromisoformat(d) - today_d).days
+                            if 0 <= days <= 14:
+                                r["earnings_days"] = days
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+            # Semáforo de mercado para la cabecera del screener.
+            try:
+                import market_regime
+                regime = market_regime.get_market_regime()
+            except Exception:
+                regime = None
+
             _screener_cache["data"] = {
                 "generated_at": datetime.now(timezone.utc).isoformat(),
                 "universe_size": len(universe),
                 "matches": len(results),
                 "results": results,
                 "filters": SCREENER_FILTERS,
+                "market_regime": regime,
             }
             _screener_cache["ts"] = datetime.now(timezone.utc)
             await _save_snapshot("screener", _screener_cache["data"])

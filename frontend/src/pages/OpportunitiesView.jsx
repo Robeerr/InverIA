@@ -168,6 +168,11 @@ function ScreenerCard({ row, onPick }) {
       {row.reason && (
         <p className="text-[11px] text-[#5c6b66] italic mb-2 leading-snug">{row.reason}</p>
       )}
+      {row.earnings_days != null && (
+        <p className="text-[10px] font-mono mb-2 text-[#d85c41] bg-[#d85c41]/10 border border-[#d85c41]/30 rounded px-2 py-1">
+          ⚠ Resultados {row.earnings_days === 0 ? "HOY" : row.earnings_days === 1 ? "mañana" : `en ${row.earnings_days} días`} — riesgo binario
+        </p>
+      )}
 
       <div className="grid grid-cols-3 gap-1 text-center mb-3 text-[10px] font-mono">
         <div className="bg-[#4a7c59]/10 border border-[#4a7c59]/30 rounded px-1 py-1.5">
@@ -464,6 +469,19 @@ export default function OpportunitiesView({ setSymbol }) {
                 {screenerLoading ? "Filtrando..." : "Refrescar"}
               </Button>
             </div>
+
+            {/* Semáforo de mercado */}
+            {screener?.market_regime && screener.market_regime.light !== "desconocido" && (() => {
+              const rg = screener.market_regime;
+              const c = { verde: "#4a7c59", amarillo: "#c9a14a", rojo: "#d85c41" }[rg.light] || "#5c6b66";
+              return (
+                <div className="flex items-center gap-2 mt-4 px-3 py-2 rounded-lg" style={{ background: `${c}14`, border: `1px solid ${c}40` }}>
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: c }} />
+                  <span className="text-xs font-semibold" style={{ color: c }}>{rg.label}</span>
+                  <span className="text-[11px] text-[#5c6b66] hidden sm:inline">— {rg.advice}</span>
+                </div>
+              );
+            })()}
 
             {/* Filter chips */}
             {screener?.filters && (

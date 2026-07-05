@@ -32,6 +32,7 @@ import backtest
 import signal_table
 import daily_analyst
 import newsletter_ingest
+import market_regime
 import levels_engine
 import auth
 
@@ -893,9 +894,17 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y"):
         "analyst": analyst,
         "buy_levels": buy_levels or [],
         "volume_profile": vp_dict or None,
+        "market_regime": market_regime.get_market_regime(),
     }
     _cache.set(cache_key, result, ttl=300)
     return result
+
+
+@api_router.get("/market-regime")
+async def market_regime_endpoint():
+    """Semáforo de mercado (S&P vs SMA200 + tendencia) — condiciona la fiabilidad de las
+    señales de compra. 🟢 sano · 🟡 transición · 🔴 riesgo."""
+    return market_regime.get_market_regime()
 
 
 # ---------- Watchlist ----------
