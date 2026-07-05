@@ -362,9 +362,18 @@ async def signal_worker_loop(db, interval: int = 10):
                         diff_pct = round(((price - target) / target) * 100, 2)
                         level_num = level_key.replace("nivel", "Nivel ")
                         approaching = price > target  # precio en zona pero aún sobre el nivel exacto
+                        # Confirmación por VOLUMEN: un rebote en soporte con volumen alto es
+                        # mucho más fiable. Ratio volumen-hoy / media (si hay datos).
+                        vol_ratio = None
+                        try:
+                            v, av = quote.get("volume"), quote.get("avg_volume")
+                            if v and av and av > 0:
+                                vol_ratio = round(v / av, 2)
+                        except Exception:
+                            pass
                         await _fire_alert(
                             entry, symbol, level_num, target, price, diff_pct, "COMPRA",
-                            db=db, approaching=approaching,
+                            db=db, approaching=approaching, vol_ratio=vol_ratio,
                         )
 
                     for level_key, target in sell_levels.items():
@@ -445,7 +454,7 @@ async def _fire_panic_alert(entry, symbol, price, daily_chg, db=None):
             pass
 
 
-async def _fire_alert(entry, symbol, level_label, target, price, diff_pct, action, db=None, approaching=False):
+async def _fire_alert(entry, symbol, level_label, target, price, diff_pct, action, db=None, approaching=False, vol_ratio=None):
     """Dispara alerta por Telegram y guarda en historial."""
     name = entry.get("name", "") or symbol
     sector = entry.get("sector", "")
@@ -496,6 +505,12 @@ async def _fire_alert(entry, symbol, level_label, target, price, diff_pct, actio
     )
     if extra:
         tg_msg += extra
+    # Confirmación por volumen (solo en compras): rebote fiable si el volumen es alto.
+    if action == "COMPRA" and vol_ratio is not None:
+        if vol_ratio >= 1.5:
+            tg_msg += f"🔊 Volumen *{e(f'{vol_ratio:.1f}')}× la media* — rebote fiable\n"
+        elif vol_ratio < 0.7:
+            tg_msg += f"🔈 Volumen *{e(f'{vol_ratio:.1f}')}× la media* — flojo, rebote menos fiable\n"
     tg_msg += (
         f"\n━━━━━━━━━━━━━━━━━━━━\n"
         f"⚡ _InverIA · Alerta automática_"

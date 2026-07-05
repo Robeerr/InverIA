@@ -86,9 +86,11 @@ UNIVERSE = [
 
 
 def _potential_score(rev_g, eps_g, pe, dist_52w, cons_score=None,
-                     ret_26w=None, ret_52w=None, rel_strength=None):
+                     ret_26w=None, ret_52w=None, rel_strength=None,
+                     net_margin=None, roe=None, debt_to_equity=None):
     """Score 0-100 de POTENCIAL a medio plazo. Combina, como haría un gestor: crecimiento,
-    valoración/PEG, punto de entrada, consenso de analistas y MOMENTUM/fuerza relativa.
+    valoración/PEG, punto de entrada, consenso de analistas, MOMENTUM/fuerza relativa y
+    CALIDAD (rentabilidad + poca deuda — factor con prima demostrada).
     Aplica un GUARDIÁN DE TENDENCIA: una empresa que crece pero cuya acción lleva meses
     cayendo y rinde peor que el mercado (sector rezagado / value trap) se penaliza fuerte,
     porque a corto/medio plazo no suele subir por muy buenos que sean sus fundamentales.
@@ -135,6 +137,19 @@ def _potential_score(rev_g, eps_g, pe, dist_52w, cons_score=None,
     if cons_score is not None:
         # Reescala 50→0 y 100→14 (por debajo de "mantener" no suma nada).
         score += max(0, (cons_score - 50) / 50) * 14
+
+    # 5b) CALIDAD (factor con prima demostrada: rentables y poco endeudadas baten +2-3%
+    # anual). Hasta ~8 pts: margen neto, ROE y control de deuda. Distingue "crece Y gana
+    # dinero de calidad" de "crece pero quema caja y está muy endeudada".
+    if net_margin is not None and net_margin > 0:
+        score += min(net_margin, 25) / 25 * 3       # margen neto sano
+    if roe is not None and roe > 0:
+        score += min(roe, 30) / 30 * 3              # rentabilidad sobre recursos propios
+    if debt_to_equity is not None and debt_to_equity >= 0:
+        if debt_to_equity < 0.5:
+            score += 2                              # poca deuda
+        elif debt_to_equity < 1.5:
+            score += 1
 
     # 6) Momentum reciente (6 meses). Hasta 10 pts: premia que la acción YA suba.
     if ret_26w is not None:
@@ -391,10 +406,12 @@ async def _run_screener_scan():
                 ret_26w = m.get("return_26w")
                 ret_52w = m.get("return_52w")
                 rel_str = m.get("rel_strength_52w")
-                # Score de potencial: crecimiento + valoración + entrada + consenso + momentum,
-                # con guardián de tendencia contra value traps / sectores muertos.
+                # Score de potencial: crecimiento + valoración + entrada + consenso + momentum
+                # + calidad, con guardián de tendencia contra value traps / sectores muertos.
                 pot_score, val_label, mom_label = _potential_score(
-                    rev_g, eps_g, pe, dist, cons_score, ret_26w, ret_52w, rel_str)
+                    rev_g, eps_g, pe, dist, cons_score, ret_26w, ret_52w, rel_str,
+                    net_margin=m.get("net_margin"), roe=m.get("roe"),
+                    debt_to_equity=m.get("debt_to_equity"))
                 reason = _build_screener_reason(rev_r, dist_r, cp, mc)
                 results.append({
                     "symbol": s,

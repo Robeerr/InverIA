@@ -459,6 +459,11 @@ def finnhub_basic_financials(symbol: str):
             # Fuerza relativa vs S&P500 a 52s: >0 bate al mercado, <0 lo hace peor
             # (síntoma de sector rezagado). Finnhub la reporta en %.
             "rel_strength_52w": m.get("priceRelativeToS&P50052Week"),
+            # CALIDAD (factor con prima demostrada: empresas rentables y poco endeudadas
+            # baten +2-3% anual). Margen neto (%), ROE (%) y deuda/patrimonio.
+            "net_margin": m.get("netProfitMarginTTM") or m.get("netProfitMarginAnnual"),
+            "roe": m.get("roeTTM") or m.get("roeRfy"),
+            "debt_to_equity": m.get("totalDebt/totalEquityQuarterly") or m.get("totalDebt/totalEquityAnnual"),
         }
         return {k: v for k, v in out.items() if v is not None}
     except Exception:
