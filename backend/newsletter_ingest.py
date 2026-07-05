@@ -33,6 +33,7 @@ Estructura EXACTA:
   "acciones": [
     {"ticker": "AAPL", "nombre": "Apple",
      "accion": "COMPRAR|VENDER|VIGILAR|MANTENER|MENCIONADA",
+     "sentimiento": "POSITIVO|NEGATIVO|NEUTRAL",
      "niveles": "precios/zonas que menciona si los hay, o null",
      "motivo": "el ángulo/tesis del artículo o mención, 1 frase (traduce al español)"}
   ],
@@ -128,6 +129,13 @@ def _build_email_html(data: dict, subject: str) -> str:
     for a in acciones:
         c = color.get((a.get("accion") or "").upper(), "#5c6b66")
         niveles = f" · Niveles: {a['niveles']}" if a.get("niveles") else ""
+        # Sentimiento de la newsletter sobre la empresa (habla bien / mal / neutral).
+        sent = (a.get("sentimiento") or "").upper()
+        sent_html = ""
+        if sent == "POSITIVO":
+            sent_html = '<span style="color:#4a7c59;font-size:12px;font-weight:600;"> 👍 la ven bien</span>'
+        elif sent == "NEGATIVO":
+            sent_html = '<span style="color:#d85c41;font-size:12px;font-weight:600;"> 👎 la ven mal</span>'
         inv = a.get("inveria")
         veredicto_html = ""
         if inv and inv.get("verdict"):
@@ -140,7 +148,7 @@ def _build_email_html(data: dict, subject: str) -> str:
         acc_rows += f"""
         <div style="border-left:3px solid {c};padding:8px 12px;margin:8px 0;background:#faf9f6;border-radius:4px;">
           <b style="color:#0e1f1a;">{a.get('ticker','')}</b> <span style="color:#5c6b66;">{a.get('nombre','')}</span>
-          <span style="color:{c};font-weight:600;font-size:12px;"> · {a.get('accion','')}</span>{niveles}
+          <span style="color:{c};font-weight:600;font-size:12px;"> · {a.get('accion','')}</span>{sent_html}{niveles}
           <p style="margin:4px 0 0 0;font-size:13px;color:#0e1f1a;">{a.get('motivo','')}</p>
           {veredicto_html}
         </div>"""

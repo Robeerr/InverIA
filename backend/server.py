@@ -962,6 +962,7 @@ async def radar(days: int = 14):
                 "ticker": tk, "nombre": a.get("nombre") or "",
                 "menciones": 0, "fuentes": set(), "angulos": [],
                 "acciones_reco": set(), "inveria": a.get("inveria"), "ultima": when,
+                "positivos": 0, "negativos": 0,
             })
             slot["menciones"] += 1
             slot["fuentes"].add(src_short)
@@ -969,6 +970,11 @@ async def radar(days: int = 14):
                 slot["angulos"].append(a["motivo"])
             if a.get("accion"):
                 slot["acciones_reco"].add(a["accion"])
+            sent = (a.get("sentimiento") or "").upper()
+            if sent == "POSITIVO":
+                slot["positivos"] += 1
+            elif sent == "NEGATIVO":
+                slot["negativos"] += 1
             # Guarda el veredicto del motor más reciente disponible.
             if a.get("inveria") and not slot.get("inveria"):
                 slot["inveria"] = a["inveria"]
@@ -985,6 +991,8 @@ async def radar(days: int = 14):
             "n_fuentes": len(s["fuentes"]),
             "angulos": s["angulos"][:3],
             "recomendaciones": sorted(s["acciones_reco"]),
+            "positivos": s["positivos"],
+            "negativos": s["negativos"],
             "inveria": s.get("inveria"),
             "ultima": s["ultima"],
         })

@@ -35,12 +35,19 @@ function StockCard({ row, onPick }) {
       </div>
 
       {/* Cuántas fuentes lo mencionan = fuerza del consenso */}
-      <div className="flex items-center gap-1.5 mb-2">
+      <div className="flex items-center gap-1.5 mb-1">
         <span className="text-[11px] font-semibold text-[#1a3a32]">
           {row.n_fuentes} {row.n_fuentes === 1 ? "fuente" : "fuentes"}
         </span>
         <span className="text-[10px] text-[#5c6b66] truncate">· {row.fuentes.join(", ")}</span>
       </div>
+      {/* Sentimiento de las fuentes: hablan bien/mal de la empresa */}
+      {(row.positivos > 0 || row.negativos > 0) && (
+        <div className="flex items-center gap-2 mb-1.5 text-[10px] font-semibold">
+          {row.positivos > 0 && <span className="text-[#4a7c59]">👍 {row.positivos} la ven bien</span>}
+          {row.negativos > 0 && <span className="text-[#d85c41]">👎 {row.negativos} la ven mal</span>}
+        </div>
+      )}
 
       {row.angulos?.length > 0 && (
         <p className="text-[11px] text-[#5c6b66] leading-snug line-clamp-2">{row.angulos[0]}</p>
