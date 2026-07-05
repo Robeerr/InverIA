@@ -253,6 +253,18 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
         <OverlayBtn label="Líneas IA" color="#4a7c59" active={showLines} onClick={() => setShowLines((v) => !v)} />
       </div>
 
+      {/* Patrón detectado (Fase 2): triángulo, canal, doble suelo, consolidación... */}
+      {lines?.pattern && (
+        <div className="mb-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-[#1a3a32]/[0.06] border border-[#1a3a32]/20">
+          <span className="text-base leading-none mt-0.5">📐</span>
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.12em] text-[#5c6b66] font-mono">Patrón detectado</p>
+            <p className="text-sm font-semibold text-[#0e1f1a]">{lines.pattern.nombre}</p>
+            <p className="text-xs text-[#5c6b66] leading-snug mt-0.5">{lines.pattern.descripcion}</p>
+          </div>
+        </div>
+      )}
+
       {/* Main price chart */}
       <div style={{ height: overlays.rsi ? 360 : 460 }} className="w-full">
         <ResponsiveContainer width="100%" height="100%">
@@ -396,6 +408,19 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
                 label={{ value: `Venta $${signalEntry.deseado}`, position: "insideTopRight", fill: "#7c3aed", fontSize: 10, fontFamily: "IBM Plex Mono" }}
               />
             )}
+            {/* Zonas de demanda (verde) / oferta (rojo) sombreadas — donde el precio ha
+                reaccionado. Se pintan tenues detrás de las velas. */}
+            {showLines && Array.isArray(lines?.zones) && lines.zones.map((z, i) => (
+              <ReferenceArea
+                key={`zone-${i}`}
+                yAxisId="price"
+                y1={z.low}
+                y2={z.high}
+                fill={z.role === "demanda" ? "#4a7c59" : "#d85c41"}
+                fillOpacity={0.08}
+                stroke="none"
+              />
+            ))}
             {/* Directrices diagonales de tendencia (detección algorítmica). Las S/R
                 horizontales NO se pintan aquí: el motor ya dibuja los niveles N1-N6, así
                 que solo añadimos lo que aporta valor nuevo — las líneas inclinadas. */}

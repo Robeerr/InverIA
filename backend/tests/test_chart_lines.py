@@ -15,8 +15,9 @@ def _candles(closes, spread=2.0):
 
 
 def test_pocas_velas_no_revienta():
-    assert chart_lines.detect_lines([]) == {"trendlines": [], "levels": []}
-    assert chart_lines.detect_lines(_candles([1, 2, 3])) == {"trendlines": [], "levels": []}
+    for r in (chart_lines.detect_lines([]), chart_lines.detect_lines(_candles([1, 2, 3]))):
+        assert r["trendlines"] == [] and r["levels"] == []
+        assert r["pattern"] is None and r["zones"] == []
 
 
 def _noisy_uptrend(seed=3, n=120):

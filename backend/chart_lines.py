@@ -111,12 +111,62 @@ def _horizontal_levels(highs, lows, closes, current_price, max_levels: int = 4):
     return levels[:max_levels]
 
 
+def _detect_pattern(trendlines, levels, closes, current_price):
+    """Reconoce patrones sencillos a partir de las directrices y niveles ya detectados.
+    Devuelve dict {nombre, descripcion, tipo} o None. Reglas geométricas, sin IA."""
+    res = next((t for t in trendlines if t["kind"] == "resistencia"), None)
+    sup = next((t for t in trendlines if t["kind"] == "soporte"), None)
+
+    def slope(tl):
+        p = tl["points"]
+        dx = p[1]["index"] - p[0]["index"]
+        return (p[1]["price"] - p[0]["price"]) / dx if dx else 0
+
+    n = len(closes)
+    recent = closes[-min(n, 40):]
+    rng = (max(recent) - min(recent)) if recent else 0
+    avg = sum(recent) / len(recent) if recent else 0
+    flat_th = (avg * 0.0008) if avg else 0  # umbral de "casi horizontal"
+
+    if res and sup:
+        sr, ss = slope(res), slope(sup)
+        conv = (sr < -flat_th and ss > flat_th)   # convergen
+        # Triángulos
+        if conv:
+            return {"tipo": "triangulo", "nombre": "Triángulo simétrico",
+                    "descripcion": "Máximos decrecientes y mínimos crecientes convergen. "
+                    "Ruptura inminente; la dirección de la ruptura marca el siguiente movimiento."}
+        if abs(sr) <= flat_th and ss > flat_th:
+            return {"tipo": "triangulo_asc", "nombre": "Triángulo ascendente",
+                    "descripcion": "Resistencia horizontal con mínimos crecientes. Sesgo alcista: "
+                    "la ruptura de la resistencia suele impulsar al alza."}
+        if abs(ss) <= flat_th and sr < -flat_th:
+            return {"tipo": "triangulo_desc", "nombre": "Triángulo descendente",
+                    "descripcion": "Soporte horizontal con máximos decrecientes. Sesgo bajista: "
+                    "la pérdida del soporte suele acelerar la caída."}
+        # Canales (paralelos)
+        if sr > flat_th and ss > flat_th:
+            return {"tipo": "canal_alcista", "nombre": "Canal alcista",
+                    "descripcion": "Precio en tendencia alcista entre dos directrices paralelas. "
+                    "Comprar cerca del soporte del canal, vender cerca de la resistencia."}
+        if sr < -flat_th and ss < -flat_th:
+            return {"tipo": "canal_bajista", "nombre": "Canal bajista",
+                    "descripcion": "Tendencia bajista entre directrices paralelas. Rebotes hacia "
+                    "la resistencia del canal suelen ser oportunidades de venta, no de compra."}
+    # Consolidación lateral: rango estrecho reciente.
+    if avg and rng / avg < 0.04:
+        return {"tipo": "consolidacion", "nombre": "Consolidación lateral",
+                "descripcion": "El precio se mueve en un rango estrecho (acumulación/distribución). "
+                "Espera la ruptura del rango para confirmar dirección."}
+    return None
+
+
 def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
     """Punto de entrada. `candles` = lista de dicts con high/low/close (y opcionalmente
     fecha). Devuelve líneas de tendencia + niveles horizontales, en coordenadas de índice
     de vela (el frontend las mapea a la escala temporal del gráfico)."""
     if not candles or len(candles) < 15:
-        return {"trendlines": [], "levels": []}
+        return {"trendlines": [], "levels": [], "pattern": None, "zones": []}
     highs = [float(c.get("high") or c.get("h") or c.get("close") or 0) for c in candles]
     lows = [float(c.get("low") or c.get("l") or c.get("close") or 0) for c in candles]
     closes = [float(c.get("close") or c.get("c") or 0) for c in candles]
@@ -139,4 +189,37 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
             trendlines.append(line)
 
     levels = _horizontal_levels(highs, lows, closes, current_price)
-    return {"trendlines": trendlines, "levels": levels}
+
+    # Doble suelo / doble techo (dos pivotes al mismo nivel) — patrón de reversión clásico.
+    pattern = None
+    lo_all = _pivots(lows, "low")
+    hi_all = _pivots(highs, "high")
+    price_range = max(highs) - min(lows) if highs else 0
+    if price_range > 0 and len(lo_all) >= 2:
+        a, b = lo_all[-2], lo_all[-1]
+        if abs(lows[a] - lows[b]) / price_range < 0.02 and (b - a) >= 5:
+            pattern = {"tipo": "doble_suelo", "nombre": "Doble suelo",
+                       "descripcion": "Dos mínimos al mismo nivel: el precio ha rebotado dos veces en "
+                       "ese soporte. Patrón alcista de reversión si rompe el máximo intermedio."}
+    if pattern is None and price_range > 0 and len(hi_all) >= 2:
+        a, b = hi_all[-2], hi_all[-1]
+        if abs(highs[a] - highs[b]) / price_range < 0.02 and (b - a) >= 5:
+            pattern = {"tipo": "doble_techo", "nombre": "Doble techo",
+                       "descripcion": "Dos máximos al mismo nivel: el precio ha sido rechazado dos "
+                       "veces en esa resistencia. Patrón bajista si pierde el mínimo intermedio."}
+    # Si no hay doble suelo/techo, prueba patrones de directrices.
+    if pattern is None:
+        pattern = _detect_pattern(trendlines, levels, closes, current_price)
+
+    # ZONAS de demanda/oferta: banda alrededor del soporte/resistencia horizontal más fuerte.
+    zones = []
+    band = price_range * 0.01 if price_range else 0
+    for lv in levels[:2]:
+        zones.append({
+            "type": "zone",
+            "role": "demanda" if lv["role"] == "soporte" else "oferta",
+            "low": round(lv["price"] - band, 2),
+            "high": round(lv["price"] + band, 2),
+        })
+
+    return {"trendlines": trendlines, "levels": levels, "pattern": pattern, "zones": zones}
