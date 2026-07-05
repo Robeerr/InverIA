@@ -42,11 +42,20 @@ Estructura EXACTA:
 REGLAS IMPORTANTES:
 - Extrae TODAS las acciones que aparezcan, AUNQUE sean solo titulares de artículos o menciones
   (no solo recomendaciones explícitas). Si un titular habla de una empresa, inclúyela con
-  accion="MENCIONADA" y el ángulo en "motivo" (ej. "Micron: ganador de infra IA atrapado por su
-  éxito" → ticker MU, motivo "Ganador de infraestructura de IA, pero atrapado por su propio éxito").
-- Deduce el ticker del nombre de la empresa si no viene explícito (Micron→MU, Netflix→NFLX,
-  MercadoLibre→MELI, Adobe→ADBE, Intel→INTC). Si no estás seguro del ticker, omite la acción.
-- Ignora enlaces de publicidad, "Subscribe", "Register", "Darse de baja".
+  accion="MENCIONADA" y el ángulo en "motivo".
+- MUCHAS newsletters son LISTAS de titulares de artículos con el ticker pegado al autor. Ejemplo
+  (formato Seeking Alpha "Stock Ideas" / "Tech Daily"):
+    "Lumentum: The Pullback Before The Breakout — Pythia Research • LITE
+     Netflix: Forget Subscriber Growth, AI Is The New Narrative — Ryan Canady • NFLX
+     MercadoLibre: Scaling Ahead Of A Rotation Trade — Gary Alexander • MELI
+     Navitas: Too Cheap To Ignore Anymore — By Uttam Dey"
+  → De AHÍ debes extraer TODAS: LITE (Lumentum), NFLX (Netflix), MELI (MercadoLibre),
+    NVTS (Navitas)... El ticker suele venir tras "•"; si no, dedúcelo del nombre de la empresa
+    del titular. El "motivo" es el ángulo del titular traducido al español.
+- Deduce el ticker del nombre si no viene explícito (Micron→MU, Adobe→ADBE, Intel→INTC,
+  Affirm→AFRM, Palantir→PLTR). Si de verdad no sabes el ticker, omite esa acción.
+- Ignora publicidad: "Subscribe", "Register Now", "Featured", "Darse de baja", "Top Stocks H2".
+- Ignora el envoltorio de reenvío ("---------- Forwarded message ----------", "From:", "Date:").
 - No inventes niveles de precio que no aparezcan. Sé fiel al contenido."""
 
 
@@ -70,7 +79,7 @@ async def _extract(subject: str, text: str) -> dict:
     import ai_analysis
     body = (text or "")[:12000]  # acota tokens de entrada
     user_msg = f"ASUNTO: {subject}\n\nTEXTO DE LA NEWSLETTER:\n{body}"
-    return await ai_analysis._run_model("gpt-oss-120b", _EXTRACT_PROMPT, user_msg, max_tokens=1800)
+    return await ai_analysis._run_model("gpt-oss-120b", _EXTRACT_PROMPT, user_msg, max_tokens=2800)
 
 
 async def _score_ticker(symbol: str):
