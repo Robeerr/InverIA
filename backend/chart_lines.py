@@ -227,6 +227,15 @@ def _detect_pattern(trendlines, levels, closes, current_price):
             return {"tipo": "triangulo_desc", "nombre": "Triángulo descendente",
                     "descripcion": "Soporte horizontal con máximos decrecientes. Sesgo bajista: "
                     "la pérdida del soporte suele acelerar la caída."}
+        # Cuñas: ambas directrices en la MISMA dirección pero convergiendo.
+        if sr > flat_th and ss > flat_th and ss > sr:  # ambas suben, soporte más empinado → converge
+            return {"tipo": "cuna_ascendente", "nombre": "Cuña ascendente", "sentido": "bajista",
+                    "descripcion": "Ambas directrices suben pero convergen: pese a las subidas, el impulso "
+                    "se agota. Sesgo BAJISTA — suele romper a la baja."}
+        if sr < -flat_th and ss < -flat_th and sr > ss:  # ambas bajan, resistencia más empinada → converge
+            return {"tipo": "cuna_descendente", "nombre": "Cuña descendente", "sentido": "alcista",
+                    "descripcion": "Ambas directrices bajan pero convergen: la caída pierde fuerza. "
+                    "Sesgo ALCISTA — suele romper al alza."}
         # Canales (paralelos)
         if sr > flat_th and ss > flat_th:
             return {"tipo": "canal_alcista", "nombre": "Canal alcista",
@@ -290,6 +299,24 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
             pattern = {"tipo": "doble_techo", "nombre": "Doble techo",
                        "descripcion": "Dos máximos al mismo nivel: el precio ha sido rechazado dos "
                        "veces en esa resistencia. Patrón bajista si pierde el mínimo intermedio."}
+    # BANDERA / BANDERÍN: impulso fuerte reciente + consolidación breve y estrecha después.
+    # Es una PAUSA en la tendencia (patrón de continuación), no una reversión.
+    if pattern is None and len(closes) >= 25:
+        pole = closes[-25:-8]          # el "mástil" (impulso)
+        flag = closes[-8:]             # la consolidación reciente
+        if pole and flag:
+            pole_move = (pole[-1] - pole[0]) / pole[0] if pole[0] else 0
+            flag_rng = (max(flag) - min(flag)) / (sum(flag) / len(flag)) if flag else 1
+            if abs(pole_move) > 0.08 and flag_rng < 0.04:   # impulso >8% + consolidación <4%
+                if pole_move > 0:
+                    pattern = {"tipo": "bandera_alcista", "nombre": "Bandera alcista", "sentido": "alcista",
+                               "descripcion": "Impulso alcista fuerte seguido de una pausa de consolidación. "
+                               "Patrón de continuación: se espera ruptura al alza que reanude la subida."}
+                else:
+                    pattern = {"tipo": "bandera_bajista", "nombre": "Bandera bajista", "sentido": "bajista",
+                               "descripcion": "Caída fuerte seguida de una pausa de consolidación. Patrón de "
+                               "continuación: se espera ruptura a la baja que reanude el descenso."}
+
     # Cabeza y hombros tiene prioridad sobre los patrones de directriz.
     if pattern is None:
         pattern = _detect_head_shoulders(highs, lows, price_range)
