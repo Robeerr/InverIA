@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import QuoteHeader from "../components/QuoteHeader";
 import PriceChart from "../components/PriceChart";
 import RecommendationPanel from "../components/RecommendationPanel";
+import AnalysisSummaryPanel from "../components/AnalysisSummaryPanel";
 import IndicatorsPanel from "../components/IndicatorsPanel";
 import TradingLevels from "../components/TradingLevels";
 import WhyMovingCard from "../components/WhyMovingCard";
@@ -306,13 +307,22 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
           buyLevels={buyLevels}
           lines={chartLines}
         />
-        <RecommendationPanel
-          analysis={analysis}
-          isLoading={loadingAnalysis}
-          onAnalyze={runAnalysis}
-          model={model}
-          setModel={setModel}
-        />
+        <div className="space-y-4">
+          <RecommendationPanel
+            analysis={analysis}
+            isLoading={loadingAnalysis}
+            onAnalyze={runAnalysis}
+            model={model}
+            setModel={setModel}
+          />
+          <AnalysisSummaryPanel
+            analysis={analysis}
+            indicators={indicators}
+            buyLevels={buyLevels}
+            lines={chartLines}
+            quote={quote}
+          />
+        </div>
       </div>
 
       {analysis && <PricePredictionCard analysis={analysis} quote={quote} />}
