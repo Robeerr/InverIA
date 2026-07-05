@@ -378,30 +378,22 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
                 label={{ value: `Venta $${signalEntry.deseado}`, position: "insideTopRight", fill: "#7c3aed", fontSize: 10, fontFamily: "IBM Plex Mono" }}
               />
             )}
-            {/* Líneas automáticas (detección algorítmica): soportes/resistencias
-                horizontales + directrices diagonales de tendencia. Toggle "Líneas IA". */}
-            {showLines && Array.isArray(lines?.levels) && lines.levels.map((lv, i) => (
-              <ReferenceLine
-                key={`auto-lv-${i}`}
-                yAxisId="price"
-                y={lv.price}
-                stroke={lv.role === "resistencia" ? "#d85c41" : "#4a7c59"}
-                strokeWidth={1}
-                strokeOpacity={0.5}
-                strokeDasharray="6 4"
-              />
-            ))}
+            {/* Directrices diagonales de tendencia (detección algorítmica). Las S/R
+                horizontales NO se pintan aquí: el motor ya dibuja los niveles N1-N6, así
+                que solo añadimos lo que aporta valor nuevo — las líneas inclinadas. */}
             {showLines && Array.isArray(lines?.trendlines) && lines.trendlines.map((tl, i) => {
               const p = tl.points || [];
               if (p.length < 2 || !p[0].date || !p[1].date) return null;
+              const col = tl.kind === "resistencia" ? "#d85c41" : "#4a7c59";
               return (
                 <ReferenceLine
                   key={`auto-tl-${i}`}
                   yAxisId="price"
                   segment={[{ x: p[0].date, y: p[0].price }, { x: p[1].date, y: p[1].price }]}
-                  stroke={tl.kind === "resistencia" ? "#d85c41" : "#4a7c59"}
+                  stroke={col}
                   strokeWidth={1.5}
-                  strokeOpacity={0.7}
+                  strokeOpacity={0.8}
+                  label={{ value: `Directriz ${tl.direction}`, position: "insideBottomLeft", fill: col, fontSize: 9, fontFamily: "IBM Plex Mono" }}
                 />
               );
             })}
