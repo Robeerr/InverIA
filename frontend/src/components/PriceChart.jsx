@@ -192,6 +192,20 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
   const tp1 = analysis?.take_profit_1;
   const tp2 = analysis?.take_profit_2;
 
+  // LEGIBILIDAD: con muchos niveles de compra, etiquetar todos satura el gráfico. Solo
+  // etiquetamos los 3 MÁS CERCANOS al precio (los accionables); los profundos quedan como
+  // líneas tenues sin texto. Jerarquía visual: destaca lo que importa, atenúa lo demás.
+  const lastPrice = data.length ? data[data.length - 1].close : null;
+  const labeledBuyIdx = (!Array.isArray(buyLevels) || lastPrice == null)
+    ? new Set()
+    : new Set(
+        buyLevels
+          .map((z, i) => ({ i, d: Math.abs((z?.price ?? 0) - lastPrice) }))
+          .sort((a, b) => a.d - b.d)
+          .slice(0, 3)
+          .map((x) => x.i)
+      );
+
   const xTickFmt = (d) => {
     const dt = new Date(d);
     return ["5M", "15M", "1H", "1D", "1W"].includes(timeframe)
@@ -241,12 +255,12 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
       <div style={{ height: overlays.rsi ? 360 : 460 }} className="w-full">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={chartData} margin={{ top: 8, right: 64, left: 0, bottom: 4 }} syncId="inveria-chart">
-            <CartesianGrid stroke="#e5e0d8" strokeDasharray="3 3" vertical={false} />
+            <CartesianGrid stroke="#e5e0d8" strokeOpacity={0.4} strokeDasharray="2 4" vertical={false} />
             <XAxis
               dataKey="date"
               tick={{ fontSize: 10, fill: "#5c6b66", fontFamily: "IBM Plex Mono" }}
               tickFormatter={xTickFmt}
-              minTickGap={40}
+              minTickGap={50}
             />
             <YAxis
               yAxisId="price"
@@ -271,15 +285,15 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
             {/* Candlesticks */}
             <Bar yAxisId="price" dataKey="high" shape={CandleShape} isAnimationActive={false} />
 
-            {/* SMA overlays */}
+            {/* SMA overlays (medias suavizadas para no competir con las velas) */}
             {overlays.sma20 && (
-              <Line yAxisId="price" type="monotone" dataKey="sma20" stroke="#f59e0b" strokeWidth={1.5} dot={false} isAnimationActive={false} connectNulls={false} />
+              <Line yAxisId="price" type="monotone" dataKey="sma20" stroke="#f59e0b" strokeWidth={1.25} strokeOpacity={0.75} dot={false} isAnimationActive={false} connectNulls={false} />
             )}
             {overlays.sma50 && (
-              <Line yAxisId="price" type="monotone" dataKey="sma50" stroke="#3b82f6" strokeWidth={1.5} dot={false} isAnimationActive={false} connectNulls={false} />
+              <Line yAxisId="price" type="monotone" dataKey="sma50" stroke="#3b82f6" strokeWidth={1.25} strokeOpacity={0.75} dot={false} isAnimationActive={false} connectNulls={false} />
             )}
             {overlays.sma200 && (
-              <Line yAxisId="price" type="monotone" dataKey="sma200" stroke="#8b5cf6" strokeWidth={1.5} dot={false} isAnimationActive={false} connectNulls={false} />
+              <Line yAxisId="price" type="monotone" dataKey="sma200" stroke="#8b5cf6" strokeWidth={1.25} strokeOpacity={0.75} dot={false} isAnimationActive={false} connectNulls={false} />
             )}
 
             {/* Bollinger Bands */}
@@ -340,15 +354,17 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
                   const val = z?.price;
                   if (val == null) return null;
                   const tac = z?.tactical;
+                  const labeled = labeledBuyIdx.has(i);
                   return (
                     <ReferenceLine
                       key={`bl-${i}`}
                       yAxisId="price"
                       y={val}
                       stroke={tac ? "#b8860b" : "#2563eb"}
-                      strokeWidth={tac ? 1 : 1.5}
+                      strokeWidth={1}
+                      strokeOpacity={labeled ? 0.85 : 0.35}
                       strokeDasharray={tac ? "2 4" : "4 3"}
-                      label={{ value: `N${i + 1} $${val}${tac ? " ·táct" : ""}`, position: "insideTopRight", fill: tac ? "#b8860b" : "#2563eb", fontSize: 10, fontFamily: "IBM Plex Mono" }}
+                      label={labeled ? { value: `N${i + 1} $${val}${tac ? " ·táct" : ""}`, position: "insideTopRight", fill: tac ? "#b8860b" : "#2563eb", fontSize: 10, fontFamily: "IBM Plex Mono" } : undefined}
                     />
                   );
                 })
