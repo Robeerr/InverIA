@@ -111,6 +111,89 @@ def _horizontal_levels(highs, lows, closes, current_price, max_levels: int = 4):
     return levels[:max_levels]
 
 
+def _detect_candlesticks(candles):
+    """Patrones de VELAS japonesas sobre las últimas velas (los más fiables: mates puras
+    sobre OHLC). Devuelve el más reciente/relevante o None. Prioriza patrones de 2-3 velas."""
+    if len(candles) < 3:
+        return None
+
+    def o(c): return float(c.get("open") or c.get("close") or 0)
+    def h(c): return float(c.get("high") or c.get("close") or 0)
+    def l(c): return float(c.get("low") or c.get("close") or 0)
+    def cl_(c): return float(c.get("close") or 0)
+
+    c2, c1, c0 = candles[-3], candles[-2], candles[-1]  # antepenúltima, penúltima, última
+    body = abs(cl_(c0) - o(c0))
+    rng = h(c0) - l(c0)
+    if rng <= 0:
+        return None
+    upper = h(c0) - max(cl_(c0), o(c0))
+    lower = min(cl_(c0), o(c0)) - l(c0)
+    prev_trend_up = cl_(c1) > cl_(c2)     # contexto: veníamos subiendo
+    prev_trend_dn = cl_(c1) < cl_(c2)
+
+    # --- Patrones de 3 velas ---
+    b1 = abs(cl_(c1) - o(c1)); b2 = abs(cl_(c2) - o(c2))
+    if b2 > 0 and cl_(c2) < o(c2) and b1 < b2 * 0.5 and cl_(c0) > o(c0) and cl_(c0) > (o(c2) + cl_(c2)) / 2:
+        return {"tipo": "estrella_amanecer", "nombre": "Estrella del amanecer", "sentido": "alcista",
+                "descripcion": "Patrón alcista de 3 velas que confirma el fin de una tendencia bajista."}
+    if b2 > 0 and cl_(c2) > o(c2) and b1 < b2 * 0.5 and cl_(c0) < o(c0) and cl_(c0) < (o(c2) + cl_(c2)) / 2:
+        return {"tipo": "estrella_anochecer", "nombre": "Estrella del anochecer", "sentido": "bajista",
+                "descripcion": "Patrón bajista de 3 velas que confirma el fin de una tendencia alcista."}
+
+    # --- Patrones de 2 velas ---
+    if cl_(c1) < o(c1) and cl_(c0) > o(c0) and cl_(c0) >= o(c1) and o(c0) <= cl_(c1):
+        return {"tipo": "envolvente_alcista", "nombre": "Envolvente alcista", "sentido": "alcista",
+                "descripcion": "Una vela verde grande envuelve por completo la roja anterior: cambio a alcista."}
+    if cl_(c1) > o(c1) and cl_(c0) < o(c0) and o(c0) >= cl_(c1) and cl_(c0) <= o(c1):
+        return {"tipo": "envolvente_bajista", "nombre": "Envolvente bajista", "sentido": "bajista",
+                "descripcion": "Una vela roja grande envuelve por completo la verde anterior: cambio a bajista."}
+    if cl_(c1) > o(c1) and cl_(c0) < o(c0) and o(c0) > h(c1) and cl_(c0) < (o(c1) + cl_(c1)) / 2:
+        return {"tipo": "nube_oscura", "nombre": "Cubierta de nube oscura", "sentido": "bajista",
+                "descripcion": "Vela bajista que abre por encima y cierra bajo la mitad de la verde previa: señal bajista."}
+
+    # --- Patrones de 1 vela (martillo/estrella ANTES que doji: son más específicos) ---
+    if body > 0 and lower >= body * 2 and upper <= body * 0.6 and prev_trend_dn:
+        return {"tipo": "martillo", "nombre": "Martillo", "sentido": "alcista",
+                "descripcion": "Cuerpo pequeño arriba con larga sombra inferior tras una caída: posible reversión alcista."}
+    if body > 0 and upper >= body * 2 and lower <= body * 0.6 and prev_trend_up:
+        return {"tipo": "estrella_fugaz", "nombre": "Estrella fugaz", "sentido": "bajista",
+                "descripcion": "Cuerpo pequeño abajo con larga sombra superior tras una subida: posible reversión bajista."}
+    if body >= rng * 0.9:
+        alcista = cl_(c0) > o(c0)
+        return {"tipo": "marubozu", "nombre": "Marubozu " + ("verde" if alcista else "rojo"),
+                "sentido": "alcista" if alcista else "bajista",
+                "descripcion": "Vela de cuerpo largo sin sombras: dominio total de " + ("compradores." if alcista else "vendedores.")}
+    if body <= rng * 0.1:
+        return {"tipo": "doji", "nombre": "Doji", "sentido": "indecision",
+                "descripcion": "Apertura y cierre casi idénticos: indecisión entre compradores y vendedores."}
+    return None
+
+
+def _detect_head_shoulders(highs, lows, price_range):
+    """Cabeza y Hombros (bajista) e invertido (alcista). 3 picos donde el central destaca
+    y los hombros están a nivel similar. Devuelve dict o None."""
+    if price_range <= 0:
+        return None
+    hi = _pivots(highs, "high")
+    if len(hi) >= 3:
+        a, b, c = hi[-3], hi[-2], hi[-1]
+        ha, hb, hc = highs[a], highs[b], highs[c]
+        if hb > ha and hb > hc and abs(ha - hc) / price_range < 0.05 and (hb - max(ha, hc)) / price_range > 0.03:
+            return {"tipo": "cabeza_hombros", "nombre": "Cabeza y hombros", "sentido": "bajista",
+                    "descripcion": "Tres picos con el central más alto: patrón clásico de reversión bajista. "
+                    "La pérdida de la línea clavicular confirma la caída."}
+    lo = _pivots(lows, "low")
+    if len(lo) >= 3:
+        a, b, c = lo[-3], lo[-2], lo[-1]
+        la, lb, lc = lows[a], lows[b], lows[c]
+        if lb < la and lb < lc and abs(la - lc) / price_range < 0.05 and (min(la, lc) - lb) / price_range > 0.03:
+            return {"tipo": "hch_invertido", "nombre": "Hombro-cabeza-hombro invertido", "sentido": "alcista",
+                    "descripcion": "Tres valles con el central más bajo: reversión alcista. La ruptura de la "
+                    "clavicular confirma la subida."}
+    return None
+
+
 def _detect_pattern(trendlines, levels, closes, current_price):
     """Reconoce patrones sencillos a partir de las directrices y niveles ya detectados.
     Devuelve dict {nombre, descripcion, tipo} o None. Reglas geométricas, sin IA."""
@@ -166,7 +249,7 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
     fecha). Devuelve líneas de tendencia + niveles horizontales, en coordenadas de índice
     de vela (el frontend las mapea a la escala temporal del gráfico)."""
     if not candles or len(candles) < 15:
-        return {"trendlines": [], "levels": [], "pattern": None, "zones": []}
+        return {"trendlines": [], "levels": [], "pattern": None, "candlestick": None, "zones": []}
     highs = [float(c.get("high") or c.get("h") or c.get("close") or 0) for c in candles]
     lows = [float(c.get("low") or c.get("l") or c.get("close") or 0) for c in candles]
     closes = [float(c.get("close") or c.get("c") or 0) for c in candles]
@@ -207,9 +290,15 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
             pattern = {"tipo": "doble_techo", "nombre": "Doble techo",
                        "descripcion": "Dos máximos al mismo nivel: el precio ha sido rechazado dos "
                        "veces en esa resistencia. Patrón bajista si pierde el mínimo intermedio."}
-    # Si no hay doble suelo/techo, prueba patrones de directrices.
+    # Cabeza y hombros tiene prioridad sobre los patrones de directriz.
+    if pattern is None:
+        pattern = _detect_head_shoulders(highs, lows, price_range)
+    # Si no hay doble suelo/techo ni H-C-H, prueba patrones de directrices.
     if pattern is None:
         pattern = _detect_pattern(trendlines, levels, closes, current_price)
+
+    # Patrón de VELAS reciente (independiente del patrón chartista de estructura).
+    candlestick = _detect_candlesticks(candles)
 
     # ZONAS de demanda/oferta: banda alrededor del soporte/resistencia horizontal más fuerte.
     zones = []
@@ -222,4 +311,5 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
             "high": round(lv["price"] + band, 2),
         })
 
-    return {"trendlines": trendlines, "levels": levels, "pattern": pattern, "zones": zones}
+    return {"trendlines": trendlines, "levels": levels, "pattern": pattern,
+            "candlestick": candlestick, "zones": zones}

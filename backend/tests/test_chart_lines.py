@@ -50,6 +50,27 @@ def test_niveles_horizontales_en_rango():
         assert 80 <= lv["price"] <= 120
 
 
+def test_detecta_doji():
+    velas = [{"open": 100, "high": 102, "low": 98, "close": 100.05, "date": f"d{i}"} for i in range(20)]
+    r = chart_lines.detect_lines(velas)
+    assert r["candlestick"] and r["candlestick"]["tipo"] == "doji"
+
+
+def test_detecta_envolvente_alcista():
+    velas = [{"open": 100 - i * 0.1, "high": 101, "low": 99, "close": 99.5 - i * 0.1, "date": f"d{i}"} for i in range(18)]
+    velas.append({"open": 98, "high": 98.2, "low": 96, "close": 96.5, "date": "d18"})
+    velas.append({"open": 96, "high": 99, "low": 95.8, "close": 98.8, "date": "d19"})
+    r = chart_lines.detect_lines(velas)
+    assert r["candlestick"] and r["candlestick"]["sentido"] == "alcista"
+
+
+def test_candlestick_tiene_sentido_valido():
+    velas = [{"open": 100, "high": 102, "low": 98, "close": 100.05, "date": f"d{i}"} for i in range(20)]
+    r = chart_lines.detect_lines(velas)
+    if r["candlestick"]:
+        assert r["candlestick"]["sentido"] in ("alcista", "bajista", "indecision")
+
+
 def test_resultado_serializable():
     closes = list(np.linspace(50, 80, 100))
     r = chart_lines.detect_lines(_candles(closes))

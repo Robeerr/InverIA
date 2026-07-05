@@ -253,15 +253,33 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
         <OverlayBtn label="Líneas IA" color="#4a7c59" active={showLines} onClick={() => setShowLines((v) => !v)} />
       </div>
 
-      {/* Patrón detectado (Fase 2): triángulo, canal, doble suelo, consolidación... */}
-      {lines?.pattern && (
-        <div className="mb-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-[#1a3a32]/[0.06] border border-[#1a3a32]/20">
-          <span className="text-base leading-none mt-0.5">📐</span>
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.12em] text-[#5c6b66] font-mono">Patrón detectado</p>
-            <p className="text-sm font-semibold text-[#0e1f1a]">{lines.pattern.nombre}</p>
-            <p className="text-xs text-[#5c6b66] leading-snug mt-0.5">{lines.pattern.descripcion}</p>
-          </div>
+      {/* Patrones detectados (Fase 2): estructura (triángulo, canal, C-H...) y VELA reciente */}
+      {(lines?.pattern || lines?.candlestick) && (
+        <div className="mb-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {lines?.pattern && (
+            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-[#1a3a32]/[0.06] border border-[#1a3a32]/20">
+              <span className="text-base leading-none mt-0.5">📐</span>
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.12em] text-[#5c6b66] font-mono">Patrón de estructura</p>
+                <p className="text-sm font-semibold text-[#0e1f1a]">{lines.pattern.nombre}</p>
+                <p className="text-xs text-[#5c6b66] leading-snug mt-0.5">{lines.pattern.descripcion}</p>
+              </div>
+            </div>
+          )}
+          {lines?.candlestick && (() => {
+            const s = lines.candlestick.sentido;
+            const col = s === "alcista" ? "#4a7c59" : s === "bajista" ? "#d85c41" : "#c9a14a";
+            return (
+              <div className="flex items-start gap-2 px-3 py-2 rounded-lg" style={{ background: `${col}12`, border: `1px solid ${col}33` }}>
+                <span className="text-base leading-none mt-0.5">🕯️</span>
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.12em] text-[#5c6b66] font-mono">Patrón de vela</p>
+                  <p className="text-sm font-semibold" style={{ color: col }}>{lines.candlestick.nombre}</p>
+                  <p className="text-xs text-[#5c6b66] leading-snug mt-0.5">{lines.candlestick.descripcion}</p>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
