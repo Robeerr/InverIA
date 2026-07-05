@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Radar, ArrowClockwise, Newspaper, ArrowRight } from "@phosphor-icons/react";
+import { Target, ArrowClockwise, Newspaper, ArrowRight } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 
@@ -86,7 +86,7 @@ export default function RadarView({ setSymbol }) {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <Radar size={22} weight="fill" className="text-[#1a3a32]" />
+              <Target size={22} weight="fill" className="text-[#1a3a32]" />
               <h2 className="font-heading font-bold text-2xl text-[#0e1f1a]">Radar</h2>
             </div>
             <p className="text-sm text-[#5c6b66]">
