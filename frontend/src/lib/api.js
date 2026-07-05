@@ -55,6 +55,7 @@ export const api = {
   backtestUniverse: (window = 60, limit = 30) =>
     client.get(`/backtest`, { params: { window, limit }, timeout: 300000 }).then((r) => r.data),
   marketFutures: () => client.get(`/market/futures`).then((r) => r.data),
+  radar: (days = 14) => client.get(`/radar`, { params: { days } }).then((r) => r.data),
   signals: () => client.get(`/signals`).then((r) => r.data),
   calendar: {
     earnings: (days = 14, symbols = null) =>

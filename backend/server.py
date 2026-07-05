@@ -907,6 +907,81 @@ async def market_regime_endpoint():
     return market_regime.get_market_regime()
 
 
+# ---------- Radar: inteligencia acumulada de todas las newsletters ----------
+@api_router.get("/radar")
+async def radar(days: int = 14):
+    """Recopila TODA la información de las newsletters recibidas en los últimos `days` días
+    y la divide en dos: (1) ACCIONES agregadas (cada ticker, cuántas fuentes lo mencionan,
+    con qué ángulo y el veredicto del motor), y (2) INFORMACIÓN (feed de resúmenes)."""
+    from datetime import timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    docs = await db.newsletter_summaries.find(
+        {"received_at": {"$gte": cutoff}}, {"_id": 0}
+    ).sort("received_at", -1).to_list(200)
+
+    # 1) Feed de información
+    info_feed = []
+    # 2) Acciones agregadas por ticker
+    by_ticker = {}
+    for d in docs:
+        ex = d.get("extracted") or {}
+        src = d.get("sender") or d.get("subject") or "newsletter"
+        # Nombre corto de la fuente (dominio del remitente).
+        src_short = src.split("@")[-1].split(">")[0] if "@" in src else src
+        when = d.get("received_at")
+        if ex.get("resumen"):
+            info_feed.append({
+                "titulo": ex.get("titulo") or d.get("subject"),
+                "resumen": ex.get("resumen"),
+                "fuente": src_short,
+                "fecha": when,
+            })
+        for a in (ex.get("acciones") or []):
+            tk = (a.get("ticker") or "").strip().upper()
+            if not tk:
+                continue
+            slot = by_ticker.setdefault(tk, {
+                "ticker": tk, "nombre": a.get("nombre") or "",
+                "menciones": 0, "fuentes": set(), "angulos": [],
+                "acciones_reco": set(), "inveria": a.get("inveria"), "ultima": when,
+            })
+            slot["menciones"] += 1
+            slot["fuentes"].add(src_short)
+            if a.get("motivo"):
+                slot["angulos"].append(a["motivo"])
+            if a.get("accion"):
+                slot["acciones_reco"].add(a["accion"])
+            # Guarda el veredicto del motor más reciente disponible.
+            if a.get("inveria") and not slot.get("inveria"):
+                slot["inveria"] = a["inveria"]
+            if not slot["nombre"] and a.get("nombre"):
+                slot["nombre"] = a["nombre"]
+
+    acciones = []
+    for tk, s in by_ticker.items():
+        acciones.append({
+            "ticker": tk,
+            "nombre": s["nombre"],
+            "menciones": s["menciones"],
+            "fuentes": sorted(s["fuentes"]),
+            "n_fuentes": len(s["fuentes"]),
+            "angulos": s["angulos"][:3],
+            "recomendaciones": sorted(s["acciones_reco"]),
+            "inveria": s.get("inveria"),
+            "ultima": s["ultima"],
+        })
+    # Ordena por nº de fuentes distintas (consenso) y menciones.
+    acciones.sort(key=lambda x: (x["n_fuentes"], x["menciones"]), reverse=True)
+
+    return {
+        "days": days,
+        "total_newsletters": len(docs),
+        "acciones": acciones,
+        "informacion": info_feed[:40],
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 # ---------- Watchlist ----------
 @api_router.get("/watchlist")
 async def list_watchlist():

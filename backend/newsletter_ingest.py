@@ -23,24 +23,31 @@ except ImportError:
 
 
 _EXTRACT_PROMPT = """Eres un analista financiero senior. Te doy el TEXTO de una newsletter de bolsa
-a la que el usuario está suscrito. Extrae SOLO lo accionable y devuelve un JSON válido (sin markdown).
+a la que el usuario está suscrito (puede ser una lista de titulares de artículos, un resumen de
+mercado, o análisis). Extrae la MÁXIMA información útil y devuelve un JSON válido (sin markdown).
 
 Estructura EXACTA:
 {
   "titulo": "título o tema principal de la newsletter (1 frase)",
   "resumen": "3-5 frases con lo MÁS importante que dice, en español claro",
   "acciones": [
-    {"ticker": "AAPL", "nombre": "Apple", "accion": "COMPRAR|VENDER|VIGILAR|MANTENER",
+    {"ticker": "AAPL", "nombre": "Apple",
+     "accion": "COMPRAR|VENDER|VIGILAR|MANTENER|MENCIONADA",
      "niveles": "precios/zonas que menciona si los hay, o null",
-     "motivo": "por qué lo dice, 1 frase"}
+     "motivo": "el ángulo/tesis del artículo o mención, 1 frase (traduce al español)"}
   ],
   "ideas_clave": ["idea o consejo relevante 1", "idea 2"]
 }
 
-REGLAS:
-- Solo incluye acciones que la newsletter mencione EXPLÍCITAMENTE. No inventes tickers ni niveles.
-- Si no recomienda ninguna acción concreta, deja "acciones" como lista vacía.
-- Sé fiel al contenido: resume, no opines por tu cuenta."""
+REGLAS IMPORTANTES:
+- Extrae TODAS las acciones que aparezcan, AUNQUE sean solo titulares de artículos o menciones
+  (no solo recomendaciones explícitas). Si un titular habla de una empresa, inclúyela con
+  accion="MENCIONADA" y el ángulo en "motivo" (ej. "Micron: ganador de infra IA atrapado por su
+  éxito" → ticker MU, motivo "Ganador de infraestructura de IA, pero atrapado por su propio éxito").
+- Deduce el ticker del nombre de la empresa si no viene explícito (Micron→MU, Netflix→NFLX,
+  MercadoLibre→MELI, Adobe→ADBE, Intel→INTC). Si no estás seguro del ticker, omite la acción.
+- Ignora enlaces de publicidad, "Subscribe", "Register", "Darse de baja".
+- No inventes niveles de precio que no aparezcan. Sé fiel al contenido."""
 
 
 def _html_to_text(body: str) -> str:
@@ -107,7 +114,8 @@ def _build_email_html(data: dict, subject: str) -> str:
     acciones = data.get("acciones") or []
     ideas = data.get("ideas_clave") or []
     acc_rows = ""
-    color = {"COMPRAR": "#4a7c59", "VENDER": "#d85c41", "VIGILAR": "#c9a14a", "MANTENER": "#5c6b66"}
+    color = {"COMPRAR": "#4a7c59", "VENDER": "#d85c41", "VIGILAR": "#c9a14a",
+             "MANTENER": "#5c6b66", "MENCIONADA": "#1F6FB5"}
     for a in acciones:
         c = color.get((a.get("accion") or "").upper(), "#5c6b66")
         niveles = f" · Niveles: {a['niveles']}" if a.get("niveles") else ""

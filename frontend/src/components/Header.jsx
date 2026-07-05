@@ -1,5 +1,5 @@
 import React from "react";
-import { ChartLineUp, MagnifyingGlass, House, CalendarBlank, Lightning, Moon, Sun, TelegramLogo, Crosshair, List, X, Bell, SignOut, User } from "@phosphor-icons/react";
+import { ChartLineUp, MagnifyingGlass, House, CalendarBlank, Lightning, Moon, Sun, TelegramLogo, Crosshair, List, X, Bell, SignOut, User, Radar } from "@phosphor-icons/react";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { Link, useLocation } from "react-router-dom";
@@ -10,6 +10,7 @@ import { useAuth } from "../context/AuthContext";
 const NAV = [
   { to: "/", label: "Dashboard", icon: House, testId: "nav-dashboard" },
   { to: "/oportunidades", label: "Oportunidades", icon: Lightning, testId: "nav-opportunities" },
+  { to: "/radar", label: "Radar", icon: Radar, testId: "nav-radar" },
   { to: "/calendario", label: "Calendario", icon: CalendarBlank, testId: "nav-calendar" },
   { to: "/signals", label: "Alertas", icon: Bell, testId: "nav-signals" },
 ];
