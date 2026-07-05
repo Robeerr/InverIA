@@ -108,7 +108,9 @@ function OverlayBtn({ label, color, active, onClick }) {
 function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, signalEntry, buyLevels, lines }) {
   const data = useMemo(() => candles || [], [candles]);
 
-  const [overlays, setOverlays] = useState({ sma20: false, sma50: true, sma200: true, bb: false, rsi: false });
+  // Por defecto SIN medias móviles: las velas son las protagonistas (estilo TradingView,
+  // mucho más limpio). El usuario las reactiva con los botones si las quiere.
+  const [overlays, setOverlays] = useState({ sma20: false, sma50: false, sma200: false, bb: false, rsi: false });
   const [showLines, setShowLines] = useState(true);
   const toggle = (k) => setOverlays((p) => ({ ...p, [k]: !p[k] }));
 
@@ -362,7 +364,7 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
                       y={val}
                       stroke={tac ? "#b8860b" : "#2563eb"}
                       strokeWidth={1}
-                      strokeOpacity={labeled ? 0.85 : 0.35}
+                      strokeOpacity={labeled ? 0.85 : 0.2}
                       strokeDasharray={tac ? "2 4" : "4 3"}
                       label={labeled ? { value: `N${i + 1} $${val}${tac ? " ·táct" : ""}`, position: "insideTopRight", fill: tac ? "#b8860b" : "#2563eb", fontSize: 10, fontFamily: "IBM Plex Mono" } : undefined}
                     />
