@@ -923,11 +923,29 @@ async def radar(days: int = 14):
     info_feed = []
     # 2) Acciones agregadas por ticker
     by_ticker = {}
+    import re as _re
+    def _clean_source(sender: str, subject: str) -> str:
+        """Nombre legible de la fuente. Make a veces manda el 'from' como objeto JSON
+        ({"address":"x@y.com","name":"The Daily Upside"}) o como 'Nombre <x@y.com>'."""
+        s = sender or ""
+        # 1) Si trae un "name":"..." (JSON de Make), úsalo.
+        m = _re.search(r'"name"\s*:\s*"([^"]+)"', s, _re.I)
+        if m and m.group(1).strip():
+            return m.group(1).strip()
+        # 2) "Nombre <email>" → el nombre.
+        m = _re.match(r'\s*([^<@"]+?)\s*<', s)
+        if m and m.group(1).strip():
+            return m.group(1).strip()
+        # 3) Dominio del email como último recurso.
+        m = _re.search(r'@([\w.-]+)', s)
+        if m:
+            dom = m.group(1).split(".")[0]
+            return dom.replace("-", " ").title()
+        return (subject or "Newsletter")[:40]
+
     for d in docs:
         ex = d.get("extracted") or {}
-        src = d.get("sender") or d.get("subject") or "newsletter"
-        # Nombre corto de la fuente (dominio del remitente).
-        src_short = src.split("@")[-1].split(">")[0] if "@" in src else src
+        src_short = _clean_source(d.get("sender"), d.get("subject"))
         when = d.get("received_at")
         if ex.get("resumen"):
             info_feed.append({
