@@ -33,6 +33,7 @@ import signal_table
 import daily_analyst
 import newsletter_ingest
 import market_regime
+import chart_lines
 import levels_engine
 import auth
 
@@ -354,6 +355,21 @@ async def get_quote(symbol: str):
 
 
 # ---------- Chart (candles + indicators) ----------
+def _compute_chart_lines(candles):
+    """Detecta líneas de tendencia + niveles y mapea los índices de vela a sus fechas
+    (para que el frontend las dibuje en el eje temporal). Best-effort: [] si falla."""
+    try:
+        lines = chart_lines.detect_lines(candles)
+        for tl in lines.get("trendlines", []):
+            for pt in tl.get("points", []):
+                idx = pt.get("index")
+                if idx is not None and 0 <= idx < len(candles):
+                    pt["date"] = candles[idx].get("date")
+        return lines
+    except Exception:
+        return {"trendlines": [], "levels": []}
+
+
 @api_router.get("/chart/{symbol}")
 async def get_chart(symbol: str, timeframe: str = "1Y"):
     sym = symbol.upper()
@@ -363,7 +379,9 @@ async def get_chart(symbol: str, timeframe: str = "1Y"):
     df = market_data.get_stock_data(sym, timeframe=timeframe)
     if df is None or df.empty:
         raise HTTPException(404, f"No hay datos históricos para '{sym}'")
-    result = {"symbol": sym, "timeframe": timeframe, "candles": market_data.df_to_candles(df)}
+    candles = market_data.df_to_candles(df)
+    result = {"symbol": sym, "timeframe": timeframe, "candles": candles,
+              "lines": _compute_chart_lines(candles)}
     _cache.set(f"chart:{sym}:{timeframe}", result, ttl=300)  # 5 min
     return result
 
@@ -889,6 +907,7 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y"):
         "timeframe": timeframe,
         "quote": quote,
         "candles": candles,
+        "lines": _compute_chart_lines(candles),
         "indicators": indicators_data,
         "news": news_list,
         "analyst": analyst,

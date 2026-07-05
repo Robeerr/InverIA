@@ -105,10 +105,11 @@ function OverlayBtn({ label, color, active, onClick }) {
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
-function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, signalEntry, buyLevels }) {
+function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, signalEntry, buyLevels, lines }) {
   const data = useMemo(() => candles || [], [candles]);
 
   const [overlays, setOverlays] = useState({ sma20: false, sma50: true, sma200: true, bb: false, rsi: false });
+  const [showLines, setShowLines] = useState(true);
   const toggle = (k) => setOverlays((p) => ({ ...p, [k]: !p[k] }));
 
   const hasVolume = useMemo(() => data.some((d) => d.volume > 0), [data]);
@@ -233,6 +234,7 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
         <OverlayBtn label="SMA200" color="#8b5cf6" active={overlays.sma200} onClick={() => toggle("sma200")} />
         <OverlayBtn label="Bollinger" color="#9ca3af" active={overlays.bb} onClick={() => toggle("bb")} />
         <OverlayBtn label="RSI" color="#f59e0b" active={overlays.rsi} onClick={() => toggle("rsi")} />
+        <OverlayBtn label="Líneas IA" color="#4a7c59" active={showLines} onClick={() => setShowLines((v) => !v)} />
       </div>
 
       {/* Main price chart */}
@@ -376,6 +378,33 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
                 label={{ value: `Venta $${signalEntry.deseado}`, position: "insideTopRight", fill: "#7c3aed", fontSize: 10, fontFamily: "IBM Plex Mono" }}
               />
             )}
+            {/* Líneas automáticas (detección algorítmica): soportes/resistencias
+                horizontales + directrices diagonales de tendencia. Toggle "Líneas IA". */}
+            {showLines && Array.isArray(lines?.levels) && lines.levels.map((lv, i) => (
+              <ReferenceLine
+                key={`auto-lv-${i}`}
+                yAxisId="price"
+                y={lv.price}
+                stroke={lv.role === "resistencia" ? "#d85c41" : "#4a7c59"}
+                strokeWidth={1}
+                strokeOpacity={0.5}
+                strokeDasharray="6 4"
+              />
+            ))}
+            {showLines && Array.isArray(lines?.trendlines) && lines.trendlines.map((tl, i) => {
+              const p = tl.points || [];
+              if (p.length < 2 || !p[0].date || !p[1].date) return null;
+              return (
+                <ReferenceLine
+                  key={`auto-tl-${i}`}
+                  yAxisId="price"
+                  segment={[{ x: p[0].date, y: p[0].price }, { x: p[1].date, y: p[1].price }]}
+                  stroke={tl.kind === "resistencia" ? "#d85c41" : "#4a7c59"}
+                  strokeWidth={1.5}
+                  strokeOpacity={0.7}
+                />
+              );
+            })}
           </ComposedChart>
         </ResponsiveContainer>
       </div>

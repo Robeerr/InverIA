@@ -64,6 +64,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const [marketSignals, setMarketSignals] = useState(null);
   const [volumeProfile, setVolumeProfile] = useState(null);
   const [buyLevels, setBuyLevels] = useState(null);
+  const [chartLines, setChartLines] = useState(null);
   const [marketRegime, setMarketRegime] = useState(null);
   const [news, setNews] = useState([]);
   const [loadingQuote, setLoadingQuote] = useState(false);
@@ -90,6 +91,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
     setMarketSignals(null);
     setVolumeProfile(null);
     setBuyLevels(null);
+    setChartLines(null);
     // 1 reintento rápido ante un fallo de red puntual.
     const fetchWithRetry = async () => {
       try {
@@ -114,6 +116,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       setAnalystData(data.analyst);
       // Niveles del motor (deterministas): disponibles ya al cargar, sin esperar a la IA.
       if (data.buy_levels) setBuyLevels(data.buy_levels);
+      if (data.lines) setChartLines(data.lines);
       if (data.volume_profile) setVolumeProfile(data.volume_profile);
       if (data.market_regime) setMarketRegime(data.market_regime);
     } catch (e) {
@@ -132,6 +135,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
         const c = await api.chart(symbol, tf);
         if (my !== chartReqId.current) return; // respuesta obsoleta
         setCandles(c.candles || []);
+        setChartLines(c.lines || null);
       } catch (e) {
         if (my === chartReqId.current) toast.error("Error al cargar el gráfico");
       }
@@ -300,6 +304,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
           indicators={indicators}
           signalEntry={signalEntry}
           buyLevels={buyLevels}
+          lines={chartLines}
         />
         <RecommendationPanel
           analysis={analysis}
