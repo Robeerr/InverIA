@@ -478,7 +478,7 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
                   stroke={col}
                   strokeWidth={1.5}
                   strokeOpacity={0.85}
-                  label={{ value: `Directriz ${tl.direction}`, position: "insideBottomLeft", fill: col, fontSize: 9, fontFamily: "IBM Plex Mono" }}
+                  label={{ value: `Directriz ${tl.direction}`, position: tl.kind === "resistencia" ? "insideTopLeft" : "insideBottomLeft", fill: col, fontSize: 9, fontFamily: "IBM Plex Mono" }}
                 />
               );
             })}
