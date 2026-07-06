@@ -1022,6 +1022,27 @@ async def radar(days: int = 14):
     # Ordena por nº de fuentes distintas (consenso) y menciones.
     acciones.sort(key=lambda x: (x["n_fuentes"], x["menciones"]), reverse=True)
 
+    # Reconcilia el veredicto con el motor EN VIVO: el "inveria" guardado es una foto
+    # del día que llegó el email y puede estar rancio (un ticker bueno marcado como
+    # "Evítala" por un bajón puntual ya superado). Recalculamos el score fresco para
+    # los más relevantes, con límite de concurrencia y caché para no saturar las APIs.
+    top = acciones[:25]
+    sem = asyncio.Semaphore(5)
+
+    async def _refresh(item):
+        cache_key = f"radar_score_{item['ticker']}"
+        fresh = _cache.get(cache_key)
+        if fresh is None:
+            async with sem:
+                fresh = await newsletter_ingest._score_ticker(item["ticker"])
+            if fresh is not None:
+                _cache.set(cache_key, fresh, ttl=1800)  # 30 min
+        if fresh is not None:
+            item["inveria"] = fresh
+            item["inveria_actualizado"] = True
+
+    await asyncio.gather(*[_refresh(a) for a in top], return_exceptions=True)
+
     return {
         "days": days,
         "total_newsletters": len(docs),

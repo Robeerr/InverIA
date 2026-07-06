@@ -27,8 +27,10 @@ function StockCard({ row, onPick }) {
           {row.nombre && <p className="text-[10px] text-[#5c6b66] truncate max-w-[150px]">{row.nombre}</p>}
         </div>
         {vs && (
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0"
-            style={{ background: `${vs.c}18`, color: vs.c, border: `1px solid ${vs.c}40` }}>
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 flex items-center gap-1"
+            style={{ background: `${vs.c}18`, color: vs.c, border: `1px solid ${vs.c}40` }}
+            title={row.inveria_actualizado ? "Veredicto recalculado en vivo con el motor" : "Veredicto del día de la mención"}>
+            {row.inveria_actualizado && <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: vs.c }} />}
             {vs.short}{row.inveria?.score != null ? ` ${row.inveria.score}` : ""}
           </span>
         )}
