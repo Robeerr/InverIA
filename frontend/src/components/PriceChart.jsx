@@ -115,6 +115,7 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
     return () => window.removeEventListener("resize", onResize);
   }, []);
   const [fullscreen, setFullscreen] = useState(false);
+  const [openPattern, setOpenPattern] = useState(null); // 'estructura' | 'vela' | null
   // En pantalla completa (horizontal) cabe mucho más → más velas y más detalle.
   const maxCandles = fullscreen ? 150 : vw < 500 ? 45 : vw < 768 ? 60 : 110;
   const data = useMemo(() => (candles || []).slice(-maxCandles), [candles, maxCandles]);
@@ -151,24 +152,29 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
     return Math.max(...data.map((d) => d.volume || 0), 1);
   }, [data, hasVolume]);
 
-  // Compute indicator series only when their overlays are active.
+  // Compute indicator series only when their overlays are active. IMPORTANTE: se calculan
+  // sobre TODAS las velas (no solo las visibles), porque la SMA200 necesita 200 velas
+  // previas; luego se alinean a la ventana visible con el offset. Así la SMA200 (y las
+  // demás) sí aparecen aunque solo mostremos ~110 velas.
   const chartData = useMemo(() => {
     if (!data.length) return [];
-    const sma20v = overlays.sma20 ? calcSMA(data, 20) : null;
-    const sma50v = overlays.sma50 ? calcSMA(data, 50) : null;
-    const sma200v = overlays.sma200 ? calcSMA(data, 200) : null;
-    const bbv = overlays.bb ? calcBB(data, 20, 2) : null;
-    const rsiv = overlays.rsi ? calcRSI(data, 14) : null;
+    const full = candles || [];
+    const off = full.length - data.length;
+    const s20 = overlays.sma20 ? calcSMA(full, 20) : null;
+    const s50 = overlays.sma50 ? calcSMA(full, 50) : null;
+    const s200 = overlays.sma200 ? calcSMA(full, 200) : null;
+    const bbv = overlays.bb ? calcBB(full, 20, 2) : null;
+    const rsiv = overlays.rsi ? calcRSI(full, 14) : null;
     return data.map((d, i) => ({
       ...d,
-      sma20: sma20v?.[i] ?? undefined,
-      sma50: sma50v?.[i] ?? undefined,
-      sma200: sma200v?.[i] ?? undefined,
-      bbU: bbv?.[i]?.bbU ?? undefined,
-      bbL: bbv?.[i]?.bbL ?? undefined,
-      rsi: rsiv?.[i] ?? undefined,
+      sma20: s20?.[off + i] ?? undefined,
+      sma50: s50?.[off + i] ?? undefined,
+      sma200: s200?.[off + i] ?? undefined,
+      bbU: bbv?.[off + i]?.bbU ?? undefined,
+      bbL: bbv?.[off + i]?.bbL ?? undefined,
+      rsi: rsiv?.[off + i] ?? undefined,
     }));
-  }, [data, overlays]);
+  }, [data, candles, overlays]);
 
   // CandleShape: closure over priceDomain for coordinate math.
   // Recharts Bar always passes background = {x, y, width, height} to shape,
@@ -239,7 +245,7 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
     <section
       data-testid="price-chart"
       className={fullscreen
-        ? "fixed inset-0 z-[100] bg-white dark:bg-neutral-950 p-2 overflow-y-auto animate-fade-up"
+        ? "fixed inset-0 z-[100] bg-white dark:bg-neutral-950 p-2 flex flex-col overflow-hidden animate-fade-up"
         : "card-flat p-2 sm:p-4 md:p-6 animate-fade-up"}
     >
       {/* Botón de pantalla completa (arriba a la derecha, flotante) */}
@@ -291,8 +297,8 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
 
       {/* Main price chart (el gráfico va PRIMERO — sobre todo en móvil) */}
       <div
-        style={{ height: fullscreen ? (overlays.rsi ? "62vh" : "78vh") : (overlays.rsi ? 360 : 460) }}
-        className="w-full"
+        style={{ height: fullscreen ? undefined : (overlays.rsi ? 360 : 460) }}
+        className={fullscreen ? "w-full flex-1 min-h-0" : "w-full"}
       >
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }} syncId="inveria-chart">
@@ -486,28 +492,44 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
         </ResponsiveContainer>
       </div>
 
-      {/* Patrones detectados DEBAJO del gráfico (compactos) — estructura + vela reciente */}
-      {(lines?.pattern || lines?.candlestick) && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {lines?.pattern && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#1a3a32]/[0.06] border border-[#1a3a32]/20"
-                 title={lines.pattern.descripcion}>
-              <span className="text-sm">📐</span>
-              <span className="text-xs font-semibold text-[#0e1f1a]">{lines.pattern.nombre}</span>
-            </div>
+      {/* Patrones detectados DEBAJO del gráfico. Chips que se despliegan al pulsar para
+          mostrar QUÉ SIGNIFICA cada patrón (funciona en móvil, sin hover). */}
+      {(lines?.pattern || lines?.candlestick) && !fullscreen && (
+        <div className="mt-3">
+          <div className="flex flex-wrap gap-2">
+            {lines?.pattern && (
+              <button onClick={() => setOpenPattern((v) => v === "estructura" ? null : "estructura")}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-colors ${openPattern === "estructura" ? "bg-[#1a3a32] border-[#1a3a32]" : "bg-[#1a3a32]/[0.06] border-[#1a3a32]/20"}`}>
+                <span className="text-sm">📐</span>
+                <span className={`text-xs font-semibold ${openPattern === "estructura" ? "text-white" : "text-[#0e1f1a]"}`}>{lines.pattern.nombre}</span>
+              </button>
+            )}
+            {lines?.candlestick && (() => {
+              const s = lines.candlestick.sentido;
+              const col = s === "alcista" ? "#4a7c59" : s === "bajista" ? "#d85c41" : "#c9a14a";
+              const open = openPattern === "vela";
+              return (
+                <button onClick={() => setOpenPattern((v) => v === "vela" ? null : "vela")}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-colors"
+                  style={{ background: open ? col : `${col}12`, borderColor: `${col}55` }}>
+                  <span className="text-sm">🕯️</span>
+                  <span className="text-xs font-semibold" style={{ color: open ? "#fff" : col }}>{lines.candlestick.nombre}</span>
+                </button>
+              );
+            })()}
+          </div>
+          {/* Descripción del patrón seleccionado */}
+          {openPattern === "estructura" && lines?.pattern && (
+            <p className="mt-2 text-xs text-[#5c6b66] leading-relaxed bg-[#1a3a32]/[0.04] rounded-lg px-3 py-2">
+              <b className="text-[#0e1f1a]">{lines.pattern.nombre}:</b> {lines.pattern.descripcion}
+            </p>
           )}
-          {lines?.candlestick && (() => {
-            const s = lines.candlestick.sentido;
-            const col = s === "alcista" ? "#4a7c59" : s === "bajista" ? "#d85c41" : "#c9a14a";
-            return (
-              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg"
-                   style={{ background: `${col}12`, border: `1px solid ${col}33` }}
-                   title={lines.candlestick.descripcion}>
-                <span className="text-sm">🕯️</span>
-                <span className="text-xs font-semibold" style={{ color: col }}>{lines.candlestick.nombre}</span>
-              </div>
-            );
-          })()}
+          {openPattern === "vela" && lines?.candlestick && (
+            <p className="mt-2 text-xs text-[#5c6b66] leading-relaxed bg-[#1a3a32]/[0.04] rounded-lg px-3 py-2">
+              <b className="text-[#0e1f1a]">{lines.candlestick.nombre}:</b> {lines.candlestick.descripcion}
+            </p>
+          )}
+          <p className="mt-1.5 text-[10px] text-[#5c6b66]">Toca un patrón para ver qué significa.</p>
         </div>
       )}
 
