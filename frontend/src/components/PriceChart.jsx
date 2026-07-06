@@ -277,9 +277,9 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
             <YAxis
               yAxisId="price"
               domain={priceDomain}
-              tick={{ fontSize: 10, fill: "#5c6b66", fontFamily: "IBM Plex Mono" }}
-              tickFormatter={(v) => `$${v >= 1000 ? v.toFixed(0) : v.toFixed(2)}`}
-              width={60}
+              tick={{ fontSize: 9, fill: "#5c6b66", fontFamily: "IBM Plex Mono" }}
+              tickFormatter={(v) => (v >= 1000 ? v.toFixed(0) : v.toFixed(1))}
+              width={44}
               orientation="right"
             />
             {hasVolume && <YAxis yAxisId="vol" domain={[0, maxVol * 5]} hide />}
@@ -424,16 +424,31 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
                 que solo añadimos lo que aporta valor nuevo — las líneas inclinadas. */}
             {showLines && Array.isArray(lines?.trendlines) && lines.trendlines.map((tl, i) => {
               const p = tl.points || [];
-              if (p.length < 2 || !p[0].date || !p[1].date) return null;
+              if (p.length < 2) return null;
               const col = tl.kind === "resistencia" ? "#d85c41" : "#4a7c59";
+              // Recorte a la ventana VISIBLE: las líneas se calculan sobre todas las velas,
+              // pero mostramos solo las últimas N. Si el punto de inicio queda fuera, lo
+              // proyectamos hasta la primera vela visible usando la pendiente de la línea.
+              const fullLen = (candles || []).length;
+              const firstIdx = fullLen - data.length; // índice (array completo) de data[0]
+              let a = { ...p[0] }, b = { ...p[1] };
+              const dIdx = (b.index - a.index) || 1;
+              const slope = (b.price - a.price) / dIdx;
+              if (a.index < firstIdx && data.length) {
+                a = { index: firstIdx, price: a.price + slope * (firstIdx - a.index), date: data[0].date };
+              } else {
+                a.date = a.date || (data[a.index - firstIdx] || {}).date;
+              }
+              b.date = b.date || (data[data.length - 1] || {}).date;
+              if (!a.date || !b.date) return null;
               return (
                 <ReferenceLine
                   key={`auto-tl-${i}`}
                   yAxisId="price"
-                  segment={[{ x: p[0].date, y: p[0].price }, { x: p[1].date, y: p[1].price }]}
+                  segment={[{ x: a.date, y: a.price }, { x: b.date, y: b.price }]}
                   stroke={col}
                   strokeWidth={1.5}
-                  strokeOpacity={0.8}
+                  strokeOpacity={0.85}
                   label={{ value: `Directriz ${tl.direction}`, position: "insideBottomLeft", fill: col, fontSize: 9, fontFamily: "IBM Plex Mono" }}
                 />
               );
