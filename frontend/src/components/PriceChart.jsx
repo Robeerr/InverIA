@@ -114,8 +114,18 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
-  const maxCandles = vw < 500 ? 45 : vw < 768 ? 60 : 110;
+  const [fullscreen, setFullscreen] = useState(false);
+  // En pantalla completa (horizontal) cabe mucho más → más velas y más detalle.
+  const maxCandles = fullscreen ? 150 : vw < 500 ? 45 : vw < 768 ? 60 : 110;
   const data = useMemo(() => (candles || []).slice(-maxCandles), [candles, maxCandles]);
+
+  // Bloquea el scroll del fondo mientras el gráfico está en pantalla completa.
+  useEffect(() => {
+    if (fullscreen) {
+      document.body.style.overflow = "hidden";
+      return () => { document.body.style.overflow = ""; };
+    }
+  }, [fullscreen]);
 
   // Por defecto SIN medias móviles: las velas son las protagonistas (estilo TradingView,
   // mucho más limpio). El usuario las reactiva con los botones si las quiere.
@@ -226,9 +236,25 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
   };
 
   return (
-    <section data-testid="price-chart" className="card-flat p-2 sm:p-4 md:p-6 animate-fade-up">
+    <section
+      data-testid="price-chart"
+      className={fullscreen
+        ? "fixed inset-0 z-[100] bg-white dark:bg-neutral-950 p-2 overflow-y-auto animate-fade-up"
+        : "card-flat p-2 sm:p-4 md:p-6 animate-fade-up"}
+    >
+      {/* Botón de pantalla completa (arriba a la derecha, flotante) */}
+      <button
+        onClick={() => setFullscreen((v) => !v)}
+        title={fullscreen ? "Salir de pantalla completa" : "Pantalla completa (gira el móvil)"}
+        className="absolute top-2 right-2 z-10 px-2.5 py-1.5 rounded-lg border border-[#e5e0d8] bg-[#f5f3ef] text-[#1a3a32] text-xs font-mono hover:bg-[#1a3a32] hover:text-white transition-colors"
+      >
+        {fullscreen ? "✕ Salir" : "⛶ Pantalla completa"}
+      </button>
+      {fullscreen && vw < 640 && (
+        <p className="text-center text-[11px] text-[#5c6b66] mb-1">📱 Gira el móvil para verlo en horizontal con más detalle</p>
+      )}
       {/* Header row: title + timeframe buttons */}
-      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2 pr-28">
         <div>
           <h3 className="font-heading font-semibold text-lg text-[#0e1f1a]">Gráfico de Precio</h3>
           <p className="text-xs text-[#5c6b66] mt-0.5">
@@ -264,7 +290,10 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
       </div>
 
       {/* Main price chart (el gráfico va PRIMERO — sobre todo en móvil) */}
-      <div style={{ height: overlays.rsi ? 360 : 460 }} className="w-full">
+      <div
+        style={{ height: fullscreen ? (overlays.rsi ? "62vh" : "78vh") : (overlays.rsi ? 360 : 460) }}
+        className="w-full"
+      >
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }} syncId="inveria-chart">
             <CartesianGrid stroke="#e5e0d8" strokeOpacity={0.4} strokeDasharray="2 4" vertical={false} />
