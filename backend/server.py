@@ -207,6 +207,9 @@ api_router = APIRouter(prefix="/api")
 logger = logging.getLogger("inveria")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
+# Referencias fuertes a tareas en segundo plano (si no, el GC puede cancelarlas).
+_bg_tasks: set = set()
+
 
 # ---------- Models ----------
 class WatchlistItem(BaseModel):
@@ -1347,8 +1350,21 @@ async def inbound_newsletter(request: Request, token: str = ""):
         payload = {k: v for k, v in form.items()}
 
     subject, html, text, sender = _newsletter_body_from(payload)
-    result = await newsletter_ingest.process_newsletter(db, subject, html, text, sender)
-    return result
+
+    # Procesa en SEGUNDO PLANO y responde al instante. La extracción con IA + el cruce
+    # de tickers (quotes/financials/consenso) puede tardar >40s en Render free, y Make
+    # corta la conexión a los 40s ("timeout of 40000ms exceeded") y acaba desactivando
+    # el escenario. Devolviendo 200 de inmediato, Make nunca hace timeout.
+    async def _bg():
+        try:
+            await newsletter_ingest.process_newsletter(db, subject, html, text, sender)
+        except Exception:
+            logger.exception("newsletter: procesado en segundo plano falló")
+
+    task = asyncio.create_task(_bg())
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return {"ok": True, "queued": True}
 
 
 _backtest_cache: dict = {}
