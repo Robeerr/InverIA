@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   ComposedChart,
   Bar,
@@ -107,9 +107,15 @@ function OverlayBtn({ label, color, active, onClick }) {
 
 // ── Main component ───────────────────────────────────────────────────────────
 function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, signalEntry, buyLevels, lines }) {
-  // Mostrar solo las ~110 velas más recientes: así cada vela es ANCHA y clara (como
-  // TradingView), en vez de cientos apretadas que no se distinguen.
-  const data = useMemo(() => (candles || []).slice(-110), [candles]);
+  // Nº de velas según el ancho de pantalla: en móvil MENOS velas = más anchas y claras.
+  const [vw, setVw] = useState(typeof window !== "undefined" ? window.innerWidth : 1024);
+  useEffect(() => {
+    const onResize = () => setVw(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const maxCandles = vw < 500 ? 45 : vw < 768 ? 60 : 110;
+  const data = useMemo(() => (candles || []).slice(-maxCandles), [candles, maxCandles]);
 
   // Por defecto SIN medias móviles: las velas son las protagonistas (estilo TradingView,
   // mucho más limpio). El usuario las reactiva con los botones si las quiere.
@@ -220,7 +226,7 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
   };
 
   return (
-    <section data-testid="price-chart" className="card-flat p-4 md:p-6 animate-fade-up">
+    <section data-testid="price-chart" className="card-flat p-2 sm:p-4 md:p-6 animate-fade-up">
       {/* Header row: title + timeframe buttons */}
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div>
@@ -260,7 +266,7 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
       {/* Main price chart (el gráfico va PRIMERO — sobre todo en móvil) */}
       <div style={{ height: overlays.rsi ? 360 : 460 }} className="w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={chartData} margin={{ top: 8, right: 64, left: 0, bottom: 4 }} syncId="inveria-chart">
+          <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }} syncId="inveria-chart">
             <CartesianGrid stroke="#e5e0d8" strokeOpacity={0.4} strokeDasharray="2 4" vertical={false} />
             <XAxis
               dataKey="date"
