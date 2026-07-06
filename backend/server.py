@@ -977,6 +977,10 @@ async def radar(days: int = 14):
             tk = (a.get("ticker") or "").strip().upper()
             if not tk:
                 continue
+            # Oculta patrocinadores/anuncios que se colaron antes del filtro de ingesta
+            # (ej. "Oracle NetSuite" como patrocinador, no como idea de inversión).
+            if newsletter_ingest._is_sponsor(a):
+                continue
             slot = by_ticker.setdefault(tk, {
                 "ticker": tk, "nombre": a.get("nombre") or "",
                 "menciones": 0, "fuentes": set(), "angulos": [],

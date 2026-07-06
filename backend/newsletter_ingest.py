@@ -56,8 +56,31 @@ REGLAS IMPORTANTES:
 - Deduce el ticker del nombre si no viene explícito (Micron→MU, Adobe→ADBE, Intel→INTC,
   Affirm→AFRM, Palantir→PLTR). Si de verdad no sabes el ticker, omite esa acción.
 - Ignora publicidad: "Subscribe", "Register Now", "Featured", "Darse de baja", "Top Stocks H2".
+- NO incluyas empresas que aparecen SOLO como PATROCINADOR o ANUNCIO del newsletter. Casi todos
+  los boletines llevan un bloque publicitario pagado por una marca (ej. "Oracle NetSuite",
+  "Brought to you by...", "Sponsored by...", "Patrocinado por...", "Together with...",
+  "This is a paid advertisement", un producto B2B con CTA tipo "download the guide / KPI checklist /
+  book a demo / free report"). Eso NO es una idea de inversión: es publicidad. NO lo pongas en
+  "acciones" aunque se mencione un nombre de empresa cotizada. Solo incluye una empresa si el
+  contenido EDITORIAL (un titular, análisis o comentario de mercado) habla de ella como oportunidad,
+  riesgo o noticia — no si es quien paga el anuncio.
 - Ignora el envoltorio de reenvío ("---------- Forwarded message ----------", "From:", "Date:").
 - No inventes niveles de precio que no aparezcan. Sé fiel al contenido."""
+
+
+# Señales típicas de que una "acción" extraída es en realidad el patrocinador/anuncio
+# del newsletter, no una idea editorial. Se usa como red de seguridad tras la extracción IA.
+_SPONSOR_RE = re.compile(
+    r"(?i)(patrocin|sponsor|brought to you|together with|paid (advert|promotion)|"
+    r"anuncio|publicidad|advertisement|book a demo|download the (guide|report|whitepaper)|"
+    r"kpi (guide|checklist|gu[íi]a)|free (guide|report|trial)|netsuite)"
+)
+
+
+def _is_sponsor(a: dict) -> bool:
+    """True si la acción huele a patrocinador/anuncio (no es una idea de inversión real)."""
+    blob = " ".join(str(a.get(k) or "") for k in ("motivo", "nombre", "niveles"))
+    return bool(_SPONSOR_RE.search(blob))
 
 
 def _html_to_text(body: str) -> str:
@@ -204,6 +227,13 @@ async def process_newsletter(db, subject: str, body_html: str, body_text: str = 
     # CRUCE CON TU MOTOR: cada acción mencionada se pasa por el score + guardián de
     # tendencia, para que sepas si fiarte o no (verde/amarillo/rojo). Acotado a 6 tickers.
     acciones = data.get("acciones") or []
+    # Red de seguridad: descarta patrocinadores/anuncios que la IA haya colado como acciones.
+    filtradas = [a for a in acciones if not _is_sponsor(a)]
+    if len(filtradas) != len(acciones):
+        logger.info("newsletter: descartadas %d menciones de patrocinador/anuncio",
+                    len(acciones) - len(filtradas))
+        acciones = filtradas
+        data["acciones"] = acciones
     for a in acciones[:6]:
         ticker = (a.get("ticker") or "").strip().upper()
         if ticker:
