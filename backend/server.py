@@ -1367,6 +1367,24 @@ async def inbound_newsletter(request: Request, token: str = ""):
     return {"ok": True, "queued": True}
 
 
+@api_router.get("/inbound/newsletter/debug")
+async def inbound_newsletter_debug(token: str = ""):
+    """Diagnóstico: devuelve el resultado de los últimos procesados de newsletter
+    (extracción / envío de email) para depurar sin acceso a los logs de Render.
+    Protegido con el mismo INBOUND_SECRET."""
+    secret = os.environ.get("INBOUND_SECRET")
+    if not secret or token != secret:
+        raise HTTPException(401, "Token de entrada inválido.")
+    return {
+        "resend_configurado": bool(os.environ.get("RESEND_API_KEY")),
+        "destino": (os.environ.get("ANALYST_RECIPIENT_EMAIL")
+                    or os.environ.get("ALERT_RECIPIENT_EMAIL") or "(SIN DESTINO)"),
+        "from": (os.environ.get("ALERT_FROM_EMAIL")
+                 or os.environ.get("SENDER_EMAIL") or "onboarding@resend.dev"),
+        "ultimos_procesados": newsletter_ingest._LAST_RUNS,
+    }
+
+
 _backtest_cache: dict = {}
 
 

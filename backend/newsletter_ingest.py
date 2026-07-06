@@ -83,6 +83,17 @@ def _is_sponsor(a: dict) -> bool:
     return bool(_SPONSOR_RE.search(blob))
 
 
+# Traza de diagnóstico: guarda el resultado de los últimos procesados en memoria para
+# poder inspeccionar por qué no llegó un email sin acceso a los logs de Render.
+_LAST_RUNS: list = []
+
+
+def _trace(**info):
+    info["at"] = datetime.now(timezone.utc).isoformat()
+    _LAST_RUNS.insert(0, info)
+    del _LAST_RUNS[8:]  # conserva solo los 8 más recientes
+
+
 def _html_to_text(body: str) -> str:
     """Convierte HTML de email a texto plano legible (suficiente para la IA)."""
     if not body:
@@ -217,11 +228,15 @@ async def process_newsletter(db, subject: str, body_html: str, body_text: str = 
     reenvía el resumen destilado al usuario. Devuelve el resultado."""
     text = body_text.strip() if body_text and body_text.strip() else _html_to_text(body_html)
     if not text or len(text) < 40:
+        _trace(subject=subject, sender=sender, stage="body",
+               ok=False, error="cuerpo del email vacío o demasiado corto",
+               text_len=len(text or ""))
         return {"ok": False, "error": "cuerpo del email vacío o demasiado corto"}
     try:
         data = await _extract(subject, text)
     except Exception as e:
         logger.exception("newsletter: extracción falló")
+        _trace(subject=subject, sender=sender, stage="extract", ok=False, error=str(e)[:300])
         return {"ok": False, "error": f"extracción falló: {e}"}
 
     # CRUCE CON TU MOTOR: cada acción mencionada se pasa por el score + guardián de
@@ -251,5 +266,10 @@ async def process_newsletter(db, subject: str, body_html: str, body_text: str = 
         logger.warning("newsletter: no se pudo guardar en Mongo")
 
     ok, err = await _send_summary(data, subject)
+    _trace(subject=subject, sender=sender, stage="email", ok=ok, error=err,
+           acciones=len(data.get("acciones") or []), titulo=data.get("titulo"),
+           recipient=(os.environ.get("ANALYST_RECIPIENT_EMAIL")
+                      or os.environ.get("ALERT_RECIPIENT_EMAIL") or "(sin destino)"),
+           resend=bool(os.environ.get("RESEND_API_KEY")))
     return {"ok": ok, "error": err, "acciones": len(data.get("acciones") or []),
             "titulo": data.get("titulo")}
