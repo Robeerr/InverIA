@@ -247,8 +247,8 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
         </div>
       </div>
 
-      {/* Indicator overlay toggles */}
-      <div className="flex gap-1.5 flex-wrap mb-3">
+      {/* Indicator overlay toggles — una fila deslizable en móvil (no 2 filas) */}
+      <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1 [&>*]:shrink-0">
         <OverlayBtn label="SMA20" color="#f59e0b" active={overlays.sma20} onClick={() => toggle("sma20")} />
         <OverlayBtn label="SMA50" color="#3b82f6" active={overlays.sma50} onClick={() => toggle("sma50")} />
         <OverlayBtn label="SMA200" color="#8b5cf6" active={overlays.sma200} onClick={() => toggle("sma200")} />
@@ -257,37 +257,7 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
         <OverlayBtn label="Líneas IA" color="#4a7c59" active={showLines} onClick={() => setShowLines((v) => !v)} />
       </div>
 
-      {/* Patrones detectados (Fase 2): estructura (triángulo, canal, C-H...) y VELA reciente */}
-      {(lines?.pattern || lines?.candlestick) && (
-        <div className="mb-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {lines?.pattern && (
-            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-[#1a3a32]/[0.06] border border-[#1a3a32]/20">
-              <span className="text-base leading-none mt-0.5">📐</span>
-              <div>
-                <p className="text-[10px] uppercase tracking-[0.12em] text-[#5c6b66] font-mono">Patrón de estructura</p>
-                <p className="text-sm font-semibold text-[#0e1f1a]">{lines.pattern.nombre}</p>
-                <p className="text-xs text-[#5c6b66] leading-snug mt-0.5">{lines.pattern.descripcion}</p>
-              </div>
-            </div>
-          )}
-          {lines?.candlestick && (() => {
-            const s = lines.candlestick.sentido;
-            const col = s === "alcista" ? "#4a7c59" : s === "bajista" ? "#d85c41" : "#c9a14a";
-            return (
-              <div className="flex items-start gap-2 px-3 py-2 rounded-lg" style={{ background: `${col}12`, border: `1px solid ${col}33` }}>
-                <span className="text-base leading-none mt-0.5">🕯️</span>
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.12em] text-[#5c6b66] font-mono">Patrón de vela</p>
-                  <p className="text-sm font-semibold" style={{ color: col }}>{lines.candlestick.nombre}</p>
-                  <p className="text-xs text-[#5c6b66] leading-snug mt-0.5">{lines.candlestick.descripcion}</p>
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-      )}
-
-      {/* Main price chart */}
+      {/* Main price chart (el gráfico va PRIMERO — sobre todo en móvil) */}
       <div style={{ height: overlays.rsi ? 360 : 460 }} className="w-full">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={chartData} margin={{ top: 8, right: 64, left: 0, bottom: 4 }} syncId="inveria-chart">
@@ -465,6 +435,31 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+
+      {/* Patrones detectados DEBAJO del gráfico (compactos) — estructura + vela reciente */}
+      {(lines?.pattern || lines?.candlestick) && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {lines?.pattern && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#1a3a32]/[0.06] border border-[#1a3a32]/20"
+                 title={lines.pattern.descripcion}>
+              <span className="text-sm">📐</span>
+              <span className="text-xs font-semibold text-[#0e1f1a]">{lines.pattern.nombre}</span>
+            </div>
+          )}
+          {lines?.candlestick && (() => {
+            const s = lines.candlestick.sentido;
+            const col = s === "alcista" ? "#4a7c59" : s === "bajista" ? "#d85c41" : "#c9a14a";
+            return (
+              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg"
+                   style={{ background: `${col}12`, border: `1px solid ${col}33` }}
+                   title={lines.candlestick.descripcion}>
+                <span className="text-sm">🕯️</span>
+                <span className="text-xs font-semibold" style={{ color: col }}>{lines.candlestick.nombre}</span>
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* RSI subplot */}
       {overlays.rsi && (
