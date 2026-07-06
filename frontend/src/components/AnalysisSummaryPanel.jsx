@@ -33,7 +33,7 @@ export default function AnalysisSummaryPanel({ analysis, indicators, buyLevels, 
   const rsi = indicators?.rsi;
   const rsiLabel = rsi == null ? "—" : rsi > 70 ? "sobrecompra" : rsi < 30 ? "sobreventa" : "neutro";
   const rsiColor = rsi == null ? "#5c6b66" : rsi > 70 ? "#d85c41" : rsi < 30 ? "#4a7c59" : "#5c6b66";
-  const regime = indicators?.regime?.regime || analysis?.trend;
+  const regime = indicators?.regime?.regime || indicators?.trend || analysis?.trend || "—";
   const vol = quote?.volume, avgVol = quote?.avg_volume;
   const volLabel = vol && avgVol ? (vol > avgVol * 1.3 ? "Alto" : vol < avgVol * 0.7 ? "Bajo" : "Normal") : "—";
 
@@ -92,7 +92,7 @@ export default function AnalysisSummaryPanel({ analysis, indicators, buyLevels, 
       {/* Momentum */}
       <p className="text-[10px] uppercase tracking-[0.15em] text-[#5c6b66] font-mono mb-1">Momentum</p>
       <div>
-        {regime && <Row label="Tendencia" value={regime} />}
+        <Row label="Tendencia" value={regime} />
         <Row label="Volumen" value={volLabel} />
         <Row label="RSI" value={rsi != null ? `${Math.round(rsi)} · ${rsiLabel}` : "—"} color={rsiColor} />
       </div>

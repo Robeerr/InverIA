@@ -106,7 +106,9 @@ function OverlayBtn({ label, color, active, onClick }) {
 
 // ── Main component ───────────────────────────────────────────────────────────
 function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, signalEntry, buyLevels, lines }) {
-  const data = useMemo(() => candles || [], [candles]);
+  // Mostrar solo las ~110 velas más recientes: así cada vela es ANCHA y clara (como
+  // TradingView), en vez de cientos apretadas que no se distinguen.
+  const data = useMemo(() => (candles || []).slice(-110), [candles]);
 
   // Por defecto SIN medias móviles: las velas son las protagonistas (estilo TradingView,
   // mucho más limpio). El usuario las reactiva con los botones si las quiere.
@@ -166,17 +168,17 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
       const { high, low, close } = payload;
       if (high == null || low == null || close == null) return null;
       const isUp = close >= open;
-      const color = isUp ? "#4a7c59" : "#d85c41";
-      const bw = Math.max((width || 4) * 0.72, 1.5);
+      const color = isUp ? "#22c55e" : "#ef4444";  // verde/rojo más vivos para que resalten
+      const bw = Math.max((width || 4) * 0.82, 2.5);
       const cx = (x || 0) + (width || 4) / 2;
       return (
         <g>
-          <line x1={cx} y1={py(high)} x2={cx} y2={py(low)} stroke={color} strokeWidth={1} />
+          <line x1={cx} y1={py(high)} x2={cx} y2={py(low)} stroke={color} strokeWidth={1.25} />
           <rect
             x={cx - bw / 2}
             y={Math.min(py(open), py(close))}
             width={bw}
-            height={Math.max(Math.abs(py(close) - py(open)), 1)}
+            height={Math.max(Math.abs(py(close) - py(open)), 1.5)}
             fill={color}
           />
         </g>
