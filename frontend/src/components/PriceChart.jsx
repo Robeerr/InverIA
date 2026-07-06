@@ -13,7 +13,8 @@ import {
 } from "recharts";
 import { fmtPrice } from "../lib/format";
 
-const TIMEFRAMES = ["5M", "15M", "1H", "1D", "1W", "1M", "3M", "1Y", "5Y"];
+// Marcos enfocados a swing trading (intradía → mensual). El 1D/1W son los clave.
+const TIMEFRAMES = ["15M", "1H", "4H", "1D", "1W", "1M"];
 
 // ── Technical indicator calculations ───────────────────────────────────────
 function calcSMA(data, period) {
@@ -212,7 +213,8 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
 
   const xTickFmt = (d) => {
     const dt = new Date(d);
-    return ["5M", "15M", "1H", "1D", "1W"].includes(timeframe)
+    // Intradía (15M/1H/4H) → hora; diario y mayor (1D/1W/1M) → fecha.
+    return ["5M", "15M", "1H", "4H"].includes(timeframe)
       ? dt.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
       : dt.toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
   };

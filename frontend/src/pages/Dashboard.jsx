@@ -56,7 +56,7 @@ function MarketRegimeBar({ regime }) {
 }
 
 export default function Dashboard({ symbol, setSymbol, model, setModel }) {
-  const [timeframe, setTimeframe] = useState("1Y");
+  const [timeframe, setTimeframe] = useState("1D");
   const [quote, setQuote] = useState(null);
   const [candles, setCandles] = useState([]);
   const [indicators, setIndicators] = useState(null);

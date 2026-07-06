@@ -103,13 +103,17 @@ def _ticker(symbol: str):
     return yf.Ticker(symbol)
 
 
+# Cada etiqueta = TAMAÑO DE VELA real (lo que espera un trader). El periodo es cuánto
+# histórico se carga. El 4H se construye remuestreando velas de 1h (Yahoo no lo da nativo).
 PERIOD_MAP = {
+    "15M": ("1mo", "15m"),   # velas de 15 min
+    "1H": ("2mo", "1h"),     # velas de 1 hora
+    "4H": ("1y", "1h"),      # velas de 4 horas (remuestreadas desde 1h)
+    "1D": ("2y", "1d"),      # velas DIARIAS
+    "1W": ("5y", "1wk"),     # velas SEMANALES
+    "1M": ("10y", "1mo"),    # velas MENSUALES
+    # Compatibilidad con enlaces antiguos:
     "5M": ("5d", "5m"),
-    "15M": ("1mo", "15m"),
-    "1H": ("3mo", "1h"),
-    "1D": ("5d", "5m"),
-    "1W": ("1mo", "30m"),
-    "1M": ("3mo", "1d"),
     "3M": ("6mo", "1d"),
     "1Y": ("2y", "1d"),
     "5Y": ("5y", "1wk"),
@@ -327,6 +331,17 @@ def get_stock_data(ticker: str, timeframe: str = "1Y"):
 
     if df is None or df.empty:
         return None
+
+    # 4H: Yahoo no da velas de 4h nativas → las construimos agrupando las de 1h.
+    if timeframe == "4H":
+        try:
+            r = df.set_index(pd.to_datetime(df["Date"])).resample("4h").agg({
+                "Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum",
+            }).dropna(subset=["Open", "Close"]).reset_index()
+            if not r.empty:
+                df = r
+        except Exception:
+            pass
 
     _cache_set(cache_key, df)
     return df
