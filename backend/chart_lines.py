@@ -29,40 +29,43 @@ def _pivots(values, kind: str, left: int = 3, right: int = 3):
 
 
 def _fit_trendline(idxs, prices, want: str):
-    """Ajusta la mejor recta a los pivotes. want='resistencia' usa máximos (línea por
-    encima), 'soporte' usa mínimos. Devuelve dos puntos {index, price} o None.
+    """Traza la directriz como haría un TRADER: uniendo los DOS SWINGS RECIENTES del tipo
+    pedido (no los extremos globales, que cruzaban todo el gráfico). want='resistencia'
+    une máximos recientes; 'soporte' une mínimos recientes. Devuelve dos puntos o None.
 
-    Estrategia sencilla y robusta: toma los 2 pivotes más separados en el tiempo cuyo
-    trazo deja al resto de pivotes del lado correcto (una directriz "limpia")."""
+    Elige entre los últimos ~4 pivotes el par (reciente) que forma la recta con MÁS toques
+    (pivotes que la línea roza) — una directriz con varios apoyos es más fiable que una
+    que solo une dos puntos al azar. Solo mira estructura RECIENTE, no todo el histórico."""
     if len(idxs) < 2:
         return None
+    tol = (max(prices) - min(prices)) * 0.02 or 1e-9
+    # Solo pivotes de las ÚLTIMAS ~45 velas → directriz LOCAL reciente (no una diagonal
+    # que cruza todo el histórico). Si hay muchos, nos quedamos con los últimos.
+    last_i = len(prices) - 1
+    recent = [i for i in idxs if i >= last_i - 45][-5:]
+    if len(recent) < 2:
+        recent = idxs[-3:]  # respaldo si no hay pivotes recientes suficientes
     best = None
-    for a in range(len(idxs)):
-        for b in range(a + 1, len(idxs)):
-            i1, i2 = idxs[a], idxs[b]
-            if i2 == i1:
+    for a in range(len(recent)):
+        for b in range(a + 1, len(recent)):
+            i1, i2 = recent[a], recent[b]
+            if i2 - i1 < 3:  # demasiado juntos → pendiente poco fiable
                 continue
             p1, p2 = prices[i1], prices[i2]
             slope = (p2 - p1) / (i2 - i1)
-            # Comprueba que la recta deja los pivotes del lado correcto (tolerancia pequeña).
-            tol = (max(prices) - min(prices)) * 0.01
-            ok = True
-            for k in idxs:
-                line_val = p1 + slope * (k - i1)
-                if want == "resistencia" and prices[k] > line_val + tol:
-                    ok = False; break
-                if want == "soporte" and prices[k] < line_val - tol:
-                    ok = False; break
-            if not ok:
-                continue
-            span = i2 - i1
-            if best is None or span > best["span"]:
-                best = {"span": span, "i1": i1, "p1": p1, "i2": i2, "p2": p2, "slope": slope}
+            # Cuenta cuántos pivotes recientes ROZA la línea (apoyos) sin que la crucen mucho.
+            touches = 0
+            for k in recent:
+                diff = prices[k] - (p1 + slope * (k - i1))
+                if abs(diff) <= tol:
+                    touches += 1
+            # Preferimos: más toques y, a igualdad, la más RECIENTE (i2 mayor).
+            score = (touches, i2)
+            if best is None or score > best["score"]:
+                best = {"score": score, "i1": i1, "p1": p1, "slope": slope}
     if not best:
         return None
-    # Proyecta la directriz hasta la ÚLTIMA vela (el "ahora"), para que la línea llegue al
-    # borde derecho y el usuario vea dónde está el soporte/resistencia HOY, no dónde acabó
-    # el último pivote.
+    # Proyecta hasta la ÚLTIMA vela para ver dónde está el soporte/resistencia HOY.
     last = len(prices) - 1
     end_price = best["p1"] + best["slope"] * (last - best["i1"])
     return {
