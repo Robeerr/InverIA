@@ -263,11 +263,13 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2 pr-28">
         <div>
           <h3 className="font-heading font-semibold text-lg text-[#0e1f1a]">Gráfico de Precio</h3>
-          <p className="text-xs text-[#5c6b66] mt-0.5">
-            {(Array.isArray(buyLevels) && buyLevels.length > 0) || signalEntry
-              ? "Niveles de compra del motor (azul · tácticos en dorado) · IA: zona entrada, SL y TPs"
-              : "Zona de entrada, SL y Take Profits sugeridos por IA"}
-          </p>
+          {!fullscreen && (
+            <p className="text-xs text-[#5c6b66] mt-0.5">
+              {(Array.isArray(buyLevels) && buyLevels.length > 0) || signalEntry
+                ? "Niveles de compra del motor (azul · tácticos en dorado) · IA: zona entrada, SL y TPs"
+                : "Zona de entrada, SL y Take Profits sugeridos por IA"}
+            </p>
+          )}
         </div>
         <div className="flex gap-1 bg-[#f5f3ef] border border-[#e5e0d8] rounded-md p-1 flex-wrap">
           {TIMEFRAMES.map((t) => (
@@ -297,8 +299,10 @@ function PriceChart({ candles, timeframe, setTimeframe, analysis, indicators, si
 
       {/* Main price chart (el gráfico va PRIMERO — sobre todo en móvil) */}
       <div
-        style={{ height: fullscreen ? undefined : (overlays.rsi ? 360 : 460) }}
-        className={fullscreen ? "w-full flex-1 min-h-0" : "w-full"}
+        style={{ height: fullscreen
+          ? (overlays.rsi ? "calc(100dvh - 260px)" : "calc(100dvh - 150px)")
+          : (overlays.rsi ? 360 : 460) }}
+        className="w-full"
       >
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }} syncId="inveria-chart">
