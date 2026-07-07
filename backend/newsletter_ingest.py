@@ -53,8 +53,21 @@ REGLAS IMPORTANTES:
   → De AHÍ debes extraer TODAS: LITE (Lumentum), NFLX (Netflix), MELI (MercadoLibre),
     NVTS (Navitas)... El ticker suele venir tras "•"; si no, dedúcelo del nombre de la empresa
     del titular. El "motivo" es el ángulo del titular traducido al español.
+- ALGUNAS newsletters son de ANÁLISIS NARRATIVO (prosa), no listas. La empresa se menciona
+  dentro del texto, a veces solo por su nombre en negrita. DEBES extraerla igual. Ejemplo:
+    "🚨 EN VIGILANCIA: Rotación, JFROG y +
+     ...el sector de software que se beneficia de la IA. ¿Un claro ejemplo? JFrog. JFrog se
+     dedica a gestionar y proteger código..."
+  → De AHÍ extrae JFrog con ticker FROG, accion="VIGILAR", motivo="Software que se beneficia
+    de la IA; más código generado por agentes = más demanda de gestión/seguridad".
+- SECCIONES DE VIGILANCIA / WATCHLIST: si el texto tiene un apartado tipo "EN VIGILANCIA",
+  "En el radar", "Vigilando", "Watchlist", "Seguimiento", TODAS las empresas nombradas ahí son
+  accion="VIGILAR" (el autor las está siguiendo para entrar/salir). Es la información MÁS
+  importante de una newsletter premium: no te dejes ninguna, aunque solo se cite el nombre.
 - Deduce el ticker del nombre si no viene explícito (Micron→MU, Adobe→ADBE, Intel→INTC,
-  Affirm→AFRM, Palantir→PLTR). Si de verdad no sabes el ticker, omite esa acción.
+  Affirm→AFRM, Palantir→PLTR, JFrog→FROG, Datadog→DDOG, CrowdStrike→CRWD, Snowflake→SNOW,
+  MongoDB→MDB, Cloudflare→NET, ServiceNow→NOW, Nvidia→NVDA). Si de verdad no sabes el ticker,
+  omite esa acción.
 - Ignora publicidad: "Subscribe", "Register Now", "Featured", "Darse de baja", "Top Stocks H2".
 - NO incluyas empresas que aparecen SOLO como PATROCINADOR o ANUNCIO del newsletter. Casi todos
   los boletines llevan un bloque publicitario pagado por una marca (ej. "Oracle NetSuite",
