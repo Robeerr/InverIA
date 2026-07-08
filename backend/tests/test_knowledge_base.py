@@ -52,6 +52,26 @@ def _run(coro):
 
 def _reset():
     kb._DIGEST = ""
+    kb._ALL = []
+
+
+def test_seleccion_por_relevancia_al_sector():
+    _reset()
+    kb._ALL = [
+        {"categoria": "sectores", "tema": "Software IA",
+         "principio": "El dinero rota hacia el software que se beneficia de la IA",
+         "detalle": "", "refuerzos": 3},
+        {"categoria": "macro", "tema": "Semiconductores",
+         "principio": "La demanda de hardware de IA impulsa a los fabricantes de chips",
+         "detalle": "", "refuerzos": 2},
+        {"categoria": "riesgo", "tema": "Stops",
+         "principio": "Coloca stop por ATR y no lo muevas", "detalle": "", "refuerzos": 5},
+    ]
+    # Contexto de una empresa de chips → el principio de semiconductores debe aparecer.
+    d = kb.digest_for_prompt("Nvidia semiconductores hardware chips")
+    assert "fabricantes de chips" in d
+    # La disciplina universal (riesgo) siempre se incluye.
+    assert "stop por ATR" in d
 
 
 def test_dedup_por_tema_incrementa_refuerzos():

@@ -680,11 +680,20 @@ async def analyze_stock(
     user_msg = _build_payload(quote, indicators, news, analyst_consensus, price_target,
                               volume_profile, insider, earnings_history, buy_levels,
                               next_earnings_date, days_to_earnings, company_profile)
-    # Inyecta el conocimiento acumulado de las newsletters (cerebro que crece con cada correo).
+    # Inyecta el conocimiento acumulado de las newsletters (cerebro que crece con cada
+    # correo), SELECCIONADO por relevancia al sector/situación de esta acción.
     system = SYSTEM_PROMPT
     try:
         import knowledge_base
-        system = SYSTEM_PROMPT + knowledge_base.digest_for_prompt()
+        prof = company_profile or {}
+        ctx = " ".join(str(x) for x in (
+            quote.get("name") or quote.get("symbol") or "",
+            prof.get("sector") or "", prof.get("industry") or prof.get("finnhubIndustry") or "",
+            (indicators or {}).get("trend") or "",
+            "sobrecompra" if (indicators or {}).get("rsi", 50) > 70 else
+            "sobreventa" if (indicators or {}).get("rsi", 50) < 30 else "",
+        ) if x)
+        system = SYSTEM_PROMPT + knowledge_base.digest_for_prompt(ctx)
     except Exception:
         pass
     return await _run_model(model_key, system, user_msg, max_tokens=8000)

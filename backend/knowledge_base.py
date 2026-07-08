@@ -19,9 +19,18 @@ _CATEGORIAS = {"selección", "seleccion", "valoración", "valoracion", "riesgo",
 
 # Cache en memoria del digest inyectable. Módulo-level para que analyze_stock lo lea
 # sin necesitar acceso a la BD.
-_DIGEST = ""
+_DIGEST = ""            # digest genérico (top por refuerzos) — fallback sin contexto
+_ALL: list = []         # TODOS los principios en memoria, para selección por relevancia
 _MAX_DIGEST_CHARS = 2600   # techo para no inflar el prompt del motor
 _MAX_ITEMS = 40
+
+# Categorías "universales" (disciplina/gestión) que aplican a CUALQUIER operación: se
+# reservan siempre un hueco en el digest, pase lo que pase con la relevancia al sector.
+_UNIVERSAL = {"riesgo", "psicología", "psicologia", "método", "metodo"}
+_STOPWORDS = {"para", "con", "los", "las", "una", "que", "del", "por", "sin", "the",
+              "and", "sus", "más", "mas", "como", "este", "esta", "sobre", "entre",
+              "puede", "debe", "hacia", "solo", "cada", "ante", "tras", "empresa",
+              "acción", "accion", "mercado", "precio", "inversión", "inversion"}
 
 
 def fix_mojibake(s: str) -> str:
@@ -105,27 +114,49 @@ async def add_learnings(db, aprendizajes: list, source: str = "") -> int:
 
 
 async def rebuild_cache(db) -> str:
-    """Reconstruye el digest inyectable desde Mongo. Prioriza los principios más
-    reforzados (mencionados por más correos) y respeta el techo de caracteres."""
-    global _DIGEST
+    """Reconstruye el cache en memoria desde Mongo: la lista completa de principios
+    (_ALL, para selección por relevancia) y el digest genérico (_DIGEST, fallback por
+    refuerzos). Repara mojibake por si algún doc viejo lo tuviera."""
+    global _DIGEST, _ALL
     try:
         docs = await db.investing_knowledge.find(
             {}, {"_id": 0}
-        ).sort("refuerzos", -1).to_list(_MAX_ITEMS)
+        ).sort("refuerzos", -1).to_list(2000)
     except Exception:
         return _DIGEST
+    _ALL = [{
+        "categoria": fix_mojibake(d.get("categoria") or ""),
+        "tema": fix_mojibake(d.get("tema") or ""),
+        "principio": fix_mojibake(d.get("principio") or ""),
+        "detalle": fix_mojibake(d.get("detalle") or ""),
+        "refuerzos": d.get("refuerzos", 1),
+    } for d in docs if d.get("principio")]
+    _DIGEST = _build_digest(_ALL[:_MAX_ITEMS])
+    logger.info("knowledge: cache reconstruido (%d principios en memoria)", len(_ALL))
+    return _DIGEST
+
+
+def _line(p: dict) -> str:
+    ref = p.get("refuerzos", 1)
+    mark = f" (×{ref})" if ref > 1 else ""
+    return f"- [{p.get('categoria')}] {p.get('principio')}{mark}"
+
+
+def _build_digest(items: list) -> str:
+    """Une principios en texto respetando el techo de caracteres."""
     lines, total = [], 0
-    for d in docs:
-        ref = d.get("refuerzos", 1)
-        mark = f" (×{ref})" if ref > 1 else ""
-        line = f"- [{fix_mojibake(d.get('categoria') or '')}] {fix_mojibake(d.get('principio') or '')}{mark}"
+    for p in items:
+        line = _line(p)
         if total + len(line) > _MAX_DIGEST_CHARS:
             break
         lines.append(line)
         total += len(line)
-    _DIGEST = "\n".join(lines)
-    logger.info("knowledge: digest reconstruido (%d principios, %d chars)", len(lines), total)
-    return _DIGEST
+    return "\n".join(lines)
+
+
+def _tokens(s: str) -> set:
+    """Palabras significativas (sin tildes, sin stopwords, len>3) para medir solape."""
+    return {w for w in _norm(s).split() if len(w) > 3 and w not in _STOPWORDS}
 
 
 async def fix_existing_encoding(db) -> dict:
@@ -160,17 +191,52 @@ async def fix_existing_encoding(db) -> dict:
 
 async def ensure_loaded(db):
     """Carga el cache al arrancar si está vacío."""
-    if not _DIGEST:
+    if not _ALL:
         await rebuild_cache(db)
 
 
-def digest_for_prompt() -> str:
-    """Devuelve el bloque de conocimiento acumulado para añadir al system prompt del
-    motor, o cadena vacía si aún no hay nada aprendido."""
-    if not _DIGEST:
+def _select_relevant(context: str) -> list:
+    """Elige los principios más relevantes para el contexto (sector/situación de la
+    acción): reserva un hueco para disciplina/gestión (universales, por refuerzos) y
+    llena el resto con los que más solapan con el contexto. Sin contexto → top general."""
+    if not _ALL:
+        return []
+    universal = [p for p in _ALL if p.get("categoria") in _UNIVERSAL]
+    contextual = [p for p in _ALL if p.get("categoria") not in _UNIVERSAL]
+    universal.sort(key=lambda p: p.get("refuerzos", 1), reverse=True)
+
+    ctx = _tokens(context)
+    if ctx:
+        def rel(p):
+            toks = _tokens(f"{p.get('tema','')} {p.get('principio','')} "
+                           f"{p.get('detalle','')} {p.get('categoria','')}")
+            return len(toks & ctx)
+        # Relevancia primero; a igualdad, los más reforzados.
+        contextual.sort(key=lambda p: (rel(p), p.get("refuerzos", 1)), reverse=True)
+    else:
+        contextual.sort(key=lambda p: p.get("refuerzos", 1), reverse=True)
+
+    # ~1/3 disciplina universal + 2/3 relevantes al sector (intercalados, sin repetir).
+    picked, seen = [], set()
+    for p in universal[:8] + contextual[:24]:
+        key = (p.get("categoria"), p.get("tema"))
+        if key not in seen:
+            seen.add(key)
+            picked.append(p)
+    return picked
+
+
+def digest_for_prompt(context: str = "") -> str:
+    """Bloque de conocimiento para el system prompt del motor. Si se pasa `context`
+    (p.ej. nombre/sector/situación de la acción), selecciona los principios relevantes;
+    si no, usa el digest genérico. Cadena vacía si aún no hay nada aprendido."""
+    if not _ALL:
+        return ""
+    body = _build_digest(_select_relevant(context)) if context else _DIGEST
+    if not body:
         return ""
     return (
         "\n\nCONOCIMIENTO ACUMULADO (principios de inversión aprendidos de las newsletters "
         "a las que el usuario está suscrito; aplícalos como criterio adicional en tu análisis, "
-        "sin citar fuentes ni reproducir texto literal):\n" + _DIGEST
+        "sin citar fuentes ni reproducir texto literal):\n" + body
     )
