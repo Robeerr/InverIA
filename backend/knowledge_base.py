@@ -24,6 +24,30 @@ _MAX_DIGEST_CHARS = 2600   # techo para no inflar el prompt del motor
 _MAX_ITEMS = 40
 
 
+def fix_mojibake(s: str) -> str:
+    """Repara texto UTF-8 mal decodificado como Latin-1 (mojibake): 'selecciÃ³n' →
+    'selección', 'Ã—4' → '×4', '15â€‘20' → '15‑20'. Solo actúa si detecta las marcas
+    típicas del problema, para no romper texto ya correcto."""
+    if not s or not isinstance(s, str):
+        return s
+    if not any(m in s for m in ("Ã", "â€", "Â", "Ã‚")):
+        return s
+
+    def _marks(t):
+        return t.count("Ã") + t.count("â€") + t.count("Â")
+
+    # El mojibake real suele venir de CP1252 (Windows) — que codifica '×', em‑dash,
+    # espacios finos, etc. Se prueba CP1252 y, si no, Latin‑1.
+    for enc in ("cp1252", "latin-1"):
+        try:
+            fixed = s.encode(enc, errors="strict").decode("utf-8", errors="strict")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            continue
+        if _marks(fixed) < _marks(s):
+            return fixed
+    return s
+
+
 def _norm(s: str) -> str:
     """Normaliza para deduplicar: minúsculas, sin tildes, sin puntuación, colapsado."""
     s = (s or "").lower().strip()
@@ -45,14 +69,14 @@ async def add_learnings(db, aprendizajes: list, source: str = "") -> int:
         return 0
     n = 0
     for a in aprendizajes:
-        tema = (a.get("tema") or "").strip()
-        principio = (a.get("principio") or "").strip()
+        tema = fix_mojibake((a.get("tema") or "").strip())
+        principio = fix_mojibake((a.get("principio") or "").strip())
         if not tema or not principio:
             continue
-        cat = (a.get("categoria") or "método").strip().lower()
+        cat = fix_mojibake((a.get("categoria") or "método").strip().lower())
         if cat not in _CATEGORIAS:
             cat = "método"
-        detalle = (a.get("detalle") or "").strip()
+        detalle = fix_mojibake((a.get("detalle") or "").strip())
         k = _key(cat, tema)
         try:
             existing = await db.investing_knowledge.find_one({"_key": k})
@@ -94,7 +118,7 @@ async def rebuild_cache(db) -> str:
     for d in docs:
         ref = d.get("refuerzos", 1)
         mark = f" (×{ref})" if ref > 1 else ""
-        line = f"- [{d.get('categoria')}] {d.get('principio')}{mark}"
+        line = f"- [{fix_mojibake(d.get('categoria') or '')}] {fix_mojibake(d.get('principio') or '')}{mark}"
         if total + len(line) > _MAX_DIGEST_CHARS:
             break
         lines.append(line)
@@ -102,6 +126,36 @@ async def rebuild_cache(db) -> str:
     _DIGEST = "\n".join(lines)
     logger.info("knowledge: digest reconstruido (%d principios, %d chars)", len(lines), total)
     return _DIGEST
+
+
+async def fix_existing_encoding(db) -> dict:
+    """Repara el mojibake de los principios YA guardados (los del backfill inicial) y
+    reconstruye el cache. Devuelve cuántos se corrigieron."""
+    try:
+        docs = await db.investing_knowledge.find({}).to_list(2000)
+    except Exception:
+        return {"revisados": 0, "corregidos": 0}
+    corregidos = 0
+    for d in docs:
+        campos = {}
+        for k in ("categoria", "tema", "principio", "detalle"):
+            v = d.get(k)
+            nv = fix_mojibake(v) if isinstance(v, str) else v
+            if nv != v:
+                campos[k] = nv
+        if campos:
+            # Si cambió la categoría/tema, recalcula la clave para no dejar duplicados sucios.
+            cat = campos.get("categoria", d.get("categoria"))
+            tema = campos.get("tema", d.get("tema"))
+            campos["_key"] = _key(cat, tema)
+            try:
+                await db.investing_knowledge.update_one(
+                    {"_id": d["_id"]}, {"$set": campos})
+                corregidos += 1
+            except Exception:
+                pass
+    await rebuild_cache(db)
+    return {"revisados": len(docs), "corregidos": corregidos}
 
 
 async def ensure_loaded(db):

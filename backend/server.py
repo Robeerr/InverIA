@@ -1403,6 +1403,19 @@ async def inbound_newsletter_backfill(token: str = "", limit: int = 200):
                        "/api/inbound/newsletter/knowledge?token=..."}
 
 
+@api_router.api_route("/inbound/newsletter/fix-encoding", methods=["GET", "POST"])
+async def inbound_newsletter_fix_encoding(token: str = ""):
+    """Repara el mojibake (acentos corruptos: 'selecciÃ³n' → 'selección') de los
+    principios ya guardados en el cerebro y reconstruye el cache. Acepta GET para
+    lanzarlo desde el móvil."""
+    secret = os.environ.get("INBOUND_SECRET")
+    if not secret or token != secret:
+        raise HTTPException(401, "Token de entrada inválido.")
+    import knowledge_base
+    result = await knowledge_base.fix_existing_encoding(db)
+    return {"ok": True, **result}
+
+
 @api_router.get("/inbound/newsletter/knowledge")
 async def inbound_newsletter_knowledge(token: str = ""):
     """Estado del cerebro: cuántos principios ha aprendido y el digest actual."""

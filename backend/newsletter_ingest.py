@@ -270,6 +270,11 @@ async def process_newsletter(db, subject: str, body_html: str, body_text: str = 
     """Procesa un correo de newsletter entrante: extrae lo accionable, lo guarda y
     reenvía el resumen destilado al usuario. Devuelve el resultado."""
     text = body_text.strip() if body_text and body_text.strip() else _html_to_text(body_html)
+    # Repara mojibake del cuerpo (correos que llegan con UTF-8 mal decodificado como CP1252):
+    # así la IA recibe texto limpio y todo lo guardado/enviado sale con acentos correctos.
+    import knowledge_base
+    text = knowledge_base.fix_mojibake(text)
+    subject = knowledge_base.fix_mojibake(subject or "")
     if not text or len(text) < 40:
         _trace(subject=subject, sender=sender, stage="body",
                ok=False, error="cuerpo del email vacío o demasiado corto",
