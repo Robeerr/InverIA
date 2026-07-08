@@ -1434,8 +1434,8 @@ async def inbound_newsletter_knowledge(token: str = ""):
         "tiene_marca_mojibake": any(m in (muestra or "") for m in ("Ã", "â€", "Â")),
         "reparado": knowledge_base.fix_mojibake(muestra or ""),
     }
-    return {"principios": total, "digest_inyectado": knowledge_base._DIGEST,
-            "_encoding_debug": dbg, "top": top}
+    return {"_encoding_debug": dbg, "principios": total,
+            "digest_inyectado": knowledge_base._DIGEST, "top": top}
 
 
 @api_router.get("/inbound/newsletter/debug")
