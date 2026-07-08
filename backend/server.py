@@ -1083,6 +1083,19 @@ async def radar(days: int = 14):
     }
 
 
+@api_router.get("/track-record")
+async def track_record(days: int = 180):
+    """Auto-examen del sistema: ¿funcionaron las señales de COMPRA del motor? Mira qué
+    hizo el precio tras cada análisis (tocó antes TP1 = acierto, o stop = fallo)."""
+    cached = _cache.get(f"track_record_{days}")
+    if cached is not None:
+        return cached
+    import track_record as tr
+    result = await tr.compute_track_record(db, days=days)
+    _cache.set(f"track_record_{days}", result, ttl=1800)  # 30 min
+    return result
+
+
 # ---------- Watchlist ----------
 @api_router.get("/watchlist")
 async def list_watchlist():

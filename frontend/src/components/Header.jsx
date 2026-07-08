@@ -13,6 +13,7 @@ const NAV = [
   { to: "/radar", label: "Radar", icon: Target, testId: "nav-radar" },
   { to: "/calendario", label: "Calendario", icon: CalendarBlank, testId: "nav-calendar" },
   { to: "/signals", label: "Alertas", icon: Bell, testId: "nav-signals" },
+  { to: "/track-record", label: "Track record", icon: ChartLineUp, testId: "nav-track-record" },
 ];
 
 export default function Header({ symbol, setSymbol, onSearch, showSearch = true, darkMode, setDarkMode }) {
