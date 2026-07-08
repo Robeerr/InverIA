@@ -680,7 +680,14 @@ async def analyze_stock(
     user_msg = _build_payload(quote, indicators, news, analyst_consensus, price_target,
                               volume_profile, insider, earnings_history, buy_levels,
                               next_earnings_date, days_to_earnings, company_profile)
-    return await _run_model(model_key, SYSTEM_PROMPT, user_msg, max_tokens=8000)
+    # Inyecta el conocimiento acumulado de las newsletters (cerebro que crece con cada correo).
+    system = SYSTEM_PROMPT
+    try:
+        import knowledge_base
+        system = SYSTEM_PROMPT + knowledge_base.digest_for_prompt()
+    except Exception:
+        pass
+    return await _run_model(model_key, system, user_msg, max_tokens=8000)
 
 
 # ---------- OCR de tabla de watchlist desde una FOTO (Gemini visión) ----------

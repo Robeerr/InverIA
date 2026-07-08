@@ -128,6 +128,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Snapshot hydrate failed: {e}")
 
+    # Carga el "cerebro" (conocimiento acumulado de newsletters) en memoria para que el
+    # motor de análisis lo inyecte desde el primer request.
+    try:
+        import knowledge_base
+        await db.investing_knowledge.create_index("_key", unique=True)
+        await knowledge_base.ensure_loaded(db)
+    except Exception as e:
+        logger.warning(f"Knowledge base load failed: {e}")
+
     # Aviso de seguridad no-bloqueante: si faltan secretos en producción, se usan
     # defaults públicos del repo (cualquiera podría forjar un token). No rompe el arranque.
     if not os.environ.get("JWT_SECRET"):
@@ -1365,6 +1374,30 @@ async def inbound_newsletter(request: Request, token: str = ""):
     _bg_tasks.add(task)
     task.add_done_callback(_bg_tasks.discard)
     return {"ok": True, "queued": True}
+
+
+@api_router.post("/inbound/newsletter/backfill-knowledge")
+async def inbound_newsletter_backfill(token: str = "", limit: int = 200):
+    """Reprocesa los correos ya guardados para poblar el cerebro (investing_knowledge)
+    con el método/sabiduría que enseñan. Protegido con INBOUND_SECRET."""
+    secret = os.environ.get("INBOUND_SECRET")
+    if not secret or token != secret:
+        raise HTTPException(401, "Token de entrada inválido.")
+    result = await newsletter_ingest.backfill_knowledge(db, limit=limit)
+    return {"ok": True, **result}
+
+
+@api_router.get("/inbound/newsletter/knowledge")
+async def inbound_newsletter_knowledge(token: str = ""):
+    """Estado del cerebro: cuántos principios ha aprendido y el digest actual."""
+    secret = os.environ.get("INBOUND_SECRET")
+    if not secret or token != secret:
+        raise HTTPException(401, "Token de entrada inválido.")
+    import knowledge_base
+    total = await db.investing_knowledge.count_documents({})
+    top = await db.investing_knowledge.find({}, {"_id": 0}).sort(
+        "refuerzos", -1).to_list(50)
+    return {"principios": total, "digest_inyectado": knowledge_base._DIGEST, "top": top}
 
 
 @api_router.get("/inbound/newsletter/debug")

@@ -37,7 +37,13 @@ Estructura EXACTA:
      "niveles": "precios/zonas que menciona si los hay, o null",
      "motivo": "el ángulo/tesis del artículo o mención, 1 frase (traduce al español)"}
   ],
-  "ideas_clave": ["idea o consejo relevante 1", "idea 2"]
+  "ideas_clave": ["idea o consejo relevante 1", "idea 2"],
+  "aprendizajes": [
+    {"tema": "Rotación de sectores",
+     "categoria": "selección|valoración|riesgo|psicología|macro|método|sectores",
+     "principio": "regla/método GENERAL y reutilizable en 1 frase (NO sobre un ticker concreto)",
+     "detalle": "matiz o cómo aplicarlo, 1 frase, o null"}
+  ]
 }
 
 REGLAS IMPORTANTES:
@@ -78,7 +84,15 @@ REGLAS IMPORTANTES:
   contenido EDITORIAL (un titular, análisis o comentario de mercado) habla de ella como oportunidad,
   riesgo o noticia — no si es quien paga el anuncio.
 - Ignora el envoltorio de reenvío ("---------- Forwarded message ----------", "From:", "Date:").
-- No inventes niveles de precio que no aparezcan. Sé fiel al contenido."""
+- No inventes niveles de precio que no aparezcan. Sé fiel al contenido.
+- "aprendizajes": extrae el MÉTODO y la SABIDURÍA de inversión GENERAL que enseña el correo
+  (cómo valorar una empresa, cómo detectar buenas oportunidades, cómo gestionar el riesgo,
+  cómo leer una rotación de sectores, qué mirar antes de entrar/salir, psicología...). Deben ser
+  principios REUTILIZABLES que sigan siendo útiles dentro de un año, NO comentarios sobre un
+  ticker concreto ni sobre el mercado de esta semana. Si el correo no enseña método, deja la
+  lista vacía. Ejemplos de buen "principio": "El dinero rota del hardware de IA hacia el software
+  que se beneficia de la IA", "No comprar en máximos sin stop; limitar cada posición al 5% de la
+  cartera", "Una empresa mejora si su producto se vuelve más necesario cuando crece su mercado"."""
 
 
 # Señales típicas de que una "acción" extraída es en realidad el patrocinador/anuncio
@@ -271,12 +285,24 @@ async def process_newsletter(db, subject: str, body_html: str, body_text: str = 
         "subject": subject,
         "sender": sender,
         "extracted": data,
+        "raw_text": text[:12000],  # guardado para poder reprocesar aprendizajes en el futuro
         "received_at": datetime.now(timezone.utc).isoformat(),
     }
     try:
         await db.newsletter_summaries.insert_one({**doc})
     except Exception:
         logger.warning("newsletter: no se pudo guardar en Mongo")
+
+    # Alimenta el cerebro: acumula el MÉTODO/sabiduría que enseña este correo para que
+    # el motor de análisis sea cada vez más listo (deduplicado por tema).
+    try:
+        import knowledge_base
+        n_aprend = await knowledge_base.add_learnings(
+            db, data.get("aprendizajes") or [], source=subject[:80])
+        if n_aprend:
+            logger.info("newsletter: +%d aprendizajes al cerebro", n_aprend)
+    except Exception:
+        logger.warning("newsletter: no se pudieron guardar aprendizajes")
 
     ok, err = await _send_summary(data, subject)
     _trace(subject=subject, sender=sender, stage="email", ok=ok, error=err,
@@ -286,3 +312,49 @@ async def process_newsletter(db, subject: str, body_html: str, body_text: str = 
            resend=bool(os.environ.get("RESEND_API_KEY")))
     return {"ok": ok, "error": err, "acciones": len(data.get("acciones") or []),
             "titulo": data.get("titulo")}
+
+
+_LEARN_PROMPT = """Eres un analista financiero senior. Te doy el contenido (o un resumen) de una
+newsletter de bolsa. Extrae SOLO el MÉTODO y la SABIDURÍA de inversión GENERAL y reutilizable que
+enseña: cómo valorar empresas, cómo encontrar buenas oportunidades, gestión de riesgo, lectura de
+rotación de sectores, qué mirar antes de entrar/salir, psicología. NADA sobre un ticker concreto ni
+sobre el mercado de esta semana. Devuelve JSON válido (sin markdown):
+{"aprendizajes": [{"tema": "...", "categoria": "selección|valoración|riesgo|psicología|macro|método|sectores",
+  "principio": "regla general en 1 frase", "detalle": "cómo aplicarlo o null"}]}
+Si no enseña método reutilizable, devuelve {"aprendizajes": []}."""
+
+
+async def _extract_learnings(text: str) -> list:
+    import ai_analysis
+    data = await ai_analysis._run_model("gpt-oss-120b", _LEARN_PROMPT, text[:12000], max_tokens=1500)
+    return (data or {}).get("aprendizajes") or []
+
+
+async def backfill_knowledge(db, limit: int = 200) -> dict:
+    """Reprocesa los correos YA guardados para poblar el cerebro con su método/sabiduría.
+    Usa el texto crudo si está guardado; si no (correos antiguos), reconstruye un texto
+    a partir de lo extraído (resumen + ideas + motivos). Devuelve un recuento."""
+    import knowledge_base
+    docs = await db.newsletter_summaries.find({}, {"_id": 0}).sort(
+        "received_at", -1).to_list(limit)
+    procesados, aprendidos = 0, 0
+    for d in docs:
+        ex = d.get("extracted") or {}
+        raw = d.get("raw_text")
+        if raw and len(raw) > 60:
+            blob = raw
+        else:
+            partes = [ex.get("titulo") or d.get("subject") or "", ex.get("resumen") or ""]
+            partes += ex.get("ideas_clave") or []
+            partes += [a.get("motivo") or "" for a in (ex.get("acciones") or [])]
+            blob = "\n".join(p for p in partes if p)
+        if len(blob) < 60:
+            continue
+        try:
+            aprend = await _extract_learnings(blob)
+            n = await knowledge_base.add_learnings(db, aprend, source=(d.get("subject") or "")[:80])
+            aprendidos += n
+            procesados += 1
+        except Exception:
+            logger.warning("backfill: fallo procesando un correo")
+    return {"correos_procesados": procesados, "aprendizajes_anadidos": aprendidos}
