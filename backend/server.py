@@ -1426,7 +1426,16 @@ async def inbound_newsletter_knowledge(token: str = ""):
     total = await db.investing_knowledge.count_documents({})
     top = await db.investing_knowledge.find({}, {"_id": 0}).sort(
         "refuerzos", -1).to_list(50)
-    return {"principios": total, "digest_inyectado": knowledge_base._DIGEST, "top": top}
+    # Diagnóstico de codificación: repr con escapes unicode del primer principio, para
+    # distinguir mojibake real en BD de un simple artefacto de visualización/caché.
+    muestra = top[0].get("principio") if top else ""
+    dbg = {
+        "raw_repr": ascii(muestra),
+        "tiene_marca_mojibake": any(m in (muestra or "") for m in ("Ã", "â€", "Â")),
+        "reparado": knowledge_base.fix_mojibake(muestra or ""),
+    }
+    return {"principios": total, "digest_inyectado": knowledge_base._DIGEST,
+            "_encoding_debug": dbg, "top": top}
 
 
 @api_router.get("/inbound/newsletter/debug")
