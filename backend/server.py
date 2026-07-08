@@ -1432,6 +1432,31 @@ async def inbound_newsletter_dedupe(token: str = ""):
     return {"ok": True, **result}
 
 
+@api_router.api_route("/inbound/newsletter/dedupe-knowledge-llm", methods=["GET", "POST"])
+async def inbound_newsletter_dedupe_llm(token: str = ""):
+    """Dedup SEMÁNTICO con LLM (entiende paráfrasis) del cerebro. Tarda (varias llamadas
+    al modelo), así que va en segundo plano; mira el resultado en /knowledge (baja el nº
+    de principios). Protegido con INBOUND_SECRET."""
+    secret = os.environ.get("INBOUND_SECRET")
+    if not secret or token != secret:
+        raise HTTPException(401, "Token de entrada inválido.")
+    import knowledge_base
+
+    async def _bg():
+        try:
+            res = await knowledge_base.dedupe_semantic_llm(db)
+            logger.info("dedupe-llm cerebro: %s", res)
+        except Exception:
+            logger.exception("dedupe-llm cerebro falló")
+
+    task = asyncio.create_task(_bg())
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return {"ok": True, "queued": True,
+            "mensaje": "Dedup semántico en marcha en segundo plano. Mira el nº de "
+                       "principios en /api/inbound/newsletter/knowledge?token=..."}
+
+
 @api_router.api_route("/inbound/newsletter/fix-encoding", methods=["GET", "POST"])
 async def inbound_newsletter_fix_encoding(token: str = ""):
     """Repara el mojibake (acentos corruptos: 'selecciÃ³n' → 'selección') de los

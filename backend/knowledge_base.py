@@ -248,6 +248,95 @@ async def dedupe_semantic(db, threshold: float = _SIM_THRESHOLD) -> dict:
     return {"fusiones": fusiones, "eliminados": eliminados, "restantes": restantes}
 
 
+_DEDUP_LLM_PROMPT = """Te doy una lista NUMERADA de principios de inversión de la misma categoría.
+Tu tarea: agrupar los que expresan LA MISMA idea, aunque estén redactados con distintas palabras.
+Devuelve SOLO JSON válido (sin markdown): {"grupos": [[1,5,9],[2,7]]}, donde cada sublista son los
+números (empezando en 1) de principios que son DUPLICADOS entre sí.
+REGLAS ESTRICTAS:
+- Agrupa únicamente si de verdad significan lo MISMO (misma recomendación accionable).
+- Principios sobre aspectos DISTINTOS NO se agrupan, aunque compartan tema (p.ej. "poner stop por ATR"
+  y "subir el stop para proteger ganancias" son DISTINTOS: no los agrupes).
+- Los principios sin duplicado no aparecen en la respuesta.
+- No inventes números fuera del rango de la lista."""
+
+
+async def _llm_clusters(principios: list) -> list:
+    """Pide al LLM que agrupe principios equivalentes. Devuelve lista de grupos de
+    índices base-0 validados. Ante cualquier error, devuelve [] (no fusiona nada)."""
+    import ai_analysis
+    listado = "\n".join(f"{i+1}. {p}" for i, p in enumerate(principios))
+    try:
+        data = await ai_analysis._run_model(
+            "gpt-oss-120b", _DEDUP_LLM_PROMPT, listado, max_tokens=1500)
+    except Exception:
+        return []
+    grupos = []
+    for g in (data or {}).get("grupos") or []:
+        # Valida: índices en rango, únicos, grupo de 2+.
+        idx = sorted({int(x) - 1 for x in g if isinstance(x, (int, float))
+                      and 1 <= int(x) <= len(principios)})
+        if len(idx) >= 2:
+            grupos.append(idx)
+    return grupos
+
+
+async def dedupe_semantic_llm(db) -> dict:
+    """Dedup SEMÁNTICO con LLM (entiende paráfrasis). Por cada categoría, pide al modelo
+    que agrupe principios equivalentes y funde cada grupo (conserva el más reforzado,
+    suma refuerzos, texto más completo, une fuentes). Pasada puntual. Reconstruye cache."""
+    try:
+        docs = await db.investing_knowledge.find({}).to_list(4000)
+    except Exception:
+        return {"fusiones": 0, "eliminados": 0, "restantes": 0}
+    by_cat = {}
+    for d in docs:
+        by_cat.setdefault(_norm(d.get("categoria") or ""), []).append(d)
+
+    fusiones, eliminados = 0, 0
+    for _cat, items in by_cat.items():
+        if len(items) < 2:
+            continue
+        principios = [i.get("principio") or "" for i in items]
+        grupos = await _llm_clusters(principios)
+        usados = set()
+        for grupo in grupos:
+            grupo = [j for j in grupo if j not in usados]
+            if len(grupo) < 2:
+                continue
+            # Representante: el de más refuerzos del grupo.
+            grupo.sort(key=lambda j: items[j].get("refuerzos", 1), reverse=True)
+            rep = items[grupo[0]]
+            ref = rep.get("refuerzos", 1)
+            mejor = rep.get("principio") or ""
+            detalle = rep.get("detalle") or ""
+            fuentes = set(rep.get("fuentes") or [])
+            borrar = []
+            for j in grupo[1:]:
+                usados.add(j)
+                ref += items[j].get("refuerzos", 1)
+                cand = items[j].get("principio") or ""
+                if len(cand) > len(mejor):
+                    mejor = cand
+                detalle = detalle or (items[j].get("detalle") or "")
+                fuentes |= set(items[j].get("fuentes") or [])
+                borrar.append(items[j]["_id"])
+            usados.add(grupo[0])
+            if borrar:
+                try:
+                    await db.investing_knowledge.update_one(
+                        {"_id": rep["_id"]},
+                        {"$set": {"principio": mejor, "detalle": detalle,
+                                  "refuerzos": ref, "fuentes": list(fuentes)}})
+                    await db.investing_knowledge.delete_many({"_id": {"$in": borrar}})
+                    fusiones += 1
+                    eliminados += len(borrar)
+                except Exception:
+                    logger.warning("dedupe-llm: fallo fusionando un cluster")
+    await rebuild_cache(db)
+    restantes = await db.investing_knowledge.count_documents({})
+    return {"fusiones": fusiones, "eliminados": eliminados, "restantes": restantes}
+
+
 async def fix_existing_encoding(db) -> dict:
     """Repara el mojibake de los principios YA guardados (los del backfill inicial) y
     reconstruye el cache. Devuelve cuántos se corrigieron."""
