@@ -1420,6 +1420,18 @@ async def inbound_newsletter_backfill(token: str = "", limit: int = 200):
                        "/api/inbound/newsletter/knowledge?token=..."}
 
 
+@api_router.api_route("/inbound/newsletter/dedupe-knowledge", methods=["GET", "POST"])
+async def inbound_newsletter_dedupe(token: str = ""):
+    """Fusiona principios casi idénticos del cerebro (dedup semántico) y reconstruye el
+    cache. Protegido con INBOUND_SECRET. Acepta GET para lanzarlo desde el móvil."""
+    secret = os.environ.get("INBOUND_SECRET")
+    if not secret or token != secret:
+        raise HTTPException(401, "Token de entrada inválido.")
+    import knowledge_base
+    result = await knowledge_base.dedupe_semantic(db)
+    return {"ok": True, **result}
+
+
 @api_router.api_route("/inbound/newsletter/fix-encoding", methods=["GET", "POST"])
 async def inbound_newsletter_fix_encoding(token: str = ""):
     """Repara el mojibake (acentos corruptos: 'selecciÃ³n' → 'selección') de los

@@ -89,6 +89,14 @@ async def add_learnings(db, aprendizajes: list, source: str = "") -> int:
         k = _key(cat, tema)
         try:
             existing = await db.investing_knowledge.find_one({"_key": k})
+            # Si no hay coincidencia exacta de tema, busca un principio casi idéntico ya
+            # guardado (mismo significado, otras palabras) para reforzarlo en vez de crear
+            # un duplicado. Evita que "gestión de stops" y "uso de stop-loss" se separen.
+            if not existing:
+                simk = _find_similar_key(cat, principio)
+                if simk:
+                    k = simk
+                    existing = await db.investing_knowledge.find_one({"_key": k})
             if existing:
                 # Conserva el principio más largo (suele ser el más completo).
                 mejor = principio if len(principio) > len(existing.get("principio", "")) else existing["principio"]
@@ -157,6 +165,87 @@ def _build_digest(items: list) -> str:
 def _tokens(s: str) -> set:
     """Palabras significativas (sin tildes, sin stopwords, len>3) para medir solape."""
     return {w for w in _norm(s).split() if len(w) > 3 and w not in _STOPWORDS}
+
+
+def _sim(a: set, b: set) -> float:
+    """Similitud de Jaccard entre dos conjuntos de palabras (0..1)."""
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+_SIM_THRESHOLD = 0.6   # a partir de aquí dos principios se consideran "lo mismo"
+
+
+def _find_similar_key(cat: str, principio: str):
+    """Busca en el cache un principio de la MISMA categoría casi idéntico al dado.
+    Devuelve su _key para reforzarlo, o None. Usa _ALL (memoria), sin tocar la BD."""
+    toks = _tokens(principio)
+    if not toks or not _ALL:
+        return None
+    ncat = _norm(cat)
+    best_key, best_sim = None, _SIM_THRESHOLD
+    for p in _ALL:
+        if _norm(p.get("categoria") or "") != ncat:
+            continue
+        sim = _sim(toks, _tokens(p.get("principio") or ""))
+        if sim >= best_sim:
+            best_sim, best_key = sim, _key(p.get("categoria") or "", p.get("tema") or "")
+    return best_key
+
+
+async def dedupe_semantic(db, threshold: float = _SIM_THRESHOLD) -> dict:
+    """Fusiona principios casi idénticos ya guardados (mismo significado, otras palabras),
+    dentro de la misma categoría: se queda el más reforzado, le suma los refuerzos de los
+    demás, conserva el texto más completo y borra los duplicados. Reconstruye el cache."""
+    try:
+        docs = await db.investing_knowledge.find({}).to_list(4000)
+    except Exception:
+        return {"fusiones": 0, "eliminados": 0, "restantes": 0}
+    by_cat = {}
+    for d in docs:
+        by_cat.setdefault(_norm(d.get("categoria") or ""), []).append(d)
+
+    fusiones, eliminados = 0, 0
+    for _cat, items in by_cat.items():
+        items.sort(key=lambda d: d.get("refuerzos", 1), reverse=True)
+        used = [False] * len(items)
+        for i in range(len(items)):
+            if used[i]:
+                continue
+            rep = items[i]
+            ti = _tokens(rep.get("principio") or "")
+            ref = rep.get("refuerzos", 1)
+            mejor = rep.get("principio") or ""
+            detalle = rep.get("detalle") or ""
+            fuentes = set(rep.get("fuentes") or [])
+            borrar = []
+            for j in range(i + 1, len(items)):
+                if used[j]:
+                    continue
+                if _sim(ti, _tokens(items[j].get("principio") or "")) >= threshold:
+                    used[j] = True
+                    ref += items[j].get("refuerzos", 1)
+                    cand = items[j].get("principio") or ""
+                    if len(cand) > len(mejor):
+                        mejor = cand
+                    detalle = detalle or (items[j].get("detalle") or "")
+                    fuentes |= set(items[j].get("fuentes") or [])
+                    borrar.append(items[j]["_id"])
+            if borrar:
+                try:
+                    await db.investing_knowledge.update_one(
+                        {"_id": rep["_id"]},
+                        {"$set": {"principio": mejor, "detalle": detalle,
+                                  "refuerzos": ref, "fuentes": list(fuentes)}})
+                    await db.investing_knowledge.delete_many({"_id": {"$in": borrar}})
+                    fusiones += 1
+                    eliminados += len(borrar)
+                except Exception:
+                    logger.warning("dedupe: fallo fusionando un cluster")
+    await rebuild_cache(db)
+    restantes = await db.investing_knowledge.count_documents({})
+    return {"fusiones": fusiones, "eliminados": eliminados, "restantes": restantes}
 
 
 async def fix_existing_encoding(db) -> dict:

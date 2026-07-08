@@ -88,6 +88,20 @@ def test_dedup_por_tema_incrementa_refuerzos():
     assert "claramente" in doc["principio"]
 
 
+def test_dedup_semantico_refuerza_principio_casi_identico():
+    _reset()
+    db = _FakeDB()
+    # Dos aprendizajes con TEMA distinto pero principio que dice lo mismo con otras
+    # palabras → deben fundirse en uno solo (refuerzos=2), no duplicarse.
+    _run(kb.add_learnings(db, [{"tema": "Gestión de stops", "categoria": "riesgo",
+        "principio": "Coloca un stop loss bajo el precio de compra y mantenlo sin moverlo"}], "A"))
+    _run(kb.add_learnings(db, [{"tema": "Uso de stop-loss", "categoria": "riesgo",
+        "principio": "Coloca el stop loss bajo el precio y mantenlo sin moverlo nunca"}], "B"))
+    assert len(db.investing_knowledge.docs) == 1
+    doc = next(iter(db.investing_knowledge.docs.values()))
+    assert doc["refuerzos"] == 2
+
+
 def test_temas_distintos_se_guardan_separados():
     _reset()
     db = _FakeDB()
