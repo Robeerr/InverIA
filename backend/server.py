@@ -105,6 +105,11 @@ def _clean_nans(v):
 
 
 class SafeJSONResponse(JSONResponse):
+    # Declara charset=utf-8 para que los navegadores (Safari en el móvil) no adivinen mal
+    # la codificación al mostrar el JSON en crudo — sin esto, los acentos se ven como
+    # mojibake ('ó' → 'Ã³') aunque los datos y los bytes sean UTF-8 correctos.
+    media_type = "application/json; charset=utf-8"
+
     def render(self, content) -> bytes:
         return json.dumps(_clean_nans(content), ensure_ascii=False).encode("utf-8")
 
