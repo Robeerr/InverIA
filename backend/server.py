@@ -1040,25 +1040,37 @@ async def radar(days: int = 14):
     acciones.sort(key=lambda x: (x["n_fuentes"], x["menciones"]), reverse=True)
 
     # Reconcilia el veredicto con el motor EN VIVO: el "inveria" guardado es una foto
-    # del día que llegó el email y puede estar rancio (un ticker bueno marcado como
-    # "Evítala" por un bajón puntual ya superado). Recalculamos el score fresco para
-    # los más relevantes, con límite de concurrencia y caché para no saturar las APIs.
+    # del día que llegó el email y puede estar rancio. NO bloqueamos la respuesta con
+    # esto: puntuar 25 tickers (quote+financials+consenso) tarda demasiado y el Radar
+    # deja de cargar. En su lugar: servimos al instante lo que haya en caché fresca y
+    # lanzamos el recálculo en SEGUNDO PLANO para que la próxima carga ya esté fresca.
     top = acciones[:25]
-    sem = asyncio.Semaphore(5)
-
-    async def _refresh(item):
-        cache_key = f"radar_score_{item['ticker']}"
-        fresh = _cache.get(cache_key)
-        if fresh is None:
-            async with sem:
-                fresh = await newsletter_ingest._score_ticker(item["ticker"])
-            if fresh is not None:
-                _cache.set(cache_key, fresh, ttl=1800)  # 30 min
+    faltan = []
+    for item in top:
+        fresh = _cache.get(f"radar_score_{item['ticker']}")
         if fresh is not None:
             item["inveria"] = fresh
             item["inveria_actualizado"] = True
+        else:
+            faltan.append(item["ticker"])
 
-    await asyncio.gather(*[_refresh(a) for a in top], return_exceptions=True)
+    if faltan:
+        async def _refresh_bg(tickers):
+            sem = asyncio.Semaphore(5)
+
+            async def _one(tk):
+                async with sem:
+                    try:
+                        fresh = await newsletter_ingest._score_ticker(tk)
+                    except Exception:
+                        fresh = None
+                if fresh is not None:
+                    _cache.set(f"radar_score_{tk}", fresh, ttl=1800)  # 30 min
+            await asyncio.gather(*[_one(tk) for tk in tickers], return_exceptions=True)
+
+        task = asyncio.create_task(_refresh_bg(faltan))
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
 
     return {
         "days": days,
