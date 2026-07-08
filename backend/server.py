@@ -1376,10 +1376,11 @@ async def inbound_newsletter(request: Request, token: str = ""):
     return {"ok": True, "queued": True}
 
 
-@api_router.post("/inbound/newsletter/backfill-knowledge")
+@api_router.api_route("/inbound/newsletter/backfill-knowledge", methods=["GET", "POST"])
 async def inbound_newsletter_backfill(token: str = "", limit: int = 200):
     """Reprocesa los correos ya guardados para poblar el cerebro (investing_knowledge)
-    con el método/sabiduría que enseñan. Protegido con INBOUND_SECRET."""
+    con el método/sabiduría que enseñan. Protegido con INBOUND_SECRET. Acepta GET para
+    poder lanzarlo tocando un enlace desde el móvil."""
     secret = os.environ.get("INBOUND_SECRET")
     if not secret or token != secret:
         raise HTTPException(401, "Token de entrada inválido.")
