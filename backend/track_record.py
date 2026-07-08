@@ -106,15 +106,40 @@ async def compute_track_record(db, days: int = 180, min_age_days: int = 3) -> di
 
     señales.sort(key=lambda x: x["fecha"], reverse=True)
     cerradas = [s for s in señales if s["resultado"] in ("tp1", "stop")]
+    abiertas = [s for s in señales if s["resultado"] == "abierta"]
     aciertos = [s for s in cerradas if s["resultado"] == "tp1"]
-    con_ret = [s["retorno"] for s in señales if s["retorno"] is not None]
+    fallos = [s for s in cerradas if s["resultado"] == "stop"]
+
+    def _media(rows):
+        vals = [r["retorno"] for r in rows if r["retorno"] is not None]
+        return round(sum(vals) / len(vals), 1) if vals else None
+
+    win_rate = round(len(aciertos) / len(cerradas) * 100, 1) if cerradas else None
+    ganancia_media = _media(aciertos)   # cuánto ganas cuando aciertas
+    perdida_media = _media(fallos)      # cuánto pierdes cuando fallas
+    # Esperanza matemática por operación: lo que ganas de media por señal cerrada,
+    # ponderando aciertos y fallos. Es EL número que dice si el motor gana dinero.
+    esperanza = None
+    if win_rate is not None and ganancia_media is not None and perdida_media is not None:
+        p = win_rate / 100
+        esperanza = round(p * ganancia_media + (1 - p) * perdida_media, 1)
+    # Ratio riesgo/recompensa real: ganancia media / pérdida media (en valor absoluto).
+    rr = None
+    if ganancia_media and perdida_media:
+        rr = round(ganancia_media / abs(perdida_media), 2) if perdida_media else None
+
     return {
         "total": len(señales),
         "aciertos": len(aciertos),
-        "fallos": len(cerradas) - len(aciertos),
-        "abiertas": len(señales) - len(cerradas),
-        "win_rate": round(len(aciertos) / len(cerradas) * 100, 1) if cerradas else None,
-        "retorno_medio": round(sum(con_ret) / len(con_ret), 1) if con_ret else None,
+        "fallos": len(fallos),
+        "abiertas": len(abiertas),
+        "win_rate": win_rate,
+        "retorno_medio_cerradas": _media(cerradas),   # resultado real de lo ya cerrado
+        "ganancia_media": ganancia_media,
+        "perdida_media": perdida_media,
+        "ratio_rr": rr,
+        "esperanza": esperanza,
+        "pl_abiertas": _media(abiertas),              # P&L medio de lo que sigue en curso
         "señales": señales[:50],
         "dias": days,
         "generado": now.isoformat(),

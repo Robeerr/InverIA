@@ -75,21 +75,36 @@ export default function TrackRecordView() {
         </div>
       ) : (
         <>
-          {/* Resumen */}
+          {/* Resumen principal: acierto + esperanza (el que dice si gana dinero) */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             <Stat label="% Acierto" value={s.win_rate != null ? `${s.win_rate}%` : "—"}
               sub={`${s.aciertos}✓ / ${s.fallos}✗`}
               color={s.win_rate == null ? "#5c6b66" : s.win_rate >= 55 ? "#4a7c59" : s.win_rate >= 45 ? "#c9a14a" : "#d85c41"} />
-            <Stat label="Retorno medio" value={s.retorno_medio != null ? `${s.retorno_medio > 0 ? "+" : ""}${s.retorno_medio}%` : "—"}
-              color={(s.retorno_medio || 0) > 0 ? "#4a7c59" : (s.retorno_medio || 0) < 0 ? "#d85c41" : "#5c6b66"} />
-            <Stat label="Señales" value={s.total} sub={`últimos ${s.dias || days} días`} />
-            <Stat label="Abiertas" value={s.abiertas} sub="aún en curso" color="#c9a14a" />
+            <Stat label="Esperanza / op." value={s.esperanza != null ? `${s.esperanza > 0 ? "+" : ""}${s.esperanza}%` : "—"}
+              sub="por señal cerrada"
+              color={s.esperanza == null ? "#5c6b66" : s.esperanza > 0 ? "#4a7c59" : "#d85c41"} />
+            <Stat label="Ratio R/R" value={s.ratio_rr != null ? `${s.ratio_rr}:1` : "—"}
+              sub="ganancia / pérdida"
+              color={s.ratio_rr == null ? "#5c6b66" : s.ratio_rr >= 1.5 ? "#4a7c59" : s.ratio_rr >= 1 ? "#c9a14a" : "#d85c41"} />
+            <Stat label="Señales" value={s.total} sub={`${s.abiertas} abiertas`} />
+          </div>
+
+          {/* Desglose ganancia/pérdida y cerradas vs abiertas */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <Stat label="Ganancia media" value={s.ganancia_media != null ? `+${s.ganancia_media}%` : "—"} sub="cuando acierta" color="#4a7c59" />
+            <Stat label="Pérdida media" value={s.perdida_media != null ? `${s.perdida_media}%` : "—"} sub="cuando falla" color="#d85c41" />
+            <Stat label="Retorno cerradas" value={s.retorno_medio_cerradas != null ? `${s.retorno_medio_cerradas > 0 ? "+" : ""}${s.retorno_medio_cerradas}%` : "—"} sub="resultado real"
+              color={(s.retorno_medio_cerradas || 0) > 0 ? "#4a7c59" : (s.retorno_medio_cerradas || 0) < 0 ? "#d85c41" : "#5c6b66"} />
+            <Stat label="P&L abiertas" value={s.pl_abiertas != null ? `${s.pl_abiertas > 0 ? "+" : ""}${s.pl_abiertas}%` : "—"} sub="en curso"
+              color={(s.pl_abiertas || 0) > 0 ? "#4a7c59" : (s.pl_abiertas || 0) < 0 ? "#d85c41" : "#5c6b66"} />
           </div>
 
           {/* Nota honesta */}
           <p className="text-[11px] text-[#5c6b66] leading-relaxed px-1">
-            Acierto = el precio tocó el <b>take-profit</b> antes que el stop. Fallo = tocó el <b>stop</b> antes.
-            El stop se cuenta primero (criterio conservador). Las <b>abiertas</b> aún no han tocado ninguno.
+            La <b>esperanza por operación</b> es lo que importa: cuánto ganas de media por señal cerrada
+            (pondera aciertos y fallos). Si es positiva, el motor gana dinero aunque falle a veces.
+            El <b>ratio R/R</b> ideal es ≥1.5:1. Acierto = tocó <b>take-profit</b> antes que el stop; el stop se
+            cuenta primero (conservador). Las <b>abiertas</b> aún no han tocado ninguno.
           </p>
 
           {/* Detalle */}
