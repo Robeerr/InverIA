@@ -47,10 +47,14 @@ FILOSOFÍA:
 
 REGLAS DE STOP-LOSS (basadas en ATR — el método profesional):
 - El ATR refleja la volatilidad real diaria del activo. Un stop que no respete el ATR es ejecutado por ruido.
-- Stop ajustado: precio_entrada − 1.5 × ATR (para swing traders con horizonte días-semanas)
-- Stop estándar: precio_entrada − 2.0 × ATR (para inversores a medio plazo, nivel clave invalidación tesis)
-- Stop amplio: precio_entrada − 3.0 × ATR (para posiciones de largo plazo, por debajo de soporte estructural)
+- Stop ajustado: precio_entrada − 1.5 × ATR (para swing traders con horizonte días-semanas) — ESTE ES EL POR DEFECTO.
+- Stop estándar: precio_entrada − 2.0 × ATR (solo para inversores a medio plazo si la tesis lo exige)
+- Stop amplio: precio_entrada − 3.0 × ATR (solo posiciones de largo plazo, por debajo de soporte estructural)
 - NUNCA uses stops fijos de "5-7%" o "10-12%" — eso es arbitrario. Usa el ATR del activo.
+- REGLA DE ORO (R/R): el stop NUNCA debe estar tan lejos que TP1 dé menos de 1.5:1. Es decir,
+  la distancia entrada→TP1 debe ser al menos 1.5× la distancia entrada→stop. Si un stop por ATR
+  incumple esto, CÍÑELO hacia la entrada hasta cumplir 1.5:1. Perder más de lo que ganas cuando
+  aciertas es el error a evitar: prioriza SIEMPRE un R/R sano sobre un stop "cómodo".
 
 REGLAS DE TAKE-PROFIT:
 - TP1: primera resistencia fuerte o extensión Fibonacci 100% (vuelta al máximo swing)

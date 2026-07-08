@@ -524,6 +524,25 @@ def _cap_take_profits(result: dict, high_52w) -> dict:
     return result
 
 
+def _enforce_rr(result: dict, price) -> dict:
+    """Guardián de riesgo/recompensa: garantiza R/R mínimo en TP1 ciñendo el stop si el
+    motor lo dejó demasiado ancho. Determinista (ver risk_rules.min_rr_stop)."""
+    import risk_rules
+    if not isinstance(result, dict):
+        return result
+    ez = result.get("entry_zone") if isinstance(result.get("entry_zone"), dict) else {}
+    entry = ez.get("min") if isinstance(ez.get("min"), (int, float)) else price
+    tp1 = result.get("take_profit_1")
+    stop = result.get("stop_loss")
+    if not all(isinstance(x, (int, float)) for x in (entry, tp1, stop)):
+        return result
+    nuevo, ajustado = risk_rules.min_rr_stop(entry, tp1, stop)
+    if ajustado:
+        result["stop_loss"] = nuevo
+        result["stop_ajustado_rr"] = True
+    return result
+
+
 # ---------- AI Analysis ----------
 @api_router.post("/analyze")
 async def analyze(req: AnalyzeRequest):
@@ -656,6 +675,7 @@ async def analyze(req: AnalyzeRequest):
         result["key_levels"] = kl
     result = _ensure_key_levels(result, indicators_data, vp, quote.get("price"))
     result = _cap_take_profits(result, quote.get("high_52w"))
+    result = _enforce_rr(result, quote.get("price"))
 
     # Persist
     doc = {
