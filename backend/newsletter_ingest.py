@@ -137,11 +137,27 @@ def _html_to_text(body: str) -> str:
 
 
 async def _extract(subject: str, text: str) -> dict:
-    """Extrae lo accionable con Groq (robusto, sin depender de Gemini). Devuelve dict."""
+    """Extrae lo accionable con Groq (robusto, sin depender de Gemini). Devuelve dict.
+
+    Los correos PREMIUM de análisis (el Diamante) son largos y en prosa: el JSON de
+    salida se puede truncar (Groq gratis capa la salida a ~3000 tokens) y fallar el
+    parseo. Por eso reintentamos con el cuerpo cada vez más recortado — así siempre
+    sale algo y llega el email, aunque sea con menos detalle."""
     import ai_analysis
-    body = (text or "")[:12000]  # acota tokens de entrada
-    user_msg = f"ASUNTO: {subject}\n\nTEXTO DE LA NEWSLETTER:\n{body}"
-    return await ai_analysis._run_model("gpt-oss-120b", _EXTRACT_PROMPT, user_msg, max_tokens=2800)
+    # Recortes decrecientes: primero el correo entero, luego cada vez menos cuerpo para
+    # dejar más presupuesto de salida y evitar la truncación del JSON.
+    last_err = None
+    for cap in (12000, 7000, 4000):
+        body = (text or "")[:cap]
+        user_msg = f"ASUNTO: {subject}\n\nTEXTO DE LA NEWSLETTER:\n{body}"
+        try:
+            return await ai_analysis._run_model(
+                "gpt-oss-120b", _EXTRACT_PROMPT, user_msg, max_tokens=2800)
+        except Exception as e:
+            last_err = e
+            logger.warning("newsletter: extracción falló con cap=%d (%s), reintento",
+                           cap, str(e)[:120])
+    raise last_err if last_err else RuntimeError("extracción falló")
 
 
 async def _score_ticker(symbol: str):
