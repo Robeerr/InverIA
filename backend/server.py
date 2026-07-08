@@ -1384,8 +1384,23 @@ async def inbound_newsletter_backfill(token: str = "", limit: int = 200):
     secret = os.environ.get("INBOUND_SECRET")
     if not secret or token != secret:
         raise HTTPException(401, "Token de entrada inválido.")
-    result = await newsletter_ingest.backfill_knowledge(db, limit=limit)
-    return {"ok": True, **result}
+
+    # Reprocesar N correos con una llamada al LLM cada uno tarda minutos: si se hace de
+    # forma síncrona, el navegador/Render cortan ("server stopped responding"). Se lanza
+    # en segundo plano y se responde al instante; el progreso se ve en /knowledge.
+    async def _bg():
+        try:
+            res = await newsletter_ingest.backfill_knowledge(db, limit=limit)
+            logger.info("backfill cerebro: %s", res)
+        except Exception:
+            logger.exception("backfill cerebro falló")
+
+    task = asyncio.create_task(_bg())
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return {"ok": True, "queued": True,
+            "mensaje": "Backfill en marcha en segundo plano. Mira el progreso en "
+                       "/api/inbound/newsletter/knowledge?token=..."}
 
 
 @api_router.get("/inbound/newsletter/knowledge")
