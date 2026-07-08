@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from track_record import evaluate_signal  # noqa: E402
+from track_record import evaluate_signal, evaluate_signal_tp2  # noqa: E402
 
 
 def test_acierto_toca_tp1():
@@ -45,6 +45,17 @@ def test_sin_entrada_devuelve_none():
 
 def test_sin_futuro_devuelve_none():
     assert evaluate_signal(100, 110, 90, []) is None
+
+
+def test_tp2_acierto_da_mayor_retorno():
+    # Contra TP2 (120) el mismo movimiento da +20% en vez del +10% de TP1.
+    fut = [(105, 98, 104), (121, 112, 120)]
+    assert evaluate_signal_tp2(100, 120, 90, fut) == ("tp2", 20.0)
+
+
+def test_tp2_stop_prioritario():
+    fut = [(112, 88, 100)]
+    assert evaluate_signal_tp2(100, 120, 90, fut) == ("stop", -10.0)
 
 
 def test_ignora_nan_en_niveles():

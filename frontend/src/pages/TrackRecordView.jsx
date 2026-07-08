@@ -99,6 +99,32 @@ export default function TrackRecordView() {
               color={(s.pl_abiertas || 0) > 0 ? "#4a7c59" : (s.pl_abiertas || 0) < 0 ? "#d85c41" : "#5c6b66"} />
           </div>
 
+          {/* Escenario TP2: qué pasa si aguantas hasta el objetivo mayor */}
+          {s.tp2 && (
+            <div className="card-flat p-4">
+              <p className="text-[10px] uppercase tracking-[0.15em] text-[#5c6b66] font-mono mb-3">
+                Si aguantas hasta TP2 (objetivo mayor)
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <Stat label="% Acierto" value={s.tp2.win_rate != null ? `${s.tp2.win_rate}%` : "—"}
+                  sub={`${s.tp2.aciertos}✓ / ${s.tp2.fallos}✗`}
+                  color={s.tp2.win_rate == null ? "#5c6b66" : s.tp2.win_rate >= 50 ? "#4a7c59" : s.tp2.win_rate >= 40 ? "#c9a14a" : "#d85c41"} />
+                <Stat label="Esperanza / op." value={s.tp2.esperanza != null ? `${s.tp2.esperanza > 0 ? "+" : ""}${s.tp2.esperanza}%` : "—"}
+                  sub="por señal cerrada"
+                  color={s.tp2.esperanza == null ? "#5c6b66" : s.tp2.esperanza > 0 ? "#4a7c59" : "#d85c41"} />
+                <Stat label="Ratio R/R" value={s.tp2.ratio_rr != null ? `${s.tp2.ratio_rr}:1` : "—"}
+                  sub="ganancia / pérdida"
+                  color={s.tp2.ratio_rr == null ? "#5c6b66" : s.tp2.ratio_rr >= 1.5 ? "#4a7c59" : s.tp2.ratio_rr >= 1 ? "#c9a14a" : "#d85c41"} />
+                <Stat label="Ganancia media" value={s.tp2.ganancia_media != null ? `+${s.tp2.ganancia_media}%` : "—"} sub="cuando acierta" color="#4a7c59" />
+              </div>
+              <p className="text-[11px] text-[#5c6b66] leading-relaxed mt-3">
+                Mismo motor, pero cerrando en el <b>segundo objetivo</b> en vez del primero. Aciertas
+                menos veces (cuesta más llegar) pero ganas más por acierto — compara la esperanza y el R/R
+                con los de arriba (TP1) para ver qué salida te renta más.
+              </p>
+            </div>
+          )}
+
           {/* Nota honesta */}
           <p className="text-[11px] text-[#5c6b66] leading-relaxed px-1">
             La <b>esperanza por operación</b> es lo que importa: cuánto ganas de media por señal cerrada

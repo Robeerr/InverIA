@@ -28,7 +28,7 @@ def _num(x):
 
 
 def evaluate_signal(entry, tp1, sl, future):
-    """Lógica pura del resultado de una señal de compra.
+    """Lógica pura del resultado de una señal de compra (evaluada contra TP1).
 
     `future` = lista de velas posteriores a la señal, cada una (high, low, close),
     en orden cronológico. Determina qué se tocó ANTES: el stop (fallo) o el TP1
@@ -48,6 +48,27 @@ def evaluate_signal(entry, tp1, sl, future):
             return ("stop", round((sl - entry) / entry * 100, 1))
         if tp1 and hi is not None and hi >= tp1:
             return ("tp1", round((tp1 - entry) / entry * 100, 1))
+    last_close = _num(future[-1][2])
+    cur = round((last_close - entry) / entry * 100, 1) if last_close else None
+    return ("abierta", cur)
+
+
+def evaluate_signal_tp2(entry, tp2, sl, future):
+    """Igual que evaluate_signal pero contra el SEGUNDO objetivo (TP2): refleja el
+    resultado si aguantas la posición hasta el objetivo mayor en vez de cerrar en TP1.
+    Devuelve (resultado, retorno_%) con resultado en {'tp2','stop','abierta'}."""
+    entry = _num(entry)
+    if not entry:
+        return None
+    tp2, sl = _num(tp2), _num(sl)
+    if not future:
+        return None
+    for hi, lo, _close in future:
+        hi, lo = _num(hi), _num(lo)
+        if sl and lo is not None and lo <= sl:
+            return ("stop", round((sl - entry) / entry * 100, 1))
+        if tp2 and hi is not None and hi >= tp2:
+            return ("tp2", round((tp2 - entry) / entry * 100, 1))
     last_close = _num(future[-1][2])
     cur = round((last_close - entry) / entry * 100, 1) if last_close else None
     return ("abierta", cur)
@@ -78,7 +99,8 @@ async def compute_track_record(db, days: int = 180, min_age_days: int = 3) -> di
             continue
         by_symbol[d["symbol"]].append({
             "created": created, "entry": entry,
-            "tp1": res.get("take_profit_1"), "sl": res.get("stop_loss"),
+            "tp1": res.get("take_profit_1"), "tp2": res.get("take_profit_2"),
+            "sl": res.get("stop_loss"),
         })
 
     señales = []
@@ -99,10 +121,15 @@ async def compute_track_record(db, days: int = 180, min_age_days: int = 3) -> di
             if not ev:
                 continue
             resultado, retorno = ev
-            señales.append({
+            fila = {
                 "symbol": sym, "fecha": s["created"].date().isoformat(),
                 "entrada": round(s["entry"], 2), "resultado": resultado, "retorno": retorno,
-            })
+            }
+            # Resultado alternativo aguantando hasta TP2 (si el análisis lo definió).
+            ev2 = evaluate_signal_tp2(s["entry"], s["tp2"], s["sl"], future) if s.get("tp2") else None
+            if ev2:
+                fila["resultado_tp2"], fila["retorno_tp2"] = ev2
+            señales.append(fila)
 
     señales.sort(key=lambda x: x["fecha"], reverse=True)
     cerradas = [s for s in señales if s["resultado"] in ("tp1", "stop")]
@@ -112,6 +139,10 @@ async def compute_track_record(db, days: int = 180, min_age_days: int = 3) -> di
 
     def _media(rows):
         vals = [r["retorno"] for r in rows if r["retorno"] is not None]
+        return round(sum(vals) / len(vals), 1) if vals else None
+
+    def _tp2media(rows):
+        vals = [r["retorno_tp2"] for r in rows if r.get("retorno_tp2") is not None]
         return round(sum(vals) / len(vals), 1) if vals else None
 
     win_rate = round(len(aciertos) / len(cerradas) * 100, 1) if cerradas else None
@@ -128,6 +159,28 @@ async def compute_track_record(db, days: int = 180, min_age_days: int = 3) -> di
     if ganancia_media and perdida_media:
         rr = round(ganancia_media / abs(perdida_media), 2) if perdida_media else None
 
+    # --- Escenario TP2: qué pasaría aguantando hasta el objetivo mayor ---
+    tp2_rows = [s for s in señales if s.get("resultado_tp2")]
+    tp2 = None
+    if tp2_rows:
+        cerr2 = [s for s in tp2_rows if s["resultado_tp2"] in ("tp2", "stop")]
+        win2 = [s for s in cerr2 if s["resultado_tp2"] == "tp2"]
+        loss2 = [s for s in cerr2 if s["resultado_tp2"] == "stop"]
+        g2 = _tp2media(win2)
+        p2 = _tp2media(loss2)
+        wr2 = round(len(win2) / len(cerr2) * 100, 1) if cerr2 else None
+        esp2 = None
+        if wr2 is not None and g2 is not None and p2 is not None:
+            pr = wr2 / 100
+            esp2 = round(pr * g2 + (1 - pr) * p2, 1)
+        rr2 = round(g2 / abs(p2), 2) if (g2 and p2) else None
+        tp2 = {
+            "win_rate": wr2, "ganancia_media": g2, "perdida_media": p2,
+            "ratio_rr": rr2, "esperanza": esp2,
+            "aciertos": len(win2), "fallos": len(loss2),
+            "abiertas": len(tp2_rows) - len(cerr2),
+        }
+
     return {
         "total": len(señales),
         "aciertos": len(aciertos),
@@ -140,6 +193,7 @@ async def compute_track_record(db, days: int = 180, min_age_days: int = 3) -> di
         "ratio_rr": rr,
         "esperanza": esperanza,
         "pl_abiertas": _media(abiertas),              # P&L medio de lo que sigue en curso
+        "tp2": tp2,                                   # mismo análisis aguantando hasta TP2
         "señales": señales[:50],
         "dias": days,
         "generado": now.isoformat(),
