@@ -139,6 +139,8 @@ async def lifespan(app: FastAPI):
         import knowledge_base
         await db.investing_knowledge.create_index("_key", unique=True)
         await knowledge_base.ensure_loaded(db)
+        # Mantenimiento automático: dedup semántico LLM una vez por semana.
+        asyncio.create_task(knowledge_base.maintenance_loop(db))
     except Exception as e:
         logger.warning(f"Knowledge base load failed: {e}")
 

@@ -337,6 +337,22 @@ async def dedupe_semantic_llm(db) -> dict:
     return {"fusiones": fusiones, "eliminados": eliminados, "restantes": restantes}
 
 
+async def maintenance_loop(db, interval_seconds: int = 7 * 24 * 3600,
+                           initial_delay: int = 24 * 3600):
+    """Mantenimiento periódico del cerebro: ejecuta el dedup semántico con LLM cada
+    ~semana, solo, para consolidar los principios que van entrando con las newsletters.
+    Espera un margen inicial para no dispararse en cada redeploy (gastaría tokens)."""
+    import asyncio
+    await asyncio.sleep(initial_delay)
+    while True:
+        try:
+            res = await dedupe_semantic_llm(db)
+            logger.info("mantenimiento cerebro (dedup LLM semanal): %s", res)
+        except Exception:
+            logger.exception("mantenimiento cerebro: dedup semanal falló")
+        await asyncio.sleep(interval_seconds)
+
+
 async def fix_existing_encoding(db) -> dict:
     """Repara el mojibake de los principios YA guardados (los del backfill inicial) y
     reconstruye el cache. Devuelve cuántos se corrigieron."""
