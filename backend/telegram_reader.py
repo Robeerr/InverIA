@@ -20,9 +20,19 @@ try:
     from telethon import TelegramClient, events
     from telethon.sessions import StringSession
     from telethon.errors import SessionPasswordNeededError
+    from telethon.tl.functions.channels import GetForumTopicsRequest
     TELETHON_AVAILABLE = True
 except ImportError:
     TELETHON_AVAILABLE = False
+
+
+def _msg_topic_id(message):
+    """ID del tema (topic) al que pertenece un mensaje en un grupo con Temas, o None."""
+    r = getattr(message, "reply_to", None)
+    if r and getattr(r, "forum_topic", False):
+        return getattr(r, "reply_to_top_id", None) or getattr(r, "reply_to_msg_id", None) or 1
+    # En un foro, un mensaje sin reply_to pertenece al tema "General" (id 1).
+    return None
 
 
 def _api_creds():
@@ -114,38 +124,75 @@ async def _connected_client(db):
 
 
 async def list_dialogs(db) -> dict:
-    """Lista TODOS los canales/grupos que ve tu cuenta, con nombre e ID, para que elijas
-    cuáles capturar. Marca cuáles están ya en la lista blanca."""
+    """Lista los canales/grupos que ve tu cuenta. Si un grupo tiene TEMAS (topics), los
+    despliega uno a uno para que elijas solo los de los jefes e ignores el ruido. Cada
+    elemento tiene una 'clave': 'chatid' (canal entero) o 'chatid/topicid' (un tema)."""
     client = await _connected_client(db)
     if not client:
         return {"ok": False, "error": "Sin sesión. Haz login primero."}
     cfg = await _load_cfg(db)
-    activos = set(cfg.get("capture_chats") or [])
-    dialogs = []
+    activos = set(cfg.get("capture") or [])
+    items = []
     try:
         async for d in client.iter_dialogs():
-            if d.is_channel or d.is_group:
-                dialogs.append({
-                    "id": d.id,
-                    "nombre": d.name or "(sin nombre)",
+            if not (d.is_channel or d.is_group):
+                continue
+            ent = d.entity
+            es_foro = bool(getattr(ent, "forum", False))
+            if es_foro:
+                # Grupo con Temas: lista cada tema como elemento elegible.
+                try:
+                    res = await client(GetForumTopicsRequest(
+                        channel=ent, offset_date=0, offset_id=0, offset_topic=0, limit=100))
+                    for t in res.topics:
+                        title = getattr(t, "title", None) or f"Tema {t.id}"
+                        clave = f"{d.id}/{t.id}"
+                        items.append({
+                            "id": clave, "nombre": f"{d.name} › {title}",
+                            "tipo": "tema", "capturando": clave in activos,
+                        })
+                except Exception:
+                    logger.warning("telegram: no se pudieron listar temas de %s", d.name)
+                    clave = str(d.id)
+                    items.append({"id": clave, "nombre": d.name or "(sin nombre)",
+                                  "tipo": "grupo", "capturando": clave in activos})
+            else:
+                clave = str(d.id)
+                items.append({
+                    "id": clave, "nombre": d.name or "(sin nombre)",
                     "tipo": "canal" if d.is_channel and not d.is_group else "grupo",
-                    "capturando": d.id in activos,
+                    "capturando": clave in activos,
                 })
     finally:
         await client.disconnect()
-    return {"ok": True, "canales": dialogs, "capturando_ahora": sorted(activos)}
+    return {"ok": True, "canales": items, "capturando_ahora": sorted(activos)}
 
 
-async def set_capture(db, chat_ids: list) -> dict:
-    """Fija la lista blanca de canales/temas a capturar. Reinicia el worker para aplicarla."""
-    ids = []
-    for x in chat_ids or []:
-        try:
-            ids.append(int(x))
-        except (TypeError, ValueError):
-            pass
-    await _save_cfg(db, capture_chats=ids)
-    return {"ok": True, "capturando": ids}
+async def set_capture(db, claves: list) -> dict:
+    """Fija la lista blanca de temas/canales a capturar (claves 'chatid' o 'chatid/topicid').
+    Reinicia el worker para aplicarla."""
+    limpio = [str(x) for x in (claves or []) if str(x).strip()]
+    await _save_cfg(db, capture=limpio)
+    return {"ok": True, "capturando": limpio}
+
+
+def _parse_claves(claves):
+    """Convierte claves en: set de chat_ids a escuchar y set de 'chatid/topicid' permitidos.
+    Si una clave es solo 'chatid', se captura TODO ese chat."""
+    chats, topics, chats_enteros = set(), set(), set()
+    for k in claves or []:
+        if "/" in str(k):
+            cid, tid = str(k).split("/", 1)
+            try:
+                chats.add(int(cid)); topics.add(f"{int(cid)}/{int(tid)}")
+            except ValueError:
+                pass
+        else:
+            try:
+                cid = int(k); chats.add(cid); chats_enteros.add(cid)
+            except ValueError:
+                pass
+    return chats, topics, chats_enteros
 
 
 # --- Procesado de cada mensaje: texto + audio + imagen → método → cerebro ---
@@ -198,19 +245,26 @@ async def reader_worker_loop(db):
         logger.info("telegram: telethon no instalada; lector desactivado")
         return
     cfg = await _load_cfg(db)
-    if not cfg.get("session") or not cfg.get("capture_chats"):
-        logger.info("telegram: sin sesión o sin canales elegidos; lector en espera")
+    claves = cfg.get("capture") or []
+    if not cfg.get("session") or not claves:
+        logger.info("telegram: sin sesión o sin temas elegidos; lector en espera")
         return
     client = await _connected_client(db)
     if not client:
         logger.warning("telegram: no se pudo conectar con la sesión guardada")
         return
-    capture = set(cfg["capture_chats"])
-    logger.info("telegram: lector activo sobre %d canales", len(capture))
+    chats, topics, chats_enteros = _parse_claves(claves)
+    logger.info("telegram: lector activo (%d chats, %d temas)", len(chats), len(topics))
 
-    @client.on(events.NewMessage(chats=list(capture)))
+    @client.on(events.NewMessage(chats=list(chats)))
     async def _handler(event):
         try:
+            cid = event.chat_id
+            # Si el chat entero está en la lista, pasa. Si no, filtra por tema.
+            if cid not in chats_enteros:
+                tid = _msg_topic_id(event.message)
+                if tid is None or f"{cid}/{tid}" not in topics:
+                    return  # tema no elegido → ignorar (ruido)
             chat = await event.get_chat()
             name = getattr(chat, "title", None) or getattr(chat, "username", "?")
             await _process_message(db, client, event.message, name)
@@ -230,5 +284,5 @@ async def status(db) -> dict:
         "telethon_instalada": TELETHON_AVAILABLE,
         "credenciales_api": bool(api_id and api_hash),
         "sesion_guardada": bool(cfg.get("session")),
-        "canales_capturando": cfg.get("capture_chats") or [],
+        "canales_capturando": cfg.get("capture") or [],
     }
