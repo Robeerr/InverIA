@@ -74,7 +74,7 @@ def evaluate_signal_tp2(entry, tp2, sl, future):
     return ("abierta", cur)
 
 
-async def compute_track_record(db, days: int = 180, min_age_days: int = 3) -> dict:
+async def compute_track_record(db, days: int = 180, min_age_days: int = 0) -> dict:
     """Evalúa las señales de COMPRA de los últimos `days` días (con al menos
     `min_age_days` de antigüedad para que haya recorrido). Agrupa por símbolo para
     traer el histórico de cada uno una sola vez."""
@@ -138,7 +138,14 @@ async def compute_track_record(db, days: int = 180, min_age_days: int = 3) -> di
             created = s["created"].replace(tzinfo=None)
             future = [(highs[i], lows[i], closes[i])
                       for i in range(len(fechas)) if fechas[i] > created]
-            ev = evaluate_signal(s["entry"], s["tp1"], s["sl"], future)
+            if future:
+                ev = evaluate_signal(s["entry"], s["tp1"], s["sl"], future)
+            else:
+                # Señal recién creada (sin velas posteriores aún): aparece ya como
+                # 'abierta' a precio ~actual, para que veas al instante que se guardó.
+                last = _num(closes[-1]) if closes else None
+                ret = round((last - s["entry"]) / s["entry"] * 100, 1) if last else 0.0
+                ev = ("abierta", ret)
             if not ev:
                 continue
             resultado, retorno = ev

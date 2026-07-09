@@ -28,9 +28,9 @@ export default function TrackRecordView() {
   const [loading, setLoading] = useState(true);
   const [days, setDays] = useState(180);
 
-  const load = useCallback(async (d) => {
+  const load = useCallback(async (d, refresh = false) => {
     setLoading(true);
-    try { setData(await api.trackRecord(d)); }
+    try { setData(await api.trackRecord(d, refresh)); }
     catch (e) { toast.error("No se pudo cargar el track record"); }
     finally { setLoading(false); }
   }, []);
@@ -50,7 +50,7 @@ export default function TrackRecordView() {
             <p className="text-[11px] text-[#5c6b66]">¿Funcionan las señales de COMPRA del motor? Sin autoengaño.</p>
           </div>
         </div>
-        <button onClick={() => load(days)} className="shrink-0 p-2 rounded-md border border-[#e5e0d8] text-[#1a3a32]" title="Recargar">
+        <button onClick={() => load(days, true)} className="shrink-0 p-2 rounded-md border border-[#e5e0d8] text-[#1a3a32]" title="Recargar (datos frescos)">
           <ArrowClockwise size={16} weight="bold" className={loading ? "animate-spin" : ""} />
         </button>
       </div>
