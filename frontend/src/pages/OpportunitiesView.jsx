@@ -121,6 +121,14 @@ function ScreenerCard({ row, onPick }) {
           <div className="min-w-0">
             <p className="font-mono font-bold text-sm text-[#0e1f1a]">{row.symbol}</p>
             <p className="text-[10px] text-[#5c6b66] truncate max-w-[140px]">{row.name}</p>
+            {row.fuentes && (
+              <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-[#229ED915] text-[#1a6a94] border border-[#229ED930]"
+                title={`Mencionada por tus fuentes: ${(row.fuentes.fuentes || []).join(", ")}`}>
+                📣 Tus fuentes ({row.fuentes.menciones})
+                {row.fuentes.positivos > 0 && ` 👍${row.fuentes.positivos}`}
+                {row.fuentes.negativos > 0 && ` 👎${row.fuentes.negativos}`}
+              </span>
+            )}
           </div>
         </div>
         {ps != null && (
@@ -511,11 +519,21 @@ export default function OpportunitiesView({ setSymbol }) {
               </p>
             </div>
           ) : (screener.results || []).length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {screener.results.map((row) => (
-                <ScreenerCard key={row.symbol} row={row} onPick={handlePick} />
-              ))}
-            </div>
+            <>
+              {(screener.con_fuentes || []).length > 0 && (
+                <p className="text-[11px] text-[#1a6a94] bg-[#229ED910] border border-[#229ED925] rounded-md px-3 py-2 mb-3">
+                  📣 <b>{screener.con_fuentes.length}</b> de estas acciones las mencionan tus fuentes de pago — salen primero, marcadas.
+                </p>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Las mencionadas por tus fuentes flotan arriba (sin alterar el score). */}
+                {[...screener.results]
+                  .sort((a, b) => (b.fuentes ? 1 : 0) - (a.fuentes ? 1 : 0))
+                  .map((row) => (
+                    <ScreenerCard key={row.symbol} row={row} onPick={handlePick} />
+                  ))}
+              </div>
+            </>
           ) : (
             <div className="card-flat p-12 text-center">
               <p className="text-sm text-[#5c6b66]">Ninguna acción del universo cumple hoy los 7 filtros. Prueba a refrescar más tarde.</p>

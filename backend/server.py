@@ -1029,6 +1029,35 @@ def _clean_source(sender: str, subject: str) -> str:
     return (subject or "Newsletter")[:40]
 
 
+async def _mentions_by_ticker(days: int = 30) -> dict:
+    """Mapa ticker → {menciones, positivos, negativos, fuentes} desde lo que dicen tus
+    fuentes (Telegram + newsletters) en los últimos `days` días."""
+    from datetime import timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    docs = await db.newsletter_summaries.find(
+        {"received_at": {"$gte": cutoff}}, {"_id": 0}
+    ).sort("received_at", -1).to_list(300)
+    out: dict = {}
+    for d in docs:
+        ex = d.get("extracted") or {}
+        src = _clean_source(d.get("sender"), d.get("subject"))
+        for a in (ex.get("acciones") or []):
+            tk = (a.get("ticker") or "").strip().upper()
+            if not tk:
+                continue
+            slot = out.setdefault(tk, {"menciones": 0, "positivos": 0, "negativos": 0, "fuentes": set()})
+            slot["menciones"] += 1
+            slot["fuentes"].add(src)
+            sent = (a.get("sentimiento") or "").upper()
+            if sent == "POSITIVO":
+                slot["positivos"] += 1
+            elif sent == "NEGATIVO":
+                slot["negativos"] += 1
+    for tk, s in out.items():
+        s["fuentes"] = sorted(s["fuentes"])
+    return out
+
+
 @api_router.get("/fuentes/{symbol}")
 async def fuentes_de_accion(symbol: str, days: int = 30):
     """Qué han dicho TUS fuentes (Telegram + newsletters) de esta acción: cada mención
@@ -1449,8 +1478,25 @@ async def daily_opportunities(refresh: bool = False):
 @api_router.get("/opportunities/screener")
 async def growth_screener(refresh: bool = False):
     """Growth screener: 7 hard filters (market cap, price, no dividend, volume,
-    near 52w high, revenue growth, EPS growth) over a curated growth universe."""
+    near 52w high, revenue growth, EPS growth) over a curated growth universe.
+    Anota qué acciones mencionan TUS fuentes (sin tocar el score) para destacarlas."""
     data = await opportunities.scan_growth_screener(force_refresh=refresh)
+    try:
+        mentions = await _mentions_by_ticker(30)
+        if mentions:
+            results = data.get("results") or []
+            annotated, con_fuentes = [], []
+            for r in results:
+                tk = (r.get("symbol") or "").strip().upper()
+                m = mentions.get(tk)
+                if m:
+                    annotated.append({**r, "fuentes": m})
+                    con_fuentes.append(tk)
+                else:
+                    annotated.append(r)
+            data = {**data, "results": annotated, "con_fuentes": con_fuentes}
+    except Exception:
+        logger.warning("screener: no se pudieron anotar las menciones de fuentes")
     return data
 
 
