@@ -20,10 +20,16 @@ try:
     from telethon import TelegramClient, events
     from telethon.sessions import StringSession
     from telethon.errors import SessionPasswordNeededError
-    from telethon.tl.functions.channels import GetForumTopicsRequest
     TELETHON_AVAILABLE = True
 except ImportError:
     TELETHON_AVAILABLE = False
+
+# El listado de TEMAS (topics) va aparte: si esta import fallara por versión, NO debe
+# tumbar todo Telethon — simplemente no se despliegan los temas.
+try:
+    from telethon.tl.functions.channels import GetForumTopicsRequest
+except Exception:
+    GetForumTopicsRequest = None
 
 
 def _msg_topic_id(message):
@@ -154,7 +160,7 @@ async def list_dialogs(db) -> dict:
             if not (d.is_channel or d.is_group):
                 continue
             ent = d.entity
-            es_foro = bool(getattr(ent, "forum", False))
+            es_foro = bool(getattr(ent, "forum", False)) and GetForumTopicsRequest is not None
             if es_foro:
                 # Grupo con Temas: lista cada tema como elemento elegible.
                 try:
@@ -313,8 +319,16 @@ async def status(db) -> dict:
         conectado = bool(c and c.is_connected())
     except Exception:
         conectado = False
+    ver = "?"
+    try:
+        import telethon as _t
+        ver = getattr(_t, "__version__", "?")
+    except Exception:
+        pass
     return {
         "telethon_instalada": TELETHON_AVAILABLE,
+        "telethon_version": ver,
+        "temas_soportados": GetForumTopicsRequest is not None,
         "credenciales_api": bool(api_id and api_hash),
         "sesion_guardada": bool(cfg.get("session")),
         "cliente_conectado": conectado,
