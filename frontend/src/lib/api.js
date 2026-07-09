@@ -58,6 +58,13 @@ export const api = {
   radar: (days = 14) => client.get(`/radar`, { params: { days } }).then((r) => r.data),
   trackRecord: (days = 180, refresh = false) =>
     client.get(`/track-record`, { params: { days, refresh: refresh || undefined }, timeout: 120000 }).then((r) => r.data),
+  telegram: {
+    status: (token) => client.get(`/telegram/status`, { params: { token } }).then((r) => r.data),
+    loginStart: (token, phone) => client.post(`/telegram/login/start`, { phone }, { params: { token }, timeout: 60000 }).then((r) => r.data),
+    loginCode: (token, code, password) => client.post(`/telegram/login/code`, { code, password }, { params: { token }, timeout: 60000 }).then((r) => r.data),
+    dialogs: (token) => client.get(`/telegram/dialogs`, { params: { token }, timeout: 60000 }).then((r) => r.data),
+    setCapture: (token, chat_ids) => client.post(`/telegram/capture`, { chat_ids }, { params: { token } }).then((r) => r.data),
+  },
   signals: () => client.get(`/signals`).then((r) => r.data),
   calendar: {
     earnings: (days = 14, symbols = null) =>
