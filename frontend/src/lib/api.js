@@ -56,6 +56,7 @@ export const api = {
     client.get(`/backtest`, { params: { window, limit }, timeout: 300000 }).then((r) => r.data),
   marketFutures: () => client.get(`/market/futures`).then((r) => r.data),
   radar: (days = 14) => client.get(`/radar`, { params: { days } }).then((r) => r.data),
+  brain: () => client.get(`/brain`).then((r) => r.data),
   trackRecord: (days = 180, refresh = false) =>
     client.get(`/track-record`, { params: { days, refresh: refresh || undefined }, timeout: 120000 }).then((r) => r.data),
   telegram: {

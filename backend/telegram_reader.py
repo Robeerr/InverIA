@@ -265,6 +265,7 @@ async def _process_message(db, client, message, chat_name: str):
     try:
         aprend = await newsletter_ingest._extract_learnings(text)
         n = await knowledge_base.add_learnings(db, aprend, source=f"Telegram:{chat_name}"[:80])
+        await knowledge_base.log_activity(db, "telegram", f"Telegram › {chat_name}", text, n)
         if n:
             logger.info("telegram: +%d aprendizajes de '%s'", n, chat_name)
     except Exception:

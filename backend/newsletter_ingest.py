@@ -320,6 +320,9 @@ async def process_newsletter(db, subject: str, body_html: str, body_text: str = 
         import knowledge_base
         n_aprend = await knowledge_base.add_learnings(
             db, data.get("aprendizajes") or [], source=subject[:80])
+        await knowledge_base.log_activity(
+            db, "newsletter", f"Newsletter › {subject}"[:100],
+            data.get("resumen") or subject, n_aprend)
         if n_aprend:
             logger.info("newsletter: +%d aprendizajes al cerebro", n_aprend)
     except Exception:

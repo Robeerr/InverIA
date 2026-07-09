@@ -13,6 +13,7 @@ const SignalsView      = React.lazy(() => import("./pages/SignalsView"));
 const RadarView        = React.lazy(() => import("./pages/RadarView"));
 const TrackRecordView  = React.lazy(() => import("./pages/TrackRecordView"));
 const TelegramConnectView = React.lazy(() => import("./pages/TelegramConnectView"));
+const BrainView        = React.lazy(() => import("./pages/BrainView"));
 
 const PageLoader = () => (
   <div className="min-h-[60vh] flex items-center justify-center">
@@ -81,6 +82,7 @@ function AppInner() {
           <Route path="/radar" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><RadarView setSymbol={setSymbol} /></div>} />
           <Route path="/track-record" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><TrackRecordView /></div>} />
           <Route path="/telegram" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><TelegramConnectView /></div>} />
+          <Route path="/cerebro" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><BrainView /></div>} />
           <Route path="*" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><Dashboard symbol={symbol} setSymbol={setSymbol} model={model} setModel={setModel} /></div>} />
         </Routes>
       </Suspense>

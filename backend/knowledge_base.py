@@ -121,6 +121,68 @@ async def add_learnings(db, aprendizajes: list, source: str = "") -> int:
     return n
 
 
+async def log_activity(db, tipo: str, fuente: str, snippet: str, aprendidos: int):
+    """Registra cada captura (Telegram/newsletter) para poder verla en el apartado
+    Cerebro: qué llegó, de dónde, cuándo y cuántos principios añadió."""
+    from datetime import datetime, timezone
+    try:
+        await db.brain_log.insert_one({
+            "tipo": tipo, "fuente": fuente,
+            "snippet": (snippet or "").strip()[:280],
+            "aprendidos": int(aprendidos or 0),
+            "at": datetime.now(timezone.utc).isoformat(),
+        })
+        # Poda: conserva solo los ~600 más recientes.
+        if await db.brain_log.estimated_document_count() > 700:
+            viejos = await db.brain_log.find({}, {"_id": 1}).sort("at", 1).to_list(100)
+            if viejos:
+                await db.brain_log.delete_many({"_id": {"$in": [d["_id"] for d in viejos]}})
+    except Exception:
+        logger.warning("knowledge: no se pudo registrar actividad")
+
+
+async def get_overview(db) -> dict:
+    """Resumen del cerebro para la web: total de principios, desglose por categoría,
+    los más reforzados, las fuentes y el feed de actividad reciente."""
+    try:
+        total = await db.investing_knowledge.count_documents({})
+    except Exception:
+        total = 0
+    por_categoria, top, actividad, fuentes = {}, [], [], []
+    try:
+        async for d in db.investing_knowledge.aggregate([
+            {"$group": {"_id": "$categoria", "n": {"$sum": 1}}}, {"$sort": {"n": -1}}]):
+            por_categoria[fix_mojibake(d["_id"] or "?")] = d["n"]
+    except Exception:
+        pass
+    try:
+        docs = await db.investing_knowledge.find({}, {"_id": 0}).sort("refuerzos", -1).to_list(60)
+        top = [{"categoria": fix_mojibake(d.get("categoria") or ""),
+                "tema": fix_mojibake(d.get("tema") or ""),
+                "principio": fix_mojibake(d.get("principio") or ""),
+                "detalle": fix_mojibake(d.get("detalle") or ""),
+                "refuerzos": d.get("refuerzos", 1),
+                "fuentes": d.get("fuentes") or []} for d in docs]
+    except Exception:
+        pass
+    try:
+        actividad = await db.brain_log.find({}, {"_id": 0}).sort("at", -1).to_list(80)
+    except Exception:
+        pass
+    try:
+        async for d in db.brain_log.aggregate([
+            {"$group": {"_id": "$fuente", "capturas": {"$sum": 1},
+                        "aprendidos": {"$sum": "$aprendidos"},
+                        "ultima": {"$max": "$at"}}},
+            {"$sort": {"ultima": -1}}]):
+            fuentes.append({"fuente": d["_id"], "capturas": d["capturas"],
+                            "aprendidos": d["aprendidos"], "ultima": d["ultima"]})
+    except Exception:
+        pass
+    return {"principios": total, "por_categoria": por_categoria,
+            "top": top, "fuentes": fuentes, "actividad": actividad}
+
+
 async def rebuild_cache(db) -> str:
     """Reconstruye el cache en memoria desde Mongo: la lista completa de principios
     (_ALL, para selección por relevancia) y el digest genérico (_DIGEST, fallback por

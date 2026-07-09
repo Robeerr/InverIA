@@ -1147,6 +1147,19 @@ async def radar(days: int = 14):
     }
 
 
+@api_router.get("/brain")
+async def brain_overview():
+    """Estado del CEREBRO para la web: qué ha capturado (feed de actividad), de qué
+    fuentes, cuántos principios tiene y el conocimiento acumulado por categoría."""
+    cached = _cache.get("brain_overview")
+    if cached is not None:
+        return cached
+    import knowledge_base
+    result = await knowledge_base.get_overview(db)
+    _cache.set("brain_overview", result, ttl=30)
+    return result
+
+
 @api_router.get("/track-record")
 async def track_record(days: int = 180, refresh: bool = False):
     """Auto-examen del sistema: ¿funcionaron las señales de COMPRA del motor? Mira qué
