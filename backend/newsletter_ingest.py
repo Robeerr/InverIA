@@ -338,6 +338,47 @@ async def process_newsletter(db, subject: str, body_html: str, body_text: str = 
             "titulo": data.get("titulo")}
 
 
+async def ingest_message(db, fuente: str, text: str, tipo: str = "telegram") -> dict:
+    """Ingesta compartida de un MENSAJE (Telegram, etc.): extrae picks (tickers) + método,
+    lleva los picks al Radar (db.newsletter_summaries, con el score del motor) y el método
+    al cerebro. Registra la actividad. Devuelve un recuento. No envía email."""
+    import knowledge_base
+    text = knowledge_base.fix_mojibake((text or "").strip())
+    if len(text) < 25:
+        return {"acciones": 0, "aprendidos": 0}
+    try:
+        data = await _extract(fuente, text)
+    except Exception:
+        logger.warning("ingest_message: extracción falló")
+        return {"acciones": 0, "aprendidos": 0}
+
+    # Picks: filtra patrocinadores, puntúa con tu motor y guarda para el Radar.
+    acciones = [a for a in (data.get("acciones") or []) if not _is_sponsor(a)]
+    data["acciones"] = acciones
+    for a in acciones[:6]:
+        tk = (a.get("ticker") or "").strip().upper()
+        if tk:
+            a["inveria"] = await _score_ticker(tk)
+    if acciones:
+        try:
+            await db.newsletter_summaries.insert_one({
+                "subject": fuente, "sender": fuente, "extracted": data,
+                "raw_text": text[:12000], "tipo": tipo,
+                "received_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception:
+            logger.warning("ingest_message: no se pudo guardar el pick")
+
+    # Método → cerebro.
+    n = 0
+    try:
+        n = await knowledge_base.add_learnings(db, data.get("aprendizajes") or [], source=fuente[:80])
+    except Exception:
+        pass
+    await knowledge_base.log_activity(db, tipo, fuente, data.get("resumen") or text, n)
+    return {"acciones": len(acciones), "aprendidos": n}
+
+
 _LEARN_PROMPT = """Eres un analista financiero senior. Te doy el contenido (o un resumen) de una
 newsletter de bolsa. Extrae SOLO el MÉTODO y la SABIDURÍA de inversión GENERAL y reutilizable que
 enseña: cómo valorar empresas, cómo encontrar buenas oportunidades, gestión de riesgo, lectura de

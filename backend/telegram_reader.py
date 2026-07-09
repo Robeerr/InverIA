@@ -256,20 +256,19 @@ async def _message_to_text(client, message) -> str:
 
 
 async def _process_message(db, client, message, chat_name: str):
-    """Extrae el método de un mensaje y lo mete en el cerebro."""
-    import knowledge_base
+    """Procesa un mensaje: extrae los PICKS (tickers → Radar) y el MÉTODO (→ cerebro)."""
     import newsletter_ingest
     text = await _message_to_text(client, message)
-    if len(text) < 60:
-        return  # ruido corto: nada que aprender
+    if len(text) < 25:
+        return  # ruido muy corto
     try:
-        aprend = await newsletter_ingest._extract_learnings(text)
-        n = await knowledge_base.add_learnings(db, aprend, source=f"Telegram:{chat_name}"[:80])
-        await knowledge_base.log_activity(db, "telegram", f"Telegram › {chat_name}", text, n)
-        if n:
-            logger.info("telegram: +%d aprendizajes de '%s'", n, chat_name)
+        r = await newsletter_ingest.ingest_message(
+            db, f"Telegram › {chat_name}", text, tipo="telegram")
+        if r.get("acciones") or r.get("aprendidos"):
+            logger.info("telegram: '%s' → %d picks, %d aprendizajes",
+                        chat_name, r.get("acciones", 0), r.get("aprendidos", 0))
     except Exception:
-        logger.warning("telegram: fallo extrayendo método de un mensaje")
+        logger.warning("telegram: fallo procesando un mensaje")
 
 
 # --- Activación del lector: registra el handler UNA vez sobre el cliente compartido ---
