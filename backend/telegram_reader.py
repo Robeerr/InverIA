@@ -54,86 +54,102 @@ async def _save_cfg(db, **fields):
     await db.telegram_config.update_one({"_id": "cfg"}, {"$set": fields}, upsert=True)
 
 
-# --- Login interactivo (desde el móvil, vía endpoints) ---
-# El login de Telethon es con estado: hay que usar el MISMO cliente entre pedir el código
-# y meterlo. Se guarda un cliente pendiente en memoria mientras dura el proceso.
-_pending = {"client": None, "phone": None}
+# --- Cliente ÚNICO persistente ---
+# Telethon NO tolera que la misma sesión se conecte/desconecte desde varios sitios:
+# Telegram detecta la clave duplicada y la invalida. Por eso usamos UN solo cliente vivo,
+# compartido por el login, el listado y el worker.
+_shared = {"client": None, "phone": None, "handler_added": False}
+_capture_claves: list = []
+
+
+async def _get_shared_client(db):
+    """Devuelve el cliente persistente conectado y autorizado, o None si no hay sesión
+    válida (habría que hacer login)."""
+    c = _shared.get("client")
+    if c is not None:
+        try:
+            if c.is_connected() and await c.is_user_authorized():
+                return c
+        except Exception:
+            pass
+    if not TELETHON_AVAILABLE:
+        return None
+    cfg = await _load_cfg(db)
+    session_str = cfg.get("session")
+    api_id, api_hash = _api_creds()
+    if not session_str or not api_id or not api_hash:
+        return None
+    c = TelegramClient(StringSession(session_str), api_id, api_hash)
+    await c.connect()
+    if not await c.is_user_authorized():
+        await c.disconnect()
+        _shared["client"] = None
+        return None
+    _shared["client"] = c
+    return c
 
 
 async def login_start(phone: str) -> dict:
-    """Paso 1: pide a Telegram que envíe el código de acceso al teléfono."""
+    """Paso 1: pide a Telegram que envíe el código. Deja el cliente vivo (compartido)."""
     if not TELETHON_AVAILABLE:
         return {"ok": False, "error": "telethon no instalada en el servidor"}
     api_id, api_hash = _api_creds()
     if not api_id or not api_hash:
         return {"ok": False, "error": "Falta TELEGRAM_API_ID / TELEGRAM_API_HASH en Render"}
+    # Cierra cualquier cliente previo para no duplicar conexiones.
+    old = _shared.get("client")
+    if old is not None:
+        try:
+            await old.disconnect()
+        except Exception:
+            pass
     client = TelegramClient(StringSession(), api_id, api_hash)
     await client.connect()
     try:
-        await client.send_code_request(phone)
+        sent = await client.send_code_request(phone)
     except Exception as e:
         await client.disconnect()
         return {"ok": False, "error": f"No se pudo enviar el código: {e}"}
-    _pending["client"] = client
-    _pending["phone"] = phone
-    return {"ok": True, "mensaje": "Código enviado. Míralo en Telegram y mándalo con /login/code."}
+    _shared["client"] = client
+    _shared["phone"] = phone
+    _shared["phone_code_hash"] = sent.phone_code_hash
+    _shared["handler_added"] = False
+    return {"ok": True, "mensaje": "Código enviado. Míralo en Telegram."}
 
 
 async def login_code(db, code: str, password: str = "") -> dict:
-    """Paso 2: completa el login con el código (y contraseña 2FA si la tienes). Guarda la
-    sesión cifrada en Mongo para que el worker se conecte solo a partir de ahora."""
-    client = _pending.get("client")
-    phone = _pending.get("phone")
+    """Paso 2: completa el login. NO desconecta: deja el cliente vivo y guarda la sesión."""
+    client = _shared.get("client")
+    phone = _shared.get("phone")
     if not client:
-        return {"ok": False, "error": "No hay login en curso. Empieza por /login/start."}
+        return {"ok": False, "error": "No hay login en curso. Empieza por el paso del teléfono."}
     try:
         try:
-            await client.sign_in(phone, code)
+            await client.sign_in(phone, code, phone_code_hash=_shared.get("phone_code_hash"))
         except SessionPasswordNeededError:
             if not password:
                 return {"ok": False, "error": "Tienes verificación en 2 pasos: manda también tu contraseña."}
             await client.sign_in(password=password)
-        session_str = client.session.save()
-        await _save_cfg(db, session=session_str)
+        await _save_cfg(db, session=client.session.save())
         me = await client.get_me()
-        await client.disconnect()
-        _pending["client"] = None
+        # El cliente ya autorizado queda como el compartido (vivo).
         return {"ok": True, "cuenta": getattr(me, "username", None) or getattr(me, "first_name", "?"),
-                "mensaje": "Sesión guardada. Ahora lista los canales con /dialogs."}
+                "mensaje": "Conectado. Ahora elige los temas."}
     except Exception as e:
         return {"ok": False, "error": f"Login falló: {e}"}
-
-
-async def _connected_client(db):
-    """Crea un cliente conectado con la sesión guardada, o None si no hay sesión."""
-    if not TELETHON_AVAILABLE:
-        return None
-    cfg = await _load_cfg(db)
-    session_str = cfg.get("session")
-    if not session_str:
-        return None
-    api_id, api_hash = _api_creds()
-    if not api_id or not api_hash:
-        return None
-    client = TelegramClient(StringSession(session_str), api_id, api_hash)
-    await client.connect()
-    if not await client.is_user_authorized():
-        await client.disconnect()
-        return None
-    return client
 
 
 async def list_dialogs(db) -> dict:
     """Lista los canales/grupos que ve tu cuenta. Si un grupo tiene TEMAS (topics), los
     despliega uno a uno para que elijas solo los de los jefes e ignores el ruido. Cada
     elemento tiene una 'clave': 'chatid' (canal entero) o 'chatid/topicid' (un tema)."""
-    client = await _connected_client(db)
+    client = await _get_shared_client(db)
     if not client:
-        return {"ok": False, "error": "Sin sesión. Haz login primero."}
+        return {"ok": False, "error": "Sin sesión válida. Vuelve a hacer login (teléfono + código)."}
     cfg = await _load_cfg(db)
     activos = set(cfg.get("capture") or [])
     items = []
-    try:
+    if True:
         async for d in client.iter_dialogs():
             if not (d.is_channel or d.is_group):
                 continue
@@ -163,16 +179,16 @@ async def list_dialogs(db) -> dict:
                     "tipo": "canal" if d.is_channel and not d.is_group else "grupo",
                     "capturando": clave in activos,
                 })
-    finally:
-        await client.disconnect()
     return {"ok": True, "canales": items, "capturando_ahora": sorted(activos)}
 
 
 async def set_capture(db, claves: list) -> dict:
-    """Fija la lista blanca de temas/canales a capturar (claves 'chatid' o 'chatid/topicid').
-    Reinicia el worker para aplicarla."""
+    """Fija la lista blanca de temas/canales a capturar. Activa el lector al momento."""
+    global _capture_claves
     limpio = [str(x) for x in (claves or []) if str(x).strip()]
     await _save_cfg(db, capture=limpio)
+    _capture_claves = limpio
+    await activate(db)  # asegura cliente + handler con la lista nueva
     return {"ok": True, "capturando": limpio}
 
 
@@ -237,52 +253,71 @@ async def _process_message(db, client, message, chat_name: str):
         logger.warning("telegram: fallo extrayendo método de un mensaje")
 
 
-# --- Worker: escucha en tiempo real los canales elegidos ---
-async def reader_worker_loop(db):
-    """Se conecta con la sesión guardada y escucha SOLO los canales de la lista blanca.
-    Modo pasivo: solo lee, nunca escribe. Si no hay sesión o lista, no hace nada."""
-    if not TELETHON_AVAILABLE:
-        logger.info("telegram: telethon no instalada; lector desactivado")
+# --- Activación del lector: registra el handler UNA vez sobre el cliente compartido ---
+async def _handler(event):
+    """Filtra dinámicamente por la lista blanca en memoria (_capture_claves) y procesa."""
+    db = _shared.get("db")
+    if db is None:
         return
+    chats, topics, chats_enteros = _parse_claves(_capture_claves)
+    try:
+        cid = event.chat_id
+        if cid not in chats:
+            return
+        if cid not in chats_enteros:
+            tid = _msg_topic_id(event.message)
+            if tid is None or f"{cid}/{tid}" not in topics:
+                return  # tema no elegido → ruido, ignorar
+        chat = await event.get_chat()
+        name = getattr(chat, "title", None) or getattr(chat, "username", "?")
+        await _process_message(db, _shared["client"], event.message, name)
+    except Exception:
+        logger.warning("telegram: fallo en el handler de mensaje")
+
+
+async def activate(db):
+    """Asegura el cliente compartido conectado y el handler registrado (una sola vez).
+    El cliente vive dentro del event loop de FastAPI y recibe updates en segundo plano;
+    no hace falta run_until_disconnected. Modo pasivo: solo lee."""
+    global _capture_claves
+    if not TELETHON_AVAILABLE:
+        return
+    _shared["db"] = db
     cfg = await _load_cfg(db)
-    claves = cfg.get("capture") or []
-    if not cfg.get("session") or not claves:
+    _capture_claves = cfg.get("capture") or _capture_claves
+    if not cfg.get("session") or not _capture_claves:
         logger.info("telegram: sin sesión o sin temas elegidos; lector en espera")
         return
-    client = await _connected_client(db)
+    client = await _get_shared_client(db)
     if not client:
-        logger.warning("telegram: no se pudo conectar con la sesión guardada")
+        logger.warning("telegram: sin sesión válida; hace falta re-login")
         return
-    chats, topics, chats_enteros = _parse_claves(claves)
+    if not _shared.get("handler_added"):
+        client.add_event_handler(_handler, events.NewMessage())
+        _shared["handler_added"] = True
+    chats, topics, _ = _parse_claves(_capture_claves)
     logger.info("telegram: lector activo (%d chats, %d temas)", len(chats), len(topics))
 
-    @client.on(events.NewMessage(chats=list(chats)))
-    async def _handler(event):
-        try:
-            cid = event.chat_id
-            # Si el chat entero está en la lista, pasa. Si no, filtra por tema.
-            if cid not in chats_enteros:
-                tid = _msg_topic_id(event.message)
-                if tid is None or f"{cid}/{tid}" not in topics:
-                    return  # tema no elegido → ignorar (ruido)
-            chat = await event.get_chat()
-            name = getattr(chat, "title", None) or getattr(chat, "username", "?")
-            await _process_message(db, client, event.message, name)
-        except Exception:
-            logger.warning("telegram: fallo en el handler de mensaje")
 
-    try:
-        await client.run_until_disconnected()
-    except Exception:
-        logger.exception("telegram: el lector se desconectó")
+# Compat: el lifespan sigue llamando a reader_worker_loop.
+async def reader_worker_loop(db):
+    await activate(db)
 
 
 async def status(db) -> dict:
     cfg = await _load_cfg(db)
     api_id, api_hash = _api_creds()
+    conectado = False
+    c = _shared.get("client")
+    try:
+        conectado = bool(c and c.is_connected())
+    except Exception:
+        conectado = False
     return {
         "telethon_instalada": TELETHON_AVAILABLE,
         "credenciales_api": bool(api_id and api_hash),
         "sesion_guardada": bool(cfg.get("session")),
+        "cliente_conectado": conectado,
+        "handler_activo": bool(_shared.get("handler_added")),
         "canales_capturando": cfg.get("capture") or [],
     }

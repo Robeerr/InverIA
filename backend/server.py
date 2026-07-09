@@ -1483,17 +1483,7 @@ async def telegram_capture(request: Request, token: str = ""):
     _check_inbound_token(token)
     import telegram_reader
     payload = await request.json()
-    result = await telegram_reader.set_capture(db, payload.get("chat_ids") or [])
-    # Reinicia el worker para aplicar la nueva lista.
-    async def _bg():
-        try:
-            await telegram_reader.reader_worker_loop(db)
-        except Exception:
-            logger.exception("telegram: worker (reinicio) falló")
-    task = asyncio.create_task(_bg())
-    _bg_tasks.add(task)
-    task.add_done_callback(_bg_tasks.discard)
-    return result
+    return await telegram_reader.set_capture(db, payload.get("chat_ids") or [])
 
 
 @api_router.post("/inbound/newsletter")
