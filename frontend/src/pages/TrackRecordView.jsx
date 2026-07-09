@@ -99,6 +99,30 @@ export default function TrackRecordView() {
               color={(s.pl_abiertas || 0) > 0 ? "#4a7c59" : (s.pl_abiertas || 0) < 0 ? "#d85c41" : "#5c6b66"} />
           </div>
 
+          {/* Benchmark: ¿bate el motor a comprar y mantener el índice? */}
+          {s.benchmark && (
+            <div className="card-flat p-4" style={{ borderLeft: `3px solid ${s.benchmark.alpha >= 0 ? "#4a7c59" : "#d85c41"}` }}>
+              <p className="text-[10px] uppercase tracking-[0.15em] text-[#5c6b66] font-mono mb-3">
+                ¿Bate al índice? (vs comprar S&P 500)
+              </p>
+              <div className="grid grid-cols-3 gap-2.5">
+                <Stat label="Tu motor" value={`${s.benchmark.sistema_medio > 0 ? "+" : ""}${s.benchmark.sistema_medio}%`}
+                  sub="retorno medio" color={s.benchmark.sistema_medio >= 0 ? "#4a7c59" : "#d85c41"} />
+                <Stat label="S&P 500" value={`${s.benchmark.spy_medio > 0 ? "+" : ""}${s.benchmark.spy_medio}%`}
+                  sub="misma ventana" color={s.benchmark.spy_medio >= 0 ? "#4a7c59" : "#d85c41"} />
+                <Stat label="Alpha" value={`${s.benchmark.alpha > 0 ? "+" : ""}${s.benchmark.alpha}%`}
+                  sub={s.benchmark.alpha >= 0 ? "de más 🎯" : "de menos"}
+                  color={s.benchmark.alpha >= 0 ? "#4a7c59" : "#d85c41"} />
+              </div>
+              <p className="text-[11px] text-[#5c6b66] leading-relaxed mt-3">
+                {s.benchmark.alpha >= 0
+                  ? `Tu motor bate al índice por ${s.benchmark.alpha}% de media. ${s.benchmark.baten_spy_pct}% de las señales lo superan. Todo esto aporta valor sobre comprar SPY y esperar.`
+                  : `Tu motor rinde ${Math.abs(s.benchmark.alpha)}% MENOS que comprar el índice y esperar. Solo ${s.benchmark.baten_spy_pct}% de las señales lo baten. Dato honesto a vigilar.`}
+                {" "}Cada señal comparada con SPY desde su fecha hasta hoy ({s.benchmark.muestra} señales).
+              </p>
+            </div>
+          )}
+
           {/* Escenario TP2: qué pasa si aguantas hasta el objetivo mayor */}
           {s.tp2 && (
             <div className="card-flat p-4">

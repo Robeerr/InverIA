@@ -524,6 +524,42 @@ def _cap_take_profits(result: dict, high_52w) -> dict:
     return result
 
 
+def _apply_regime_filter(result: dict) -> dict:
+    """Filtro de régimen de mercado: las señales de COMPRA fallan más en mercado bajista
+    (SPY bajo su SMA200). Cuando el régimen es rojo/amarillo, rebaja la confianza de las
+    señales de COMPRA y añade un aviso. No cambia la recomendación (eso lo decides tú),
+    solo la calibra a la realidad del mercado. Determinista."""
+    if not isinstance(result, dict):
+        return result
+    if (result.get("recommendation") or "").upper() != "COMPRAR":
+        return result
+    try:
+        regime = market_regime.get_market_regime()
+    except Exception:
+        return result
+    light = regime.get("light")
+    conf = result.get("confidence")
+    if not isinstance(conf, (int, float)):
+        conf = None
+    if light == "rojo":
+        # Mercado bajista: techo de confianza duro + aviso explícito.
+        if conf is not None:
+            result["confidence"] = min(conf, 50)
+        result["regime_warning"] = (
+            "⚠️ Mercado bajista (SPY bajo su SMA200): las compras fallan más aquí. "
+            "Confianza recortada; reduce tamaño y sé muy selectivo.")
+        result["regime_light"] = "rojo"
+    elif light == "amarillo":
+        if conf is not None:
+            result["confidence"] = min(conf, 70)
+        result["regime_warning"] = (
+            "Mercado en transición: reduce agresividad y espera confirmación.")
+        result["regime_light"] = "amarillo"
+    else:
+        result["regime_light"] = light
+    return result
+
+
 def _enforce_rr(result: dict, price) -> dict:
     """Guardián de riesgo/recompensa: garantiza R/R mínimo en TP1 ciñendo el stop si el
     motor lo dejó demasiado ancho. Determinista (ver risk_rules.min_rr_stop)."""
@@ -676,6 +712,7 @@ async def analyze(req: AnalyzeRequest):
     result = _ensure_key_levels(result, indicators_data, vp, quote.get("price"))
     result = _cap_take_profits(result, quote.get("high_52w"))
     result = _enforce_rr(result, quote.get("price"))
+    result = _apply_regime_filter(result)
 
     # Persist
     doc = {

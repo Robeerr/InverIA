@@ -41,6 +41,18 @@ export default function AnalysisSummaryPanel({ analysis, indicators, buyLevels, 
     <section className="card-flat p-5 animate-fade-up" data-testid="analysis-summary">
       <h3 className="font-heading font-semibold text-base text-[#0e1f1a] mb-3">Resumen IA</h3>
 
+      {/* Aviso de régimen de mercado (compra en mercado bajista/transición) */}
+      {analysis?.regime_warning && (
+        <div className="mb-3 px-3 py-2 rounded-md text-[11px] leading-snug font-medium"
+          style={{
+            background: analysis.regime_light === "rojo" ? "#d85c4118" : "#c9a14a18",
+            color: analysis.regime_light === "rojo" ? "#b34a34" : "#8a6d1f",
+            border: `1px solid ${analysis.regime_light === "rojo" ? "#d85c4140" : "#c9a14a40"}`,
+          }}>
+          {analysis.regime_warning}
+        </div>
+      )}
+
       {/* Señal */}
       {reco ? (
         <div className="mb-4">

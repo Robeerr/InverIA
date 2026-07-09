@@ -103,6 +103,27 @@ async def compute_track_record(db, days: int = 180, min_age_days: int = 3) -> di
             "sl": res.get("stop_loss"),
         })
 
+    # Índice de referencia (SPY): para cada señal, cuánto habría hecho el S&P 500 en la
+    # misma ventana [fecha señal → hoy]. Así medimos si el motor bate a "comprar el índice".
+    try:
+        spy_df = await asyncio.to_thread(market_data.get_full_indicator_history, "SPY")
+        spy_fechas = spy_df["Date"].tolist()
+        spy_closes = spy_df["Close"].tolist()
+    except Exception:
+        spy_fechas, spy_closes = [], []
+
+    def _spy_return_desde(created):
+        """Retorno % de SPY desde la primera vela tras `created` hasta la última."""
+        if not spy_fechas:
+            return None
+        idx = next((i for i in range(len(spy_fechas)) if spy_fechas[i] > created), None)
+        if idx is None:
+            return None
+        base, last = _num(spy_closes[idx]), _num(spy_closes[-1])
+        if not base or not last:
+            return None
+        return round((last - base) / base * 100, 1)
+
     señales = []
     for sym, sigs in by_symbol.items():
         try:
@@ -124,6 +145,7 @@ async def compute_track_record(db, days: int = 180, min_age_days: int = 3) -> di
             fila = {
                 "symbol": sym, "fecha": s["created"].date().isoformat(),
                 "entrada": round(s["entry"], 2), "resultado": resultado, "retorno": retorno,
+                "spy_retorno": _spy_return_desde(created),
             }
             # Resultado alternativo aguantando hasta TP2 (si el análisis lo definió).
             ev2 = evaluate_signal_tp2(s["entry"], s["tp2"], s["sl"], future) if s.get("tp2") else None
@@ -181,8 +203,27 @@ async def compute_track_record(db, days: int = 180, min_age_days: int = 3) -> di
             "abiertas": len(tp2_rows) - len(cerr2),
         }
 
+    # --- Benchmark vs índice (SPY) ---
+    # Compara el retorno gestionado del motor (con TP/stop) contra lo que habría hecho
+    # SPY en la misma ventana de cada señal. alpha = cuánto de más (o de menos) aporta.
+    pares = [(s["retorno"], s["spy_retorno"]) for s in señales
+             if s.get("retorno") is not None and s.get("spy_retorno") is not None]
+    benchmark = None
+    if pares:
+        sis = round(sum(a for a, _ in pares) / len(pares), 1)
+        spy = round(sum(b for _, b in pares) / len(pares), 1)
+        baten = sum(1 for a, b in pares if a > b)
+        benchmark = {
+            "sistema_medio": sis,
+            "spy_medio": spy,
+            "alpha": round(sis - spy, 1),          # cuánto bate (o no) al índice
+            "baten_spy_pct": round(baten / len(pares) * 100, 1),
+            "muestra": len(pares),
+        }
+
     return {
         "total": len(señales),
+        "benchmark": benchmark,
         "aciertos": len(aciertos),
         "fallos": len(fallos),
         "abiertas": len(abiertas),
