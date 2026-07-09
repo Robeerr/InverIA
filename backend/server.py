@@ -144,6 +144,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Knowledge base load failed: {e}")
 
+    # Lector de Telegram: escucha los canales de tu grupo de pago (si está configurado).
+    try:
+        import telegram_reader
+        asyncio.create_task(telegram_reader.reader_worker_loop(db))
+    except Exception as e:
+        logger.warning(f"Telegram reader start failed: {e}")
+
     # Aviso de seguridad no-bloqueante: si faltan secretos en producción, se usan
     # defaults públicos del repo (cualquiera podría forjar un token). No rompe el arranque.
     if not os.environ.get("JWT_SECRET"):
@@ -1428,6 +1435,65 @@ def _newsletter_body_from(payload: dict) -> tuple:
             or payload.get("body_text") or payload.get("body") or "")
     sender = (payload.get("from") or payload.get("sender") or payload.get("From") or "")
     return subject, html, text, sender
+
+
+# ---------- Lector de Telegram (alimenta el cerebro con tu grupo de pago) ----------
+def _check_inbound_token(token: str):
+    secret = os.environ.get("INBOUND_SECRET")
+    if not secret or token != secret:
+        raise HTTPException(401, "Token de entrada inválido.")
+
+
+@api_router.get("/telegram/status")
+async def telegram_status(token: str = ""):
+    _check_inbound_token(token)
+    import telegram_reader
+    return await telegram_reader.status(db)
+
+
+@api_router.post("/telegram/login/start")
+async def telegram_login_start(request: Request, token: str = ""):
+    _check_inbound_token(token)
+    import telegram_reader
+    payload = await request.json()
+    phone = (payload.get("phone") or "").strip()
+    if not phone:
+        raise HTTPException(400, "Falta el teléfono (con prefijo, ej. +34...).")
+    return await telegram_reader.login_start(phone)
+
+
+@api_router.post("/telegram/login/code")
+async def telegram_login_code(request: Request, token: str = ""):
+    _check_inbound_token(token)
+    import telegram_reader
+    payload = await request.json()
+    return await telegram_reader.login_code(
+        db, str(payload.get("code") or "").strip(), str(payload.get("password") or "").strip())
+
+
+@api_router.get("/telegram/dialogs")
+async def telegram_dialogs(token: str = ""):
+    _check_inbound_token(token)
+    import telegram_reader
+    return await telegram_reader.list_dialogs(db)
+
+
+@api_router.post("/telegram/capture")
+async def telegram_capture(request: Request, token: str = ""):
+    _check_inbound_token(token)
+    import telegram_reader
+    payload = await request.json()
+    result = await telegram_reader.set_capture(db, payload.get("chat_ids") or [])
+    # Reinicia el worker para aplicar la nueva lista.
+    async def _bg():
+        try:
+            await telegram_reader.reader_worker_loop(db)
+        except Exception:
+            logger.exception("telegram: worker (reinicio) falló")
+    task = asyncio.create_task(_bg())
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return result
 
 
 @api_router.post("/inbound/newsletter")

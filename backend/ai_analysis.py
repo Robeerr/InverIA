@@ -795,6 +795,58 @@ async def extract_watchlist_from_image(image_bytes: bytes, mime_type: str = "ima
     return out
 
 
+# ---------- Transcripción de audio (Groq Whisper, gratis) y visión de imágenes ----------
+
+async def transcribe_audio(audio_bytes: bytes, filename: str = "audio.ogg",
+                           language: str = "es") -> str:
+    """Transcribe una nota de voz / audio con Groq Whisper (capa gratuita). Devuelve el
+    texto, o '' si falla o no hay clave. Usado para leer los audios de Telegram."""
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key or not audio_bytes:
+        return ""
+    try:
+        client = AsyncGroq(api_key=api_key)
+        resp = await client.audio.transcriptions.create(
+            file=(filename, audio_bytes),
+            model="whisper-large-v3-turbo",
+            language=language,
+            temperature=0.0,
+        )
+        return (getattr(resp, "text", "") or "").strip()
+    except Exception:
+        logger.warning("transcripción de audio falló")
+        return ""
+
+
+_IMAGE_PROMPT = """Eres un analista. Recibes una imagen de un chat de trading. Extrae TODO el
+texto legible y, si es un gráfico de bolsa, describe lo relevante: ticker/activo, precios y
+niveles visibles, patrón o setup, y la idea que transmite. Devuelve TEXTO PLANO claro en español
+(sin markdown). Si la imagen no tiene nada útil para inversión, responde solo 'SIN CONTENIDO'."""
+
+
+async def describe_image_text(image_bytes: bytes, mime_type: str = "image/jpeg") -> str:
+    """Extrae el texto y describe el contenido de una imagen (gráficos, capturas) con Gemini
+    visión. Devuelve texto plano, o '' si falla / no hay clave / no aporta nada."""
+    if not GEMINI_AVAILABLE or not image_bytes:
+        return ""
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        return ""
+    try:
+        client = genai.Client(api_key=api_key)
+        image_part = genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+        response = await asyncio.to_thread(
+            client.models.generate_content,
+            model="gemini-2.5-flash",
+            contents=[image_part, _IMAGE_PROMPT],
+        )
+        text = (getattr(response, "text", "") or "").strip()
+        return "" if text.upper().startswith("SIN CONTENIDO") else text
+    except Exception:
+        logger.warning("descripción de imagen falló")
+        return ""
+
+
 # ---------- "¿Por qué se mueve hoy?" — explicación ligera del movimiento diario ----------
 
 DAILY_MOVE_PROMPT = """Eres un analista de mercado que explica, en lenguaje claro y directo, POR QUÉ una acción se mueve HOY.
