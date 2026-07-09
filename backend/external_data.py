@@ -116,6 +116,35 @@ def finnhub_company_news(symbol: str, days: int = 7, limit: int = 10):
         return []
 
 
+def finnhub_general_news(limit: int = 25):
+    """Noticias GENERALES de mercado (Finnhub /news?category=general). Para alimentar
+    el cerebro/Radar con catalizadores del día. Cacheado 30 min. [] si no hay clave."""
+    cached, hit = _ext_cache_get("general_news", 1800)
+    if hit:
+        return cached
+    key = _finnhub_key()
+    if not key:
+        return []
+    try:
+        r = _finnhub_get("/news", {"category": "general", "token": key})
+        if r.status_code != 200:
+            return []
+        out = []
+        for n in (r.json() or [])[:limit]:
+            title = n.get("headline")
+            if not title:
+                continue
+            out.append({
+                "title": title, "summary": n.get("summary"),
+                "url": n.get("url"), "publisher": n.get("source"),
+                "published": n.get("datetime"),
+            })
+        _ext_cache_set("general_news", out)
+        return out
+    except Exception:
+        return []
+
+
 def _fmp_key():
     return os.environ.get("FMP_API_KEY")
 

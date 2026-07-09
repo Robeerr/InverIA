@@ -151,6 +151,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Telegram reader start failed: {e}")
 
+    # Ingesta de noticias de mercado → cerebro + Radar (cada ~6 h).
+    try:
+        import news_ingest
+        asyncio.create_task(news_ingest.news_worker_loop(db))
+    except Exception as e:
+        logger.warning(f"News ingest start failed: {e}")
+
     # Aviso de seguridad no-bloqueante: si faltan secretos en producción, se usan
     # defaults públicos del repo (cualquiera podría forjar un token). No rompe el arranque.
     if not os.environ.get("JWT_SECRET"):
@@ -1206,6 +1213,14 @@ async def radar(days: int = 14):
         "informacion": info_feed[:40],
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@api_router.api_route("/inbound/news/ingest", methods=["GET", "POST"])
+async def inbound_news_ingest(token: str = ""):
+    """Dispara la ingesta de noticias de mercado al vuelo (para probar). Protegido."""
+    _check_inbound_token(token)
+    import news_ingest
+    return await news_ingest.ingest_general_news(db)
 
 
 @api_router.get("/brain")
