@@ -1009,6 +1009,57 @@ async def market_regime_endpoint():
     return market_regime.get_market_regime()
 
 
+import re as _re_mod
+
+
+def _clean_source(sender: str, subject: str) -> str:
+    """Nombre legible de la fuente. Make a veces manda el 'from' como objeto JSON
+    ({"address":"x@y.com","name":"The Daily Upside"}) o como 'Nombre <x@y.com>'."""
+    s = sender or ""
+    m = _re_mod.search(r'"name"\s*:\s*"([^"]+)"', s, _re_mod.I)
+    if m and m.group(1).strip():
+        return m.group(1).strip()
+    m = _re_mod.match(r'\s*([^<@"]+?)\s*<', s)
+    if m and m.group(1).strip():
+        return m.group(1).strip()
+    m = _re_mod.search(r'@([\w.-]+)', s)
+    if m:
+        dom = m.group(1).split(".")[0]
+        return dom.replace("-", " ").title()
+    return (subject or "Newsletter")[:40]
+
+
+@api_router.get("/fuentes/{symbol}")
+async def fuentes_de_accion(symbol: str, days: int = 30):
+    """Qué han dicho TUS fuentes (Telegram + newsletters) de esta acción: cada mención
+    con su fuente, sentimiento, tesis y fecha. Para mostrarlo junto al análisis."""
+    from datetime import timedelta
+    sym = symbol.strip().upper()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    docs = await db.newsletter_summaries.find(
+        {"received_at": {"$gte": cutoff}}, {"_id": 0}
+    ).sort("received_at", -1).to_list(300)
+    menciones, pos, neg = [], 0, 0
+    for d in docs:
+        ex = d.get("extracted") or {}
+        src = _clean_source(d.get("sender"), d.get("subject"))
+        for a in (ex.get("acciones") or []):
+            if (a.get("ticker") or "").strip().upper() != sym:
+                continue
+            sent = (a.get("sentimiento") or "").upper()
+            if sent == "POSITIVO":
+                pos += 1
+            elif sent == "NEGATIVO":
+                neg += 1
+            menciones.append({
+                "fuente": src, "accion": a.get("accion"), "sentimiento": sent or None,
+                "niveles": a.get("niveles"), "motivo": a.get("motivo"),
+                "fecha": d.get("received_at"), "inveria": a.get("inveria"),
+            })
+    return {"symbol": sym, "n": len(menciones), "positivos": pos, "negativos": neg,
+            "menciones": menciones[:20]}
+
+
 # ---------- Radar: inteligencia acumulada de todas las newsletters ----------
 @api_router.get("/radar")
 async def radar(days: int = 14):
@@ -1025,25 +1076,6 @@ async def radar(days: int = 14):
     info_feed = []
     # 2) Acciones agregadas por ticker
     by_ticker = {}
-    import re as _re
-    def _clean_source(sender: str, subject: str) -> str:
-        """Nombre legible de la fuente. Make a veces manda el 'from' como objeto JSON
-        ({"address":"x@y.com","name":"The Daily Upside"}) o como 'Nombre <x@y.com>'."""
-        s = sender or ""
-        # 1) Si trae un "name":"..." (JSON de Make), úsalo.
-        m = _re.search(r'"name"\s*:\s*"([^"]+)"', s, _re.I)
-        if m and m.group(1).strip():
-            return m.group(1).strip()
-        # 2) "Nombre <email>" → el nombre.
-        m = _re.match(r'\s*([^<@"]+?)\s*<', s)
-        if m and m.group(1).strip():
-            return m.group(1).strip()
-        # 3) Dominio del email como último recurso.
-        m = _re.search(r'@([\w.-]+)', s)
-        if m:
-            dom = m.group(1).split(".")[0]
-            return dom.replace("-", " ").title()
-        return (subject or "Newsletter")[:40]
 
     for d in docs:
         ex = d.get("extracted") or {}

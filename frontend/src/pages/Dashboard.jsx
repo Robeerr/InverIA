@@ -5,6 +5,7 @@ import QuoteHeader from "../components/QuoteHeader";
 import PriceChart from "../components/PriceChart";
 import RecommendationPanel from "../components/RecommendationPanel";
 import AnalysisSummaryPanel from "../components/AnalysisSummaryPanel";
+import SourcesPanel from "../components/SourcesPanel";
 import IndicatorsPanel from "../components/IndicatorsPanel";
 import TradingLevels from "../components/TradingLevels";
 import WhyMovingCard from "../components/WhyMovingCard";
@@ -322,6 +323,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
             lines={chartLines}
             quote={quote}
           />
+          <SourcesPanel symbol={symbol} />
         </div>
       </div>
 
