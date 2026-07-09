@@ -24,12 +24,23 @@ try:
 except ImportError:
     TELETHON_AVAILABLE = False
 
-# El listado de TEMAS (topics) va aparte: si esta import fallara por versión, NO debe
-# tumbar todo Telethon — simplemente no se despliegan los temas.
-try:
-    from telethon.tl.functions.channels import GetForumTopicsRequest
-except Exception:
-    GetForumTopicsRequest = None
+# El listado de TEMAS (topics) cambia de sitio según la versión de Telethon
+# (functions.channels o functions.messages). Se resuelve dinámicamente probando ambas,
+# para no depender de una ruta fija ni tumbar todo Telethon si no está.
+def _resolve_forum_topics():
+    try:
+        from telethon.tl import functions
+    except Exception:
+        return None, None
+    for modname, param in (("channels", "channel"), ("messages", "peer")):
+        mod = getattr(functions, modname, None)
+        cls = getattr(mod, "GetForumTopicsRequest", None) if mod else None
+        if cls is not None:
+            return cls, param
+    return None, None
+
+
+GetForumTopicsRequest, _FORUM_PARAM = _resolve_forum_topics()
 
 
 def _msg_topic_id(message):
@@ -164,8 +175,9 @@ async def list_dialogs(db) -> dict:
             if es_foro:
                 # Grupo con Temas: lista cada tema como elemento elegible.
                 try:
-                    res = await client(GetForumTopicsRequest(
-                        channel=ent, offset_date=0, offset_id=0, offset_topic=0, limit=100))
+                    kwargs = {_FORUM_PARAM: ent, "offset_date": 0, "offset_id": 0,
+                              "offset_topic": 0, "limit": 100}
+                    res = await client(GetForumTopicsRequest(**kwargs))
                     for t in res.topics:
                         title = getattr(t, "title", None) or f"Tema {t.id}"
                         clave = f"{d.id}/{t.id}"
