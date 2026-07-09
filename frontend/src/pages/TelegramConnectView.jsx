@@ -37,8 +37,12 @@ export default function TelegramConnectView() {
       if (r.ok) {
         setDialogs(r.canales || []);
         setSelected(new Set((r.canales || []).filter((c) => c.capturando).map((c) => c.id)));
-      } else toast.error(r.error || "No se pudieron listar los canales");
-    } catch (e) { toast.error("Error listando canales"); }
+      } else {
+        // Sesión inválida (o caducada) → volver al login de teléfono.
+        toast.error(r.error || "Sesión no válida, vuelve a hacer login");
+        setStep("phone");
+      }
+    } catch (e) { toast.error("Error listando canales"); setStep("phone"); }
     finally { setBusy(false); }
   }, []);
 
@@ -163,6 +167,9 @@ export default function TelegramConnectView() {
           </div>
           <button onClick={saveCapture} disabled={busy} className="w-full py-2 rounded-md bg-[#1a3a32] text-white text-sm font-semibold disabled:opacity-50">
             Guardar y empezar a capturar ({selected.size})
+          </button>
+          <button onClick={() => setStep("phone")} className="w-full mt-2 py-2 text-[#5c6b66] text-xs underline">
+            ¿Problemas? Rehacer login (teléfono + código)
           </button>
         </div>
       )}
