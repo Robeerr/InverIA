@@ -14,7 +14,8 @@ const NAV = [
   { to: "/calendario", label: "Calendario", icon: CalendarBlank, testId: "nav-calendar" },
   { to: "/signals", label: "Alertas", icon: Bell, testId: "nav-signals" },
   { to: "/track-record", label: "Track record", icon: ChartLineUp, testId: "nav-track-record" },
-  { to: "/telegram", label: "Telegram", icon: TelegramLogo, testId: "nav-telegram" },
+  // Telegram: setup puntual (conectar / cambiar temas). Fuera del menú para no
+  // saturar; sigue accesible por URL directa /telegram cuando haga falta.
 ];
 
 export default function Header({ symbol, setSymbol, onSearch, showSearch = true, darkMode, setDarkMode }) {
