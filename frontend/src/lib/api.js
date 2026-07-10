@@ -58,6 +58,7 @@ export const api = {
   radar: (days = 14) => client.get(`/radar`, { params: { days } }).then((r) => r.data),
   brain: () => client.get(`/brain`).then((r) => r.data),
   fuentes: (symbol) => client.get(`/fuentes/${symbol}`).then((r) => r.data),
+  youtubeIngest: (url) => client.post(`/youtube/ingest`, { url }, { timeout: 180000 }).then((r) => r.data),
   trackRecord: (days = 180, refresh = false) =>
     client.get(`/track-record`, { params: { days, refresh: refresh || undefined }, timeout: 120000 }).then((r) => r.data),
   telegram: {

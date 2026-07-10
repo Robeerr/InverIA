@@ -376,7 +376,9 @@ async def ingest_message(db, fuente: str, text: str, tipo: str = "telegram") -> 
     except Exception:
         pass
     await knowledge_base.log_activity(db, tipo, fuente, data.get("resumen") or text, n)
-    return {"acciones": len(acciones), "aprendidos": n}
+    return {"acciones": len(acciones), "aprendidos": n,
+            "resumen": data.get("resumen"), "titulo": data.get("titulo"),
+            "tickers": [(a.get("ticker") or "").upper() for a in acciones if a.get("ticker")]}
 
 
 _LEARN_PROMPT = """Eres un analista financiero senior. Te doy el contenido (o un resumen) de una

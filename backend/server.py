@@ -1223,6 +1223,17 @@ async def inbound_news_ingest(token: str = ""):
     return await news_ingest.ingest_general_news(db)
 
 
+@api_router.post("/youtube/ingest")
+async def youtube_ingest_ep(request: Request, _user: str = Depends(auth.get_current_user)):
+    """Ingiere un vídeo de YouTube al cerebro/Radar y devuelve qué ha conseguido."""
+    import youtube_ingest
+    payload = await request.json()
+    url = (payload.get("url") or "").strip()
+    if not url:
+        raise HTTPException(400, "Falta el enlace del vídeo.")
+    return await youtube_ingest.ingest_youtube(db, url)
+
+
 @api_router.get("/brain")
 async def brain_overview():
     """Estado del CEREBRO para la web: qué ha capturado (feed de actividad), de qué

@@ -1,7 +1,59 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Brain, ArrowClockwise, TelegramLogo, Envelope, CaretDown } from "@phosphor-icons/react";
+import { Brain, ArrowClockwise, TelegramLogo, Envelope, CaretDown, YoutubeLogo } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
+
+function YouTubeBox({ onDone }) {
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState(null);
+
+  const go = async () => {
+    if (!url.trim()) return;
+    setBusy(true); setRes(null);
+    try {
+      const r = await api.youtubeIngest(url.trim());
+      setRes(r);
+      if (r.ok) { toast.success("Vídeo procesado"); onDone?.(); }
+      else toast.error(r.error || "No se pudo procesar");
+    } catch (e) { toast.error("Error procesando el vídeo"); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="card-flat p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <YoutubeLogo size={18} weight="fill" className="text-[#FF0000]" />
+        <p className="text-sm font-semibold text-[#0e1f1a]">Añadir vídeo de YouTube</p>
+      </div>
+      <div className="flex gap-2">
+        <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://youtu.be/..."
+          className="flex-1 px-3 py-2 rounded-md border border-[#e5e0d8] bg-white text-[#0e1f1a] text-sm min-w-0" />
+        <button onClick={go} disabled={busy} className="px-4 py-2 rounded-md bg-[#1a3a32] text-white text-sm font-semibold disabled:opacity-50 shrink-0">
+          {busy ? "Procesando…" : "Procesar"}
+        </button>
+      </div>
+      {busy && <p className="text-[11px] text-[#5c6b66] mt-2">Sacando la transcripción y extrayendo ideas… (puede tardar si hay que bajar el audio)</p>}
+      {res?.ok && (
+        <div className="mt-3 border-l-2 border-[#4a7c59] pl-3 py-1">
+          <p className="text-[11px] font-semibold text-[#1a3a32]">✅ Conseguido del vídeo (vía {res.via}):</p>
+          {res.resumen && <p className="text-[12px] text-[#0e1f1a] leading-snug mt-1">{res.resumen}</p>}
+          <div className="flex flex-wrap gap-1.5 mt-2 text-[10px]">
+            <span className="px-1.5 py-0.5 rounded-full bg-[#4a7c5915] text-[#4a7c59] font-semibold">🧠 {res.aprendidos} aprendizajes</span>
+            <span className="px-1.5 py-0.5 rounded-full bg-[#2563eb15] text-[#2563eb] font-semibold">📈 {res.acciones} picks</span>
+            {(res.tickers || []).map((t) => (
+              <span key={t} className="px-1.5 py-0.5 rounded-full bg-[#f0ece3] text-[#5c6b66] font-mono">{t}</span>
+            ))}
+          </div>
+          {res.acciones === 0 && res.aprendidos === 0 && (
+            <p className="text-[11px] text-[#5c6b66] mt-1">Leyó el vídeo ({res.chars} caracteres) pero no encontró picks ni método reutilizable.</p>
+          )}
+        </div>
+      )}
+      {res && !res.ok && <p className="text-[11px] text-[#d85c41] mt-2">{res.error}</p>}
+    </div>
+  );
+}
 
 // Apartado "Cerebro": ventana a lo que sabe y a lo que va capturando en tiempo real
 // (Telegram + newsletters). Feed de actividad + conocimiento acumulado por categoría.
@@ -88,6 +140,8 @@ export default function BrainView() {
         <Stat label="Capturas" value={totalCapturas} color="#4a7c59" />
         <Stat label="Fuentes" value={fuentes.length} color="#2563eb" />
       </div>
+
+      <YouTubeBox onDone={load} />
 
       <div className="flex gap-1.5">
         {[["actividad", "Actividad"], ["conocimiento", "Conocimiento"], ["fuentes", "Fuentes"]].map(([k, l]) => (
