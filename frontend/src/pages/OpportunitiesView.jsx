@@ -529,6 +529,17 @@ export default function OpportunitiesView({ setSymbol }) {
             </div>
           ) : (screener.results || []).length > 0 ? (
             <>
+              {(screener.sectores_calientes || []).length > 0 && (
+                <div className="card-flat p-3 mb-3 border-l-4 border-[#e8890c]">
+                  <p className="text-[11px] text-[#0e1f1a]">
+                    🔥 <b>El dinero va hacia:</b>{" "}
+                    {screener.sectores_calientes.slice(0, 4).map((s, i) => (
+                      <span key={s.sector}>{i > 0 ? " · " : ""}{s.sector}</span>
+                    ))}
+                  </p>
+                  <p className="text-[10px] text-[#5c6b66] mt-0.5">Detectado en vivo (momentum + lo que dicen tus fuentes). Se actualiza solo; estos sectores pesan más en la Top Selección.</p>
+                </div>
+              )}
               {(screener.top_seleccion || []).length > 0 && (
                 <div className="card-flat p-4 mb-3 border-l-4 border-[#4a7c59]">
                   <p className="text-[11px] uppercase tracking-[0.15em] text-[#1a3a32] font-mono font-bold mb-2">⭐ Top Selección</p>

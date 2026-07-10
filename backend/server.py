@@ -1515,11 +1515,46 @@ async def daily_opportunities(refresh: bool = False):
     return data
 
 
-def _top_seleccion(results: list, n: int = 5) -> list:
-    """La 'Top Selección': los N mejores del screener por potential_score, con un motivo
-    cualitativo breve construido de sus métricas (crecimiento, proximidad a máximos,
-    consenso, momentum)."""
-    top = sorted(results, key=lambda x: x.get("potential_score") or 0, reverse=True)[:n]
+def _sector_heat(results: list) -> dict:
+    """Calcula el 'calor' de cada sector EN VIVO (dónde va el dinero), combinando dos
+    señales, sin listas fijas — se adapta solo:
+      1) Mercado: momentum de las acciones del sector (cuánto de cerca de máximos están).
+      2) Tus fuentes: cuánto mencionan tus jefes/newsletters acciones de ese sector.
+    Devuelve heat normalizado 0..1 por sector."""
+    from collections import defaultdict
+    agg = defaultdict(lambda: {"n": 0, "mom": 0.0, "ment": 0})
+    for r in results:
+        sec = r.get("sector")
+        if not sec:
+            continue
+        a = agg[sec]
+        a["n"] += 1
+        d = r.get("dist_52w_high")           # negativo: -3 = a 3% de máximos (fuerte)
+        if isinstance(d, (int, float)):
+            a["mom"] += max(0.0, 20.0 + d)   # 0..20 (0 = a 20% o más de máximos)
+        f = r.get("fuentes")
+        if isinstance(f, dict):
+            a["ment"] += f.get("menciones", 0)
+    heat = {}
+    for sec, a in agg.items():
+        avg_mom = a["mom"] / a["n"] if a["n"] else 0.0   # 0..20 (mercado)
+        heat[sec] = avg_mom + 5.0 * a["ment"]            # + interés de tus fuentes
+    if heat:
+        lo, hi = min(heat.values()), max(heat.values())
+        rng = (hi - lo) or 1.0
+        heat = {k: round((v - lo) / rng, 3) for k, v in heat.items()}
+    return heat
+
+
+def _top_seleccion(results: list, heat: dict, n: int = 5) -> list:
+    """La 'Top Selección': los N mejores ponderando el potential_score por el CALOR del
+    sector (adaptativo). Un sector caliente sube sus acciones; uno frío las baja — sin
+    listas fijas, se actualiza solo según a dónde va el dinero."""
+    def efectivo(r):
+        base = r.get("potential_score") or 0
+        h = heat.get(r.get("sector"), 0.5)   # sin dato → neutro
+        return base * (0.85 + 0.30 * h)      # sector caliente hasta +30%, frío −15%
+    top = sorted(results, key=efectivo, reverse=True)[:n]
     out = []
     for r in top:
         razones = []
@@ -1535,6 +1570,8 @@ def _top_seleccion(results: list, n: int = 5) -> list:
         mom = r.get("momentum") or ""
         if mom and not mom.startswith("⚠"):
             razones.append("momentum sano")
+        if heat.get(r.get("sector"), 0) >= 0.75:
+            razones.append("sector caliente 🔥")
         out.append({
             "symbol": r.get("symbol"), "name": r.get("name"),
             "potential_score": r.get("potential_score"), "sector": r.get("sector"),
@@ -1561,11 +1598,21 @@ async def growth_screener(refresh: bool = False):
                 con_fuentes.append(tk)
             else:
                 annotated.append(r)
+        heat = _sector_heat(annotated)
+        # Sectores calientes: top por calor, solo los con varias acciones (señal fiable).
+        conteo = {}
+        for r in annotated:
+            s = r.get("sector")
+            if s:
+                conteo[s] = conteo.get(s, 0) + 1
+        calientes = sorted([s for s in heat if conteo.get(s, 0) >= 2],
+                           key=lambda s: heat[s], reverse=True)[:5]
         data = {**data, "results": annotated, "con_fuentes": con_fuentes,
-                "top_seleccion": _top_seleccion(annotated)}
+                "top_seleccion": _top_seleccion(annotated, heat),
+                "sectores_calientes": [{"sector": s, "heat": heat[s]} for s in calientes]}
     except Exception:
         logger.warning("screener: no se pudieron anotar menciones/top selección")
-        data = {**data, "top_seleccion": _top_seleccion(results)}
+        data = {**data, "top_seleccion": _top_seleccion(results, _sector_heat(results))}
     return data
 
 
