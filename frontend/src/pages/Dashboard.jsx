@@ -6,6 +6,7 @@ import PriceChart from "../components/PriceChart";
 import RecommendationPanel from "../components/RecommendationPanel";
 import AnalysisSummaryPanel from "../components/AnalysisSummaryPanel";
 import SourcesPanel from "../components/SourcesPanel";
+import { CongressPanel, AlternativePanel } from "../components/MoreInsights";
 import IndicatorsPanel from "../components/IndicatorsPanel";
 import TradingLevels from "../components/TradingLevels";
 import WhyMovingCard from "../components/WhyMovingCard";
@@ -324,6 +325,8 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
             quote={quote}
           />
           <SourcesPanel symbol={symbol} />
+          <AlternativePanel symbol={symbol} onPick={setSymbol} />
+          <CongressPanel symbol={symbol} />
         </div>
       </div>
 

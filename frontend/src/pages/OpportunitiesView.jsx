@@ -520,6 +520,23 @@ export default function OpportunitiesView({ setSymbol }) {
             </div>
           ) : (screener.results || []).length > 0 ? (
             <>
+              {(screener.top_seleccion || []).length > 0 && (
+                <div className="card-flat p-4 mb-3 border-l-4 border-[#4a7c59]">
+                  <p className="text-[11px] uppercase tracking-[0.15em] text-[#1a3a32] font-mono font-bold mb-2">⭐ Top Selección</p>
+                  <div className="space-y-1.5">
+                    {screener.top_seleccion.map((t) => (
+                      <button key={t.symbol} onClick={() => handlePick(t.symbol)}
+                        className="w-full flex items-center justify-between gap-2 text-left py-1">
+                        <div className="min-w-0">
+                          <span className="font-mono font-bold text-sm text-[#0e1f1a]">{t.symbol}</span>
+                          <span className="text-[11px] text-[#5c6b66] ml-2">{t.motivo}</span>
+                        </div>
+                        <span className="shrink-0 text-xs font-mono font-bold text-[#4a7c59]">{t.potential_score} pts</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {(screener.con_fuentes || []).length > 0 && (
                 <p className="text-[11px] text-[#1a6a94] bg-[#229ED910] border border-[#229ED925] rounded-md px-3 py-2 mb-3">
                   📣 <b>{screener.con_fuentes.length}</b> de estas acciones las mencionan tus fuentes de pago — salen primero, marcadas.

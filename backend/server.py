@@ -1515,29 +1515,100 @@ async def daily_opportunities(refresh: bool = False):
     return data
 
 
+def _top_seleccion(results: list, n: int = 5) -> list:
+    """La 'Top Selección': los N mejores del screener por potential_score, con un motivo
+    cualitativo breve construido de sus métricas (crecimiento, proximidad a máximos,
+    consenso, momentum)."""
+    top = sorted(results, key=lambda x: x.get("potential_score") or 0, reverse=True)[:n]
+    out = []
+    for r in top:
+        razones = []
+        rg = r.get("revenue_growth")
+        if isinstance(rg, (int, float)):
+            razones.append(f"ventas +{round(rg)}%")
+        d = r.get("dist_52w_high")
+        if isinstance(d, (int, float)) and d >= -8:
+            razones.append("cerca de máximos")
+        cs = r.get("consensus_score")
+        if isinstance(cs, (int, float)) and cs >= 70:
+            razones.append("consenso analista fuerte")
+        mom = r.get("momentum") or ""
+        if mom and not mom.startswith("⚠"):
+            razones.append("momentum sano")
+        out.append({
+            "symbol": r.get("symbol"), "name": r.get("name"),
+            "potential_score": r.get("potential_score"), "sector": r.get("sector"),
+            "motivo": ", ".join(razones) or "cumple todos los filtros de crecimiento",
+        })
+    return out
+
+
 @api_router.get("/opportunities/screener")
 async def growth_screener(refresh: bool = False):
     """Growth screener: 7 hard filters (market cap, price, no dividend, volume,
     near 52w high, revenue growth, EPS growth) over a curated growth universe.
-    Anota qué acciones mencionan TUS fuentes (sin tocar el score) para destacarlas."""
+    Anota qué acciones mencionan TUS fuentes y añade la 'Top Selección' (mejores 3-5)."""
     data = await opportunities.scan_growth_screener(force_refresh=refresh)
+    results = data.get("results") or []
     try:
         mentions = await _mentions_by_ticker(30)
-        if mentions:
-            results = data.get("results") or []
-            annotated, con_fuentes = [], []
-            for r in results:
-                tk = (r.get("symbol") or "").strip().upper()
-                m = mentions.get(tk)
-                if m:
-                    annotated.append({**r, "fuentes": m})
-                    con_fuentes.append(tk)
-                else:
-                    annotated.append(r)
-            data = {**data, "results": annotated, "con_fuentes": con_fuentes}
+        annotated, con_fuentes = [], []
+        for r in results:
+            tk = (r.get("symbol") or "").strip().upper()
+            m = mentions.get(tk) if mentions else None
+            if m:
+                annotated.append({**r, "fuentes": m})
+                con_fuentes.append(tk)
+            else:
+                annotated.append(r)
+        data = {**data, "results": annotated, "con_fuentes": con_fuentes,
+                "top_seleccion": _top_seleccion(annotated)}
     except Exception:
-        logger.warning("screener: no se pudieron anotar las menciones de fuentes")
+        logger.warning("screener: no se pudieron anotar menciones/top selección")
+        data = {**data, "top_seleccion": _top_seleccion(results)}
     return data
+
+
+@api_router.get("/congress/{symbol}")
+async def congress_trading(symbol: str):
+    """Operaciones de congresistas de EE.UU. sobre esta acción (smart money)."""
+    sym = symbol.strip().upper()
+    data = await asyncio.to_thread(external_data.finnhub_congressional_trading, sym)
+    compras = sum(1 for t in data if (t.get("tipo") or "").lower().startswith("purchase")
+                  or (t.get("tipo") or "").lower().startswith("buy"))
+    ventas = len(data) - compras
+    return {"symbol": sym, "n": len(data), "compras": compras, "ventas": ventas,
+            "operaciones": data}
+
+
+@api_router.get("/alternativa/{symbol}")
+async def alternativa_sectorial(symbol: str):
+    """Sugiere otra acción del MISMO sector con mejores métricas (mayor potential_score)
+    que la analizada, tomada del screener growth. Para descubrir mejores oportunidades."""
+    sym = symbol.strip().upper()
+    data = await opportunities.scan_growth_screener()
+    results = data.get("results") or []
+    # Sector de la acción: del screener si está, si no de la cotización.
+    propia = next((r for r in results if (r.get("symbol") or "").upper() == sym), None)
+    sector = propia.get("sector") if propia else None
+    mi_score = propia.get("potential_score") if propia else None
+    if not sector:
+        try:
+            q = await asyncio.to_thread(market_data.get_quote, sym)
+            sector = (q or {}).get("sector")
+        except Exception:
+            sector = None
+    if not sector:
+        return {"symbol": sym, "sector": None, "alternativas": []}
+    cands = [r for r in results
+             if r.get("sector") == sector and (r.get("symbol") or "").upper() != sym
+             and (mi_score is None or (r.get("potential_score") or 0) > (mi_score or 0))]
+    cands.sort(key=lambda x: x.get("potential_score") or 0, reverse=True)
+    alts = [{"symbol": r["symbol"], "name": r.get("name"),
+             "potential_score": r.get("potential_score"),
+             "revenue_growth": r.get("revenue_growth"),
+             "dist_52w_high": r.get("dist_52w_high")} for r in cands[:2]]
+    return {"symbol": sym, "sector": sector, "mi_score": mi_score, "alternativas": alts}
 
 
 # ---------- Analista Institucional ----------

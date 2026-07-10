@@ -53,6 +53,42 @@ def _alpha_key():
     return os.environ.get("ALPHA_VANTAGE_API_KEY")
 
 
+def finnhub_congressional_trading(symbol: str, limit: int = 12):
+    """Operaciones de congresistas de EE.UU. sobre una acción (indicador 'smart money').
+    Finnhub /stock/congressional-trading. Cacheado 6h. [] si no hay clave, no hay datos,
+    o el plan no lo cubre (degrada silenciosamente)."""
+    from datetime import datetime, timedelta
+    sym = symbol.upper()
+    cached, hit = _ext_cache_get(f"congress:{sym}", 21600)
+    if hit:
+        return cached
+    key = _finnhub_key()
+    if not key:
+        return []
+    try:
+        today = datetime.utcnow().date()
+        frm = (today - timedelta(days=365)).isoformat()
+        r = _finnhub_get("/stock/congressional-trading",
+                         {"symbol": sym, "from": frm, "to": today.isoformat(), "token": key})
+        if r.status_code != 200:
+            return []
+        data = (r.json() or {}).get("data") or []
+        out = []
+        for t in data[:limit]:
+            out.append({
+                "nombre": t.get("name"),
+                "tipo": t.get("transactionType"),      # buy / sell
+                "importe": t.get("amountFrom") or t.get("amount"),
+                "importe_max": t.get("amountTo"),
+                "fecha": t.get("transactionDate"),
+                "cargo": t.get("position"),
+            })
+        _ext_cache_set(f"congress:{sym}", out)
+        return out
+    except Exception:
+        return []
+
+
 def finnhub_recommendation_trends(symbol: str):
     """Aggregated analyst recs by month (last 4 months). Cached 4h."""
     sym = symbol.upper()
