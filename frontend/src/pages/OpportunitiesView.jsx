@@ -4,6 +4,7 @@ import { Lightning, TrendDown, TrendUp, Sparkle, Pulse, Sun, ArrowRight, ArrowCl
 import { Button } from "../components/ui/button";
 import { api } from "../lib/api";
 import { fmtPrice, fmtPct, fmtNum } from "../lib/format";
+import MiniChart from "../components/MiniChart";
 
 const CATEGORY_META = {
   OVERSOLD: { label: "Sobrevendidas (RSI<30)", icon: TrendDown, color: "#4a7c59", desc: "RSI muy bajo, posible rebote técnico" },
@@ -101,7 +102,7 @@ function OpportunityCard({ op, onPick }) {
   );
 }
 
-function ScreenerCard({ row, onPick }) {
+function ScreenerCard({ row, onPick, top }) {
   const dist = row.dist_52w_high;
   const distColor = dist == null ? "#5c6b66" : dist >= -5 ? "#4a7c59" : dist >= -12 ? "#c9a14a" : "#d85c41";
   // Score de potencial: verde fuerte ≥70, ámbar 45-70, gris <45.
@@ -110,9 +111,15 @@ function ScreenerCard({ row, onPick }) {
   return (
     <div
       data-testid={`screener-${row.symbol}`}
-      className="card-flat p-4 hover:shadow-md transition-all cursor-pointer card-hover"
+      className="card-flat p-4 hover:shadow-md transition-all cursor-pointer card-hover relative"
+      style={top ? { border: "2px solid #e8890c", boxShadow: "0 0 0 1px #e8890c22" } : undefined}
       onClick={() => onPick(row.symbol)}
     >
+      {top && (
+        <span className="absolute -top-2 left-3 px-2 py-0.5 rounded-full text-[9px] font-bold text-white bg-[#e8890c] shadow">
+          ★ TOP SELECCIÓN
+        </span>
+      )}
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-10 h-10 rounded-md bg-[#1a3a32] text-[#f5f3ef] flex items-center justify-center font-mono font-bold text-xs shrink-0">
@@ -197,7 +204,9 @@ function ScreenerCard({ row, onPick }) {
         </div>
       </div>
 
-      <div className="flex items-center justify-between text-[10px] text-[#5c6b66]">
+      <MiniChart symbol={row.symbol} />
+
+      <div className="flex items-center justify-between text-[10px] text-[#5c6b66] mt-2">
         <span className="truncate max-w-[150px]">{row.sector || "—"}</span>
         <span className="flex items-center gap-1 text-[#1a3a32] font-mono">
           Analizar <ArrowRight size={10} weight="bold" />
@@ -542,12 +551,13 @@ export default function OpportunitiesView({ setSymbol }) {
                   📣 <b>{screener.con_fuentes.length}</b> de estas acciones las mencionan tus fuentes de pago — salen primero, marcadas.
                 </p>
               )}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                 {/* Las mencionadas por tus fuentes flotan arriba (sin alterar el score). */}
                 {[...screener.results]
                   .sort((a, b) => (b.fuentes ? 1 : 0) - (a.fuentes ? 1 : 0))
                   .map((row) => (
-                    <ScreenerCard key={row.symbol} row={row} onPick={handlePick} />
+                    <ScreenerCard key={row.symbol} row={row} onPick={handlePick}
+                      top={(screener.top_seleccion || []).some((t) => t.symbol === row.symbol)} />
                   ))}
               </div>
             </>
