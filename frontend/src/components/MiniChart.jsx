@@ -19,14 +19,24 @@ export default function MiniChart({ symbol, height = 140 }) {
   }, [visible]);
 
   const isDark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
-  const src =
-    `https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(symbol)}` +
-    `&interval=W&hidesidetoolbar=1&hidetoptoolbar=1&symboledit=0&saveimage=0` +
-    `&hideideas=1&hidevolume=1&theme=${isDark ? "dark" : "light"}&style=3&timezone=exchange` +
-    `&withdateranges=0&studies=[]`;
+  // Widget "Mini Symbol Overview": línea limpia SIN barras de herramientas (como el vídeo).
+  // La config va en el hash de la URL como JSON.
+  const config = {
+    symbol,
+    width: "100%",
+    height: String(height),
+    locale: "es",
+    dateRange: "12M",
+    colorTheme: isDark ? "dark" : "light",
+    isTransparent: true,
+    autosize: true,
+    chartOnly: false,
+    noTimeScale: false,
+  };
+  const src = `https://s.tradingview.com/embed-widget/mini-symbol-overview/?locale=es#${encodeURIComponent(JSON.stringify(config))}`;
 
   return (
-    <div ref={ref} style={{ height }} className="w-full rounded-md overflow-hidden bg-[#f6f4ef] mt-2">
+    <div ref={ref} style={{ height }} className="w-full rounded-md overflow-hidden mt-2">
       {visible && (
         <iframe
           title={`chart-${symbol}`}
