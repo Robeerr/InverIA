@@ -279,8 +279,32 @@ def compute_all(df: pd.DataFrame):
     except Exception:
         obv_trend = None
 
+    # --- Salida por media de 10 semanas (= SMA 50 días): el método de "dejar correr los
+    # ganadores y vender cuando el precio pierde la media de 10 semanas". ---
+    salida_10w = None
+    if len(close) >= 50:
+        s50 = sma(close, 50)
+        sma50_val = s50.iloc[last]
+        if pd.notna(sma50_val) and sma50_val:
+            por_encima = current_price >= sma50_val
+            dist = (current_price - sma50_val) / sma50_val * 100
+            recien = False
+            if len(close) >= 56:
+                seq = [current_price >= s50.iloc[i] if i == last else close.iloc[i] >= s50.iloc[i]
+                       for i in range(last - 5, last + 1) if pd.notna(s50.iloc[i])]
+                if len(seq) >= 2 and seq[0] and not seq[-1]:
+                    recien = True  # estaba por encima y ha perdido la media en los últimos días
+            salida_10w = {
+                "sma": round(float(sma50_val), 2),
+                "por_encima": bool(por_encima),
+                "distancia_pct": round(float(dist), 2),
+                "senal": "mantener" if por_encima else "salida",
+                "recien_perdida": recien,
+            }
+
     return {
         "price": round(current_price, 2),
+        "salida_10w": salida_10w,
         "rsi": _safe(rsi_series.iloc[last]),
         "macd": {
             "macd": _safe(macd_line.iloc[last]),

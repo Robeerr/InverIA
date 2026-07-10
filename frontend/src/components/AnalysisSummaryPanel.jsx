@@ -36,6 +36,7 @@ export default function AnalysisSummaryPanel({ analysis, indicators, buyLevels, 
   const regime = indicators?.regime?.regime || indicators?.trend || analysis?.trend || "—";
   const vol = quote?.volume, avgVol = quote?.avg_volume;
   const volLabel = vol && avgVol ? (vol > avgVol * 1.3 ? "Alto" : vol < avgVol * 0.7 ? "Bajo" : "Normal") : "—";
+  const s10 = indicators?.salida_10w;
 
   return (
     <section className="card-flat p-5 animate-fade-up" data-testid="analysis-summary">
@@ -107,7 +108,21 @@ export default function AnalysisSummaryPanel({ analysis, indicators, buyLevels, 
         <Row label="Tendencia" value={regime} />
         <Row label="Volumen" value={volLabel} />
         <Row label="RSI" value={rsi != null ? `${Math.round(rsi)} · ${rsiLabel}` : "—"} color={rsiColor} />
+        {s10 && (
+          <Row label="Media 10 sem"
+            value={s10.por_encima ? `Mantener · +${s10.distancia_pct}%` : `Salida · ${s10.distancia_pct}%`}
+            color={s10.por_encima ? "#4a7c59" : "#d85c41"} />
+        )}
       </div>
+
+      {/* Señal de salida por media de 10 semanas (método: dejar correr y salir al perderla) */}
+      {s10?.recien_perdida && (
+        <div className="mt-3 px-3 py-2 rounded-md text-[11px] leading-snug font-medium"
+          style={{ background: "#d85c4118", color: "#b34a34", border: "1px solid #d85c4140" }}>
+          ⚠️ <b>Señal de venta</b>: el precio acaba de perder la media de 10 semanas (${s10.sma}).
+          Si dejabas correr el ganador, este es el punto de salida del método.
+        </div>
+      )}
     </section>
   );
 }
