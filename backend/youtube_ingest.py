@@ -1,13 +1,11 @@
-"""Ingesta de vídeos de YouTube → cerebro + Radar.
+"""Ingesta de vídeos de YouTube → cerebro + Radar, usando Gemini.
 
-Pegas un enlace, el servidor saca la transcripción (subtítulos si los hay; si no,
-descarga el audio y lo transcribe con Whisper) y extrae los picks + el método, igual
-que un mensaje o newsletter. Devuelve un feedback de lo que ha conseguido del vídeo.
+Gemini (de Google) "ve" los vídeos de YouTube nativamente: le pasamos el enlace y él
+analiza imagen + audio y devuelve el análisis. Así evitamos descargar el vídeo (que
+YouTube bloquea a los servidores). Requiere GEMINI_API_KEY.
 
-Nota: se ejecuta en TU backend (Render), que sí puede acceder a YouTube. Descargar de
-YouTube es zona gris de sus términos; para uso personal es defendible. No redistribuir.
+Nota: solo vídeos públicos de YouTube. Uso personal; no redistribuir.
 """
-import asyncio
 import logging
 import re
 
@@ -25,79 +23,25 @@ def video_id(url: str):
     return m.group(0) if m else None
 
 
-def _captions(vid: str) -> str:
-    """Transcripción por subtítulos (rápido). '' si el vídeo no tiene o falla."""
-    try:
-        from youtube_transcript_api import YouTubeTranscriptApi
-    except ImportError:
-        return ""
-    for langs in (["es"], ["en"], ["es", "en"], None):
-        try:
-            data = (YouTubeTranscriptApi.get_transcript(vid, languages=langs)
-                    if langs else YouTubeTranscriptApi.get_transcript(vid))
-            txt = " ".join(x.get("text", "") for x in data).strip()
-            if txt:
-                return txt
-        except Exception:
-            continue
-    return ""
-
-
-async def _audio_transcript(vid: str) -> str:
-    """Fallback: descarga el audio con yt-dlp y lo transcribe con Whisper (Groq)."""
-    try:
-        import yt_dlp  # noqa: F401
-        import ai_analysis
-    except ImportError:
-        return ""
-    import os
-    import tempfile
-
-    def _download():
-        tmp = tempfile.mkdtemp()
-        out = os.path.join(tmp, "a.%(ext)s")
-        opts = {"format": "bestaudio/best", "outtmpl": out, "quiet": True,
-                "noplaylist": True, "no_warnings": True}
-        try:
-            import yt_dlp as y
-            with y.YoutubeDL(opts) as ydl:
-                ydl.download([f"https://www.youtube.com/watch?v={vid}"])
-            for f in os.listdir(tmp):
-                p = os.path.join(tmp, f)
-                if os.path.getsize(p) < 24 * 1024 * 1024:  # límite Whisper ~25MB
-                    with open(p, "rb") as fh:
-                        return fh.read(), f
-            return None, None
-        except Exception:
-            return None, None
-
-    audio, fname = await asyncio.to_thread(_download)
-    if not audio:
-        return ""
-    return await ai_analysis.transcribe_audio(audio, fname or "audio.m4a")
+def _normalize(url: str) -> str:
+    vid = video_id(url)
+    return f"https://www.youtube.com/watch?v={vid}" if vid else url
 
 
 async def ingest_youtube(db, url: str) -> dict:
-    """Procesa un vídeo: saca transcripción → picks + método → cerebro/Radar. Devuelve
+    """Analiza un vídeo con Gemini y mete picks + método en el cerebro/Radar. Devuelve
     feedback de lo conseguido."""
+    import ai_analysis
     import newsletter_ingest
-    vid = video_id(url)
-    if not vid:
+    if not video_id(url):
         return {"ok": False, "error": "No reconozco ese enlace de YouTube."}
-
-    via = "subtítulos"
-    text = await asyncio.to_thread(_captions, vid)
-    if not text:
-        via = "audio (Whisper)"
-        text = await _audio_transcript(vid)
-    if not text or len(text) < 60:
-        return {"ok": False, "error": "No pude obtener la transcripción (sin subtítulos y sin poder bajar el audio). Prueba a pegarme el texto a mano."}
-
-    r = await newsletter_ingest.ingest_message(
-        db, f"YouTube › {vid}", text, tipo="youtube")
-    return {
-        "ok": True, "via": via, "chars": len(text),
-        "titulo": r.get("titulo"), "resumen": r.get("resumen"),
-        "tickers": r.get("tickers") or [], "acciones": r.get("acciones", 0),
-        "aprendidos": r.get("aprendidos", 0),
-    }
+    try:
+        data = await ai_analysis.analyze_youtube(_normalize(url))
+    except Exception as e:
+        logger.warning("youtube: Gemini no pudo con el vídeo (%s)", str(e)[:150])
+        return {"ok": False, "error": f"Gemini no pudo leer el vídeo: {str(e)[:160]}"}
+    if not isinstance(data, dict) or not (data.get("resumen") or data.get("acciones")):
+        return {"ok": False, "error": "Gemini no sacó nada útil del vídeo."}
+    fuente = f"YouTube › {(data.get('titulo') or video_id(url))}"[:80]
+    r = await newsletter_ingest.store_extracted(db, fuente, data, "youtube")
+    return {"ok": True, "via": "Gemini (vídeo)", **r}

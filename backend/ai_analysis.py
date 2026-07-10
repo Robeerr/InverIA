@@ -795,6 +795,55 @@ async def extract_watchlist_from_image(image_bytes: bytes, mime_type: str = "ima
     return out
 
 
+# ---------- Análisis de vídeo de YouTube (Gemini lo "ve" nativamente) ----------
+
+_YT_PROMPT = """Eres un analista financiero senior. Estás VIENDO un vídeo de bolsa de YouTube.
+Extrae TODO lo útil y devuelve SOLO un JSON válido (sin markdown) con esta estructura EXACTA:
+{
+  "titulo": "tema principal del vídeo en 1 frase",
+  "resumen": "4-6 frases con lo MÁS importante que dice el vídeo, en español claro",
+  "acciones": [
+    {"ticker": "AAPL", "nombre": "Apple",
+     "accion": "COMPRAR|VENDER|VIGILAR|MANTENER|MENCIONADA",
+     "sentimiento": "POSITIVO|NEGATIVO|NEUTRAL",
+     "niveles": "precios/zonas que menciona o null",
+     "motivo": "la tesis o ángulo sobre esa acción, 1 frase"}
+  ],
+  "ideas_clave": ["idea o consejo relevante 1", "idea 2"],
+  "aprendizajes": [
+    {"tema": "...", "categoria": "selección|valoración|riesgo|psicología|macro|método|sectores",
+     "principio": "regla/método GENERAL reutilizable en 1 frase (no sobre un ticker concreto)",
+     "detalle": "cómo aplicarlo o null"}
+  ]
+}
+Deduce el ticker del nombre si hace falta. No inventes niveles que no se digan. Si el vídeo no
+habla de acciones, deja "acciones" vacío pero rellena resumen y aprendizajes si enseña método."""
+
+
+async def analyze_youtube(url: str) -> dict:
+    """Analiza un vídeo de YouTube pasándoselo DIRECTAMENTE a Gemini (que lo ve nativamente,
+    sin descargarlo). Devuelve el dict extraído (titulo, resumen, acciones, aprendizajes)."""
+    if not GEMINI_AVAILABLE:
+        raise RuntimeError("google-genai no está instalada en el servidor.")
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY no configurada — necesaria para leer el vídeo.")
+    client = genai.Client(api_key=api_key)
+    video_part = genai_types.Part(file_data=genai_types.FileData(file_uri=url))
+    config = genai_types.GenerateContentConfig(
+        temperature=0.2, max_output_tokens=4000, response_mime_type="application/json")
+    response = await asyncio.to_thread(
+        client.models.generate_content,
+        model="gemini-2.5-flash",
+        contents=[video_part, _YT_PROMPT],
+        config=config,
+    )
+    text = getattr(response, "text", "") or ""
+    if not text:
+        raise RuntimeError("Gemini no devolvió nada al ver el vídeo.")
+    return _parse_model_json(text)
+
+
 # ---------- Transcripción de audio (Groq Whisper, gratis) y visión de imágenes ----------
 
 async def transcribe_audio(audio_bytes: bytes, filename: str = "audio.ogg",

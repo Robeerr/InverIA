@@ -338,21 +338,11 @@ async def process_newsletter(db, subject: str, body_html: str, body_text: str = 
             "titulo": data.get("titulo")}
 
 
-async def ingest_message(db, fuente: str, text: str, tipo: str = "telegram") -> dict:
-    """Ingesta compartida de un MENSAJE (Telegram, etc.): extrae picks (tickers) + método,
-    lleva los picks al Radar (db.newsletter_summaries, con el score del motor) y el método
-    al cerebro. Registra la actividad. Devuelve un recuento. No envía email."""
+async def store_extracted(db, fuente: str, data: dict, tipo: str, raw_text: str = "") -> dict:
+    """Guarda un resultado YA extraído (dict con acciones/aprendizajes): filtra
+    patrocinadores, puntúa los picks con el motor, los lleva al Radar, el método al
+    cerebro y registra la actividad. Compartido por mensajes, vídeos y texto pegado."""
     import knowledge_base
-    text = knowledge_base.fix_mojibake((text or "").strip())
-    if len(text) < 25:
-        return {"acciones": 0, "aprendidos": 0}
-    try:
-        data = await _extract(fuente, text)
-    except Exception:
-        logger.warning("ingest_message: extracción falló")
-        return {"acciones": 0, "aprendidos": 0}
-
-    # Picks: filtra patrocinadores, puntúa con tu motor y guarda para el Radar.
     acciones = [a for a in (data.get("acciones") or []) if not _is_sponsor(a)]
     data["acciones"] = acciones
     for a in acciones[:6]:
@@ -363,22 +353,34 @@ async def ingest_message(db, fuente: str, text: str, tipo: str = "telegram") -> 
         try:
             await db.newsletter_summaries.insert_one({
                 "subject": fuente, "sender": fuente, "extracted": data,
-                "raw_text": text[:12000], "tipo": tipo,
+                "raw_text": (raw_text or "")[:12000], "tipo": tipo,
                 "received_at": datetime.now(timezone.utc).isoformat(),
             })
         except Exception:
-            logger.warning("ingest_message: no se pudo guardar el pick")
-
-    # Método → cerebro.
+            logger.warning("store_extracted: no se pudo guardar el pick")
     n = 0
     try:
         n = await knowledge_base.add_learnings(db, data.get("aprendizajes") or [], source=fuente[:80])
     except Exception:
         pass
-    await knowledge_base.log_activity(db, tipo, fuente, data.get("resumen") or text, n)
+    await knowledge_base.log_activity(db, tipo, fuente, data.get("resumen") or raw_text, n)
     return {"acciones": len(acciones), "aprendidos": n,
             "resumen": data.get("resumen"), "titulo": data.get("titulo"),
             "tickers": [(a.get("ticker") or "").upper() for a in acciones if a.get("ticker")]}
+
+
+async def ingest_message(db, fuente: str, text: str, tipo: str = "telegram") -> dict:
+    """Ingesta de un MENSAJE/texto: extrae picks + método y lo guarda (Radar + cerebro)."""
+    import knowledge_base
+    text = knowledge_base.fix_mojibake((text or "").strip())
+    if len(text) < 25:
+        return {"acciones": 0, "aprendidos": 0}
+    try:
+        data = await _extract(fuente, text)
+    except Exception:
+        logger.warning("ingest_message: extracción falló")
+        return {"acciones": 0, "aprendidos": 0}
+    return await store_extracted(db, fuente, data, tipo, raw_text=text)
 
 
 _LEARN_PROMPT = """Eres un analista financiero senior. Te doy el contenido (o un resumen) de una
