@@ -1573,7 +1573,7 @@ async def growth_screener(refresh: bool = False):
 async def congress_trading(symbol: str):
     """Operaciones de congresistas de EE.UU. sobre esta acción (smart money)."""
     sym = symbol.strip().upper()
-    data = await asyncio.to_thread(external_data.finnhub_congressional_trading, sym)
+    data = await asyncio.to_thread(external_data.congress_trading, sym)
     compras = sum(1 for t in data if (t.get("tipo") or "").lower().startswith("purchase")
                   or (t.get("tipo") or "").lower().startswith("buy"))
     ventas = len(data) - compras

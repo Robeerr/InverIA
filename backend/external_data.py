@@ -53,40 +53,48 @@ def _alpha_key():
     return os.environ.get("ALPHA_VANTAGE_API_KEY")
 
 
-def finnhub_congressional_trading(symbol: str, limit: int = 12):
-    """Operaciones de congresistas de EE.UU. sobre una acción (indicador 'smart money').
-    Finnhub /stock/congressional-trading. Cacheado 6h. [] si no hay clave, no hay datos,
-    o el plan no lo cubre (degrada silenciosamente)."""
-    from datetime import datetime, timedelta
+def congress_trading(symbol: str, limit: int = 12):
+    """Operaciones de congresistas de EE.UU. (Senado + Cámara) sobre una acción, vía FMP
+    ('smart money'). Cacheado 6h. [] si no hay clave, no hay datos o el plan no lo cubre."""
     sym = symbol.upper()
     cached, hit = _ext_cache_get(f"congress:{sym}", 21600)
     if hit:
         return cached
-    key = _finnhub_key()
+    key = _fmp_key()
     if not key:
         return []
+    out = []
     try:
-        today = datetime.utcnow().date()
-        frm = (today - timedelta(days=365)).isoformat()
-        r = _finnhub_get("/stock/congressional-trading",
-                         {"symbol": sym, "from": frm, "to": today.isoformat(), "token": key})
-        if r.status_code != 200:
-            return []
-        data = (r.json() or {}).get("data") or []
-        out = []
-        for t in data[:limit]:
-            out.append({
-                "nombre": t.get("name"),
-                "tipo": t.get("transactionType"),      # buy / sell
-                "importe": t.get("amountFrom") or t.get("amount"),
-                "importe_max": t.get("amountTo"),
-                "fecha": t.get("transactionDate"),
-                "cargo": t.get("position"),
-            })
+        http = _md.get_http_session()
+        for path in ("/api/v4/senate-trading", "/api/v4/senate-disclosure"):
+            try:
+                r = http.get(f"{FMP_BASE}{path}", params={"symbol": sym, "apikey": key}, timeout=8)
+                if r.status_code != 200:
+                    continue
+                for t in (r.json() or []):
+                    tipo = (t.get("type") or "").lower()
+                    nombre = (f"{t.get('firstName', '')} {t.get('lastName', '')}".strip()
+                              or t.get("representative") or t.get("office") or "Congresista")
+                    out.append({
+                        "nombre": nombre,
+                        "tipo": "buy" if "purchase" in tipo or "buy" in tipo
+                                else "sell" if "sale" in tipo or "sell" in tipo else tipo,
+                        "importe": t.get("amount"),
+                        "fecha": t.get("transactionDate") or t.get("dateRecieved"),
+                        "cargo": t.get("office") or t.get("district") or "Congreso",
+                    })
+            except Exception:
+                continue
+        out.sort(key=lambda x: x.get("fecha") or "", reverse=True)
+        out = out[:limit]
         _ext_cache_set(f"congress:{sym}", out)
-        return out
     except Exception:
         return []
+    return out
+
+
+# compat: nombre anterior
+finnhub_congressional_trading = congress_trading
 
 
 def finnhub_recommendation_trends(symbol: str):
