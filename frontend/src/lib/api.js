@@ -58,7 +58,6 @@ export const api = {
   radar: (days = 14) => client.get(`/radar`, { params: { days } }).then((r) => r.data),
   brain: () => client.get(`/brain`).then((r) => r.data),
   fuentes: (symbol) => client.get(`/fuentes/${symbol}`).then((r) => r.data),
-  congress: (symbol) => client.get(`/congress/${symbol}`).then((r) => r.data),
   alternativa: (symbol) => client.get(`/alternativa/${symbol}`).then((r) => r.data),
   youtubeIngest: (url) => client.post(`/youtube/ingest`, { url }, { timeout: 180000 }).then((r) => r.data),
   ingestText: (text, fuente) => client.post(`/ingest/text`, { text, fuente }, { timeout: 120000 }).then((r) => r.data),

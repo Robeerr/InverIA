@@ -1569,18 +1569,6 @@ async def growth_screener(refresh: bool = False):
     return data
 
 
-@api_router.get("/congress/{symbol}")
-async def congress_trading(symbol: str):
-    """Operaciones de congresistas de EE.UU. sobre esta acción (smart money)."""
-    sym = symbol.strip().upper()
-    data = await asyncio.to_thread(external_data.congress_trading, sym)
-    compras = sum(1 for t in data if (t.get("tipo") or "").lower().startswith("purchase")
-                  or (t.get("tipo") or "").lower().startswith("buy"))
-    ventas = len(data) - compras
-    return {"symbol": sym, "n": len(data), "compras": compras, "ventas": ventas,
-            "operaciones": data}
-
-
 @api_router.get("/alternativa/{symbol}")
 async def alternativa_sectorial(symbol: str):
     """Sugiere otra acción del MISMO sector con mejores métricas (mayor potential_score)

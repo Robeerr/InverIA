@@ -53,50 +53,6 @@ def _alpha_key():
     return os.environ.get("ALPHA_VANTAGE_API_KEY")
 
 
-def congress_trading(symbol: str, limit: int = 12):
-    """Operaciones de congresistas de EE.UU. (Senado + Cámara) sobre una acción, vía FMP
-    ('smart money'). Cacheado 6h. [] si no hay clave, no hay datos o el plan no lo cubre."""
-    sym = symbol.upper()
-    cached, hit = _ext_cache_get(f"congress:{sym}", 21600)
-    if hit:
-        return cached
-    key = _fmp_key()
-    if not key:
-        return []
-    out = []
-    try:
-        http = _md.get_http_session()
-        for path in ("/api/v4/senate-trading", "/api/v4/senate-disclosure"):
-            try:
-                r = http.get(f"{FMP_BASE}{path}", params={"symbol": sym, "apikey": key}, timeout=8)
-                if r.status_code != 200:
-                    continue
-                for t in (r.json() or []):
-                    tipo = (t.get("type") or "").lower()
-                    nombre = (f"{t.get('firstName', '')} {t.get('lastName', '')}".strip()
-                              or t.get("representative") or t.get("office") or "Congresista")
-                    out.append({
-                        "nombre": nombre,
-                        "tipo": "buy" if "purchase" in tipo or "buy" in tipo
-                                else "sell" if "sale" in tipo or "sell" in tipo else tipo,
-                        "importe": t.get("amount"),
-                        "fecha": t.get("transactionDate") or t.get("dateRecieved"),
-                        "cargo": t.get("office") or t.get("district") or "Congreso",
-                    })
-            except Exception:
-                continue
-        out.sort(key=lambda x: x.get("fecha") or "", reverse=True)
-        out = out[:limit]
-        _ext_cache_set(f"congress:{sym}", out)
-    except Exception:
-        return []
-    return out
-
-
-# compat: nombre anterior
-finnhub_congressional_trading = congress_trading
-
-
 def finnhub_recommendation_trends(symbol: str):
     """Aggregated analyst recs by month (last 4 months). Cached 4h."""
     sym = symbol.upper()
