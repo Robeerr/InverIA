@@ -7,6 +7,9 @@ function YouTubeBox({ onDone }) {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState(null);
+  const [manual, setManual] = useState(false);
+  const [texto, setTexto] = useState("");
+  const [fuente, setFuente] = useState("");
 
   const go = async () => {
     if (!url.trim()) return;
@@ -17,6 +20,17 @@ function YouTubeBox({ onDone }) {
       if (r.ok) { toast.success("Vídeo procesado"); onDone?.(); }
       else toast.error(r.error || "No se pudo procesar");
     } catch (e) { toast.error("Error procesando el vídeo"); }
+    finally { setBusy(false); }
+  };
+
+  const goText = async () => {
+    if (texto.trim().length < 60) return toast.error("Pega un texto más largo");
+    setBusy(true); setRes(null);
+    try {
+      const r = await api.ingestText(texto.trim(), fuente.trim() || "Texto pegado");
+      setRes(r);
+      if (r.ok) { toast.success("Texto procesado"); setTexto(""); onDone?.(); }
+    } catch (e) { toast.error("Error procesando el texto"); }
     finally { setBusy(false); }
   };
 
@@ -33,7 +47,22 @@ function YouTubeBox({ onDone }) {
           {busy ? "Procesando…" : "Procesar"}
         </button>
       </div>
-      {busy && <p className="text-[11px] text-[#5c6b66] mt-2">Sacando la transcripción y extrayendo ideas… (puede tardar si hay que bajar el audio)</p>}
+      {busy && <p className="text-[11px] text-[#5c6b66] mt-2">Procesando y extrayendo ideas…</p>}
+
+      <button onClick={() => setManual((v) => !v)} className="text-[11px] text-[#5c6b66] underline mt-2">
+        {manual ? "Ocultar" : "¿Falla? Pega la transcripción / texto a mano"}
+      </button>
+      {manual && (
+        <div className="mt-2 space-y-2">
+          <input value={fuente} onChange={(e) => setFuente(e.target.value)} placeholder="Fuente (ej. Vídeo JaviZone) — opcional"
+            className="w-full px-3 py-2 rounded-md border border-[#e5e0d8] bg-white text-[#0e1f1a] text-sm" />
+          <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={5} placeholder="Pega aquí la transcripción del vídeo, o cualquier texto (artículo, análisis)…"
+            className="w-full px-3 py-2 rounded-md border border-[#e5e0d8] bg-white text-[#0e1f1a] text-sm" />
+          <button onClick={goText} disabled={busy} className="w-full py-2 rounded-md bg-[#1a3a32] text-white text-sm font-semibold disabled:opacity-50">
+            {busy ? "Procesando…" : "Procesar texto"}
+          </button>
+        </div>
+      )}
       {res?.ok && (
         <div className="mt-3 border-l-2 border-[#4a7c59] pl-3 py-1">
           <p className="text-[11px] font-semibold text-[#1a3a32]">✅ Conseguido del vídeo (vía {res.via}):</p>

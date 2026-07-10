@@ -1234,6 +1234,20 @@ async def youtube_ingest_ep(request: Request, _user: str = Depends(auth.get_curr
     return await youtube_ingest.ingest_youtube(db, url)
 
 
+@api_router.post("/ingest/text")
+async def ingest_text_ep(request: Request, _user: str = Depends(auth.get_current_user)):
+    """Ingiere TEXTO pegado a mano (transcripción de vídeo, artículo, etc.) al cerebro/
+    Radar. Es la vía 100% fiable cuando YouTube/webs bloquean al servidor."""
+    import newsletter_ingest
+    payload = await request.json()
+    text = (payload.get("text") or "").strip()
+    fuente = (payload.get("fuente") or "Texto pegado").strip()[:80]
+    if len(text) < 60:
+        raise HTTPException(400, "Pega un texto más largo (al menos unas frases).")
+    r = await newsletter_ingest.ingest_message(db, fuente, text, tipo="manual")
+    return {"ok": True, "chars": len(text), **r}
+
+
 @api_router.get("/brain")
 async def brain_overview():
     """Estado del CEREBRO para la web: qué ha capturado (feed de actividad), de qué
