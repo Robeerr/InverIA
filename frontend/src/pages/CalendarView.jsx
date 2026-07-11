@@ -1,7 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarBlank, ArrowRight } from "@phosphor-icons/react";
+import { CalendarBlank, ArrowRight, ArrowClockwise } from "@phosphor-icons/react";
 import { api } from "../lib/api";
 import { useSignals } from "../hooks/useSignals";
 
@@ -20,6 +20,7 @@ function hourLabel(h) {
 export default function CalendarView({ setSymbol }) {
   const navigate = useNavigate();
   const [days, setDays] = React.useState(14);
+  const [refreshN, setRefreshN] = React.useState(0);
 
   // Señales desde el caché compartido (no se re-piden al cambiar "días").
   const { data: signals } = useSignals();
@@ -30,9 +31,9 @@ export default function CalendarView({ setSymbol }) {
 
   // Earnings de esos símbolos: el backend los trae en paralelo por símbolo.
   const earningsQuery = useQuery({
-    queryKey: ["earnings", days, syms],
+    queryKey: ["earnings", days, syms, refreshN],
     queryFn: () =>
-      syms.length ? api.calendar.earnings(days, syms.join(",")) : Promise.resolve({ items: [] }),
+      syms.length ? api.calendar.earnings(days, syms.join(","), refreshN > 0) : Promise.resolve({ items: [] }),
     enabled: signals !== undefined,
     staleTime: 5 * 60_000,
   });
@@ -62,6 +63,10 @@ export default function CalendarView({ setSymbol }) {
               Próximos earnings de tus acciones en Señales.
             </p>
           </div>
+          <button onClick={() => setRefreshN((n) => n + 1)} title="Recargar (datos frescos)"
+            className="p-2 rounded-md border border-[#e5e0d8] text-[#1a3a32] mr-1">
+            <ArrowClockwise size={16} weight="bold" className={loading ? "animate-spin" : ""} />
+          </button>
           <select
             data-testid="days-select"
             value={days}

@@ -1435,14 +1435,15 @@ async def sentiment_news(symbol: str):
 
 # ---------- Earnings Calendar ----------
 @api_router.get("/calendar/earnings")
-async def earnings_calendar(days: int = 14, symbols: Optional[str] = None):
+async def earnings_calendar(days: int = 14, symbols: Optional[str] = None, refresh: bool = False):
     """Upcoming earnings from Finnhub. Always fetches 60 days and caches by symbols only;
-    the day range is then filtered in-memory so every day-filter combo shares the same cache."""
+    the day range is then filtered in-memory so every day-filter combo shares the same cache.
+    `refresh=true` salta la caché (para forzar datos frescos)."""
     from datetime import datetime, timedelta
     sym_list = sorted({s.strip().upper() for s in symbols.split(",") if s.strip()}) if symbols else []
     # Cache key ignores `days` — we always fetch 60d and slice in memory
     cache_key = f"earnings60:{','.join(sym_list)}"
-    cached = _cache.get(cache_key)
+    cached = None if refresh else _cache.get(cache_key)
     if cached is None:
         sym_filter = set(sym_list) if sym_list else None
         loop = asyncio.get_running_loop()
@@ -1450,7 +1451,7 @@ async def earnings_calendar(days: int = 14, symbols: Optional[str] = None):
             None, lambda: external_data.finnhub_earnings_calendar(days=60, symbols=sym_filter)
         )
         cached = data or {"items": []}
-        _cache.set(cache_key, cached, ttl=7200)  # 2h — earnings don't change intraday
+        _cache.set(cache_key, cached, ttl=1800)  # 30 min
 
     # Ventana: desde HOY hasta +days. Y deduplica por símbolo (Finnhub a veces devuelve
     # la misma acción con dos fechas → salía repetida): nos quedamos con la MÁS CERCANA.

@@ -72,8 +72,8 @@ export const api = {
   },
   signals: () => client.get(`/signals`).then((r) => r.data),
   calendar: {
-    earnings: (days = 14, symbols = null) =>
-      client.get(`/calendar/earnings`, { params: { days, symbols: symbols || undefined } }).then((r) => r.data),
+    earnings: (days = 14, symbols = null, refresh = false) =>
+      client.get(`/calendar/earnings`, { params: { days, symbols: symbols || undefined, refresh: refresh || undefined } }).then((r) => r.data),
   },
   alerts: {
     create: (payload) => client.post(`/alerts`, payload).then((r) => r.data),
