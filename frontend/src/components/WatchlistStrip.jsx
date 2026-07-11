@@ -4,7 +4,7 @@ import { fmtPrice } from "../lib/format";
 
 // Tira de watchlist (estilo terminal): tus acciones de Cartera en una fila horizontal
 // scrollable, con precio y cambio del día. Toca una para cargarla al instante. Mobile-first.
-export default function WatchlistStrip({ symbol, setSymbol }) {
+export default function WatchlistStrip({ symbol, setSymbol, vertical = false, className = "" }) {
   const { data: signals } = useSignals();
   const entries = React.useMemo(() => {
     const arr = Array.isArray(signals) ? signals : (signals?.items || signals?.entries || []);
@@ -22,8 +22,13 @@ export default function WatchlistStrip({ symbol, setSymbol }) {
 
   if (!entries.length) return null;
 
+  const wrapCls = vertical
+    ? `flex flex-col gap-1.5 ${className}`
+    : `flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar ${className}`;
+
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar">
+    <div className={wrapCls}>
+      {vertical && <p className="text-[10px] uppercase tracking-[0.15em] text-[#5c6b66] font-mono mb-1 px-1">Watchlist</p>}
       {entries.map((e) => {
         const s = (e.symbol || "").toUpperCase();
         const active = s === (symbol || "").toUpperCase();
@@ -33,11 +38,11 @@ export default function WatchlistStrip({ symbol, setSymbol }) {
           <button
             key={s}
             onClick={() => setSymbol?.(s)}
-            className="shrink-0 rounded-lg border px-3 py-1.5 text-left transition-colors"
+            className={`rounded-lg border px-3 py-1.5 text-left transition-colors ${vertical ? "w-full" : "shrink-0"}`}
             style={{
               borderColor: active ? "#1a3a32" : "#e5e0d8",
               background: active ? "#1a3a32" : "white",
-              minWidth: 92,
+              minWidth: vertical ? undefined : 92,
             }}
           >
             <p className="font-mono font-bold text-xs" style={{ color: active ? "#f5f3ef" : "#0e1f1a" }}>{s}</p>

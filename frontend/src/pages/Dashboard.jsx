@@ -285,8 +285,14 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
 
 
   return (
-    <main data-testid="main-dashboard" className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
-      <WatchlistStrip symbol={symbol} setSymbol={setSymbol} />
+    <div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6 lg:flex lg:gap-5 lg:items-start">
+      {/* Escritorio: watchlist como barra lateral izquierda (sticky). */}
+      <aside className="hidden lg:block w-52 shrink-0 sticky top-4">
+        <WatchlistStrip symbol={symbol} setSymbol={setSymbol} vertical />
+      </aside>
+      <main data-testid="main-dashboard" className="flex-1 min-w-0 space-y-4 sm:space-y-6">
+      {/* Móvil: watchlist como tira horizontal arriba. */}
+      <WatchlistStrip symbol={symbol} setSymbol={setSymbol} className="lg:hidden" />
       <MarketFuturesBar futures={futures} />
       <MarketRegimeBar regime={marketRegime} />
 
@@ -365,6 +371,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       {/* Espacio para que la barra de señal fija no tape el contenido */}
       {quote && <div className="h-16" />}
       <BottomSignalBar symbol={symbol} quote={quote} indicators={indicators} analysis={analysis} />
-    </main>
+      </main>
+    </div>
   );
 }
