@@ -104,6 +104,44 @@ function Stat({ label, value, color }) {
   );
 }
 
+function ActivityItem({ a }) {
+  const [open, setOpen] = useState(false);
+  const principios = a.principios || [];
+  const canOpen = principios.length > 0;
+  return (
+    <div className="card-flat px-4 py-2.5">
+      <button onClick={() => canOpen && setOpen((v) => !v)} className={`w-full flex items-start gap-2.5 text-left ${canOpen ? "cursor-pointer" : "cursor-default"}`}>
+        {a.tipo === "telegram"
+          ? <TelegramLogo size={16} weight="fill" className="text-[#229ED9] shrink-0 mt-0.5" />
+          : <Envelope size={16} weight="fill" className="text-[#c9a14a] shrink-0 mt-0.5" />}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] font-semibold text-[#1a3a32] truncate">{a.fuente}</p>
+            <span className="text-[9px] text-[#8a958f] shrink-0 font-mono">{fmtFecha(a.at)}</span>
+          </div>
+          <p className={`text-[12px] text-[#5c6b66] leading-snug mt-0.5 ${open ? "" : "line-clamp-2"}`}>{a.snippet || "(sin texto)"}</p>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {a.aprendidos > 0 && (
+            <span className="text-[10px] font-bold text-[#4a7c59] bg-[#4a7c5915] px-1.5 py-0.5 rounded-full">+{a.aprendidos}</span>
+          )}
+          {canOpen && <CaretDown size={12} className={`text-[#5c6b66] transition-transform ${open ? "rotate-180" : ""}`} />}
+        </div>
+      </button>
+      {open && (
+        <div className="mt-2 pl-6 space-y-1.5 border-t border-[#e5e0d8] pt-2">
+          <p className="text-[10px] uppercase tracking-wider text-[#5c6b66] font-mono">Aprendió:</p>
+          {principios.map((p, i) => (
+            <p key={i} className="text-[12px] text-[#0e1f1a] leading-snug flex gap-1.5">
+              <span className="text-[#4a7c59]">•</span><span>{p}</span>
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Principio({ p }) {
   const [open, setOpen] = useState(false);
   return (
@@ -187,23 +225,7 @@ export default function BrainView() {
         <div className="space-y-1.5">
           <p className="text-[11px] text-[#5c6b66] px-1">Cada mensaje/audio/foto que capta, en orden. Lo que aporta método suma principios; el ruido pasa sin añadir nada.</p>
           {actividad.length === 0 && <div className="card-flat p-6 text-center text-xs text-[#5c6b66]">Aún no ha capturado nada. Cuando llegue algo a tus fuentes, aparecerá aquí.</div>}
-          {actividad.map((a, i) => (
-            <div key={i} className="card-flat px-4 py-2.5 flex items-start gap-2.5">
-              {a.tipo === "telegram"
-                ? <TelegramLogo size={16} weight="fill" className="text-[#229ED9] shrink-0 mt-0.5" />
-                : <Envelope size={16} weight="fill" className="text-[#c9a14a] shrink-0 mt-0.5" />}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[11px] font-semibold text-[#1a3a32] truncate">{a.fuente}</p>
-                  <span className="text-[9px] text-[#8a958f] shrink-0 font-mono">{fmtFecha(a.at)}</span>
-                </div>
-                <p className="text-[12px] text-[#5c6b66] leading-snug line-clamp-2 mt-0.5">{a.snippet || "(sin texto)"}</p>
-              </div>
-              {a.aprendidos > 0 && (
-                <span className="shrink-0 text-[10px] font-bold text-[#4a7c59] bg-[#4a7c5915] px-1.5 py-0.5 rounded-full">+{a.aprendidos}</span>
-              )}
-            </div>
-          ))}
+          {actividad.map((a, i) => <ActivityItem key={i} a={a} />)}
         </div>
       ) : tab === "conocimiento" ? (
         <div className="space-y-2">

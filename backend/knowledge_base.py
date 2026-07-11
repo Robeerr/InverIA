@@ -121,15 +121,17 @@ async def add_learnings(db, aprendizajes: list, source: str = "") -> int:
     return n
 
 
-async def log_activity(db, tipo: str, fuente: str, snippet: str, aprendidos: int):
-    """Registra cada captura (Telegram/newsletter) para poder verla en el apartado
-    Cerebro: qué llegó, de dónde, cuándo y cuántos principios añadió."""
+async def log_activity(db, tipo: str, fuente: str, snippet: str, aprendidos: int,
+                       principios: list = None):
+    """Registra cada captura (Telegram/newsletter/vídeo) para verla en el Cerebro: qué
+    llegó, de dónde, cuándo, cuántos principios añadió y CUÁLES (para verlos al tocar)."""
     from datetime import datetime, timezone
     try:
         await db.brain_log.insert_one({
             "tipo": tipo, "fuente": fuente,
             "snippet": (snippet or "").strip()[:280],
             "aprendidos": int(aprendidos or 0),
+            "principios": [fix_mojibake(str(p)) for p in (principios or []) if p][:20],
             "at": datetime.now(timezone.utc).isoformat(),
         })
         # Poda: conserva solo los ~600 más recientes.

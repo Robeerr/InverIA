@@ -322,7 +322,8 @@ async def process_newsletter(db, subject: str, body_html: str, body_text: str = 
             db, data.get("aprendizajes") or [], source=subject[:80])
         await knowledge_base.log_activity(
             db, "newsletter", f"Newsletter › {subject}"[:100],
-            data.get("resumen") or subject, n_aprend)
+            data.get("resumen") or subject, n_aprend,
+            [a.get("principio") for a in (data.get("aprendizajes") or []) if a.get("principio")])
         if n_aprend:
             logger.info("newsletter: +%d aprendizajes al cerebro", n_aprend)
     except Exception:
@@ -363,7 +364,8 @@ async def store_extracted(db, fuente: str, data: dict, tipo: str, raw_text: str 
         n = await knowledge_base.add_learnings(db, data.get("aprendizajes") or [], source=fuente[:80])
     except Exception:
         pass
-    await knowledge_base.log_activity(db, tipo, fuente, data.get("resumen") or raw_text, n)
+    principios = [a.get("principio") for a in (data.get("aprendizajes") or []) if a.get("principio")]
+    await knowledge_base.log_activity(db, tipo, fuente, data.get("resumen") or raw_text, n, principios)
     return {"acciones": len(acciones), "aprendidos": n,
             "resumen": data.get("resumen"), "titulo": data.get("titulo"),
             "tickers": [(a.get("ticker") or "").upper() for a in acciones if a.get("ticker")]}
