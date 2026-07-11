@@ -197,6 +197,67 @@ def _detect_head_shoulders(highs, lows, price_range):
     return None
 
 
+def _detect_cup_handle(closes):
+    """Taza con asa (cup & handle, O'Neil): fondo redondeado + pequeña consolidación (asa)
+    cerca del borde. Alcista, favorito de los que rompen máximos."""
+    n = len(closes)
+    if n < 30:
+        return None
+    w = closes[-45:] if n >= 45 else closes[:]
+    m = len(w)
+    t = m // 3
+    left_rim = max(w[:t])
+    bottom = min(w[t:2 * t]) if w[t:2 * t] else min(w)
+    right = w[2 * t:]
+    right_rim = max(right) if right else max(w)
+    if not left_rim:
+        return None
+    depth = (left_rim - bottom) / left_rim
+    if not (0.08 <= depth <= 0.40):                 # profundidad razonable de taza
+        return None
+    if abs(left_rim - right_rim) / left_rim > 0.06:  # bordes a nivel similar
+        return None
+    handle_pull = (right_rim - min(w[-6:])) / right_rim if right_rim else 1
+    if handle_pull > 0.15:                           # el asa es un retroceso suave
+        return None
+    return {"tipo": "taza_asa", "nombre": "Taza con asa", "sentido": "alcista",
+            "descripcion": "Fondo redondeado (taza) y una pequeña consolidación (asa) cerca del "
+            "borde. Patrón alcista de O'Neil: se compra en la ruptura del borde con volumen."}
+
+
+def _detect_flat_base(closes):
+    """Base plana / Caja de Darvas: consolidación estrecha y horizontal cerca de máximos
+    tras una subida. Alcista en la ruptura del techo."""
+    n = len(closes)
+    if n < 25:
+        return None
+    base = closes[-15:]
+    avg = sum(base) / len(base)
+    rng = (max(base) - min(base)) / avg if avg else 1
+    recent_high = max(closes[-60:]) if n >= 60 else max(closes)
+    near_high = closes[-1] >= recent_high * 0.92
+    prior = closes[-30:-15] if n >= 30 else []
+    subio = bool(prior and (base[0] - prior[0]) / prior[0] > 0.05)
+    if rng < 0.08 and near_high and subio:
+        return {"tipo": "base_plana", "nombre": "Base plana / Caja de Darvas", "sentido": "alcista",
+                "descripcion": "Consolidación estrecha y horizontal cerca de máximos tras una subida "
+                "(caja de Darvas). Se compra en la ruptura del techo de la caja con volumen."}
+    return None
+
+
+def _detect_broadening(highs, lows):
+    """Megáfono (ensanchamiento): máximos crecientes + mínimos decrecientes = volatilidad
+    en expansión. Patrón a EVITAR (inestabilidad/distribución)."""
+    hp = _pivots(highs, "high")
+    lp = _pivots(lows, "low")
+    if len(hp) >= 2 and len(lp) >= 2:
+        if highs[hp[-1]] > highs[hp[-2]] and lows[lp[-1]] < lows[lp[-2]]:
+            return {"tipo": "megafono", "nombre": "Megáfono (ensanchamiento)", "sentido": "bajista",
+                    "descripcion": "Máximos crecientes y mínimos decrecientes: volatilidad en expansión "
+                    "e indecisión. Patrón a EVITAR — suele indicar distribución/inestabilidad."}
+    return None
+
+
 def _detect_pattern(trendlines, levels, closes, current_price):
     """Reconoce patrones sencillos a partir de las directrices y niveles ya detectados.
     Devuelve dict {nombre, descripcion, tipo} o None. Reglas geométricas, sin IA."""
@@ -320,12 +381,20 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
                                "descripcion": "Caída fuerte seguida de una pausa de consolidación. Patrón de "
                                "continuación: se espera ruptura a la baja que reanude el descenso."}
 
+    # Taza con asa y base plana (favoritos de ruptura de máximos): prioridad alta.
+    if pattern is None:
+        pattern = _detect_cup_handle(closes)
+    if pattern is None:
+        pattern = _detect_flat_base(closes)
     # Cabeza y hombros tiene prioridad sobre los patrones de directriz.
     if pattern is None:
         pattern = _detect_head_shoulders(highs, lows, price_range)
     # Si no hay doble suelo/techo ni H-C-H, prueba patrones de directrices.
     if pattern is None:
         pattern = _detect_pattern(trendlines, levels, closes, current_price)
+    # Megáfono (a evitar): último recurso, solo si no hay nada mejor.
+    if pattern is None:
+        pattern = _detect_broadening(highs, lows)
 
     # Patrón de VELAS reciente (independiente del patrón chartista de estructura).
     candlestick = _detect_candlesticks(candles)
