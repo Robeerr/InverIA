@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { Bell, BellSlash, Trash, Plus, X, UploadSimple, ArrowClockwise, Lightning, Bank, Camera } from "@phosphor-icons/react";
+import { Bell, BellSlash, Trash, Plus, X, UploadSimple, ArrowClockwise, Lightning, Camera } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 const API = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
@@ -11,7 +11,7 @@ const authHeaders = () => {
 // ── sub-tabs ───────────────────────────────────────────────────────────────────
 const GRUPOS = [
   { key: "ideas_javi", label: "Cartera",   icon: Lightning },
-  { key: "cimientos",  label: "Cimientos", icon: Bank },
+  // "Cimientos" retirado (no se usaba). El código de la vista queda inerte.
 ];
 const grupoOf = (e) => e.grupo || "ideas_javi"; // entradas antiguas → Cartera
 
@@ -454,7 +454,8 @@ export default function SignalsView({ setSymbol }) {
         </div>
       </div>
 
-      {/* Sub-tabs */}
+      {/* Sub-tabs (solo si hay más de un grupo) */}
+      {GRUPOS.length > 1 && (
       <div className="flex items-center gap-1 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg p-1 w-fit">
         {GRUPOS.map((g) => {
           const Icon = g.icon;
@@ -475,6 +476,7 @@ export default function SignalsView({ setSymbol }) {
           );
         })}
       </div>
+      )}
 
       {/* Legend */}
       {isCim ? (

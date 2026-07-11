@@ -120,6 +120,17 @@ async def lifespan(app: FastAPI):
     # DB indexes
     await db.signal_entries.create_index("symbol")
     await db.signal_entries.create_index("active")
+
+    # Limpieza: el grupo "Cimientos" se ha retirado. Borra sus entradas para que no
+    # aparezcan en Alertas ni en el Calendario. (No se crean nuevas: la UI ya no lo ofrece.)
+    try:
+        _rm = await db.signal_entries.delete_many({"grupo": "cimientos"})
+        if _rm.deleted_count:
+            logger.info("Cimientos retirado: %d entradas borradas", _rm.deleted_count)
+            _cache._store.pop("signals_list", None)
+            _cache._store.pop("signals_hot", None)
+    except Exception as e:
+        logger.warning(f"Purga de Cimientos falló: {e}")
     await db.analyses.create_index([("symbol", 1), ("created_at", -1)])
     await db.watchlist.create_index("symbol")
     await db.alerts.create_index("symbol")

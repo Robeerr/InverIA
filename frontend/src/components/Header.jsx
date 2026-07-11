@@ -55,7 +55,7 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
   };
 
   const testTelegram = async () => {
-    for (const [grupo, label] of [["ideas_javi", "Cartera"], ["cimientos", "Cimientos"]]) {
+    for (const [grupo, label] of [["ideas_javi", "Cartera"]]) {
       try {
         await api.alerts.testTelegram(grupo);
         toast.success(`Telegram ${label}: enviado ✓`);
