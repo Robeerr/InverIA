@@ -29,6 +29,18 @@ export default function CalendarView({ setSymbol }) {
     return [...new Set(entries.map((e) => e.symbol).filter(Boolean))];
   }, [signals]);
 
+  // Mapa símbolo → grupo de Alertas (Cartera / Cimientos), para ver de qué pestaña sale
+  // cada earnings (así identificas los que no recuerdas haber añadido).
+  const symGroup = React.useMemo(() => {
+    const entries = Array.isArray(signals) ? signals : (signals?.items || signals?.entries || []);
+    const labels = { ideas_javi: "Cartera", cimientos: "Cimientos" };
+    const m = {};
+    entries.forEach((e) => {
+      if (e.symbol) m[e.symbol.toUpperCase()] = labels[e.grupo || "ideas_javi"] || (e.grupo || "Cartera");
+    });
+    return m;
+  }, [signals]);
+
   // Earnings de esos símbolos: el backend los trae en paralelo por símbolo.
   const earningsQuery = useQuery({
     queryKey: ["earnings", days, syms, refreshN],
@@ -104,7 +116,14 @@ export default function CalendarView({ setSymbol }) {
                   {it.symbol.slice(0, 4)}
                 </div>
                 <div>
-                  <p className="font-mono font-semibold text-sm text-[#0e1f1a]">{it.symbol}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="font-mono font-semibold text-sm text-[#0e1f1a]">{it.symbol}</p>
+                    {symGroup[it.symbol?.toUpperCase()] && (
+                      <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-[#1a3a32]/10 text-[#1a3a32]">
+                        {symGroup[it.symbol.toUpperCase()]}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[10px] text-[#5c6b66]">Q{it.quarter} {it.year}</p>
                 </div>
                 <div>
