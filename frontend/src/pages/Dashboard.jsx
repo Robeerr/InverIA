@@ -123,7 +123,15 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       if (data.volume_profile) setVolumeProfile(data.volume_profile);
       if (data.market_regime) setMarketRegime(data.market_regime);
     } catch (e) {
-      if (my === reqId.current) toast.error("Error al cargar datos");
+      if (my === reqId.current) {
+        const st = e?.response?.status;
+        if (st === 404) {
+          setQuote(null);
+          toast.error(`"${sym}" no existe. Revisa el símbolo (p.ej. AAPL, no APPL).`);
+        } else {
+          toast.error("Error al cargar datos. Inténtalo de nuevo.");
+        }
+      }
     } finally {
       if (my === reqId.current) setLoadingQuote(false);
     }
