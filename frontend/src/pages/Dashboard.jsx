@@ -7,6 +7,7 @@ import RecommendationPanel from "../components/RecommendationPanel";
 import AnalysisSummaryPanel from "../components/AnalysisSummaryPanel";
 import SourcesPanel from "../components/SourcesPanel";
 import { AlternativePanel } from "../components/MoreInsights";
+import WatchlistStrip from "../components/WatchlistStrip";
 import IndicatorsPanel from "../components/IndicatorsPanel";
 import TradingLevels from "../components/TradingLevels";
 import WhyMovingCard from "../components/WhyMovingCard";
@@ -284,6 +285,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
 
   return (
     <main data-testid="main-dashboard" className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+      <WatchlistStrip symbol={symbol} setSymbol={setSymbol} />
       <MarketFuturesBar futures={futures} />
       <MarketRegimeBar regime={marketRegime} />
 

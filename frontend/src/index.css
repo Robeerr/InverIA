@@ -236,3 +236,7 @@ body {
         display: contents !important;
     }
 }
+
+/* Ocultar scrollbar horizontal (watchlist strip estilo terminal) */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
