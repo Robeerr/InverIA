@@ -8,6 +8,7 @@ import AnalysisSummaryPanel from "../components/AnalysisSummaryPanel";
 import SourcesPanel from "../components/SourcesPanel";
 import { AlternativePanel } from "../components/MoreInsights";
 import WatchlistStrip from "../components/WatchlistStrip";
+import BottomSignalBar from "../components/BottomSignalBar";
 import IndicatorsPanel from "../components/IndicatorsPanel";
 import TradingLevels from "../components/TradingLevels";
 import WhyMovingCard from "../components/WhyMovingCard";
@@ -360,6 +361,10 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       {analysis && <RisksCatalystsCard analysis={analysis} />}
 
       <NewsFeed news={news} />
+
+      {/* Espacio para que la barra de señal fija no tape el contenido */}
+      {quote && <div className="h-16" />}
+      <BottomSignalBar symbol={symbol} quote={quote} indicators={indicators} analysis={analysis} />
     </main>
   );
 }
