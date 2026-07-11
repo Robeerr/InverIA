@@ -837,15 +837,17 @@ async def analyze_youtube(url: str) -> dict:
         raise RuntimeError("GEMINI_API_KEY no configurada — necesaria para leer el vídeo.")
     client = genai.Client(api_key=api_key)
     video_part = genai_types.Part(file_data=genai_types.FileData(file_uri=url))
-    cfg_kwargs = dict(temperature=0.2, max_output_tokens=6000,
-                      response_mime_type="application/json")
+    base_kwargs = dict(temperature=0.2, max_output_tokens=6000,
+                       response_mime_type="application/json")
     # Baja resolución de vídeo: en una clase hablada lo valioso es el AUDIO, no los
     # fotogramas en HD. Reduce muchísimo los tokens y evita el límite (vídeos largos ~1h).
+    # Si la versión de la librería no lo soporta, se construye sin ese parámetro.
+    config = None
     try:
-        cfg_kwargs["media_resolution"] = genai_types.MediaResolution.MEDIA_RESOLUTION_LOW
+        config = genai_types.GenerateContentConfig(
+            media_resolution=genai_types.MediaResolution.MEDIA_RESOLUTION_LOW, **base_kwargs)
     except Exception:
-        pass
-    config = genai_types.GenerateContentConfig(**cfg_kwargs)
+        config = genai_types.GenerateContentConfig(**base_kwargs)
     response = await asyncio.to_thread(
         client.models.generate_content,
         model="gemini-2.5-flash",
