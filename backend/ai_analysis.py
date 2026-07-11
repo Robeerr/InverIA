@@ -817,7 +817,14 @@ Extrae TODO lo útil y devuelve SOLO un JSON válido (sin markdown) con esta est
   ]
 }
 Deduce el ticker del nombre si hace falta. No inventes niveles que no se digan. Si el vídeo no
-habla de acciones, deja "acciones" vacío pero rellena resumen y aprendizajes si enseña método."""
+habla de acciones, deja "acciones" vacío pero rellena resumen y aprendizajes si enseña método.
+
+MUY IMPORTANTE con "aprendizajes": si es un vídeo EDUCATIVO / clase de método (cómo elegir
+acciones, cómo entrar, gestión de riesgo, patrones, position sizing, psicología...), NO te quedes
+en 1. Extrae CADA regla o principio distinto que enseñe, como aprendizajes SEPARADOS — normalmente
+5 a 10 en una clase densa. Cada patrón (VCP, caja de Darvas, copa y asa, bandera...), cada regla de
+stop, cada criterio de selección, cada regla de sizing o de venta = un aprendizaje propio, general
+y reutilizable. Exprime el método al máximo; es lo más valioso del vídeo."""
 
 
 async def analyze_youtube(url: str) -> dict:
@@ -831,7 +838,7 @@ async def analyze_youtube(url: str) -> dict:
     client = genai.Client(api_key=api_key)
     video_part = genai_types.Part(file_data=genai_types.FileData(file_uri=url))
     config = genai_types.GenerateContentConfig(
-        temperature=0.2, max_output_tokens=4000, response_mime_type="application/json")
+        temperature=0.2, max_output_tokens=6000, response_mime_type="application/json")
     response = await asyncio.to_thread(
         client.models.generate_content,
         model="gemini-2.5-flash",
