@@ -109,14 +109,14 @@ export default function CalendarView({ setSymbol }) {
               <div
                 key={`${it.symbol}-${i}`}
                 data-testid={`earnings-${it.symbol}`}
-                className="grid grid-cols-[80px_1fr_120px_120px_24px] items-center gap-3 p-2 hover:bg-[#f5f3ef] rounded cursor-pointer"
+                className="flex items-center gap-3 p-2 hover:bg-[#f5f3ef] rounded cursor-pointer"
                 onClick={() => { setSymbol(it.symbol); navigate("/"); }}
               >
-                <div className="w-12 h-12 rounded-md bg-[#1a3a32] text-[#f5f3ef] flex items-center justify-center font-mono font-bold text-xs">
+                <div className="w-11 h-11 rounded-md bg-[#1a3a32] text-[#f5f3ef] flex items-center justify-center font-mono font-bold text-xs shrink-0">
                   {it.symbol.slice(0, 4)}
                 </div>
-                <div>
-                  <div className="flex items-center gap-1.5">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <p className="font-mono font-semibold text-sm text-[#0e1f1a]">{it.symbol}</p>
                     {symGroup[it.symbol?.toUpperCase()] && (
                       <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-[#1a3a32]/10 text-[#1a3a32]">
@@ -124,17 +124,15 @@ export default function CalendarView({ setSymbol }) {
                       </span>
                     )}
                   </div>
-                  <p className="text-[10px] text-[#5c6b66]">Q{it.quarter} {it.year}</p>
+                  <p className="text-[10px] text-[#5c6b66] truncate">
+                    Q{it.quarter} {it.year} · {hourLabel(it.hour)}
+                  </p>
                 </div>
-                <div>
-                  <p className="font-mono text-[10px] uppercase text-[#5c6b66]">EPS estimado</p>
-                  <p className="font-mono text-sm">{it.eps_estimate ?? "—"}</p>
+                <div className="text-right shrink-0">
+                  <p className="font-mono text-[9px] uppercase text-[#5c6b66]">EPS est.</p>
+                  <p className="font-mono text-sm text-[#0e1f1a]">{it.eps_estimate ?? "—"}</p>
                 </div>
-                <div>
-                  <p className="font-mono text-[10px] uppercase text-[#5c6b66]">Momento</p>
-                  <p className="font-mono text-xs">{hourLabel(it.hour)}</p>
-                </div>
-                <ArrowRight size={14} className="text-[#5c6b66]" />
+                <ArrowRight size={14} className="text-[#5c6b66] shrink-0" />
               </div>
             ))}
           </div>
