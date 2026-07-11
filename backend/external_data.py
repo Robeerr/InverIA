@@ -644,12 +644,23 @@ def finnhub_earnings_calendar(days: int = 14, symbols=None):
             })
         out.sort(key=lambda x: x.get("date") or "")
 
-        # Fallback: if bulk returned nothing for our symbols, fetch individually (max 5)
-        if sym_set and not out:
-            fallback_syms = list(sym_set)[:5]
-            for sym in fallback_syms:
-                out.extend(_fetch_earnings_for_symbol(sym, from_str, to_str, key))
-            out.sort(key=lambda x: x.get("date") or "")
+        # Relleno por-símbolo de los que FALTEN en el lote (el masivo de Finnhub free se
+        # trunca y deja fuera acciones como NFLX). Antes solo se rellenaba si no había
+        # NINGUNA → las que faltaban no aparecían nunca. Ahora cada símbolo pedido que no
+        # esté en el resultado se busca individualmente.
+        if sym_set:
+            encontrados = {x["symbol"] for x in out}
+            faltan = [s for s in sym_set if s not in encontrados][:25]
+            if faltan:
+                with ThreadPoolExecutor(max_workers=5) as ex:
+                    futs = [ex.submit(_fetch_earnings_for_symbol, s, from_str, to_str, key)
+                            for s in faltan]
+                    for f in as_completed(futs):
+                        try:
+                            out.extend(f.result() or [])
+                        except Exception:
+                            pass
+                out.sort(key=lambda x: x.get("date") or "")
 
         return {"items": out, "from": from_str, "to": to_str}
     except Exception:
