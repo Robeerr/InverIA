@@ -38,8 +38,13 @@ async def ingest_youtube(db, url: str) -> dict:
     try:
         data = await ai_analysis.analyze_youtube(_normalize(url))
     except Exception as e:
-        logger.warning("youtube: Gemini no pudo con el vídeo (%s)", str(e)[:150])
-        return {"ok": False, "error": f"Gemini no pudo leer el vídeo: {str(e)[:160]}"}
+        msg = str(e)
+        logger.warning("youtube: Gemini no pudo con el vídeo (%s)", msg[:150])
+        if "token count exceeds" in msg or "1048576" in msg:
+            return {"ok": False, "error": "El vídeo es demasiado largo para procesarlo de una vez. "
+                    "Usa '¿Falla? Pega la transcripción / texto a mano' (abre el vídeo en YouTube → "
+                    "Mostrar transcripción → copia y pega)."}
+        return {"ok": False, "error": f"Gemini no pudo leer el vídeo: {msg[:160]}"}
     if not isinstance(data, dict) or not (data.get("resumen") or data.get("acciones")):
         return {"ok": False, "error": "Gemini no sacó nada útil del vídeo."}
     fuente = f"YouTube › {(data.get('titulo') or video_id(url))}"[:80]
