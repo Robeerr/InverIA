@@ -599,22 +599,33 @@ def _cards_html(ideas) -> str:
 
 async def digest_loop(db):
     """Envía el resumen diario UNA vez al día, tras el cierre de mercado US (~16:10 ET
-    ≈ 22:10 hora España). Comprueba cada 30 min y marca el día ya enviado para no repetir."""
+    ≈ 22:10 hora España). El 'ya enviado hoy' se guarda en Mongo para NO reenviar cuando
+    Render redespliega (el bug de recibirlo 3 veces era por perder ese estado en memoria)."""
     logger.info("Digest diario del Analista arrancado")
-    last_sent_date = None
     while True:
         try:
             now = datetime.now(EASTERN)
             past_close = now.hour * 60 + now.minute >= 16 * 60 + 10  # 16:10 ET
             is_weekday = now.weekday() < 5
             today = now.date().isoformat()
-            if is_weekday and past_close and last_sent_date != today:
-                res = await send_daily_digest(db)
-                if res.get("sent"):
-                    last_sent_date = today
-                    logger.info(f"Digest diario enviado: {res['ideas']} ideas")
-                else:
-                    logger.warning(f"Digest diario no enviado: {res.get('error')}")
+            if is_weekday and past_close:
+                # Asegura que el doc existe, luego reclama el envío de HOY de forma atómica:
+                # solo una ejecución (aunque haya varios reinicios/instancias) consigue
+                # modified_count>0 y envía. El resto ve que ya está hecho y no reenvía.
+                await db.analyst_config.update_one(
+                    {"_id": "digest"}, {"$setOnInsert": {"last_sent_date": None}}, upsert=True)
+                claim = await db.analyst_config.update_one(
+                    {"_id": "digest", "last_sent_date": {"$ne": today}},
+                    {"$set": {"last_sent_date": today}})
+                if (claim.modified_count or 0) > 0:
+                    res = await send_daily_digest(db)
+                    if res.get("sent"):
+                        logger.info(f"Digest diario enviado: {res['ideas']} ideas")
+                    else:
+                        # Falló el envío: libera la marca para reintentar en el próximo ciclo.
+                        await db.analyst_config.update_one(
+                            {"_id": "digest"}, {"$set": {"last_sent_date": None}})
+                        logger.warning(f"Digest diario no enviado: {res.get('error')}")
             await asyncio.sleep(30 * 60)
         except asyncio.CancelledError:
             raise
