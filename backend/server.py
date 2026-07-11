@@ -1452,9 +1452,22 @@ async def earnings_calendar(days: int = 14, symbols: Optional[str] = None):
         cached = data or {"items": []}
         _cache.set(cache_key, cached, ttl=7200)  # 2h — earnings don't change intraday
 
-    # Filter down to the requested day window
+    # Ventana: desde HOY hasta +days. Y deduplica por símbolo (Finnhub a veces devuelve
+    # la misma acción con dos fechas → salía repetida): nos quedamos con la MÁS CERCANA.
+    hoy = datetime.now(timezone.utc).date().isoformat()
     cutoff = (datetime.now(timezone.utc).date() + timedelta(days=days)).isoformat()
-    filtered = [it for it in (cached.get("items") or []) if (it.get("date") or "") <= cutoff]
+    permitido = set(sym_list) if sym_list else None
+    por_symbol: dict = {}
+    for it in (cached.get("items") or []):
+        d = it.get("date") or ""
+        sym = (it.get("symbol") or "").upper()
+        if not (hoy <= d <= cutoff):
+            continue
+        if permitido is not None and sym not in permitido:
+            continue  # solo tus acciones de Alertas
+        if sym not in por_symbol or d < por_symbol[sym]["date"]:
+            por_symbol[sym] = it
+    filtered = sorted(por_symbol.values(), key=lambda x: x.get("date") or "")
     return {"items": filtered}
 
 
