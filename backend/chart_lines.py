@@ -143,6 +143,20 @@ def _detect_candlesticks(candles):
     if b2 > 0 and cl_(c2) > o(c2) and b1 < b2 * 0.5 and cl_(c0) < o(c0) and cl_(c0) < (o(c2) + cl_(c2)) / 2:
         return {"tipo": "estrella_anochecer", "nombre": "Estrella del anochecer", "sentido": "bajista",
                 "descripcion": "Patrón bajista de 3 velas que confirma el fin de una tendencia alcista."}
+    # Tres soldados blancos / tres cuervos negros: 3 velas del mismo color con cierres
+    # progresivos y apertura dentro del cuerpo previo (impulso sostenido).
+    up3 = (cl_(c2) > o(c2) and cl_(c1) > o(c1) and cl_(c0) > o(c0)
+           and cl_(c0) > cl_(c1) > cl_(c2)
+           and o(c1) <= cl_(c2) and o(c0) <= cl_(c1) and o(c1) >= o(c2) and o(c0) >= o(c1))
+    if up3 and b1 > 0 and b2 > 0:
+        return {"tipo": "tres_soldados", "nombre": "Tres soldados blancos", "sentido": "alcista",
+                "descripcion": "Tres velas verdes consecutivas con cierres crecientes: impulso comprador sostenido, reversión/continuación alcista."}
+    dn3 = (cl_(c2) < o(c2) and cl_(c1) < o(c1) and cl_(c0) < o(c0)
+           and cl_(c0) < cl_(c1) < cl_(c2)
+           and o(c1) >= cl_(c2) and o(c0) >= cl_(c1) and o(c1) <= o(c2) and o(c0) <= o(c1))
+    if dn3 and b1 > 0 and b2 > 0:
+        return {"tipo": "tres_cuervos", "nombre": "Tres cuervos negros", "sentido": "bajista",
+                "descripcion": "Tres velas rojas consecutivas con cierres decrecientes: presión vendedora sostenida, reversión/continuación bajista."}
 
     # --- Patrones de 2 velas ---
     if cl_(c1) < o(c1) and cl_(c0) > o(c0) and cl_(c0) >= o(c1) and o(c0) <= cl_(c1):
@@ -154,6 +168,15 @@ def _detect_candlesticks(candles):
     if cl_(c1) > o(c1) and cl_(c0) < o(c0) and o(c0) > h(c1) and cl_(c0) < (o(c1) + cl_(c1)) / 2:
         return {"tipo": "nube_oscura", "nombre": "Cubierta de nube oscura", "sentido": "bajista",
                 "descripcion": "Vela bajista que abre por encima y cierra bajo la mitad de la verde previa: señal bajista."}
+    # Harami: cuerpo pequeño CONTENIDO dentro del cuerpo grande anterior (color opuesto) →
+    # pérdida de impulso, posible reversión (confirmar con la vela siguiente).
+    if b1 > 0 and body <= b1 * 0.5 and max(o(c0), cl_(c0)) <= max(o(c1), cl_(c1)) and min(o(c0), cl_(c0)) >= min(o(c1), cl_(c1)):
+        if cl_(c1) < o(c1) and cl_(c0) > o(c0) and prev_trend_dn:
+            return {"tipo": "harami_alcista", "nombre": "Harami alcista", "sentido": "alcista",
+                    "descripcion": "Vela verde pequeña contenida dentro de una roja grande tras una caída: se frena la presión vendedora, posible giro alcista."}
+        if cl_(c1) > o(c1) and cl_(c0) < o(c0) and prev_trend_up:
+            return {"tipo": "harami_bajista", "nombre": "Harami bajista", "sentido": "bajista",
+                    "descripcion": "Vela roja pequeña contenida dentro de una verde grande tras una subida: se frena la presión compradora, posible giro bajista."}
 
     # --- Patrones de 1 vela (martillo/estrella ANTES que doji: son más específicos) ---
     if body > 0 and lower >= body * 2 and upper <= body * 0.6 and prev_trend_dn:
