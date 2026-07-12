@@ -173,27 +173,203 @@ def _detect_candlesticks(candles):
     return None
 
 
-def _detect_head_shoulders(highs, lows, price_range):
-    """Cabeza y Hombros (bajista) e invertido (alcista). 3 picos donde el central destaca
-    y los hombros están a nivel similar. Devuelve dict o None."""
-    if price_range <= 0:
+def _eval_hch(sign, peak_vals, valley_vals, closes, atr, price_range):
+    """Evalúa Cabeza y Hombros en un SENTIDO. Con sign=+1 busca el TECHO (HI/C/HD son
+    máximos de `peak_vals`=highs, axilas mínimos de `valley_vals`=lows); con sign=-1 busca el
+    SUELO/invertido (HI/C/HD mínimos de lows, axilas máximos de highs). Trabajando en el
+    "espacio transformado" t = sign*precio, la geometría del invertido queda idéntica a la
+    del techo (más extremo = mayor t), así una sola rutina sirve para ambos.
+    Devuelve el dict de dibujo (pivotes/neckline/objetivo) o None."""
+    n = len(peak_vals)
+    if n < 30 or price_range <= 0:
         return None
-    hi = _pivots(highs, "high")
-    if len(hi) >= 3:
-        a, b, c = hi[-3], hi[-2], hi[-1]
-        ha, hb, hc = highs[a], highs[b], highs[c]
-        if hb > ha and hb > hc and abs(ha - hc) / price_range < 0.05 and (hb - max(ha, hc)) / price_range > 0.03:
-            return {"tipo": "cabeza_hombros", "nombre": "Cabeza y hombros", "sentido": "bajista",
-                    "descripcion": "Tres picos con el central más alto: patrón clásico de reversión bajista. "
-                    "La pérdida de la línea clavicular confirma la caída."}
-    lo = _pivots(lows, "low")
-    if len(lo) >= 3:
-        a, b, c = lo[-3], lo[-2], lo[-1]
-        la, lb, lc = lows[a], lows[b], lows[c]
-        if lb < la and lb < lc and abs(la - lc) / price_range < 0.05 and (min(la, lc) - lb) / price_range > 0.03:
-            return {"tipo": "hch_invertido", "nombre": "Hombro-cabeza-hombro invertido", "sentido": "alcista",
-                    "descripcion": "Tres valles con el central más bajo: reversión alcista. La ruptura de la "
-                    "clavicular confirma la subida."}
+    # Pivotes: para el techo picos=máximos, axilas=mínimos; invertido al revés.
+    peaks = _pivots(peak_vals, "high" if sign > 0 else "low")
+    valleys = _pivots(valley_vals, "low" if sign > 0 else "high")
+    if len(peaks) < 3 or len(valleys) < 2:
+        return None
+    peaks = peaks[-9:]  # solo estructura RECIENTE (acota el bucle y prioriza lo relevante)
+
+    def t(v):            # espacio transformado: cabeza = valor máximo
+        return sign * v
+
+    best = None
+    best_key = None
+
+    # Recorre triples de picos (HI, C, HD); C debe ser el pico más extremo de los tres.
+    for ia in range(len(peaks) - 2):
+        for ib in range(ia + 1, len(peaks) - 1):
+            for ic in range(ib + 1, len(peaks)):
+                HI, C, HD = peaks[ia], peaks[ib], peaks[ic]
+                # (0) separación mínima temporal → evita picos pegados (poco fiables).
+                if (C - HI) < 3 or (HD - C) < 3:
+                    continue
+                pHI, pC, pHD = peak_vals[HI], peak_vals[C], peak_vals[HD]
+                tHI, tC, tHD = t(pHI), t(pC), t(pHD)
+                # (1) La CABEZA debe ser el pico más extremo (estrictamente).
+                if not (tC > tHI and tC > tHD):
+                    continue
+                # Axilas: pivote-valle más extremo (más profundo) a cada lado de la Cabeza.
+                left = [v for v in valleys if HI < v < C]
+                right = [v for v in valleys if C < v < HD]
+                if not left or not right:
+                    continue
+                A1 = min(left, key=lambda v: t(valley_vals[v]))
+                A2 = min(right, key=lambda v: t(valley_vals[v]))
+                pA1, pA2 = valley_vals[A1], valley_vals[A2]
+
+                # --- CRITERIO 1: prominencia de la Cabeza (>=3% sobre el hombro más alto).
+                higher_t = max(tHI, tHD)
+                ref_price = pHI if tHI >= tHD else pHD   # hombro de referencia (el más "difícil")
+                prom = tC - higher_t                     # prominencia en magnitud de precio (>0)
+                if prom < 0.03 * abs(ref_price):
+                    continue  # <3% → es Triple Techo/Suelo, no Cabeza y Hombros
+
+                # --- CRITERIO 2: simetría de altura de hombros (<5% del nivel de la Cabeza).
+                if abs(pHI - pHD) / abs(pC) >= 0.05:
+                    continue
+                # equivalente estricto: diferencia de hombros < 1/3 de la prominencia.
+                if abs(pHI - pHD) >= prom / 3.0:
+                    continue
+
+                # --- CRITERIO 3: simetría temporal (ratio HI->C / C->HD en 0.80-1.20).
+                ratio_t = (C - HI) / (HD - C)
+                if not (0.80 <= ratio_t <= 1.20):
+                    continue
+
+                # --- Neckline y altura del patrón (proyección vertical de C a la clavicular).
+                def nl_at(x):
+                    if A2 == A1:
+                        return pA1
+                    return pA1 + (pA2 - pA1) / (A2 - A1) * (x - A1)
+
+                altura = abs(pC - nl_at(C))
+                if altura <= 0:
+                    continue
+
+                # --- CRITERIO 5a: amplitud significativa (>= 2*ATR14) para descartar ruido.
+                if atr > 0 and altura < 2.0 * atr:
+                    continue
+
+                # --- CRITERIO 4: axilas cercanas / neckline poco inclinada (<30% de la altura).
+                if abs(pA1 - pA2) >= 0.30 * altura:
+                    continue
+
+                # Ambos hombros por encima (techo) / por debajo (invertido) de la neckline.
+                if sign * (pHI - nl_at(HI)) <= 0 or sign * (pHD - nl_at(HD)) <= 0:
+                    continue
+
+                # --- CRITERIO 5b: valles REALES → cada axila retrocede >=30% de la altura
+                # respecto al pico adyacente (descarta techo/suelo REDONDEADO sin axilas).
+                if (min(tHI, tC) - t(pA1)) < 0.30 * altura:
+                    continue
+                if (min(tHD, tC) - t(pA2)) < 0.30 * altura:
+                    continue
+
+                # --- DISCRIMINADOR de tendencia previa: el techo exige tendencia ALCISTA hacia
+                # HI/C; el invertido, BAJISTA. (Umbral 7% relajado.)
+                lb = 20
+                pre = [t(closes[k]) for k in range(max(0, HI - lb), HI)]
+                if not pre:
+                    continue
+                pre_start = min(pre)  # arranque de la tendencia en espacio transformado
+                if (t(closes[HI]) - pre_start) < 0.07 * abs(pre_start):
+                    continue
+
+                # --- CRITERIO 7: confirmación por RUPTURA de la neckline tras el HD, con filtro
+                # anti-latigazo (penetración > 0.5-1.0% del precio o > 0.5*ATR).
+                brk = None
+                for k in range(HD + 1, len(closes)):
+                    filt = max(0.005 * closes[k], 0.5 * atr)
+                    if sign * (nl_at(k) - closes[k]) > filt:  # cierre más allá de la clavicular
+                        brk = k
+                        break
+                confirmado = brk is not None
+
+                # Puntuación: preferimos patrón CONFIRMADO, luego el más RECIENTE, luego el más
+                # simétrico (ratio~1 y hombros a la misma altura).
+                sym = abs(1.0 - ratio_t) + abs(pHI - pHD) / abs(pC)
+                key = (1 if confirmado else 0, HD, -sym)
+                if best_key is None or key > best_key:
+                    best_key = key
+                    best = {
+                        "HI": HI, "A1": A1, "C": C, "A2": A2, "HD": HD,
+                        "pHI": pHI, "pA1": pA1, "pC": pC, "pA2": pA2, "pHD": pHD,
+                        "altura": altura, "brk": brk, "confirmado": confirmado,
+                        "nl_at": nl_at,
+                    }
+
+    if best is None:
+        return None
+
+    nl_at = best["nl_at"]
+    HI, A1, C, A2, HD = best["HI"], best["A1"], best["C"], best["A2"], best["HD"]
+    altura = best["altura"]
+    brk = best["brk"]
+
+    # ----- PUNTOS DE DIBUJO -----
+    pivotes = [
+        {"label": "HI", "index": int(HI), "price": round(float(best["pHI"]), 2)},
+        {"label": "A1", "index": int(A1), "price": round(float(best["pA1"]), 2)},
+        {"label": "C",  "index": int(C),  "price": round(float(best["pC"]), 2)},
+        {"label": "A2", "index": int(A2), "price": round(float(best["pA2"]), 2)},
+        {"label": "HD", "index": int(HD), "price": round(float(best["pHD"]), 2)},
+    ]
+    x_end = brk if brk is not None else len(closes) - 1
+    neckline = [
+        {"index": int(A1), "price": round(float(best["pA1"]), 2)},
+        {"index": int(x_end), "price": round(float(nl_at(x_end)), 2)},
+    ]
+    objetivo = None
+    if brk is not None:
+        target_price = nl_at(brk) - sign * altura   # techo: restar h; invertido: sumar h
+        objetivo = {
+            "ruptura": {"index": int(brk), "price": round(float(closes[brk]), 2)},
+            "target":  {"index": int(brk), "price": round(float(target_price), 2)},
+            "altura":  round(float(altura), 2),
+        }
+
+    return {
+        "confirmado": best["confirmado"],
+        "puntos": {"pivotes": pivotes, "neckline": neckline, "objetivo": objetivo},
+    }
+
+
+def _detect_head_shoulders(highs, lows, closes, price_range):
+    """Cabeza y Hombros (techo, bajista) e invertido (suelo, alcista). Detector de REVERSIÓN
+    de 5 pivotes alternos (HI, A1, C, A2, HD) con validación geométrica completa (Bulkowski):
+    prominencia de la Cabeza >=3%, hombros simétricos (<5%), simetría temporal (0.8-1.2),
+    axilas reales (>=30% de la altura) con neckline poco inclinada, altura >=2*ATR, tendencia
+    previa coherente y, si existe, ruptura confirmada de la clavicular con objetivo. Rechaza
+    triple techo/suelo, redondeado, doble techo/suelo, canales/cuñas y 3 picos aleatorios."""
+    if price_range <= 0 or len(closes) < 30:
+        return None
+    atr = _atr(highs, lows, closes, 14)
+
+    variantes = (
+        (1,  highs, lows, "cabeza_hombros", "Cabeza y hombros", "bajista",
+         "Tres máximos con la Cabeza claramente por encima de los dos hombros (simétricos) "
+         "tras una tendencia alcista: reversión BAJISTA."),
+        (-1, lows, highs, "hch_invertido", "Hombro-cabeza-hombro invertido", "alcista",
+         "Tres mínimos con la Cabeza claramente por debajo de los dos hombros (simétricos) "
+         "tras una tendencia bajista: reversión ALCISTA."),
+    )
+    for sign, pv, vv, tipo, nombre, sentido, base_desc in variantes:
+        res = _eval_hch(sign, pv, vv, closes, atr, price_range)
+        if not res:
+            continue
+        if res["confirmado"]:
+            confirm = (" La clavicular ya se ha PERDIDO: patrón confirmado; objetivo = precio "
+                       "de ruptura −/+ la altura del patrón.")
+        else:
+            confirm = (" Formación aún NO confirmada: espera el cierre más allá de la línea "
+                       "clavicular (con filtro > 0.5% o 0.5·ATR) para validarla.")
+        return {
+            "tipo": tipo, "nombre": nombre, "sentido": sentido,
+            "descripcion": base_desc + confirm,
+            "confirmado": res["confirmado"],
+            "puntos": res["puntos"],
+        }
     return None
 
 
@@ -944,6 +1120,225 @@ def _detect_wedge(highs, lows, closes, volumes=None):
     }
 
 
+def _argmax(seq):
+    """Índice del máximo (sin numpy; el módulo trabaja sobre listas)."""
+    best, bi = seq[0], 0
+    for i, v in enumerate(seq):
+        if v > best:
+            best, bi = v, i
+    return bi
+
+
+def _argmin(seq):
+    """Índice del mínimo."""
+    best, bi = seq[0], 0
+    for i, v in enumerate(seq):
+        if v < best:
+            best, bi = v, i
+    return bi
+
+
+def _detect_double(highs, lows, closes):
+    """Doble suelo (W, reversión ALCISTA) y Doble techo (M, reversión BAJISTA).
+
+    Motor riguroso: exige tendencia previa contraria, dos extremos ~iguales (A,C),
+    un retroceso intermedio B significativo (el cuello) y separación/simetría temporal.
+    Rechaza los falsos positivos clásicos: V-bottom, redondeado, cabeza-hombros,
+    triple suelo/techo, rango lateral, patrón sesgado y fakeout. Devuelve el dict del
+    patrón + `puntos` (A,B,C,D) y `lineas` de dibujo, o None."""
+    n = len(closes)
+    if n < 30:                      # hace falta histórico para la tendencia previa + el patrón
+        return None
+    if max(highs) - min(lows) <= 0:
+        return None
+
+    EQ_MAX     = 0.03   # |A-C| máx entre extremos: 3% estricto; >6% = sesgado
+    DEPTH_MIN  = 0.10   # retroceso intermedio B mínimo = altura del patrón (10% Bulkowski)
+    TREND_MIN  = 0.10   # tendencia previa contraria mínima hacia A (>=10%)
+    SEP_MIN    = 10     # velas mínimas entre A y C (~2-3 semanas)
+    SEP_MAX    = 250    # velas máximas (~1 año)
+    SYM_LO     = 0.33   # simetría temporal t(A->B)/t(B->C) mínima
+    SYM_HI     = 3.0    #   ... máxima
+    PEN_STRONG = 0.05   # penetración fuerte del cuello (filtro anti-fakeout 5%)
+    W          = 5      # ventana de pivote local (+/-5 velas)
+
+    return (_scan_double(highs, lows, closes, n, "suelo",
+                         EQ_MAX, DEPTH_MIN, TREND_MIN, SEP_MIN, SEP_MAX, SYM_LO, SYM_HI, PEN_STRONG, W)
+            or _scan_double(highs, lows, closes, n, "techo",
+                            EQ_MAX, DEPTH_MIN, TREND_MIN, SEP_MIN, SEP_MAX, SYM_LO, SYM_HI, PEN_STRONG, W))
+
+
+def _scan_double(highs, lows, closes, n, variante,
+                 EQ_MAX, DEPTH_MIN, TREND_MIN, SEP_MIN, SEP_MAX, SYM_LO, SYM_HI, PEN_STRONG, W):
+    """Escanea una variante ('suelo' o 'techo'). Comparte toda la lógica numérica; solo
+    cambia el signo: en el suelo los extremos son mínimos y el cuello un máximo intermedio."""
+    es_suelo = variante == "suelo"
+    ext = lows if es_suelo else highs                     # serie de los dos extremos A y C
+    mid = highs if es_suelo else lows                     # serie del retroceso intermedio B
+    ext_piv = _pivots(ext, "low" if es_suelo else "high", W, W)
+    if len(ext_piv) < 2:
+        return None
+
+    mejor = None
+    for ia in range(len(ext_piv)):
+        for ic in range(ia + 1, len(ext_piv)):
+            i_a, i_c = ext_piv[ia], ext_piv[ic]
+            pa, pc = ext[i_a], ext[i_c]
+            if pa <= 0 or pc <= 0:
+                continue
+
+            sep = i_c - i_a
+            if not (SEP_MIN <= sep <= SEP_MAX):
+                continue
+            if abs(pa - pc) / min(pa, pc) > EQ_MAX:
+                continue
+
+            base = min(pa, pc) if es_suelo else max(pa, pc)   # extremo del patrón (invalidación)
+
+            seg = mid[i_a + 1:i_c]
+            if not seg:
+                continue
+            if es_suelo:
+                pb = max(seg); i_b = i_a + 1 + seg.index(pb)
+                depth = (pb - base) / base
+            else:
+                pb = min(seg); i_b = i_a + 1 + seg.index(pb)
+                depth = (base - pb) / pb
+            if depth < DEPTH_MIN:            # sin pico intermedio >=10% es V o redondeado, NO doble
+                continue
+
+            t1, t2 = i_b - i_a, i_c - i_b
+            if t1 <= 0 or t2 <= 0:
+                continue
+            ratio = t1 / t2
+            if not (SYM_LO <= ratio <= SYM_HI):   # muy asimétrico => probable H&S
+                continue
+
+            tol = base * EQ_MAX
+            cerca = [p for p in ext_piv if i_a - 2 <= p <= i_c + 2 and abs(ext[p] - base) <= tol]
+            if len(cerca) > 2:                    # >2 extremos al mismo nivel => triple/rango
+                continue
+
+            es_hch = False
+            for p in ext_piv:
+                if i_a < p < i_c:
+                    if es_suelo and ext[p] < base * (1 - EQ_MAX):
+                        es_hch = True; break
+                    if not es_suelo and ext[p] > base * (1 + EQ_MAX):
+                        es_hch = True; break
+            if es_hch:
+                continue
+
+            lo0 = max(0, i_a - 60)
+            if i_a - lo0 < 10:
+                continue
+            if es_suelo:
+                i_p0 = lo0 + int(_argmax(highs[lo0:i_a]))
+                p0 = highs[i_p0]
+                trend_prev = (p0 - pa) / p0 if p0 else 0
+            else:
+                i_p0 = lo0 + int(_argmin(lows[lo0:i_a]))
+                p0 = lows[i_p0]
+                trend_prev = (pa - p0) / pa if pa else 0
+            if trend_prev < TREND_MIN:
+                continue
+
+            neck = pb
+            i_d, confirmado, penetracion_fuerte, invalidado = None, False, False, False
+            for j in range(i_c + 1, n):
+                if es_suelo:
+                    if closes[j] > neck:
+                        i_d = j; confirmado = True
+                        penetracion_fuerte = closes[j] >= neck * (1 + PEN_STRONG)
+                        break
+                    if closes[j] < base:
+                        invalidado = True; break
+                else:
+                    if closes[j] < neck:
+                        i_d = j; confirmado = True
+                        penetracion_fuerte = closes[j] <= neck * (1 - PEN_STRONG)
+                        break
+                    if closes[j] > base:
+                        invalidado = True; break
+            if invalidado:
+                continue
+
+            cand = {
+                "i_a": i_a, "i_b": i_b, "i_c": i_c, "i_d": i_d, "i_p0": i_p0,
+                "pa": pa, "pb": pb, "pc": pc, "base": base, "neck": neck,
+                "depth": depth, "trend_prev": trend_prev,
+                "confirmado": confirmado, "penetracion_fuerte": penetracion_fuerte,
+            }
+            clave = (i_c, 1 if confirmado else 0)
+            if mejor is None or clave > mejor["_clave"]:
+                cand["_clave"] = clave
+                mejor = cand
+
+    if mejor is None:
+        return None
+    return _build_double(highs, lows, closes, n, es_suelo, mejor)
+
+
+def _build_double(highs, lows, closes, n, es_suelo, m):
+    """Empaqueta el patrón: dict estándar + `puntos` (P0,A,B,C,D) y `lineas` (cuello, base,
+    objetivo, invalidación), en coordenadas de índice/precio como el resto del módulo."""
+    base, neck = m["base"], m["neck"]
+    H = abs(neck - base)                                   # altura del patrón (regla de medida)
+    if es_suelo:
+        objetivo = round(neck + H, 2)
+        objetivo_cons = round(neck + 0.7 * H, 2)
+    else:
+        objetivo = round(neck - H, 2)
+        objetivo_cons = round(neck - 0.7 * H, 2)
+
+    r = lambda x: round(float(x), 2)
+    puntos = [
+        {"index": int(m["i_p0"]), "price": r(highs[m["i_p0"]] if es_suelo else lows[m["i_p0"]]),
+         "etiqueta": "P0", "rol": "inicio_tendencia"},
+        {"index": int(m["i_a"]), "price": r(m["pa"]), "etiqueta": "A", "rol": "primer_extremo"},
+        {"index": int(m["i_b"]), "price": r(m["pb"]), "etiqueta": "B", "rol": "cuello"},
+        {"index": int(m["i_c"]), "price": r(m["pc"]), "etiqueta": "C", "rol": "segundo_extremo"},
+    ]
+    if m["i_d"] is not None:
+        puntos.append({"index": int(m["i_d"]), "price": r(closes[m["i_d"]]),
+                       "etiqueta": "D", "rol": "ruptura"})
+
+    x_fin = n - 1
+    x_rup = m["i_d"] if m["i_d"] is not None else x_fin
+    lineas = [
+        {"tipo": "cuello", "kind": "neckline",
+         "points": [{"index": int(m["i_b"]), "price": r(neck)}, {"index": int(x_fin), "price": r(neck)}]},
+        {"tipo": "base", "kind": "base", "estilo": "punteada",
+         "points": [{"index": int(m["i_a"]), "price": r(base)}, {"index": int(m["i_c"]), "price": r(base)}]},
+        {"tipo": "objetivo", "kind": "target",
+         "points": [{"index": int(x_rup), "price": r(neck)}, {"index": int(x_rup), "price": objetivo}],
+         "objetivo": objetivo, "objetivo_conservador": objetivo_cons},
+        {"tipo": "invalidacion", "kind": "invalidation", "color": "rojo",
+         "points": [{"index": int(m["i_a"]), "price": r(base)}, {"index": int(x_fin), "price": r(base)}]},
+    ]
+
+    estado = "confirmado" if m["confirmado"] else "potencial (sin romper el cuello)"
+    if es_suelo:
+        desc = ("Doble suelo (W): dos mínimos ~iguales tras una caída previa del "
+                f"{m['trend_prev']*100:.0f}%, separados por un rebote intermedio del "
+                f"{m['depth']*100:.0f}% (cuello en {r(neck)}). Reversión ALCISTA {estado}. "
+                f"Gatillo: cierre por encima del cuello (penetración >=5%). Objetivo {objetivo} "
+                f"(conservador {objetivo_cons}); invalida si cierra bajo {r(base)}.")
+        return {"tipo": "doble_suelo", "nombre": "Doble suelo", "sentido": "alcista",
+                "descripcion": desc, "confirmado": m["confirmado"],
+                "penetracion_fuerte": m["penetracion_fuerte"],
+                "puntos": puntos, "lineas": lineas}
+    desc = ("Doble techo (M): dos máximos ~iguales tras una subida previa del "
+            f"{m['trend_prev']*100:.0f}%, separados por un valle intermedio del "
+            f"{m['depth']*100:.0f}% (cuello en {r(neck)}). Reversión BAJISTA {estado}. "
+            f"Gatillo: cierre por debajo del cuello (penetración >=5%). Objetivo {objetivo} "
+            f"(conservador {objetivo_cons}); invalida si cierra sobre {r(base)}.")
+    return {"tipo": "doble_techo", "nombre": "Doble techo", "sentido": "bajista",
+            "descripcion": desc, "confirmado": m["confirmado"],
+            "penetracion_fuerte": m["penetracion_fuerte"],
+            "puntos": puntos, "lineas": lineas}
+
+
 def _detect_pattern(trendlines, levels, closes, current_price):
     """Reconoce patrones sencillos a partir de las directrices y niveles ya detectados.
     Devuelve dict {nombre, descripcion, tipo} o None. Reglas geométricas, sin IA."""
@@ -1032,23 +1427,10 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
 
     levels = _horizontal_levels(highs, lows, closes, current_price)
 
-    # Doble suelo / doble techo (dos pivotes al mismo nivel) — patrón de reversión clásico.
-    pattern = None
-    lo_all = _pivots(lows, "low")
-    hi_all = _pivots(highs, "high")
+    # Doble suelo (W) / doble techo (M) — detector RIGUROSO (extremos ~iguales, cuello,
+    # tendencia previa, simetría; rechaza V, redondeado, triple, H&S y fakeout).
     price_range = max(highs) - min(lows) if highs else 0
-    if price_range > 0 and len(lo_all) >= 2:
-        a, b = lo_all[-2], lo_all[-1]
-        if abs(lows[a] - lows[b]) / price_range < 0.02 and (b - a) >= 5:
-            pattern = {"tipo": "doble_suelo", "nombre": "Doble suelo",
-                       "descripcion": "Dos mínimos al mismo nivel: el precio ha rebotado dos veces en "
-                       "ese soporte. Patrón alcista de reversión si rompe el máximo intermedio."}
-    if pattern is None and price_range > 0 and len(hi_all) >= 2:
-        a, b = hi_all[-2], hi_all[-1]
-        if abs(highs[a] - highs[b]) / price_range < 0.02 and (b - a) >= 5:
-            pattern = {"tipo": "doble_techo", "nombre": "Doble techo",
-                       "descripcion": "Dos máximos al mismo nivel: el precio ha sido rechazado dos "
-                       "veces en esa resistencia. Patrón bajista si pierde el mínimo intermedio."}
+    pattern = _detect_double(highs, lows, closes)
     # BANDERA / BANDERÍN: impulso fuerte reciente + consolidación breve y estrecha después.
     # Es una PAUSA en la tendencia (patrón de continuación), no una reversión.
     if pattern is None and len(closes) >= 25:
@@ -1074,7 +1456,7 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
         pattern = _detect_flat_base(closes)
     # Cabeza y hombros tiene prioridad sobre los patrones de directriz.
     if pattern is None:
-        pattern = _detect_head_shoulders(highs, lows, price_range)
+        pattern = _detect_head_shoulders(highs, lows, closes, price_range)
     # Triángulos y cuñas RIGUROSOS (regresión + apex + toques): tienen prioridad sobre la
     # lógica laxa de _detect_pattern. Cuña primero (más restrictiva), luego triángulo.
     if pattern is None:
