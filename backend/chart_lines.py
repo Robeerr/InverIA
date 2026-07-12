@@ -592,23 +592,169 @@ def _detect_cup_handle(closes, highs=None, lows=None, volumes=None):
     }
 
 
-def _detect_flat_base(closes):
-    """Base plana / Caja de Darvas: consolidación estrecha y horizontal cerca de máximos
-    tras una subida. Alcista en la ruptura del techo."""
+def _linreg_slope(ys):
+    """Pendiente de regresión lineal (mínimos cuadrados) de `ys` sobre x=0..n-1."""
+    n = len(ys)
+    if n < 2:
+        return 0.0
+    xm = (n - 1) / 2.0
+    ym = sum(ys) / n
+    num = sum((i - xm) * (ys[i] - ym) for i in range(n))
+    den = sum((i - xm) ** 2 for i in range(n))
+    return num / den if den else 0.0
+
+
+def _validar_caja_darvas(t, techo, closes, highs, lows, volumes, n):
+    """Valida una caja de Darvas cuyo TECHO arranca en la vela `t` (high[t]) y devuelve el
+    patrón + puntos de dibujo, o None si incumple algún criterio. Umbrales O'Neil/Darvas."""
+    BUF = 0.0015     # 0.15%: margen de ruptura "decisiva"
+    TOL = 0.015      # 1.5%: tolerancia de "toque" a techo/suelo
+    WICK = 0.02      # 2%: mecha máxima tolerada por encima del techo
+
+    brk = None
+    e = n - 1
+    for j in range(t + 1, n):
+        if closes[j] > techo * (1 + BUF):
+            brk = j
+            e = j - 1
+            break
+    right = brk if brk is not None else n - 1
+    if right < n - 6:                       # el patrón debe ser ACTUAL
+        return None
+
+    N = e - t + 1
+    if N < 15 or N > 55:
+        return None
+
+    box_h = highs[t:e + 1]
+    box_l = lows[t:e + 1]
+    box_c = closes[t:e + 1]
+    if max(box_h) > techo * (1 + WICK):
+        return None
+
+    # Regla Darvas del suelo (4 velas): low[b] mínimo seguido de 3 mínimos crecientes.
+    suelo = None
+    b = None
+    for k in range(t + 1, e - 2):
+        lo = lows[k]
+        if k + 3 <= e and lows[k + 1] > lo and lows[k + 2] > lo and lows[k + 3] > lo:
+            if suelo is None or lo < suelo:
+                suelo = lo
+                b = k
+    if b is None or suelo >= techo:
+        return None
+
+    depth = (techo - suelo) / techo
+    if depth > 0.15:
+        return None
+
+    prior = closes[max(0, t - 60):t]
+    if len(prior) < 20:
+        return None
+    if closes[t] < min(prior) * 1.20:
+        return None
+    if _linreg_slope(prior) <= 0:
+        return None
+
+    if abs(_linreg_slope(box_h)) / techo >= 0.003:   # techo inclinado -> bandera
+        return None
+    if abs(_linreg_slope(box_l)) / suelo >= 0.003:   # suelo no plano -> taza
+        return None
+
+    q = max(2, len(box_h) // 4)
+    if abs(max(box_h[:q]) - max(box_h[-q:])) / techo >= 0.05:
+        return None
+    if abs(min(box_l[:q]) - min(box_l[-q:])) / suelo >= 0.05:
+        return None
+
+    ancho_ini = max(box_h[:q]) - min(box_l[:q])
+    ancho_fin = max(box_h[-q:]) - min(box_l[-q:])
+    if ancho_ini > 0:
+        if ancho_fin < 0.6 * ancho_ini:                     # se estrecha -> triángulo/cuña
+            return None
+        if abs(ancho_fin - ancho_ini) / ancho_ini > 0.30:   # no paralelas
+            return None
+
+    toques_techo = [i for i in range(t, e + 1) if highs[i] >= techo * (1 - TOL)]
+    toques_suelo = [i for i in range(t, e + 1) if lows[i] <= suelo * (1 + TOL)]
+    if len(toques_techo) < 2 or len(toques_suelo) < 2:
+        return None
+    for c in box_c:
+        if c > techo * 1.005 or c < suelo * 0.995:
+            return None
+
+    vol_note = ""
+    if volumes and len(volumes) == n:
+        box_vol = volumes[t:e + 1]
+        prev_vol = volumes[max(0, t - 60):t]
+        if prev_vol and box_vol:
+            if sum(box_vol) / len(box_vol) >= 0.9 * (sum(prev_vol) / len(prev_vol)):
+                return None    # sin 'dry-up' de volumen no es base plana O'Neil
+        if brk is not None:
+            m50 = volumes[max(0, brk - 50):brk]
+            if m50 and volumes[brk] < 1.4 * (sum(m50) / len(m50)):
+                vol_note = " Aviso: la ruptura NO va con expansión de volumen (posible falsa ruptura)."
+
+    if brk is not None:
+        estado = ("Ruptura confirmada: cierre %.2f sobre el techo %.2f." % (closes[brk], techo))
+        if closes[brk] > techo * 1.05:
+            estado += " Precio ya >5%% sobre el pivote: entrada descartada por 'chasing'."
+    else:
+        estado = "Caja en formación; gatillo de compra en cierre > %.2f (pivote), stop bajo %.2f." % (techo, suelo)
+
+    puntos = {
+        "techo": [{"index": int(t), "price": round(float(techo), 2)},
+                  {"index": int(right), "price": round(float(techo), 2)}],
+        "suelo": [{"index": int(b), "price": round(float(suelo), 2)},
+                  {"index": int(right), "price": round(float(suelo), 2)}],
+        "toques_techo": [{"index": int(i), "price": round(float(highs[i]), 2)} for i in toques_techo],
+        "toques_suelo": [{"index": int(i), "price": round(float(lows[i]), 2)} for i in toques_suelo],
+        "pivote_compra": round(float(techo), 2),
+        "stop": round(float(suelo), 2),
+        "ruptura": ({"index": int(brk), "price": round(float(closes[brk]), 2)} if brk is not None else None),
+    }
+
+    return {
+        "tipo": "base_plana",
+        "nombre": "Base plana / Caja de Darvas",
+        "sentido": "alcista",
+        "descripcion": ("Rectángulo horizontal de consolidación (caja de Darvas) tras un avance alcista: "
+                        "techo y suelo planos y paralelos, profundidad %.0f%%, %d velas. Patrón de "
+                        "CONTINUACIÓN alcista; se compra en la ruptura del techo con volumen. %s%s"
+                        % (depth * 100, N, estado, vol_note)),
+        "puntos": puntos,
+    }
+
+
+def _detect_flat_base(closes, highs=None, lows=None, volumes=None):
+    """Base plana / Caja de Darvas: rectángulo estrecho y horizontal cerca de máximos tras
+    una subida (CONTINUACIÓN alcista). Aplica la regla Darvas de 4 velas al techo y al suelo
+    y valida contexto/planitud/profundidad/volumen; rechaza taza, V, bandera, triángulo/cuña,
+    base profunda y distribución. Devuelve dict (con puntos de dibujo) o None."""
     n = len(closes)
     if n < 25:
         return None
-    base = closes[-15:]
-    avg = sum(base) / len(base)
-    rng = (max(base) - min(base)) / avg if avg else 1
-    recent_high = max(closes[-60:]) if n >= 60 else max(closes)
-    near_high = closes[-1] >= recent_high * 0.92
-    prior = closes[-30:-15] if n >= 30 else []
-    subio = bool(prior and (base[0] - prior[0]) / prior[0] > 0.05)
-    if rng < 0.08 and near_high and subio:
-        return {"tipo": "base_plana", "nombre": "Base plana / Caja de Darvas", "sentido": "alcista",
-                "descripcion": "Consolidación estrecha y horizontal cerca de máximos tras una subida "
-                "(caja de Darvas). Se compra en la ruptura del techo de la caja con volumen."}
+    if highs is None:
+        highs = closes
+    if lows is None:
+        lows = closes
+
+    look = min(n, 60)
+    seg_start = n - look
+    hist_high = max(highs[max(0, n - 200):])
+
+    for t in range(seg_start, n - 3):
+        hi = highs[t]
+        if hi < hist_high * 0.94:
+            continue
+        prev = highs[max(0, t - 5):t]
+        if prev and hi < max(prev):
+            continue
+        if not (highs[t + 1] < hi and highs[t + 2] < hi and highs[t + 3] < hi):
+            continue
+        res = _validar_caja_darvas(t, hi, closes, highs, lows, volumes, n)
+        if res:
+            return res
     return None
 
 
@@ -1339,6 +1485,394 @@ def _build_double(highs, lows, closes, n, es_suelo, m):
             "puntos": puntos, "lineas": lineas}
 
 
+def _lsq(xs, ys):
+    """Regresión lineal por mínimos cuadrados. Devuelve (pendiente, intercepto, R²)."""
+    n = len(xs)
+    if n < 2:
+        return 0.0, (ys[0] if ys else 0.0), 0.0
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    if sxx == 0:
+        return 0.0, my, 0.0
+    slope = sxy / sxx
+    intercept = my - slope * mx
+    ss_tot = sum((y - my) ** 2 for y in ys)
+    ss_res = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(xs, ys))
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 1.0
+    return slope, intercept, r2
+
+
+def _detect_channel(highs, lows, closes, atr14=None):
+    """Canal ASCENDENTE (alcista) o DESCENDENTE (bajista): dos directrices SENSIBLEMENTE
+    PARALELAS (misma pendiente, ancho constante) entre las que oscila el precio. RECHAZA
+    cuña, triángulo, megáfono, bandera, rectángulo y trendline suelta. Devuelve dict con los
+    puntos de dibujo de ambas rectas, o None."""
+    n = len(closes)
+    if n < 15:
+        return None
+    if atr14 is None:
+        atr14 = _atr14(highs, lows, closes)
+    price = closes[-1] or (sum(closes) / n)
+    eps = 1e-9
+
+    look = min(n, 120)
+    off = n - look
+    h_all = [i + off for i in _pivots(highs[off:], "high")]
+    l_all = [i + off for i in _pivots(lows[off:], "low")]
+    h_piv = h_all[-6:]
+    l_piv = l_all[-6:]
+    if len(h_piv) < 2 or len(l_piv) < 2:
+        return None
+
+    m_sup, b_sup, r2_sup = _lsq(h_piv, [highs[i] for i in h_piv])
+    m_inf, b_inf, r2_inf = _lsq(l_piv, [lows[i] for i in l_piv])
+    if r2_sup < 0.90 or r2_inf < 0.90:
+        return None
+
+    x_start = min(h_piv[0], l_piv[0])
+    x_end = max(h_piv[-1], l_piv[-1])
+    span = x_end - x_start
+    if span < 15:
+        return None
+
+    ws = []
+    for x in range(x_start, x_end + 1):
+        ws.append((m_sup * x + b_sup) - (m_inf * x + b_inf))
+    if min(ws) <= 0:
+        return None
+    mean_w = sum(ws) / len(ws)
+    std_w = (sum((w - mean_w) ** 2 for w in ws) / len(ws)) ** 0.5
+
+    if mean_w < max(3 * atr14, 0.05 * price):
+        return None
+    if std_w > 0.15 * mean_w:
+        return None
+    ratio = ws[-1] / ws[0] if ws[0] > 0 else 0.0
+    if not (0.75 <= ratio <= 1.25):          # <0.75 = cuña; >1.25 = megáfono
+        return None
+
+    mean_slope = (m_sup + m_inf) / 2.0
+    if abs(m_sup - m_inf) / max(abs(mean_slope), eps) > 0.20:   # paralelismo
+        return None
+
+    run = abs(mean_slope) * span
+    if run < 0.5 * mean_w:                   # sin inclinación -> rectángulo, no canal
+        return None
+    ascendente = mean_slope > 0
+
+    tol_step = 0.03 * mean_w
+
+    def _seq_ok(idxs, vals, up):
+        viol = 0
+        for k in range(1, len(idxs)):
+            d = vals[idxs[k]] - vals[idxs[k - 1]]
+            if up and d < -tol_step:
+                viol += 1
+            elif (not up) and d > tol_step:
+                viol += 1
+        return viol <= 1
+
+    if not (_seq_ok(h_piv, highs, ascendente) and _seq_ok(l_piv, lows, ascendente)):
+        return None
+
+    tol_touch = max(0.10 * mean_w, atr14)
+    sup_touch = [i for i in h_piv if abs(highs[i] - (m_sup * i + b_sup)) <= tol_touch]
+    inf_touch = [i for i in l_piv if abs(lows[i] - (m_inf * i + b_inf)) <= tol_touch]
+    if len(sup_touch) < 2 or len(inf_touch) < 2:
+        return None
+    seq = sorted([(i, "S") for i in sup_touch] + [(i, "I") for i in inf_touch])
+    tags = [t for _, t in seq]
+    run_same, max_same, changes = 1, 1, 0
+    for k in range(1, len(tags)):
+        if tags[k] == tags[k - 1]:
+            run_same += 1
+            max_same = max(max_same, run_same)
+        else:
+            run_same = 1
+            changes += 1
+    if max_same > 2 or changes < 2:
+        return None
+
+    over = 0.10 * mean_w
+    inside = total = 0
+    for x in range(x_start, x_end + 1):
+        y_sup = m_sup * x + b_sup + over
+        y_inf = m_inf * x + b_inf - over
+        total += 1
+        if y_inf <= closes[x] <= y_sup:
+            inside += 1
+    if total == 0 or inside / total < 0.90:
+        return None
+
+    x_draw_end = n - 1
+    puntos_sup = [
+        {"index": int(x_start), "price": round(float(m_sup * x_start + b_sup), 2)},
+        {"index": int(x_draw_end), "price": round(float(m_sup * x_draw_end + b_sup), 2)},
+    ]
+    puntos_inf = [
+        {"index": int(x_start), "price": round(float(m_inf * x_start + b_inf), 2)},
+        {"index": int(x_draw_end), "price": round(float(m_inf * x_draw_end + b_inf), 2)},
+    ]
+
+    if ascendente:
+        tipo, nombre, sentido = "canal_alcista", "Canal alcista", "alcista"
+        desc = ("Precio en tendencia alcista contenido entre dos directrices paralelas (misma "
+                "pendiente y ancho constante), con máximos y mínimos crecientes. Comprar en rebotes "
+                "sobre el SOPORTE con stop bajo la línea; objetivo la resistencia. El cierre por debajo "
+                "del soporte avisa de giro bajista.")
+    else:
+        tipo, nombre, sentido = "canal_bajista", "Canal bajista", "bajista"
+        desc = ("Precio en tendencia bajista contenido entre dos directrices paralelas, con máximos y "
+                "mínimos decrecientes. Vender en rechazos de la RESISTENCIA; los rebotes no son compras. "
+                "El cierre por encima de la resistencia avisa de giro alcista.")
+
+    return {
+        "tipo": tipo, "nombre": nombre, "sentido": sentido, "descripcion": desc,
+        "ancho": round(float(mean_w), 2),
+        "puntos_dibujo": {"resistencia": puntos_sup, "soporte": puntos_inf},
+    }
+
+
+def _true_range(highs, lows, closes, i):
+    """True Range de la vela i (contempla el gap con el cierre previo)."""
+    if i <= 0:
+        return highs[i] - lows[i]
+    return max(highs[i] - lows[i],
+               abs(highs[i] - closes[i - 1]),
+               abs(lows[i] - closes[i - 1]))
+
+
+def _linreg_seq(ys):
+    """Regresión lineal de ys sobre x=0..n-1. Devuelve (pendiente, intercepto, R^2).
+    (Versión de UNA serie; distinta de _linreg(xs, ys), no confundir.)"""
+    n = len(ys)
+    if n < 2:
+        return 0.0, (ys[0] if ys else 0.0), 0.0
+    xs = list(range(n))
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    slope = sxy / sxx if sxx else 0.0
+    intercept = my - slope * mx
+    ss_tot = sum((y - my) ** 2 for y in ys)
+    ss_res = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(xs, ys))
+    r2 = (1 - ss_res / ss_tot) if ss_tot > 0 else 0.0
+    return slope, intercept, r2
+
+
+def _eval_flag(highs, lows, closes, volumes, Bidx, cons, direction, atr, eps):
+    """Evalúa UNA hipótesis: consolidación de `cons` velas colgando del tip Bidx, en el
+    sentido `direction` ('bull'/'bear'). Devuelve un candidato con score y puntos de dibujo."""
+    n = len(closes)
+    bull = direction == "bull"
+
+    win_lo = max(0, Bidx - 20)
+    seg = closes[win_lo:Bidx + 1]
+    if len(seg) < 4:
+        return None
+    Arel = (min(range(len(seg)), key=lambda k: seg[k]) if bull
+            else max(range(len(seg)), key=lambda k: seg[k]))
+    Aidx = win_lo + Arel
+    pl = Bidx - Aidx
+    if not (3 <= pl <= 20):
+        return None
+
+    pole_closes = closes[Aidx:Bidx + 1]
+    P_A = lows[Aidx] if bull else highs[Aidx]
+    P_B = highs[Bidx] if bull else lows[Bidx]
+    pole_h = (P_B - P_A) if bull else (P_A - P_B)
+    if pole_h <= 0:
+        return None
+    if (bull and P_B <= P_A) or (not bull and P_B >= P_A):
+        return None
+
+    move = pole_h / P_A if P_A else 0.0
+    if move < 0.08:
+        return None
+    if pole_h / pl < atr * 0.6:
+        return None
+    steps = [pole_closes[i + 1] - pole_closes[i] for i in range(len(pole_closes) - 1)]
+    same = sum(1 for s in steps if (s > 0) == bull)
+    if steps and same / len(steps) < 0.6:
+        return None
+    pr_hi, pr_lo = max(pole_closes), min(pole_closes)
+    pr_rng = (pr_hi - pr_lo) or 1e-9
+    pos = (closes[Bidx] - pr_lo) / pr_rng
+    if (bull and pos < 0.80) or (not bull and pos > 0.20):
+        return None
+
+    _, _, pole_r2 = _linreg_seq(pole_closes)
+    if pole_r2 < 0.85:
+        return None
+    max_pull, run_ext = 0.0, pole_closes[0]
+    for v in pole_closes:
+        if bull:
+            run_ext = max(run_ext, v); max_pull = max(max_pull, run_ext - v)
+        else:
+            run_ext = min(run_ext, v); max_pull = max(max_pull, v - run_ext)
+    if max_pull > 0.20 * pole_h:
+        return None
+
+    body_hi = highs[Bidx:n - 1]
+    body_lo = lows[Bidx:n - 1]
+    body_cl = closes[Bidx:n - 1]
+    Lb = len(body_hi)
+    if Lb < 4:
+        return None
+    top, bot = max(body_hi), min(body_lo)
+    cons_h = top - bot
+
+    retro = (P_B - bot) / pole_h if bull else (top - P_B) / pole_h
+    if retro >= 0.50:
+        return None
+
+    if cons_h > 0.40 * pole_h:
+        return None
+    flag_tr = sum(_true_range(highs, lows, closes, i)
+                  for i in range(Bidx + 1, n - 1)) / max(1, (n - 1) - (Bidx + 1))
+    pole_tr = sum(_true_range(highs, lows, closes, i)
+                  for i in range(Aidx + 1, Bidx + 1)) / max(1, Bidx - Aidx)
+    if pole_tr > 0 and flag_tr > 0.60 * pole_tr:
+        return None
+
+    m_sup, b_sup, _ = _linreg_seq(body_hi)
+    m_inf, b_inf, _ = _linreg_seq(body_lo)
+    m_mid, _, _ = _linreg_seq(body_cl)
+
+    conv = (m_sup < -eps and m_inf > eps)
+
+    if bull and m_mid > eps and conv:
+        return None
+    if not bull and m_mid < -eps and conv:
+        return None
+
+    diff = abs(m_sup - m_inf) / max(abs(m_sup), abs(m_inf), eps)
+    if conv:
+        variante = "banderin"
+    elif diff < 0.30:
+        variante = "bandera"
+    else:
+        return None
+
+    running = (bull and m_mid > eps) or (not bull and m_mid < -eps)
+
+    thr = max(0.5 * atr, 0.003 * closes[-1])
+    x_break = Lb
+    sup_proj = m_sup * x_break + b_sup
+    inf_proj = m_inf * x_break + b_inf
+    if bull:
+        confirmada = closes[-1] > sup_proj + thr
+    else:
+        confirmada = closes[-1] < inf_proj - thr
+
+    vol_bonus = 0.0
+    if volumes and len(volumes) >= n:
+        prior = volumes[max(0, Aidx - 30):Aidx]
+        pole_v = volumes[Aidx:Bidx + 1]
+        body_v = volumes[Bidx:n - 1]
+        if prior and pole_v and sum(pole_v) / len(pole_v) >= 1.5 * (sum(prior) / len(prior)):
+            vol_bonus += 0.15
+        if len(body_v) >= 3 and _linreg_seq(body_v)[0] < 0:
+            vol_bonus += 0.15
+
+    def _line_val(m, b, idx):
+        return m * (idx - Bidx) + b
+    C_idx = n - 2
+    if confirmada:
+        D_idx, D_price = n - 1, closes[-1]
+    else:
+        D_idx = n - 2
+        D_price = _line_val(m_sup, b_sup, n - 2) if bull else _line_val(m_inf, b_inf, n - 2)
+    tgt_price = D_price + pole_h if bull else D_price - pole_h
+    tgt_idx = (n - 1) + max(3, pl)
+
+    def _pt(idx, price):
+        return {"index": int(idx), "price": round(float(price), 2)}
+
+    puntos = [
+        {"label": "A", **_pt(Aidx, P_A)},
+        {"label": "B", **_pt(Bidx, P_B)},
+        {"label": "C", **_pt(C_idx, closes[C_idx])},
+        {"label": "D", **_pt(D_idx, D_price)},
+        {"label": "objetivo", **_pt(tgt_idx, tgt_price)},
+    ]
+    lineas = [
+        {"kind": "mastil",   "points": [_pt(Aidx, P_A), _pt(Bidx, P_B)]},
+        {"kind": "superior", "points": [_pt(Bidx, _line_val(m_sup, b_sup, Bidx)),
+                                        _pt(n - 2, _line_val(m_sup, b_sup, n - 2))]},
+        {"kind": "inferior", "points": [_pt(Bidx, _line_val(m_inf, b_inf, Bidx)),
+                                        _pt(n - 2, _line_val(m_inf, b_inf, n - 2))]},
+        {"kind": "objetivo", "points": [_pt(D_idx, D_price), _pt(tgt_idx, tgt_price)]},
+    ]
+
+    score = (pole_r2 + min(move, 0.5) + (0.5 - min(retro, 0.5))
+             + (0.2 if confirmada else 0.0) + vol_bonus)
+
+    return {
+        "_score": score, "variante": variante, "bull": bull,
+        "confirmada": confirmada, "running": running, "retro": retro,
+        "puntos": puntos, "lineas": lineas,
+    }
+
+
+def _detect_flag_pennant(highs, lows, closes, volumes=None):
+    """BANDERA / BANDERÍN (flag / pennant): CONTINUACIÓN = mástil impulsivo casi rectilíneo +
+    consolidación breve, estrecha e inclinada EN CONTRA del mástil. Bandera = rectas casi
+    paralelas; banderín = rectas convergentes. Rechaza canal/rectángulo, triángulo grande,
+    cuña de reversión, retroceso profundo y mástil ruidoso."""
+    n = len(closes)
+    if n < 18:
+        return None
+    atr = _atr(highs, lows, closes) or (sum(closes) / n) * 0.01
+    avg = sum(closes[-40:]) / len(closes[-40:])
+    eps = max(atr * 0.05, avg * 0.0003)
+
+    best = None
+    for cons in range(5, 21):
+        Bidx = n - 1 - cons
+        if Bidx < 4:
+            break
+        for direction in ("bull", "bear"):
+            cand = _eval_flag(highs, lows, closes, volumes, Bidx, cons, direction, atr, eps)
+            if cand and (best is None or cand["_score"] > best["_score"]):
+                best = cand
+    if best is None:
+        return None
+
+    bull = best["bull"]
+    sentido = "alcista" if bull else "bajista"
+    if best["variante"] == "bandera":
+        tipo = "bandera_alcista" if bull else "bandera_bajista"
+        nombre = "Bandera " + sentido
+        geo = ("una consolidación breve y estrecha entre dos rectas casi paralelas "
+               "que derivan " + ("ligeramente a la baja" if bull else "ligeramente al alza"))
+    else:
+        tipo = "banderin_alcista" if bull else "banderin_bajista"
+        nombre = "Banderín " + sentido
+        geo = "una pequeña consolidación entre dos rectas convergentes (triángulo)"
+
+    accion = ("ruptura al alza de la recta superior reanuda la subida"
+              if bull else "ruptura a la baja de la recta inferior reanuda el descenso")
+    desc = ("Mástil " + sentido + " casi rectilíneo seguido de " + geo + ". "
+            "Patrón de CONTINUACIÓN: la " + accion + "; objetivo = altura del mástil "
+            "proyectada desde la ruptura (measure rule).")
+    if best["running"]:
+        desc += " Nota: la consolidación se inclina a favor de la tendencia (running flag), válida pero menos fiable."
+    if best["confirmada"]:
+        desc += " Ruptura ya CONFIRMADA por cierre."
+    else:
+        desc += " Aún sin confirmar: esperar cierre más allá de la recta (>=0.5xATR)."
+
+    return {
+        "tipo": tipo, "nombre": nombre, "sentido": sentido, "descripcion": desc,
+        "confirmada": best["confirmada"], "retroceso": round(best["retro"], 2),
+        "puntos": best["puntos"], "lineas": best["lineas"],
+    }
+
+
 def _detect_pattern(trendlines, levels, closes, current_price):
     """Reconoce patrones sencillos a partir de las directrices y niveles ya detectados.
     Devuelve dict {nombre, descripcion, tipo} o None. Reglas geométricas, sin IA."""
@@ -1407,6 +1941,8 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
     highs = [float(c.get("high") or c.get("h") or c.get("close") or 0) for c in candles]
     lows = [float(c.get("low") or c.get("l") or c.get("close") or 0) for c in candles]
     closes = [float(c.get("close") or c.get("c") or 0) for c in candles]
+    _vol = [float(c.get("volume") or c.get("v") or 0) for c in candles]
+    volumes = _vol if any(_vol) else None
     if current_price is None:
         current_price = closes[-1] if closes else None
 
@@ -1431,29 +1967,15 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
     # tendencia previa, simetría; rechaza V, redondeado, triple, H&S y fakeout).
     price_range = max(highs) - min(lows) if highs else 0
     pattern = _detect_double(highs, lows, closes)
-    # BANDERA / BANDERÍN: impulso fuerte reciente + consolidación breve y estrecha después.
-    # Es una PAUSA en la tendencia (patrón de continuación), no una reversión.
-    if pattern is None and len(closes) >= 25:
-        pole = closes[-25:-8]          # el "mástil" (impulso)
-        flag = closes[-8:]             # la consolidación reciente
-        if pole and flag:
-            pole_move = (pole[-1] - pole[0]) / pole[0] if pole[0] else 0
-            flag_rng = (max(flag) - min(flag)) / (sum(flag) / len(flag)) if flag else 1
-            if abs(pole_move) > 0.08 and flag_rng < 0.04:   # impulso >8% + consolidación <4%
-                if pole_move > 0:
-                    pattern = {"tipo": "bandera_alcista", "nombre": "Bandera alcista", "sentido": "alcista",
-                               "descripcion": "Impulso alcista fuerte seguido de una pausa de consolidación. "
-                               "Patrón de continuación: se espera ruptura al alza que reanude la subida."}
-                else:
-                    pattern = {"tipo": "bandera_bajista", "nombre": "Bandera bajista", "sentido": "bajista",
-                               "descripcion": "Caída fuerte seguida de una pausa de consolidación. Patrón de "
-                               "continuación: se espera ruptura a la baja que reanude el descenso."}
+    # BANDERA / BANDERÍN RIGUROSO (mástil impulsivo + consolidación breve contra-tendencia).
+    if pattern is None:
+        pattern = _detect_flag_pennant(highs, lows, closes, volumes)
 
     # Taza con asa y base plana (favoritos de ruptura de máximos): prioridad alta.
     if pattern is None:
-        pattern = _detect_cup_handle(closes, highs, lows)
+        pattern = _detect_cup_handle(closes, highs, lows, volumes)
     if pattern is None:
-        pattern = _detect_flat_base(closes)
+        pattern = _detect_flat_base(closes, highs, lows, volumes)
     # Cabeza y hombros tiene prioridad sobre los patrones de directriz.
     if pattern is None:
         pattern = _detect_head_shoulders(highs, lows, closes, price_range)
@@ -1463,6 +1985,9 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
         pattern = _detect_wedge(highs, lows, closes)
     if pattern is None:
         pattern = _detect_triangles(highs, lows, closes)
+    # Canal ASC/DESC (rectas paralelas): antes de la lógica laxa de directrices.
+    if pattern is None:
+        pattern = _detect_channel(highs, lows, closes)
     # Si nada de lo anterior, prueba la lógica laxa de directrices (canal/consolidación).
     if pattern is None:
         pattern = _detect_pattern(trendlines, levels, closes, current_price)
