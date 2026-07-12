@@ -1895,6 +1895,17 @@ def _scan_double(highs, lows, closes, n, variante,
             if abs(pa - pc) / min(pa, pc) > EQ_MAX:
                 continue
 
+            # Un doble techo/suelo se forma en EL extremo, no a mitad de una tendencia. Si hay
+            # un máximo MÁS ALTO (o mínimo más bajo) poco antes, los dos 'gemelos' son en
+            # realidad dos escalones de un descenso/ascenso -> es triángulo/canal, no doble.
+            pre_lo = max(0, i_a - 40)
+            if es_suelo:
+                if pre_lo < i_a and min(ext[pre_lo:i_a]) < min(pa, pc) * 0.97:
+                    continue
+            else:
+                if pre_lo < i_a and max(ext[pre_lo:i_a]) > max(pa, pc) * 1.03:
+                    continue
+
             base = min(pa, pc) if es_suelo else max(pa, pc)   # extremo del patrón (invalidación)
 
             seg = mid[i_a + 1:i_c]
