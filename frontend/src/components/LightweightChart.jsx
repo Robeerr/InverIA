@@ -77,25 +77,26 @@ export default function LightweightChart({ candles, indicators, buyLevels, lines
       s200.setData(sma(data, 200));
     }
 
-    // Zonas de compra (niveles del motor) como líneas de precio
-    (buyLevels || []).slice(0, 5).forEach((z, i) => {
-      if (z?.price == null) return;
+    // Zonas de compra (niveles del motor) como líneas de precio — solo las 3 más cercanas
+    // al precio actual, con etiqueta corta, para no amontonar el eje.
+    const px = data.length ? data[data.length - 1].close : null;
+    const cercanas = (buyLevels || [])
+      .filter((z) => z?.price != null)
+      .sort((a, b) => (px != null ? Math.abs(a.price - px) - Math.abs(b.price - px) : 0))
+      .slice(0, 3);
+    cercanas.forEach((z, i) => {
       candleSeries.createPriceLine({
         price: z.price, color: z.tactical ? "#b8860b" : "#2563eb",
         lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true,
-        title: `Compra ${i + 1}`,
+        title: `C${i + 1}`,
       });
     });
 
-    // Soportes / resistencias del detector
-    (lines?.levels || []).slice(0, 4).forEach((lv) => {
-      if (lv?.price == null) return;
-      candleSeries.createPriceLine({
-        price: lv.price, color: lv.role === "resistencia" ? "#d85c41" : "#4a7c59",
-        lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true,
-        title: lv.role === "resistencia" ? "Resist." : "Soporte",
-      });
-    });
+    // Soporte y resistencia más relevantes (1 de cada), etiqueta corta.
+    const res = (lines?.levels || []).find((l) => l?.role === "resistencia" && l.price != null);
+    const sop = (lines?.levels || []).find((l) => l?.role === "soporte" && l.price != null);
+    if (res) candleSeries.createPriceLine({ price: res.price, color: "#d85c41", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: "Res" });
+    if (sop) candleSeries.createPriceLine({ price: sop.price, color: "#4a7c59", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: "Sop" });
 
     chart.timeScale().fitContent();
 
