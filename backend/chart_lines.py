@@ -449,6 +449,501 @@ def _detect_broadening(highs, lows):
     return None
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Detectores RIGUROSOS de triángulos y cuñas (regresión de directrices + apex),
+# generados a partir de la investigación (Bulkowski/StockCharts). Sustituyen a la
+# lógica laxa de _detect_pattern para estas dos familias.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _lstsq_line(xs, ys):
+    """Ajuste por mínimos cuadrados de la recta price = a*index + b sobre los pivotes.
+    Devuelve (a, b, r2) o None. a = pendiente en precio/vela."""
+    n = len(xs)
+    if n < 2:
+        return None
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    if sxx == 0:
+        return None
+    sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    a = sxy / sxx
+    b = my - a * mx
+    ss_tot = sum((y - my) ** 2 for y in ys)
+    ss_res = sum((y - (a * x + b)) ** 2 for x, y in zip(xs, ys))
+    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 1.0
+    return a, b, r2
+
+
+def _atr(highs, lows, closes, period: int = 14):
+    """ATR simple (media de True Range) sobre las últimas `period` velas."""
+    trs = []
+    for i in range(1, len(closes)):
+        tr = max(highs[i] - lows[i],
+                 abs(highs[i] - closes[i - 1]),
+                 abs(lows[i] - closes[i - 1]))
+        trs.append(tr)
+    if not trs:
+        return 0.0
+    p = min(period, len(trs))
+    return sum(trs[-p:]) / p
+
+
+def _detect_triangles(highs, lows, closes, volumes=None, k: int = 3):
+    """Detecta TRIÁNGULO ascendente / descendente / simétrico según la especificación
+    (Bulkowski/StockCharts) con umbrales concretos y RECHAZA los falsos positivos:
+    cuña, rectángulo/canal, megáfono, banderín y rupturas fallidas.
+
+    Opera sobre listas highs/lows/closes (y volumes opcional). Devuelve un dict con
+    tipo/nombre/sentido/descripcion + 'puntos' (rectas, apex, base y objetivo) para
+    dibujar, o None si no hay triángulo válido. Los índices de 'puntos' están en
+    coordenadas del array COMPLETO (ya se les suma el offset de la ventana)."""
+    n = len(closes)
+    if n < 20:
+        return None
+
+    # --- Ventana reciente (patrón local, no toda la historia) ---
+    look = min(n, 120)
+    off = n - look
+    H = highs[off:]
+    L = lows[off:]
+    C = closes[off:]
+    V = volumes[off:] if volumes else None
+    price = C[-1] or (sum(C) / len(C))
+    if not price:
+        return None
+
+    # --- 1) Pivotes por fractales (ventana +/-k) ---
+    sh = _pivots(H, "high", k, k)   # swing highs → recta superior
+    sl = _pivots(L, "low", k, k)    # swing lows  → recta inferior
+    if len(sh) < 2 or len(sl) < 2:
+        return None
+
+    # --- 2) Ajuste inicial de ambas rectas por mínimos cuadrados ---
+    fit_sup = _lstsq_line(sh, [H[i] for i in sh])
+    fit_inf = _lstsq_line(sl, [L[i] for i in sl])
+    if not fit_sup or not fit_inf:
+        return None
+    a_sup, b_sup, _ = fit_sup
+    a_inf, b_inf, _ = fit_inf
+
+    def ysup(x):
+        return a_sup * x + b_sup
+
+    def yinf(x):
+        return a_inf * x + b_inf
+
+    i_start = min(sh[0], sl[0])
+    i_end = max(sh[-1], sl[-1])
+
+    # Refinado: descartar pivotes que no rozan su recta (tolerancia) y reajustar 1 vez.
+    H0_ini = ysup(i_start) - yinf(i_start)
+    tol = max(0.01 * price, 0.15 * H0_ini) if H0_ini > 0 else 0.01 * price
+    sh2 = [i for i in sh if abs(H[i] - ysup(i)) <= tol]
+    sl2 = [i for i in sl if abs(L[i] - yinf(i)) <= tol]
+    if len(sh2) >= 2 and len(sl2) >= 2:
+        f1 = _lstsq_line(sh2, [H[i] for i in sh2])
+        f2 = _lstsq_line(sl2, [L[i] for i in sl2])
+        if f1 and f2:
+            a_sup, b_sup, r2_sup = f1
+            a_inf, b_inf, r2_inf = f2
+            sh, sl = sh2, sl2
+            i_start = min(sh[0], sl[0])
+            i_end = max(sh[-1], sl[-1])
+    else:
+        r2_sup = fit_sup[2]
+        r2_inf = fit_inf[2]
+
+    # --- 3) Duración N (primer→último pivote) ---
+    N = i_end - i_start
+    if N < 15:          # <3 semanas en diario → banderín/pennant, NO triángulo
+        return None
+    if N > 120:         # base/rango largo, no triángulo
+        return None
+
+    # --- 4) Pendientes normalizadas (% por vela) y cambio total de cada recta ---
+    s_sup = a_sup / price          # fracción/vela
+    s_inf = a_inf / price
+    top_change = abs(a_sup * N) / price   # cambio total recta superior (fracción)
+    bot_change = abs(a_inf * N) / price
+    FLAT = 0.001    # |s| < 0.1%/vela  → horizontal
+    INCL = 0.0015   # |s| >= 0.15%/vela → inclinada relevante
+
+    # DISCRIMINADOR cuña: mismo signo de pendiente en ambas y ambas inclinadas → cuña.
+    if (s_sup > INCL and s_inf > INCL) or (s_sup < -INCL and s_inf < -INCL):
+        return None
+
+    # --- 5) Altura de la base H0 (parte más ancha, en el primer pivote) ---
+    H0 = ysup(i_start) - yinf(i_start)
+    if H0 <= 0:
+        return None
+    h0_pct = H0 / price
+    if not (0.03 <= h0_pct <= 0.40):   # <3% ruido, >40% demasiado volátil
+        return None
+
+    # --- 6) Convergencia real (el ancho debe estrecharse >=35%) ---
+    W_ini = H0
+    W_fin = ysup(i_end) - yinf(i_end)
+    if W_fin <= 0:            # el apex cae DENTRO del patrón → agotado
+        return None
+    r = W_fin / W_ini
+    if r > 0.65:             # DISCRIMINADOR rectángulo/canal/megáfono (sin convergencia)
+        return None
+
+    # --- 7) Clasificación de la variante ---
+    tipo = None
+    lvl_sup = sum(H[i] for i in sh) / len(sh)   # nivel medio SH (para forzar horizontal)
+    lvl_inf = sum(L[i] for i in sl) / len(sl)
+
+    # Banda de la recta plana: todos sus toques dentro de 1.5% entre sí.
+    band_sup_ok = (max(H[i] for i in sh) - min(H[i] for i in sh)) / price <= 0.015
+    band_inf_ok = (max(L[i] for i in sl) - min(L[i] for i in sl)) / price <= 0.015
+
+    if top_change <= 0.015 and band_sup_ok and s_inf > 0 and bot_change >= 0.03:
+        tipo = "ascendente"
+    elif bot_change <= 0.015 and band_inf_ok and s_sup < 0 and top_change >= 0.03:
+        tipo = "descendente"
+    elif s_sup < -FLAT and s_inf > FLAT and top_change >= 0.03 and bot_change >= 0.03:
+        ratio = abs(a_sup) / abs(a_inf) if a_inf else 999
+        if 0.5 <= ratio <= 2.0:   # simetría de pendientes
+            tipo = "simetrico"
+    if tipo is None:
+        return None
+
+    # --- 8) Fijar rectas de DIBUJO (forzar horizontal en asc/desc) y recalcular apex ---
+    if tipo == "ascendente":
+        a_sup, b_sup = 0.0, lvl_sup
+    elif tipo == "descendente":
+        a_inf, b_inf = 0.0, lvl_inf
+
+    def ysup(x):
+        return a_sup * x + b_sup
+
+    def yinf(x):
+        return a_inf * x + b_inf
+
+    H0 = ysup(i_start) - yinf(i_start)
+    if H0 <= 0:
+        return None
+    if a_sup == a_inf:
+        return None
+    x_apex = (b_inf - b_sup) / (a_sup - a_inf)
+    D = x_apex - i_start
+    if D <= 0:
+        return None
+
+    # --- 9) Toques mínimos (>=2 por recta, >=4 total) y reparto temporal ---
+    tol = max(0.01 * price, 0.15 * H0)   # residuo máximo pivote→recta
+    sup_t = [i for i in sh if abs(H[i] - ysup(i)) <= tol]
+    inf_t = [i for i in sl if abs(L[i] - yinf(i)) <= tol]
+    if len(sup_t) < 2 or len(inf_t) < 2 or (len(sup_t) + len(inf_t)) < 4:
+        return None
+    all_t = sorted(sup_t + inf_t)
+    if (all_t[0] - i_start) > 0.25 * N:   # primer toque en el 25% inicial
+        return None
+    if (i_end - all_t[-1]) > 0.40 * N:    # último toque en el 40% final
+        return None
+
+    # Calidad de ajuste: R^2>=0.90 en la(s) recta(s) INCLINADA(s) (la plana tiene R^2 bajo
+    # por construcción, así que a esa se le aplica la banda ya comprobada).
+    if tipo in ("ascendente", "simetrico") and r2_inf < 0.90:
+        return None
+    if tipo in ("descendente", "simetrico") and r2_sup < 0.90:
+        return None
+
+    # --- 10) Ruptura / invalidación ---
+    atr = _atr(H, L, C, 14)
+    buffer = max(0.5 * atr, 0.01 * price)
+    cur = look - 1
+    brk = None                      # (direccion, indice_en_ventana)
+    for i in range(i_end, look):
+        c = C[i]
+        if c > ysup(i) + buffer:
+            brk = ("alcista", i)
+            break
+        if c < yinf(i) - buffer:
+            brk = ("bajista", i)
+            break
+
+    # DISCRIMINADOR apex agotado: precio en zona del apex (>0.90*D) sin romper → nulo.
+    if brk is None and (cur - i_start) > 0.90 * D:
+        return None
+    # Ruptura demasiado cerca del apex (>0.90*D) → sin recorrido, descartar.
+    if brk and (brk[1] - i_start) > 0.90 * D:
+        return None
+    # DISCRIMINADOR ruptura fallida (busted): tras romper el cierre vuelve a entrar.
+    if brk:
+        _, bi = brk
+        for j in range(bi + 1, look):
+            if yinf(j) < C[j] < ysup(j):
+                brk = None          # ruptura anulada → tratamos el patrón como en formación
+                break
+
+    # Volumen (criterio blando, no invalida): pendiente decreciente en el patrón.
+    vol_decreasing = None
+    if V:
+        seg = V[i_start:i_end + 1]
+        if len(seg) >= 4:
+            fv = _lstsq_line(list(range(len(seg))), seg)
+            vol_decreasing = bool(fv and fv[0] < 0)
+
+    # --- 11) Sentido y objetivo (measure rule T = ruptura +/- H0, ajuste 0.63-0.70) ---
+    sentido_map = {"ascendente": "alcista", "descendente": "bajista", "simetrico": "neutral"}
+    sentido = sentido_map[tipo]
+    ruptura_pt = None
+    objetivo = None
+    if brk:
+        dir_, bi = brk
+        sentido = dir_
+        p_brk = C[bi]
+        signo = 1 if dir_ == "alcista" else -1
+        objetivo = round(p_brk + signo * 0.65 * H0, 2)   # objetivo probabilístico
+        ruptura_pt = {"index": int(bi + off), "price": round(float(p_brk), 2)}
+
+    # --- 12) Puntos de dibujo (índices en array completo) ---
+    x1 = min(sup_t[0], inf_t[0])
+    x2 = i_end
+    puntos = {
+        "superior": [
+            {"index": int(x1 + off), "price": round(float(ysup(x1)), 2)},
+            {"index": int(x2 + off), "price": round(float(ysup(x2)), 2)},
+        ],
+        "inferior": [
+            {"index": int(x1 + off), "price": round(float(yinf(x1)), 2)},
+            {"index": int(x2 + off), "price": round(float(yinf(x2)), 2)},
+        ],
+        "apex": {"index": int(round(x_apex) + off), "price": round(float(ysup(x_apex)), 2)},
+        "base": [   # segmento vertical H0 en el primer pivote
+            {"index": int(i_start + off), "price": round(float(ysup(i_start)), 2)},
+            {"index": int(i_start + off), "price": round(float(yinf(i_start)), 2)},
+        ],
+        "ruptura": ruptura_pt,
+        "objetivo": objetivo,
+    }
+
+    nombres = {
+        "ascendente": "Triángulo ascendente",
+        "descendente": "Triángulo descendente",
+        "simetrico": "Triángulo simétrico",
+    }
+    desc = {
+        "ascendente": ("Resistencia horizontal con mínimos crecientes que convergen. Sesgo alcista de "
+                       "continuación: se compra en el cierre por encima de la resistencia (buffer "
+                       "0.5*ATR/1%). Objetivo = ruptura + altura de la base (H0)."),
+        "descendente": ("Soporte horizontal con máximos decrecientes que convergen. Sesgo bajista: se "
+                        "vende en el cierre por debajo del soporte. Objetivo = ruptura - H0."),
+        "simetrico": ("Máximos decrecientes y mínimos crecientes convergen hacia el apex. Neutro/"
+                      "continuación: la dirección de la ruptura (cierre + buffer) marca el movimiento; "
+                      "objetivo = ruptura +/- H0."),
+    }[tipo]
+
+    return {
+        "tipo": "triangulo_" + tipo,
+        "nombre": nombres[tipo],
+        "sentido": sentido,
+        "descripcion": desc,
+        "puntos": puntos,
+        "meta": {
+            "N": int(N),
+            "H0_pct": round(h0_pct, 4),
+            "convergencia_r": round(r, 3),
+            "toques": {"superior": len(sup_t), "inferior": len(inf_t)},
+            "r2_sup": round(r2_sup, 3),
+            "r2_inf": round(r2_inf, 3),
+            "apex_index": int(round(x_apex) + off),
+            "D": round(D, 1),
+            "volumen_decreciente": vol_decreasing,
+            "ruptura_confirmada": brk is not None,
+        },
+    }
+
+
+def _linreg(xs, ys):
+    """Regresión lineal simple. Devuelve (pendiente, ordenada, R^2)."""
+    n = len(xs)
+    if n < 2:
+        return 0.0, (ys[0] if ys else 0.0), 0.0
+    sx = sum(xs); sy = sum(ys)
+    sxx = sum(x * x for x in xs); sxy = sum(x * y for x, y in zip(xs, ys))
+    denom = n * sxx - sx * sx
+    if denom == 0:
+        return 0.0, sy / n, 0.0
+    slope = (n * sxy - sx * sy) / denom
+    intercept = (sy - slope * sx) / n
+    mean = sy / n
+    ss_tot = sum((y - mean) ** 2 for y in ys)
+    ss_res = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(xs, ys))
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    return slope, intercept, r2
+
+
+def _atr14(highs, lows, closes):
+    """ATR de 14 sobre las últimas velas (escala de tolerancia de 'toque')."""
+    n = len(closes)
+    if n < 2:
+        return 0.0
+    trs = []
+    for i in range(max(1, n - 14), n):
+        tr = max(highs[i] - lows[i],
+                 abs(highs[i] - closes[i - 1]),
+                 abs(lows[i] - closes[i - 1]))
+        trs.append(tr)
+    return sum(trs) / len(trs) if trs else 0.0
+
+
+def _detect_wedge(highs, lows, closes, volumes=None):
+    """Cuña ascendente (rising, BAJISTA) y descendente (falling, ALCISTA).
+
+    Dos directrices con pendientes del MISMO signo que CONVERGEN hacia un vértice (apex).
+    Rechaza triángulos (signos opuestos / una línea plana), canales y banderas (paralelas)
+    y megáfonos (divergen). Requiere >=3 toques por línea, R^2>=0.85, contracción de
+    amplitud >=34% y convergencia real (apex cercano). Devuelve dict con la detección y
+    los puntos de dibujo (dos líneas + segmento de base) o None."""
+    n = len(closes)
+    if n < 15:
+        return None
+
+    P = closes[-1] or (sum(closes) / n)  # precio de referencia
+    if P <= 0:
+        return None
+
+    # --- Paso 1: pivotes por ventana fractal (k=3, con respaldo k=2). Solo estructura
+    # RECIENTE: últimas 10-60 velas (mínimo operable ~15) para una cuña local, no global.
+    look = min(n, 60)
+    off = n - look
+    hi_slice, lo_slice = highs[off:], lows[off:]
+    h_idx = l_idx = []
+    for k in (3, 2):
+        h_idx = [i + off for i in _pivots(hi_slice, "high", k, k)]
+        l_idx = [i + off for i in _pivots(lo_slice, "low", k, k)]
+        if len(h_idx) >= 3 and len(l_idx) >= 3:
+            break
+    # Criterio nº1: >=3 pivotes en cada línea (con 2 no hay cuña confirmada → falso pivote).
+    if len(h_idx) < 3 or len(l_idx) < 3:
+        return None
+
+    # --- Paso 2 y 3: regresión de la línea de MÁXIMOS (resistencia) y de MÍNIMOS (soporte).
+    a_h, b_h, r2_h = _linreg(h_idx, [highs[i] for i in h_idx])
+    a_l, b_l, r2_l = _linreg(l_idx, [lows[i] for i in l_idx])
+
+    # Criterio nº2 (ajuste): R^2 >= 0.85 en ambas líneas.
+    if r2_h < 0.85 or r2_l < 0.85:
+        return None
+
+    t_ini = min(h_idx[0], l_idx[0])
+    t_fin = max(h_idx[-1], l_idx[-1])
+    L = t_fin - t_ini
+    if L < 8:  # figura demasiado corta para ser cuña
+        return None
+
+    def recta_max(t): return a_h * t + b_h
+    def recta_min(t): return a_l * t + b_l
+
+    # --- Discriminador CUÑA vs TRIÁNGULO SIMÉTRICO: pendientes del MISMO signo (obligatorio).
+    if not (a_h > 0 and a_l > 0) and not (a_h < 0 and a_l < 0):
+        return None
+
+    # --- Discriminador CUÑA vs TRIÁNGULO asc/desc: ninguna línea casi horizontal.
+    if abs(a_h * L) < 0.01 * P or abs(a_l * L) < 0.01 * P:
+        return None
+
+    # --- Discriminador CUÑA vs CANAL/BANDERA: separación de pendientes suficiente.
+    if abs(a_l - a_h) < 0.15 * max(abs(a_h), abs(a_l)):
+        return None
+
+    # --- Convergencia (nº4) + discriminador vs MEGÁFONO: la amplitud DECRECE.
+    w_ini = recta_max(t_ini) - recta_min(t_ini)   # base (parte ancha, izquierda)
+    w_fin = recta_max(t_fin) - recta_min(t_fin)
+    if w_ini <= 0 or w_fin <= 0:                  # deben mantener techo>suelo (aún no cruzan)
+        return None
+    if w_fin / w_ini > 0.66:                       # exigir contracción >= 34%
+        return None
+
+    # Apex = intersección. Debe estar POR DELANTE y CERCA (a <= 3*L velas desde el inicio).
+    if a_h == a_l:
+        return None
+    t_apex = (b_l - b_h) / (a_h - a_l)
+    if t_apex <= t_fin or (t_apex - t_ini) > 3 * L:
+        return None
+
+    # Invalidación por expiración: si ya recorrimos >90% hacia el apex sin ruptura, expira.
+    progreso = (t_fin - t_ini) / (t_apex - t_ini) if (t_apex - t_ini) else 1.0
+    if progreso > 0.90:
+        return None
+
+    # --- Criterio nº5: dirección relativa de pendientes → tipo de cuña.
+    if a_h > 0 and a_l > 0 and a_l > a_h:
+        tipo, nombre, sentido = "cuna_ascendente", "Cuña ascendente", "bajista"
+    elif a_h < 0 and a_l < 0 and a_h < a_l:
+        tipo, nombre, sentido = "cuna_descendente", "Cuña descendente", "alcista"
+    else:
+        return None  # mismo signo pero mal ordenadas (no es cuña válida)
+
+    # --- Criterio nº2 (contención): ningún High supera recta_max ni ningún Low perfora recta_min.
+    tol = max(0.6 * _atr14(highs, lows, closes), 0.008 * P)
+    for i in range(t_ini, t_fin + 1):
+        if highs[i] - recta_max(i) > tol:  # High rompe el techo → no es canal contenedor
+            return None
+        if recta_min(i) - lows[i] > tol:   # Low perfora el suelo
+            return None
+
+    # --- Criterio nº6 (volumen): DECRECIENTE dentro de la cuña. Opcional.
+    if volumes is not None and len(volumes) >= t_fin + 1:
+        seg = volumes[t_ini:t_fin + 1]
+        tercio = max(1, len(seg) // 3)
+        vol_ini = sum(seg[:tercio]) / tercio
+        vol_fin = sum(seg[-tercio:]) / tercio
+        if vol_ini > 0 and vol_fin >= 0.80 * vol_ini:  # el último tercio debe caer <80% del primero
+            return None
+
+    # --- Ruptura/objetivo (measure rule): altura = base w(t_ini).
+    if tipo == "cuna_ascendente":
+        objetivo = round(P - w_ini, 2)  # rompe a la BAJA
+        gatillo = "cierre por DEBAJO del soporte"
+    else:
+        objetivo = round(P + w_ini, 2)  # rompe al ALZA
+        gatillo = "cierre por ENCIMA de la resistencia con volumen >=1.5x media20"
+
+    descripcion = (
+        f"Dos directrices que {'suben' if sentido == 'bajista' else 'bajan'} convergiendo "
+        f"(amplitud -{round((1 - w_fin / w_ini) * 100)}%). "
+        + ("La subida pierde impulso: sesgo BAJISTA, suele romper a la baja. "
+           if sentido == "bajista" else
+           "La caída pierde fuerza: sesgo ALCISTA, suele romper al alza. ")
+        + f"Gatillo: {gatillo}. Objetivo (altura de la base) ~ {objetivo}."
+    )
+
+    line_res = {
+        "type": "trendline", "kind": "resistencia",
+        "points": [
+            {"index": int(t_ini), "price": round(float(recta_max(t_ini)), 2)},
+            {"index": int(t_fin), "price": round(float(recta_max(t_fin)), 2)},
+        ],
+    }
+    line_sup = {
+        "type": "trendline", "kind": "soporte",
+        "points": [
+            {"index": int(t_ini), "price": round(float(recta_min(t_ini)), 2)},
+            {"index": int(t_fin), "price": round(float(recta_min(t_fin)), 2)},
+        ],
+    }
+    base_seg = {
+        "type": "segment", "kind": "base",
+        "points": [
+            {"index": int(t_ini), "price": round(float(recta_max(t_ini)), 2)},
+            {"index": int(t_ini), "price": round(float(recta_min(t_ini)), 2)},
+        ],
+    }
+
+    return {
+        "tipo": tipo, "nombre": nombre, "sentido": sentido,
+        "descripcion": descripcion,
+        "objetivo": objetivo,
+        "apex_index": int(round(t_apex)),
+        "puntos": [line_res, line_sup, base_seg],
+    }
+
+
 def _detect_pattern(trendlines, levels, closes, current_price):
     """Reconoce patrones sencillos a partir de las directrices y niveles ya detectados.
     Devuelve dict {nombre, descripcion, tipo} o None. Reglas geométricas, sin IA."""
@@ -580,7 +1075,13 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
     # Cabeza y hombros tiene prioridad sobre los patrones de directriz.
     if pattern is None:
         pattern = _detect_head_shoulders(highs, lows, price_range)
-    # Si no hay doble suelo/techo ni H-C-H, prueba patrones de directrices.
+    # Triángulos y cuñas RIGUROSOS (regresión + apex + toques): tienen prioridad sobre la
+    # lógica laxa de _detect_pattern. Cuña primero (más restrictiva), luego triángulo.
+    if pattern is None:
+        pattern = _detect_wedge(highs, lows, closes)
+    if pattern is None:
+        pattern = _detect_triangles(highs, lows, closes)
+    # Si nada de lo anterior, prueba la lógica laxa de directrices (canal/consolidación).
     if pattern is None:
         pattern = _detect_pattern(trendlines, levels, closes, current_price)
     # Megáfono (a evitar): último recurso, solo si no hay nada mejor.
