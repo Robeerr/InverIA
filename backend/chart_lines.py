@@ -1833,6 +1833,8 @@ def _detect_double(highs, lows, closes):
 
     EQ_MAX     = 0.03   # |A-C| máx entre extremos: 3% estricto; >6% = sesgado
     DEPTH_MIN  = 0.10   # retroceso intermedio B mínimo = altura del patrón (10% Bulkowski)
+    DEPTH_MAX  = 0.45   # rebote intermedio MÁXIMO: un W real rebota 10-40%, no más. Un pico
+                        # gigante entre dos mínimos lejanos NO es un doble suelo (era el bug).
     TREND_MIN  = 0.10   # tendencia previa contraria mínima hacia A (>=10%)
     SEP_MIN    = 10     # velas mínimas entre A y C (~2-3 semanas)
     SEP_MAX    = 250    # velas máximas (~1 año)
@@ -1842,13 +1844,13 @@ def _detect_double(highs, lows, closes):
     W          = 5      # ventana de pivote local (+/-5 velas)
 
     return (_scan_double(highs, lows, closes, n, "suelo",
-                         EQ_MAX, DEPTH_MIN, TREND_MIN, SEP_MIN, SEP_MAX, SYM_LO, SYM_HI, PEN_STRONG, W)
+                         EQ_MAX, DEPTH_MIN, TREND_MIN, SEP_MIN, SEP_MAX, SYM_LO, SYM_HI, PEN_STRONG, W, DEPTH_MAX)
             or _scan_double(highs, lows, closes, n, "techo",
-                            EQ_MAX, DEPTH_MIN, TREND_MIN, SEP_MIN, SEP_MAX, SYM_LO, SYM_HI, PEN_STRONG, W))
+                            EQ_MAX, DEPTH_MIN, TREND_MIN, SEP_MIN, SEP_MAX, SYM_LO, SYM_HI, PEN_STRONG, W, DEPTH_MAX))
 
 
 def _scan_double(highs, lows, closes, n, variante,
-                 EQ_MAX, DEPTH_MIN, TREND_MIN, SEP_MIN, SEP_MAX, SYM_LO, SYM_HI, PEN_STRONG, W):
+                 EQ_MAX, DEPTH_MIN, TREND_MIN, SEP_MIN, SEP_MAX, SYM_LO, SYM_HI, PEN_STRONG, W, DEPTH_MAX=0.45):
     """Escanea una variante ('suelo' o 'techo'). Comparte toda la lógica numérica; solo
     cambia el signo: en el suelo los extremos son mínimos y el cuello un máximo intermedio."""
     es_suelo = variante == "suelo"
@@ -1885,6 +1887,8 @@ def _scan_double(highs, lows, closes, n, variante,
                 depth = (base - pb) / pb
             if depth < DEPTH_MIN:            # sin pico intermedio >=10% es V o redondeado, NO doble
                 continue
+            if depth > DEPTH_MAX:            # rebote >45% => no son dos suelos gemelos de un W,
+                continue                     # sino dos mínimos lejanos alrededor de un pico grande
 
             t1, t2 = i_b - i_a, i_c - i_b
             if t1 <= 0 or t2 <= 0:
