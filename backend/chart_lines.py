@@ -2847,6 +2847,68 @@ def _detect_gap(highs, lows, closes, volumes, atr):
     return None
 
 
+_LINE_KEYS = {"superior", "inferior", "base", "neckline", "cuello", "soporte", "resistencia",
+              "arco", "arco_taza", "mitad_taza", "asa", "objetivo", "soporte_asc",
+              "resistencia_desc", "banda_hueco", "buy_line"}
+
+
+def _pattern_drawables(pattern):
+    """Normaliza la geometría heterogénea de cualquier patrón (lineas/puntos/trendlines/
+    pivotes/neckline) a un formato ÚNICO para el frontend:
+        {"lines": [{"tipo", "points":[{index,price}...]}], "markers": [{index,price,tipo}]}
+    Así el gráfico Pro dibuja cualquier patrón sin conocer su estructura interna."""
+    if not pattern:
+        return None
+    lines, markers = [], []
+
+    def is_point(d):
+        return isinstance(d, dict) and "index" in d and "price" in d and "points" not in d
+
+    def label_of(d):
+        return d.get("label") or d.get("etiqueta") or d.get("punto") or ""
+
+    def add_marker(q, key):
+        markers.append({"index": q["index"], "price": q["price"], "tipo": key, "label": label_of(q)})
+
+    def add_line(pts, tipo):
+        p = [{"index": q["index"], "price": q["price"]} for q in pts
+             if isinstance(q, dict) and q.get("index") is not None and q.get("price") is not None]
+        if len(p) >= 2:
+            lines.append({"tipo": tipo, "points": p})
+        elif len(p) == 1:
+            markers.append({**p[0], "tipo": tipo, "label": ""})
+
+    def walk(obj, key=""):
+        if isinstance(obj, dict):
+            if isinstance(obj.get("points"), list):
+                add_line(obj["points"], obj.get("tipo") or obj.get("kind") or key)
+                return
+            if is_point(obj):
+                add_marker(obj, key)
+                return
+            for k, v in obj.items():
+                walk(v, k)
+        elif isinstance(obj, list):
+            if obj and is_point(obj[0]):
+                if key in _LINE_KEYS:
+                    add_line(obj, key)
+                else:
+                    for q in obj:
+                        if is_point(q):
+                            add_marker(q, key)
+            else:
+                for v in obj:
+                    walk(v, key)
+
+    for key in ("lineas", "trendlines", "puntos", "pivotes", "neckline"):
+        if key in pattern:
+            walk(pattern[key], key)
+    if not lines and not markers:
+        return None
+    return {"lines": lines, "markers": markers,
+            "nombre": pattern.get("nombre"), "sentido": pattern.get("sentido")}
+
+
 def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
     """Punto de entrada. `candles` = lista de dicts con high/low/close (y opcionalmente
     fecha). Devuelve líneas de tendencia + niveles horizontales, en coordenadas de índice
@@ -2951,4 +3013,5 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
         })
 
     return {"trendlines": trendlines, "levels": levels, "pattern": pattern,
-            "candlestick": candlestick, "zones": zones}
+            "candlestick": candlestick, "zones": zones,
+            "pattern_draw": _pattern_drawables(pattern)}

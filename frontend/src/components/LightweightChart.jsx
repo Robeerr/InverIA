@@ -122,6 +122,55 @@ export default function LightweightChart({ candles, indicators, buyLevels, lines
       ]);
     });
 
+    // PATRÓN DIBUJADO (Fase final): el backend normaliza la geometría de cualquier patrón
+    // (arco de taza, neckline, directrices, objetivo, pivotes) a pattern_draw. Lo pintamos.
+    const pd = lines?.pattern_draw;
+    if (pd?.lines?.length) {
+      // Color por tipo de línea (con fallback al sentido del patrón).
+      const colorFor = (tipo) => {
+        const t = (tipo || "").toLowerCase();
+        if (t.includes("objetivo")) return "#2563eb";
+        if (t.includes("invalid") || t.includes("stop")) return "#c0392b";
+        if (t.includes("cuello") || t.includes("neck")) return "#d9a441";
+        if (t.includes("resist") || t.includes("buy")) return "#d85c41";
+        if (t.includes("sop")) return "#4a7c59";
+        if (t.includes("base")) return "#8a958f";
+        if (t.includes("arco") || t.includes("taza")) return "#7c5cbf";
+        return pd.sentido === "bajista" ? "#c0392b" : pd.sentido === "alcista" ? "#1e7a3a" : "#5c6b66";
+      };
+      const dashed = (tipo) => {
+        const t = (tipo || "").toLowerCase();
+        return t.includes("objetivo") || t.includes("invalid") || t.includes("base") || t.includes("mitad");
+      };
+      pd.lines.forEach((ln) => {
+        const raw = (ln.points || [])
+          .map((p) => ({ time: idxTime(p.index), value: p.price }))
+          .filter((p) => p.time != null && Number.isFinite(p.value));
+        // Ordena por tiempo y elimina duplicados de tiempo (Lightweight lo exige).
+        raw.sort((a, b) => a.time - b.time);
+        const data = raw.filter((p, i) => i === 0 || p.time !== raw[i - 1].time);
+        if (data.length < 2) return;
+        const s = chart.addLineSeries({
+          color: colorFor(ln.tipo), lineWidth: 2,
+          lineStyle: dashed(ln.tipo) ? LineStyle.Dashed : LineStyle.Solid,
+          priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+        });
+        s.setData(data);
+      });
+      // Marcadores de pivotes (P1, HI, C, V1…) sobre las velas.
+      const mk = (pd.markers || [])
+        .map((m) => ({ t: idxTime(m.index), label: m.label, sentido: pd.sentido }))
+        .filter((m) => m.t != null && m.label)
+        .sort((a, b) => a.t - b.t)
+        .filter((m, i, arr) => i === 0 || m.t !== arr[i - 1].t);
+      if (mk.length) {
+        candleSeries.setMarkers(mk.map((m) => ({
+          time: m.t, position: "aboveBar", shape: "circle",
+          color: m.sentido === "bajista" ? "#c0392b" : "#1e7a3a", text: m.label,
+        })));
+      }
+    }
+
     chart.timeScale().fitContent();
 
     return () => { try { chart.remove(); } catch (e) {} chartRef.current = null; };
