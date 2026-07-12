@@ -98,6 +98,30 @@ export default function LightweightChart({ candles, indicators, buyLevels, lines
     if (res) candleSeries.createPriceLine({ price: res.price, color: "#d85c41", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: "Res" });
     if (sop) candleSeries.createPriceLine({ price: sop.price, color: "#4a7c59", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: "Sop" });
 
+    // DIRECTRICES (Fase 2): líneas diagonales que unen los swings, como las dibuja un trader.
+    // El backend las da en coordenadas de índice de vela; las mapeamos a la escala temporal
+    // extendiendo la pendiente hasta la última vela.
+    const idxTime = (i) => {
+      const c = candles[i];
+      return c && c.date ? Math.floor(new Date(c.date).getTime() / 1000) : null;
+    };
+    (lines?.trendlines || []).forEach((tl) => {
+      const pts = tl.points || [];
+      if (pts.length < 2) return;
+      const a = pts[0], b = pts[1];
+      const slope = (b.price - a.price) / ((b.index - a.index) || 1);
+      const lastIdx = candles.length - 1;
+      const tA = idxTime(a.index);
+      const tB = idxTime(lastIdx);
+      if (tA == null || tB == null || tB <= tA) return;
+      const col = tl.kind === "resistencia" ? "#d85c41" : "#4a7c59";
+      const seg = chart.addLineSeries({ color: col, lineWidth: 2, lineStyle: LineStyle.Solid, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+      seg.setData([
+        { time: tA, value: +a.price.toFixed(2) },
+        { time: tB, value: +(a.price + slope * (lastIdx - a.index)).toFixed(2) },
+      ]);
+    });
+
     chart.timeScale().fitContent();
 
     return () => { try { chart.remove(); } catch (e) {} chartRef.current = null; };
@@ -115,7 +139,15 @@ export default function LightweightChart({ candles, indicators, buyLevels, lines
         <span className="text-[10px] text-[#8a958f] ml-auto">TradingView Lightweight</span>
       </div>
       <div ref={boxRef} style={{ width: "100%", height: 460 }} />
-      <p className="text-[10px] text-[#8a958f] mt-2">Azul: zonas de compra · Verde/rojo punteado: soporte/resistencia · Líneas: SMA 50 (azul) / 200 (dorado).</p>
+      {lines?.pattern && (
+        <div className="mt-2 flex items-start gap-2 text-[11px]">
+          <span className={`px-1.5 py-0.5 rounded font-mono font-semibold ${lines.pattern.sentido === "alcista" ? "bg-[#e6f4ea] text-[#1e7a3a]" : lines.pattern.sentido === "bajista" ? "bg-[#fbe9e6] text-[#c0392b]" : "bg-[#f0ece3] text-[#5c6b66]"}`}>
+            {lines.pattern.nombre}
+          </span>
+          <span className="text-[#5c6b66] flex-1">{lines.pattern.descripcion}</span>
+        </div>
+      )}
+      <p className="text-[10px] text-[#8a958f] mt-2">Diagonales: directrices · Azul: zonas de compra · Verde/rojo punteado: soporte/resistencia · SMA 50 (azul) / 200 (dorado).</p>
     </div>
   );
 }
