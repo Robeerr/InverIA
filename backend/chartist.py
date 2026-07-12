@@ -17,6 +17,25 @@ import chart_lines
 import knowledge_base
 import ai_analysis
 
+
+def _silhouette(closes, buckets: int = 24) -> list:
+    """Silueta normalizada 0-100 del precio (últimas ~60 velas remuestreadas a `buckets`
+    puntos). Le da al modelo la FORMA real para que juzgue el patrón (U redondeada vs V
+    puntiaguda, etc.) en vez de fiarse a ciegas del algoritmo."""
+    seg = closes[-60:] if len(closes) >= 60 else closes[:]
+    if len(seg) < buckets:
+        pts = [float(x) for x in seg]
+    else:
+        size = len(seg) / buckets
+        pts = []
+        for i in range(buckets):
+            a, b = int(i * size), int((i + 1) * size)
+            chunk = seg[a:b] or [seg[min(a, len(seg) - 1)]]
+            pts.append(sum(chunk) / len(chunk))
+    lo, hi = min(pts), max(pts)
+    rng = (hi - lo) or 1
+    return [round((p - lo) / rng * 100) for p in pts]
+
 # Timeframes que analizamos. De más rápido a más lento: el intradía marca el timing de
 # entrada, el diario/semanal marca la tendencia de fondo.
 _TFS = ["15M", "1H", "4H", "1D", "1W"]
@@ -42,14 +61,16 @@ def _tf_snapshot(sym: str, tf: str) -> dict | None:
         tls = []
         for tl in lines.get("trendlines", []):
             tls.append({"tipo": tl.get("kind"), "direccion": tl.get("direction")})
+        closes = [c.get("close") for c in candles if c.get("close") is not None]
         return {
             "timeframe": tf,
             "precio": round(float(px), 2) if px is not None else None,
-            "patron": {"nombre": pat.get("nombre"), "sentido": pat.get("sentido")} if pat else None,
+            "patron_candidato_algoritmo": {"nombre": pat.get("nombre"), "sentido": pat.get("sentido")} if pat else None,
             "vela": {"nombre": cs.get("nombre"), "sentido": cs.get("sentido")} if cs else None,
             "resistencia": res.get("price") if res else None,
             "soporte": sop.get("price") if sop else None,
             "directrices": tls,
+            "forma_precio_0a100": _silhouette(closes),
         }
     except Exception:
         return None
@@ -58,10 +79,23 @@ def _tf_snapshot(sym: str, tf: str) -> dict | None:
 _PROMPT = """Eres un analista técnico senior enseñando a un inversor particular que NO es
 analista. Tu trabajo: dar un VEREDICTO claro, honesto y PEDAGÓGICO sobre {symbol}.
 
-Te doy la RADIOGRAFÍA GEOMÉTRICA real de cada timeframe (patrón candidato, directrices,
-soporte/resistencia y precio), calculada por un algoritmo. Tú NO inventas niveles nuevos:
-usas ESTOS precios reales. Tu valor es LEER el conjunto, CORREGIR el patrón si el algoritmo
-se equivocó, y explicar QUÉ hacer y POR QUÉ.
+Te doy la RADIOGRAFÍA de cada timeframe: un `patron_candidato_algoritmo` (una PROPUESTA de
+un algoritmo geométrico que SE EQUIVOCA A MENUDO), los niveles reales (soporte/resistencia,
+directrices, precio) y `forma_precio_0a100` — la SILUETA real del precio normalizada de 0
+(mínimo) a 100 (máximo), izquierda→derecha.
+
+REGLA DE ORO: el patrón candidato NO es la verdad. TÚ decides el patrón MIRANDO la
+`forma_precio_0a100`. Valídalo contra la definición real:
+- Taza con asa: forma en "U" REDONDEADA y ancha (baja gradual, fondo plano largo, sube
+  gradual), + una pequeña recaída final (asa). Si es una "V" puntiaguda (baja y sube de
+  golpe), NO es taza — recházalo.
+- Triángulo ascendente: máximos planos (~mismo techo) + mínimos SUBIENDO.
+- Cuña descendente: máximos y mínimos ambos BAJANDO pero convergiendo, sesgo alcista.
+- Doble suelo/techo: dos valles/picos al mismo nivel separados.
+Si la forma no encaja LIMPIAMENTE con ningún patrón, dilo: "sin patrón claro" es una
+respuesta VÁLIDA y honesta. No inventes un patrón para rellenar.
+
+NO inventes niveles: usa los precios reales que te doy.
 
 RADIOGRAFÍA POR TIMEFRAME:
 {snapshots}
@@ -107,7 +141,7 @@ async def analyze(symbol: str) -> dict:
     brain = ""
     try:
         pats = ", ".join(
-            s["patron"]["nombre"] for s in snaps if s.get("patron")
+            s["patron_candidato_algoritmo"]["nombre"] for s in snaps if s.get("patron_candidato_algoritmo")
         )
         brain = knowledge_base.digest_for_prompt(f"análisis técnico chartista patrones {pats} {sym}")
     except Exception:

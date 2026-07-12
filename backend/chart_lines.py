@@ -220,6 +220,19 @@ def _detect_cup_handle(closes):
     handle_pull = (right_rim - min(w[-6:])) / right_rim if right_rim else 1
     if handle_pull > 0.15:                           # el asa es un retroceso suave
         return None
+    # CLAVE: la taza debe ser una "U" REDONDEADA, no una "V" puntiaguda. Dos filtros:
+    lo = min(w)
+    depth_abs = left_rim - lo
+    if depth_abs <= 0:
+        return None
+    # (a) Fondo ANCHO: bastantes velas cerca del mínimo (una V tiene el mínimo aislado).
+    near_bottom = sum(1 for x in w if x <= lo + 0.30 * depth_abs)
+    if near_bottom < max(5, int(0.33 * m)):
+        return None
+    # (b) Mínimo CENTRADO: en una taza el fondo está en la zona media, no pegado a un borde.
+    bi = w.index(lo)
+    if not (0.20 * m <= bi <= 0.80 * m):
+        return None
     return {"tipo": "taza_asa", "nombre": "Taza con asa", "sentido": "alcista",
             "descripcion": "Fondo redondeado (taza) y una pequeña consolidación (asa) cerca del "
             "borde. Patrón alcista de O'Neil: se compra en la ruptura del borde con volumen."}
