@@ -1117,7 +1117,10 @@ def _detect_triple_top_bottom(highs, lows, closes):
     if len(seq) < 5:
         return None
     for start in range(len(seq) - 5, -1, -1):
-        tipos = [p[1] for p in seq[start:start + 5]]
+        win = seq[start:start + 5]
+        if win[-1][0] < n - 70:              # el 3er extremo debe ser RECIENTE (patrón vigente)
+            continue
+        tipos = [p[1] for p in win]
         lado = None
         if tipos == ["high", "low", "high", "low", "high"]:
             lado = "techo"
@@ -1831,7 +1834,7 @@ def _detect_double(highs, lows, closes):
     if max(highs) - min(lows) <= 0:
         return None
 
-    EQ_MAX     = 0.03   # |A-C| máx entre extremos: 3% estricto; >6% = sesgado
+    EQ_MAX     = 0.02   # |A-C| máx entre extremos: 2% (apretado para reducir falsos positivos)
     DEPTH_MIN  = 0.10   # retroceso intermedio B mínimo = altura del patrón (10% Bulkowski)
     DEPTH_MAX  = 0.45   # rebote intermedio MÁXIMO: un W real rebota 10-40%, no más. Un pico
                         # gigante entre dos mínimos lejanos NO es un doble suelo (era el bug).
@@ -1945,6 +1948,10 @@ def _scan_double(highs, lows, closes, n, variante,
                         invalidado = True; break
             if invalidado:
                 continue
+            if not confirmado:                # SOLO mostramos el doble si ya rompió el cuello
+                continue                      # (evita ruido: un W sin confirmar sale demasiado)
+            if i_d is not None and i_d < n - 60:   # y solo si la ruptura es RECIENTE (patrón vigente,
+                continue                           # no un W de hace 200 velas ya irrelevante)
 
             cand = {
                 "i_a": i_a, "i_b": i_b, "i_c": i_c, "i_d": i_d, "i_p0": i_p0,
