@@ -32,6 +32,8 @@ export const api = {
   quote: (symbol) => client.get(`/quote/${symbol}`).then((r) => r.data),
   chart: (symbol, timeframe = "1Y") =>
     client.get(`/chart/${symbol}`, { params: { timeframe } }).then((r) => r.data),
+  chartist: (symbol, refresh = false) =>
+    client.get(`/chartist/${symbol}`, { params: { refresh }, timeout: 90000 }).then((r) => r.data),
   indicators: (symbol) => client.get(`/indicators/${symbol}`).then((r) => r.data),
   news: (symbol) => client.get(`/news/${symbol}`).then((r) => r.data),
   analyze: (symbol, model) =>

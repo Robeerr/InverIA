@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import QuoteHeader from "../components/QuoteHeader";
 import PriceChart from "../components/PriceChart";
 import LightweightChart from "../components/LightweightChart";
+import ChartistPanel from "../components/ChartistPanel";
 import RecommendationPanel from "../components/RecommendationPanel";
 import AnalysisSummaryPanel from "../components/AnalysisSummaryPanel";
 import SourcesPanel from "../components/SourcesPanel";
@@ -353,6 +354,9 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
               lines={chartLines}
             />
           )}
+          <div className="mt-4">
+            <ChartistPanel symbol={symbol} />
+          </div>
         </div>
         <div className="space-y-4">
           <RecommendationPanel

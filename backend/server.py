@@ -34,6 +34,7 @@ import daily_analyst
 import newsletter_ingest
 import market_regime
 import chart_lines
+import chartist
 import levels_engine
 import auth
 
@@ -427,6 +428,26 @@ async def get_chart(symbol: str, timeframe: str = "1Y"):
     result = {"symbol": sym, "timeframe": timeframe, "candles": candles,
               "lines": _compute_chart_lines(candles)}
     _cache.set(f"chart:{sym}:{timeframe}", result, ttl=300)  # 5 min
+    return result
+
+
+@api_router.get("/chartist/{symbol}")
+async def chartist_verdict(symbol: str, refresh: bool = False):
+    """Veredicto del Chartista IA: análisis multi-timeframe (geometría real + Gemini +
+    cerebro) con plan accionable y explicación pedagógica. Cacheado 30 min."""
+    sym = symbol.upper()
+    key = f"chartist:{sym}"
+    if not refresh:
+        cached = _cache.get(key)
+        if cached:
+            return cached
+    try:
+        result = await chartist.analyze(sym)
+    except RuntimeError as e:
+        raise HTTPException(422, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"El Chartista IA falló: {e}")
+    _cache.set(key, result, ttl=1800)  # 30 min
     return result
 
 
