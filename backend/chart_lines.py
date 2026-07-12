@@ -325,6 +325,15 @@ def _eval_hch(sign, peak_vals, valley_vals, closes, atr, price_range):
     if best is None:
         return None
 
+    # VIGENCIA: un H&S de techo cuyo precio ha recuperado SOBRE la clavicular (o un invertido
+    # que ha vuelto por DEBAJO) está invalidado — el precio anuló la tesis. Descartar.
+    nl_last = best["nl_at"](len(closes) - 1)
+    cur = closes[-1]
+    if sign > 0 and cur > nl_last:      # techo (bajista) pero precio de nuevo sobre la neckline
+        return None
+    if sign < 0 and cur < nl_last:      # invertido (alcista) pero precio de nuevo bajo la neckline
+        return None
+
     nl_at = best["nl_at"]
     HI, A1, C, A2, HD = best["HI"], best["A1"], best["C"], best["A2"], best["HD"]
     altura = best["altura"]
@@ -1074,6 +1083,13 @@ def _validar_triple(seq, start, lado, highs, lows, closes,
             ruptura = {"index": int(k), "price": round(float(closes[k]), 2)}
             break
     confirmado = ruptura is not None
+    if not confirmado:                       # solo triples CONFIRMADOS (evita 'pendientes' prematuros)
+        return None
+    cur = closes[-1]                         # y aún VIGENTES: el precio no ha vuelto al otro lado
+    if lado == "techo" and cur > neckline:   # techo: si recupera sobre la neckline, invalidado
+        return None
+    if lado == "suelo" and cur < neckline:   # suelo: si pierde la neckline, invalidado
+        return None
     objetivo = round(float(neckline - H if lado == "techo" else neckline + H), 2)
 
     tags = ["P1", "V1", "P2", "V2", "P3"] if lado == "techo" else ["V1", "P1", "V2", "P2", "V3"]
@@ -1952,6 +1968,11 @@ def _scan_double(highs, lows, closes, n, variante,
                 continue                      # (evita ruido: un W sin confirmar sale demasiado)
             if i_d is not None and i_d < n - 60:   # y solo si la ruptura es RECIENTE (patrón vigente,
                 continue                           # no un W de hace 200 velas ya irrelevante)
+            cur = closes[-1]                       # y VIGENTE: el precio no ha recaído al otro lado
+            if es_suelo and cur < neck:            # doble suelo: recayó bajo el cuello -> invalidado
+                continue
+            if (not es_suelo) and cur > neck:       # doble techo: recuperó sobre el cuello -> invalidado
+                continue
 
             cand = {
                 "i_a": i_a, "i_b": i_b, "i_c": i_c, "i_d": i_d, "i_p0": i_p0,
