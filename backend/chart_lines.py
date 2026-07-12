@@ -333,6 +333,13 @@ def _eval_hch(sign, peak_vals, valley_vals, closes, atr, price_range):
         return None
     if sign < 0 and cur < nl_last:      # invertido (alcista) pero precio de nuevo bajo la neckline
         return None
+    # AGOTADO: si el precio ya alcanzó el objetivo (neckline -/+ altura), el movimiento ya
+    # ocurrió -> patrón histórico, no señal actual.
+    objetivo_px = nl_last - sign * best["altura"]
+    if sign > 0 and cur <= objetivo_px:
+        return None
+    if sign < 0 and cur >= objetivo_px:
+        return None
 
     nl_at = best["nl_at"]
     HI, A1, C, A2, HD = best["HI"], best["A1"], best["C"], best["A2"], best["HD"]
@@ -1091,6 +1098,12 @@ def _validar_triple(seq, start, lado, highs, lows, closes,
     if lado == "suelo" and cur < neckline:   # suelo: si pierde la neckline, invalidado
         return None
     objetivo = round(float(neckline - H if lado == "techo" else neckline + H), 2)
+    # AGOTADO: si el precio YA alcanzó el objetivo, el movimiento predicho ya ocurrió
+    # (reversión histórica, no señal actual). No mostrar.
+    if lado == "techo" and cur <= objetivo:
+        return None
+    if lado == "suelo" and cur >= objetivo:
+        return None
 
     tags = ["P1", "V1", "P2", "V2", "P3"] if lado == "techo" else ["V1", "P1", "V2", "P2", "V3"]
     pivotes = [{"index": int(p[0]), "price": round(float(p[2]), 2), "punto": t}
@@ -1985,6 +1998,13 @@ def _scan_double(highs, lows, closes, n, variante,
             if es_suelo and cur < neck:            # doble suelo: recayó bajo el cuello -> invalidado
                 continue
             if (not es_suelo) and cur > neck:       # doble techo: recuperó sobre el cuello -> invalidado
+                continue
+            # AGOTADO: si el precio ya alcanzó el objetivo (neck +/- altura), el movimiento ya
+            # ocurrió -> patrón histórico, no señal actual.
+            _H = abs(neck - base)
+            if es_suelo and cur >= neck + _H:
+                continue
+            if (not es_suelo) and cur <= neck - _H:
                 continue
 
             cand = {
