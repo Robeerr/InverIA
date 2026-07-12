@@ -1875,7 +1875,9 @@ def _scan_double(highs, lows, closes, n, variante,
     es_suelo = variante == "suelo"
     ext = lows if es_suelo else highs                     # serie de los dos extremos A y C
     mid = highs if es_suelo else lows                     # serie del retroceso intermedio B
-    ext_piv = _pivots(ext, "low" if es_suelo else "high", W, W)
+    # Pivotes SIN duplicados: un suelo/techo plano genera 2+ pivotes adyacentes que inflaban
+    # el discriminador de triple/rango y hacían fallar la detección (bug).
+    ext_piv = _swing_extremes(ext, "low" if es_suelo else "high", W)
     if len(ext_piv) < 2:
         return None
 
@@ -2634,14 +2636,29 @@ def _detect_island(highs, lows, closes, atr):
     return None
 
 
+def _swing_extremes(values, kind, k=3, gap=5):
+    """Pivotes SIN duplicados: colapsa pivotes del mismo swing (a <gap velas) quedándose con
+    el más extremo. Evita contar dos veces un suelo/techo plano (bug de tres valles)."""
+    piv = _pivots(values, kind, k, k)
+    out = []
+    for i in piv:
+        if out and i - out[-1] < gap:
+            better = values[i] < values[out[-1]] if kind == "low" else values[i] > values[out[-1]]
+            if better:
+                out[-1] = i
+        else:
+            out.append(i)
+    return out
+
+
 def _detect_three_rising(highs, lows, closes):
     """Tres valles ascendentes (alcista) / tres picos descendentes (bajista). Tres swings del
     mismo tipo monótonos (>=1% cada paso), homogéneos, sin violación estructural."""
     n = len(closes)
     if n < 25:
         return None
-    lo = _pivots(lows, "low", 3, 3)
-    hi = _pivots(highs, "high", 3, 3)
+    lo = _swing_extremes(lows, "low")     # deduplicados (suelos planos no cuentan doble)
+    hi = _swing_extremes(highs, "high")
     # 3 valles ascendentes
     if len(lo) >= 3:
         v1, v2, v3 = lo[-3], lo[-2], lo[-1]
@@ -2884,14 +2901,21 @@ _LINE_KEYS = {"superior", "inferior", "base", "neckline", "cuello", "soporte", "
               "resistencia_desc", "banda_hueco", "buy_line"}
 
 
-def _pattern_drawables(pattern):
+def _pattern_drawables(pattern, n=None):
     """Normaliza la geometría heterogénea de cualquier patrón (lineas/puntos/trendlines/
     pivotes/neckline) a un formato ÚNICO para el frontend:
         {"lines": [{"tipo", "points":[{index,price}...]}], "markers": [{index,price,tipo}]}
-    Así el gráfico Pro dibuja cualquier patrón sin conocer su estructura interna."""
+    Así el gráfico Pro dibuja cualquier patrón sin conocer su estructura interna. `n` = nº de
+    velas: los índices proyectados al FUTURO (apex, objetivo) se clampan al borde del gráfico."""
     if not pattern:
         return None
     lines, markers = [], []
+    last = (n - 1) if n else None
+
+    def clamp(idx):
+        if last is None or idx is None:
+            return idx
+        return max(0, min(int(idx), last))       # nunca fuera del gráfico (evita apex/objetivo perdidos)
 
     def is_point(d):
         return isinstance(d, dict) and "index" in d and "price" in d and "points" not in d
@@ -2900,10 +2924,13 @@ def _pattern_drawables(pattern):
         return d.get("label") or d.get("etiqueta") or d.get("punto") or ""
 
     def add_marker(q, key):
+        # Los marcadores proyectados fuera del gráfico (apex/objetivo futuros) no se dibujan.
+        if last is not None and (q["index"] < 0 or q["index"] > last):
+            return
         markers.append({"index": q["index"], "price": q["price"], "tipo": key, "label": label_of(q)})
 
     def add_line(pts, tipo):
-        p = [{"index": q["index"], "price": q["price"]} for q in pts
+        p = [{"index": clamp(q["index"]), "price": q["price"]} for q in pts
              if isinstance(q, dict) and q.get("index") is not None and q.get("price") is not None]
         if len(p) >= 2:
             lines.append({"tipo": tipo, "points": p})
@@ -3001,11 +3028,9 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
         pattern = _detect_head_shoulders(highs, lows, closes, price_range)
     if pattern is None:
         pattern = _detect_diamond(highs, lows, closes)
-    # Suelo/techo redondeado y tres valles/picos.
+    # Suelo/techo redondeado (parábola).
     if pattern is None:
         pattern = _detect_rounding(highs, lows, closes)
-    if pattern is None:
-        pattern = _detect_three_rising(highs, lows, closes)
     # Triángulos y cuñas RIGUROSOS (regresión + apex + toques): tienen prioridad sobre la
     # lógica laxa de _detect_pattern. Cuña primero (más restrictiva), luego triángulo.
     if pattern is None:
@@ -3018,6 +3043,10 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
     # Rectángulo / rango lateral horizontal.
     if pattern is None:
         pattern = _detect_rectangle(highs, lows, closes, volumes)
+    # Tres valles/picos: patrón DÉBIL (solo 3 swings), fallback tras las estructuras claras
+    # (triángulo/cuña/canal también tienen mínimos crecientes pero son más específicos).
+    if pattern is None:
+        pattern = _detect_three_rising(highs, lows, closes)
     # Si nada de lo anterior, prueba la lógica laxa de directrices (canal/consolidación).
     if pattern is None:
         pattern = _detect_pattern(trendlines, levels, closes, current_price)
@@ -3046,4 +3075,4 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
 
     return {"trendlines": trendlines, "levels": levels, "pattern": pattern,
             "candlestick": candlestick, "zones": zones,
-            "pattern_draw": _pattern_drawables(pattern)}
+            "pattern_draw": _pattern_drawables(pattern, len(closes))}
