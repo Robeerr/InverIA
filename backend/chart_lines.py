@@ -2442,6 +2442,388 @@ def _detect_pattern(trendlines, levels, closes, current_price):
     return None
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# BLOQUE 2 de detectores (escritos desde la investigación): suelo/techo redondeado,
+# isla de vuelta, diamante, hueco, pipe, tres valles/picos, taza sin asa.
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _parabola_fit(ys):
+    """Ajusta y = a·x² + b·x + c por MCO y devuelve (a, b, c, r2). Python puro."""
+    n = len(ys)
+    if n < 3:
+        return 0.0, 0.0, (ys[0] if ys else 0.0), 0.0
+    xs = list(range(n))
+    Sx = sum(xs); Sx2 = sum(x * x for x in xs)
+    Sx3 = sum(x ** 3 for x in xs); Sx4 = sum(x ** 4 for x in xs)
+    Sy = sum(ys); Sxy = sum(x * y for x, y in zip(xs, ys))
+    Sx2y = sum(x * x * y for x, y in zip(xs, ys))
+    A = [[Sx4, Sx3, Sx2, Sx2y], [Sx3, Sx2, Sx, Sxy], [Sx2, Sx, n, Sy]]
+    for i in range(3):
+        piv = A[i][i]
+        if abs(piv) < 1e-12:
+            return 0.0, 0.0, Sy / n, 0.0
+        for j in range(i, 4):
+            A[i][j] /= piv
+        for k in range(3):
+            if k != i:
+                f = A[k][i]
+                for j in range(i, 4):
+                    A[k][j] -= f * A[i][j]
+    a, b, c = A[0][3], A[1][3], A[2][3]
+    my = Sy / n
+    ss_tot = sum((y - my) ** 2 for y in ys)
+    ss_res = sum((ys[x] - (a * x * x + b * x + c)) ** 2 for x in xs)
+    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    return a, b, c, r2
+
+
+def _detect_rounding(highs, lows, closes):
+    """Suelo redondeado (U, alcista) / techo redondeado (domo, bajista): giro suave en arco
+    parabólico. Exige ajuste de parábola R²>=0.85, vértice centrado (30-70%) y tendencia
+    previa contraria. Devuelve dict con arco de dibujo o None."""
+    n = len(closes)
+    if n < 30:
+        return None
+    look = min(n, 160)
+    off = n - look
+    C = closes[off:]
+    m = len(C)
+    a, b, c, r2 = _parabola_fit(C)
+    if r2 < 0.85 or a == 0:
+        return None
+    vx = -b / (2 * a)
+    if not (0.30 * m <= vx <= 0.70 * m):          # vértice en la franja central (simetría)
+        return None
+    price = sum(C) / m
+    depth = (max(C) - min(C))
+    if depth / price < 0.06:                        # demasiado plano = ruido
+        return None
+    # curvatura mínima: la parábola debe explicar buena parte de la profundidad.
+    if abs(a) * m * m < 0.5 * depth:
+        return None
+    suelo = a > 0                                   # a>0 => cóncava hacia arriba => U (suelo)
+    # tendencia previa CONTRARIA (hacia el primer borde de la ventana).
+    pre = closes[max(0, off - 40):off]
+    if pre:
+        drift = (C[0] - pre[0]) / (abs(pre[0]) or 1)
+        if suelo and drift > -0.05:                 # suelo redondeado exige bajada previa
+            return None
+        if not suelo and drift < 0.05:              # techo exige subida previa
+            return None
+    vi = int(round(vx))
+    r = lambda x: round(float(x), 2)
+    arco = {"tipo": "arco", "points": [
+        {"index": int(off), "price": r(C[0])},
+        {"index": int(off + vi), "price": r(min(C) if suelo else max(C))},
+        {"index": int(n - 1), "price": r(C[-1])}]}
+    if suelo:
+        return {"tipo": "suelo_redondeado", "nombre": "Suelo redondeado", "sentido": "alcista",
+                "descripcion": ("Giro suave en 'U' ancha (platillo): reversión ALCISTA de largo plazo. "
+                                "Se compra en la ruptura del nivel del borde con volumen creciente."),
+                "puntos": [arco]}
+    return {"tipo": "techo_redondeado", "nombre": "Techo redondeado", "sentido": "bajista",
+            "descripcion": ("Giro suave en domo ('n'): reversión BAJISTA de largo plazo. Se vende al "
+                            "perder el nivel del borde."),
+            "puntos": [arco]}
+
+
+def _detect_island(highs, lows, closes, atr):
+    """Isla de vuelta: grupo compacto de K velas aislado por DOS huecos opuestos al mismo
+    nivel. Techo (tras subida) o suelo (tras bajada). Devuelve dict o None."""
+    n = len(closes)
+    if n < 25:
+        return None
+    gmin = max(0.3 * atr, 0.005 * closes[-1])
+    # buscamos el hueco-2 (ruptura) reciente y su hueco-1 (agotamiento) unas K velas antes.
+    for last in range(n - 1, n - 12, -1):
+        if last < 6:
+            break
+        # hueco2 entre (last-1) e (last)?
+        gap2_baj = highs[last] < lows[last - 1] - gmin      # isla de TECHO cierra con hueco bajista
+        gap2_alc = lows[last] > highs[last - 1] + gmin      # isla de SUELO cierra con hueco alcista
+        if not (gap2_baj or gap2_alc):
+            continue
+        techo = gap2_baj
+        # la isla = [first..last-1]; buscamos hueco1 al inicio (mismo nivel, sentido opuesto).
+        for first in range(last - 1, max(0, last - 9), -1):
+            if first < 1:
+                break
+            if techo:
+                gap1 = lows[first] > highs[first - 1] + gmin    # hueco alcista de agotamiento
+                mismo_nivel = abs(highs[last] - highs[first - 1]) < 3 * atr
+            else:
+                gap1 = highs[first] < lows[first - 1] - gmin    # hueco bajista de agotamiento
+                mismo_nivel = abs(lows[last] - lows[first - 1]) < 3 * atr
+            if not (gap1 and mismo_nivel):
+                continue
+            # tendencia previa (10-30 velas antes de first-1) en el sentido a revertir.
+            pre = closes[max(0, first - 25):first]
+            if len(pre) < 8:
+                continue
+            trend = (closes[first - 1] - pre[0]) / (abs(pre[0]) or 1)
+            if techo and trend < 0.08:
+                continue
+            if not techo and trend > -0.08:
+                continue
+            r = lambda x: round(float(x), 2)
+            isla = [{"index": int(i), "price": r(closes[i])} for i in range(first, last)]
+            if techo:
+                return {"tipo": "isla_techo", "nombre": "Isla de vuelta (techo)", "sentido": "bajista",
+                        "descripcion": ("Grupo de velas aislado por dos huecos opuestos tras una subida: "
+                                        "reversión BAJISTA potente. Confirma el hueco de ruptura a la baja."),
+                        "puntos": isla}
+            return {"tipo": "isla_suelo", "nombre": "Isla de vuelta (suelo)", "sentido": "alcista",
+                    "descripcion": ("Grupo de velas aislado por dos huecos opuestos tras una caída: "
+                                    "reversión ALCISTA potente. Confirma el hueco de ruptura al alza."),
+                    "puntos": isla}
+    return None
+
+
+def _detect_three_rising(highs, lows, closes):
+    """Tres valles ascendentes (alcista) / tres picos descendentes (bajista). Tres swings del
+    mismo tipo monótonos (>=1% cada paso), homogéneos, sin violación estructural."""
+    n = len(closes)
+    if n < 25:
+        return None
+    lo = _pivots(lows, "low", 3, 3)
+    hi = _pivots(highs, "high", 3, 3)
+    # 3 valles ascendentes
+    if len(lo) >= 3:
+        v1, v2, v3 = lo[-3], lo[-2], lo[-1]
+        l1, l2, l3 = lows[v1], lows[v2], lows[v3]
+        if l1 > 0 and (l2 - l1) / l1 >= 0.01 and (l3 - l2) / l2 >= 0.01:
+            # sin violación: entre v2 y v3 ningún cierre bajo l2
+            if min(closes[v2:v3 + 1]) >= l2 * 0.995 and (v3 - v1) >= 12:
+                r = lambda x: round(float(x), 2)
+                pts = [{"index": int(v), "price": r(lows[v]), "punto": f"V{k+1}"} for k, v in enumerate((v1, v2, v3))]
+                return {"tipo": "tres_valles", "nombre": "Tres valles ascendentes", "sentido": "alcista",
+                        "descripcion": ("Tres mínimos consecutivos cada vez más altos: la presión compradora "
+                                        "gana terreno. Sesgo ALCISTA; ruptura del último pico lo confirma."),
+                        "puntos": pts,
+                        "lineas": [{"tipo": "soporte_asc", "points": [pts[0], pts[2]]}]}
+    # 3 picos descendentes
+    if len(hi) >= 3:
+        p1, p2, p3 = hi[-3], hi[-2], hi[-1]
+        h1, h2, h3 = highs[p1], highs[p2], highs[p3]
+        if h1 > 0 and (h1 - h2) / h1 >= 0.01 and (h2 - h3) / h2 >= 0.01:
+            if max(closes[p2:p3 + 1]) <= h2 * 1.005 and (p3 - p1) >= 12:
+                r = lambda x: round(float(x), 2)
+                pts = [{"index": int(p), "price": r(highs[p]), "punto": f"P{k+1}"} for k, p in enumerate((p1, p2, p3))]
+                return {"tipo": "tres_picos", "nombre": "Tres picos descendentes", "sentido": "bajista",
+                        "descripcion": ("Tres máximos consecutivos cada vez más bajos: la presión vendedora "
+                                        "domina. Sesgo BAJISTA; pérdida del último valle lo confirma."),
+                        "puntos": pts,
+                        "lineas": [{"tipo": "resistencia_desc", "points": [pts[0], pts[2]]}]}
+    return None
+
+
+def _detect_pipe(highs, lows, closes, lookback: int = 52):
+    """Pipe bottom/top (Bulkowski): dos velas ADYACENTES con picos gemelos muy largos (>=2x el
+    rango medio previo) y gran solapamiento (>=50%). Suelo (tras bajada) / techo (tras subida)."""
+    n = len(closes)
+    if n < 20:
+        return None
+    i = n - 2                                        # las dos últimas velas
+    j = n - 1
+    rng_i = highs[i] - lows[i]
+    rng_j = highs[j] - lows[j]
+    if rng_i <= 0 or rng_j <= 0:
+        return None
+    prev = [highs[k] - lows[k] for k in range(max(0, i - lookback), i)]
+    if len(prev) < 10:
+        return None
+    avg = sum(prev) / len(prev)
+    if rng_i < 2.0 * avg or rng_j < 2.0 * avg:       # picos mucho más largos que la media
+        return None
+    overlap = min(highs[i], highs[j]) - max(lows[i], lows[j])
+    if overlap / min(rng_i, rng_j) < 0.50:           # gran solapamiento vertical
+        return None
+    pre = closes[max(0, i - 20):i]
+    if len(pre) < 8:
+        return None
+    trend = (closes[i] - pre[0]) / (abs(pre[0]) or 1)
+    r = lambda x: round(float(x), 2)
+    pts = [{"index": int(i), "price": r(lows[i])}, {"index": int(j), "price": r(lows[j])}]
+    if trend < -0.08:                                # bajada previa → pipe bottom (alcista)
+        return {"tipo": "pipe_bottom", "nombre": "Pipe bottom (suelo en tubo)", "sentido": "alcista",
+                "descripcion": ("Dos velas gemelas de rango muy largo tras una caída: suelo de reversión "
+                                "ALCISTA (Bulkowski). Compra sobre el máximo de las dos velas."),
+                "puntos": pts}
+    if trend > 0.08:                                 # subida previa → pipe top (bajista)
+        return {"tipo": "pipe_top", "nombre": "Pipe top (techo en tubo)", "sentido": "bajista",
+                "descripcion": ("Dos velas gemelas de rango muy largo tras una subida: techo de reversión "
+                                "BAJISTA (Bulkowski). Vende bajo el mínimo de las dos velas."),
+                "puntos": [{"index": int(i), "price": r(highs[i])}, {"index": int(j), "price": r(highs[j])}]}
+    return None
+
+
+def _detect_diamond(highs, lows, closes):
+    """Diamante (top/bottom): ensanchamiento (izquierda diverge) seguido de contracción
+    (derecha converge). Rombo de 4 vértices. Requiere >=5 pivotes alternos."""
+    n = len(closes)
+    if n < 30:
+        return None
+    look = min(n, 140)
+    off = n - look
+    seq = _alternating_swings(highs[off:], lows[off:])
+    if len(seq) < 6:
+        return None
+    seq = seq[-9:]
+    # centro = pivote de mayor amplitud (donde el rombo es más ancho). Partimos la serie.
+    idxs = [p[0] for p in seq]
+    mid = len(seq) // 2
+    left = seq[:mid + 1]
+    right = seq[mid:]
+    if len(left) < 3 or len(right) < 3:
+        return None
+    hL = [p[2] for p in left if p[1] == "H"]; lL = [p[2] for p in left if p[1] == "L"]
+    hR = [p[2] for p in right if p[1] == "H"]; lR = [p[2] for p in right if p[1] == "L"]
+    if len(hL) < 2 or len(lL) < 2 or len(hR) < 2 or len(lR) < 2:
+        return None
+    # Fase 1: máximos crecientes + mínimos decrecientes (diverge).
+    if not (hL[-1] > hL[0] and lL[-1] < lL[0]):
+        return None
+    # Fase 2: máximos decrecientes + mínimos crecientes (converge).
+    if not (hR[-1] < hR[0] and lR[-1] > lR[0]):
+        return None
+    spread_c = max(hL[-1], hR[0]) - min(lL[-1], lR[0])
+    spread_L = hL[0] - lL[0]
+    spread_R = hR[-1] - lR[-1]
+    if spread_L <= 0 or spread_R <= 0 or spread_c <= 0:
+        return None
+    if spread_c / spread_L < 1.3 or spread_c / spread_R < 1.3:   # ensancha y luego contrae
+        return None
+    price = sum(closes[off:]) / look
+    prev = closes[max(0, off - 30):off]
+    up = bool(prev) and (closes[off] - prev[0]) / (abs(prev[0]) or 1) > 0.08
+    r = lambda x: round(float(x), 2)
+    T = max(seq, key=lambda p: p[2]); B = min(seq, key=lambda p: p[2])
+    vertices = [{"index": int(idxs[0] + off), "price": r(seq[0][2]), "punto": "L"},
+                {"index": int(T[0] + off), "price": r(T[2]), "punto": "T"},
+                {"index": int(B[0] + off), "price": r(B[2]), "punto": "B"},
+                {"index": int(idxs[-1] + off), "price": r(seq[-1][2]), "punto": "R"}]
+    sentido = "bajista" if up else "alcista"
+    return {"tipo": "diamante", "nombre": "Diamante " + ("de techo" if up else "de suelo"),
+            "sentido": sentido,
+            "descripcion": ("Rombo: primero la volatilidad se ensancha (diverge) y luego se contrae "
+                            "(converge). Reversión " + ("BAJISTA tras subida" if up else "ALCISTA tras caída") +
+                            "; la ruptura de la directriz de la fase de contracción confirma."),
+            "puntos": vertices}
+
+
+def _detect_cup_no_handle(closes, highs=None, lows=None):
+    """Taza SIN asa (cup without handle): U redondeada con bordes ~iguales y subida previa, que
+    rompe la resistencia SIN consolidación (asa). Reutiliza la geometría de la taza."""
+    n = len(closes)
+    if highs is None:
+        highs = closes
+    if lows is None:
+        lows = closes
+    if n < 40:
+        return None
+    W = min(n, 300)
+    off = n - W
+    H = highs[off:]; L = lows[off:]
+    m = len(H)
+    hi = _pivots(H, "high", 3, 3)
+    if len(hi) < 2:
+        return None
+    best = None
+    for p2 in hi:
+        if m - 1 - p2 > 5:                 # borde derecho debe estar CERCA del final (sin asa larga)
+            continue
+        for p0 in hi:
+            width = p2 - p0
+            if width < 25 or width > 300:
+                continue
+            rim = max(H[p0], H[p2])
+            if abs(H[p0] - H[p2]) / H[p0] > 0.05:
+                continue
+            seg = L[p0:p2 + 1]
+            lo = min(seg); p1 = p0 + seg.index(lo)
+            depth_abs = rim - lo
+            if depth_abs <= 0:
+                continue
+            depth = depth_abs / rim
+            if not (0.12 <= depth <= 0.50):
+                continue
+            if not (0.30 <= (p1 - p0) / width <= 0.70):     # fondo centrado
+                continue
+            lower_third = lo + 0.33 * depth_abs
+            nb = [k for k in range(p0, p2 + 1) if L[k] <= lower_third]
+            if len(nb) < 5 or (nb[-1] - nb[0]) < 0.20 * width:
+                continue
+            if _quad_curvature(seg) <= 0:                    # U, no V
+                continue
+            gi = p0 + off
+            if gi >= 20:
+                prev = lows[max(0, gi - 60):gi]
+                if prev and (H[p0] - min(prev)) / min(prev) < 0.30:   # subida previa >=30%
+                    continue
+            score = (1.0 - abs(depth - 0.22), width)
+            if best is None or score > best[0]:
+                best = (score, p0, p1, p2, rim, lo, depth_abs)
+    if best is None:
+        return None
+    _, p0, p1, p2, rim, lo, depth_abs = best
+    r = lambda x: round(float(x), 2)
+    gi = lambda k: int(k + off)
+    pivote = rim
+    objetivo = pivote + depth_abs
+    return {"tipo": "taza_sin_asa", "nombre": "Taza sin asa", "sentido": "alcista",
+            "descripcion": ("Fondo redondeado en 'U' con bordes al mismo nivel tras una subida previa, que "
+                            "rompe la resistencia %.2f SIN consolidación (asa). Continuación alcista; objetivo "
+                            "%.2f (pivote + profundidad)." % (round(pivote, 2), round(objetivo, 2))),
+            "pivote": round(float(pivote), 2), "objetivo": round(float(objetivo), 2),
+            "puntos": [{"index": gi(p0), "price": r(H[p0]), "punto": "P1"},
+                       {"index": gi(p1), "price": r(lo), "punto": "P2"},
+                       {"index": gi(p2), "price": r(H[p2]), "punto": "P3"}],
+            "lineas": [{"tipo": "arco_taza", "points": [{"index": gi(p0), "price": r(rim)},
+                                                        {"index": gi(p1), "price": r(lo)},
+                                                        {"index": gi(p2), "price": r(rim)}]},
+                       {"tipo": "resistencia", "points": [{"index": gi(p0), "price": r(pivote)},
+                                                          {"index": int(n - 1), "price": r(pivote)}]}]}
+
+
+def _detect_gap(highs, lows, closes, volumes, atr):
+    """Hueco (gap) reciente significativo: banda de precio sin solape entre dos velas. Clasifica
+    breakaway/runaway/agotamiento por volumen si está disponible. Informativo (baja prioridad)."""
+    n = len(closes)
+    if n < 5:
+        return None
+    gmin = max(0.01 * closes[-1], 0.5 * atr)
+    for i in range(n - 1, max(0, n - 6), -1):
+        alc = lows[i] > highs[i - 1] + gmin
+        baj = highs[i] < lows[i - 1] - gmin
+        if not (alc or baj):
+            continue
+        size = (lows[i] - highs[i - 1]) if alc else (lows[i - 1] - highs[i])
+        clase = "hueco"
+        if volumes and len(volumes) >= n:
+            sma = sum(volumes[max(0, i - 20):i]) / max(1, len(volumes[max(0, i - 20):i]))
+            if sma:
+                ratio = volumes[i] / sma
+                post = volumes[i + 1:i + 4]
+                colapso = post and (sum(post) / len(post)) < 0.8 * sma
+                if ratio >= 2 and colapso:
+                    clase = "hueco de agotamiento"
+                elif ratio >= 1.5 and not colapso:
+                    clase = "hueco de ruptura/continuación"
+        sentido = "alcista" if alc else "bajista"
+        lo_b = highs[i - 1] if alc else highs[i]
+        hi_b = lows[i] if alc else lows[i - 1]
+        r = lambda x: round(float(x), 2)
+        return {"tipo": "hueco", "nombre": clase.capitalize() + (" alcista" if alc else " bajista"),
+                "sentido": sentido,
+                "descripcion": ("Hueco %s del %.1f%%: el precio salta sin negociar entre %.2f y %.2f. Suele "
+                                "actuar como soporte/resistencia; muchos se rellenan." %
+                                (sentido, 100 * size / closes[i - 1], round(lo_b, 2), round(hi_b, 2))),
+                "puntos": [{"tipo": "banda_hueco",
+                            "points": [{"index": int(i - 1), "price": r(lo_b)}, {"index": int(n - 1), "price": r(lo_b)},
+                                       {"index": int(i - 1), "price": r(hi_b)}, {"index": int(n - 1), "price": r(hi_b)}]}]}
+    return None
+
+
 def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
     """Punto de entrada. `candles` = lista de dicts con high/low/close (y opcionalmente
     fecha). Devuelve líneas de tendencia + niveles horizontales, en coordenadas de índice
@@ -2476,10 +2858,16 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
     # Doble suelo (W) / doble techo (M) — detector RIGUROSO (extremos ~iguales, cuello,
     # tendencia previa, simetría; rechaza V, redondeado, triple, H&S y fakeout).
     price_range = max(highs) - min(lows) if highs else 0
+    _atr14v = _atr(highs, lows, closes, 14)
     pattern = _detect_double(highs, lows, closes)
     # Triple techo / triple suelo (reversión mayor de 5 pivotes): prioridad alta.
     if pattern is None:
         pattern = _detect_triple_top_bottom(highs, lows, closes)
+    # Isla de vuelta y pipe (reversiones potentes por huecos / velas gemelas): prioridad alta.
+    if pattern is None:
+        pattern = _detect_island(highs, lows, closes, _atr14v)
+    if pattern is None:
+        pattern = _detect_pipe(highs, lows, closes)
     # BANDERA / BANDERÍN RIGUROSO (mástil impulsivo + consolidación breve contra-tendencia).
     if pattern is None:
         pattern = _detect_flag_pennant(highs, lows, closes, volumes)
@@ -2488,10 +2876,19 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
     if pattern is None:
         pattern = _detect_cup_handle(closes, highs, lows, volumes)
     if pattern is None:
+        pattern = _detect_cup_no_handle(closes, highs, lows)
+    if pattern is None:
         pattern = _detect_flat_base(closes, highs, lows, volumes)
-    # Cabeza y hombros tiene prioridad sobre los patrones de directriz.
+    # Cabeza y hombros y diamante (reversión) antes de los patrones de directriz.
     if pattern is None:
         pattern = _detect_head_shoulders(highs, lows, closes, price_range)
+    if pattern is None:
+        pattern = _detect_diamond(highs, lows, closes)
+    # Suelo/techo redondeado y tres valles/picos.
+    if pattern is None:
+        pattern = _detect_rounding(highs, lows, closes)
+    if pattern is None:
+        pattern = _detect_three_rising(highs, lows, closes)
     # Triángulos y cuñas RIGUROSOS (regresión + apex + toques): tienen prioridad sobre la
     # lógica laxa de _detect_pattern. Cuña primero (más restrictiva), luego triángulo.
     if pattern is None:
@@ -2512,6 +2909,9 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
         pattern = _detect_broadening(highs, lows, closes)
         if pattern:
             trendlines.extend(pattern.pop("trendlines", []))
+    # Hueco reciente significativo: informativo, solo si no hay estructura mayor.
+    if pattern is None:
+        pattern = _detect_gap(highs, lows, closes, volumes, _atr14v)
 
     # Patrón de VELAS reciente (independiente del patrón chartista de estructura).
     candlestick = _detect_candlesticks(candles)
