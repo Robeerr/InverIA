@@ -197,45 +197,223 @@ def _detect_head_shoulders(highs, lows, price_range):
     return None
 
 
-def _detect_cup_handle(closes):
-    """Taza con asa (cup & handle, O'Neil): fondo redondeado + pequeña consolidación (asa)
-    cerca del borde. Alcista, favorito de los que rompen máximos."""
+def _lsq_slope(ys):
+    """Pendiente por mínimos cuadrados de una serie (x = 0,1,2,...). Puro Python."""
+    n = len(ys)
+    if n < 2:
+        return 0.0
+    xs = list(range(n))
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    den = sum((x - mx) ** 2 for x in xs)
+    if den == 0:
+        return 0.0
+    return sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / den
+
+
+def _quad_curvature(ys):
+    """Ajuste de parábola y = a·x² + b·x + c por mínimos cuadrados (ecuaciones normales,
+    sin numpy). Devuelve 'a': si a > 0 la curva abre hacia ARRIBA => forma de 'U' (taza);
+    si a <= 0 es plana o en 'V'/domo. Sirve para exigir un fondo cóncavo redondeado."""
+    n = len(ys)
+    if n < 3:
+        return 0.0
+    xs = list(range(n))
+    Sx = sum(xs); Sx2 = sum(x * x for x in xs)
+    Sx3 = sum(x ** 3 for x in xs); Sx4 = sum(x ** 4 for x in xs)
+    Sy = sum(ys); Sxy = sum(x * y for x, y in zip(xs, ys))
+    Sx2y = sum(x * x * y for x, y in zip(xs, ys))
+    # Sistema 3x3 [a,b,c] resuelto por eliminación de Gauss.
+    A = [[Sx4, Sx3, Sx2, Sx2y],
+         [Sx3, Sx2, Sx,  Sxy],
+         [Sx2, Sx,  n,   Sy]]
+    for i in range(3):
+        piv = A[i][i]
+        if abs(piv) < 1e-12:
+            return 0.0
+        for j in range(i, 4):
+            A[i][j] /= piv
+        for k in range(3):
+            if k != i:
+                f = A[k][i]
+                for j in range(i, 4):
+                    A[k][j] -= f * A[i][j]
+    return A[0][3]  # coeficiente 'a' (curvatura)
+
+
+def _detect_cup_handle(closes, highs=None, lows=None, volumes=None):
+    """Taza con asa (cup & handle, O'Neil) — detector RIGUROSO sobre highs/lows/closes.
+
+    Ancla 5 pivotes: P0 borde izq., P1 fondo, P2 borde der., P3 techo del asa, P4 mínimo
+    del asa. Aplica los umbrales O'Neil/Bulkowski y RECHAZA los falsos positivos:
+      • V puntiaguda  -> exige fondo redondeado (>=5 velas en el tercio inferior, >=20%
+                         del ancho) y curvatura de parábola a>0.
+      • Doble suelo (W)-> descarta si dentro del basin del fondo hay un repunte por encima
+                         de la mitad de la taza (dos valles con pico intermedio).
+      • Sin asa       -> si tras P2 no hay consolidación válida (P3/P4), devuelve None.
+      • 2ª pierna bajista -> 'halfway rule': P4 debe quedar en la MITAD SUPERIOR de la taza.
+      • Cuña/canal    -> el asa debe ser corta (<=30 velas), estrecha (<=~15%) y de deriva
+                         plana o bajista (sus máximos no ascienden).
+    Devuelve dict con tipo/nombre/sentido/descripcion + 'puntos' (5 pivotes) y 'lineas'
+    (arco, buy line, mitad de taza, canal del asa, objetivo), todo en index/price.
+    """
     n = len(closes)
-    if n < 30:
+    if highs is None:
+        highs = closes
+    if lows is None:
+        lows = closes
+    if n < 45:                       # sin histórico mínimo no hay taza fiable
         return None
-    w = closes[-45:] if n >= 45 else closes[:]
-    m = len(w)
-    t = m // 3
-    left_rim = max(w[:t])
-    bottom = min(w[t:2 * t]) if w[t:2 * t] else min(w)
-    right = w[2 * t:]
-    right_rim = max(right) if right else max(w)
-    if not left_rim:
+
+    # La taza dura 30..325 velas; basta con mirar las últimas ~360.
+    W = min(n, 360)
+    off = n - W
+    H = highs[off:]; L = lows[off:]
+    V = volumes[off:] if volumes else None
+    m = len(H)
+
+    hi = _pivots(H, "high", 3, 3)    # candidatos a bordes/techo (P0, P2, P3)
+    if len(hi) < 2:
         return None
-    depth = (left_rim - bottom) / left_rim
-    if not (0.08 <= depth <= 0.40):                 # profundidad razonable de taza
+
+    best = None
+    # P2 = borde derecho: debe dejar hueco para el asa (5..30 velas = 1..6 semanas) delante.
+    for p2 in hi:
+        after = m - 1 - p2
+        if after < 5 or after > 30:              # duración del asa fuera de rango
+            continue
+        for p0 in hi:                            # P0 = borde izquierdo
+            width = p2 - p0
+            if width < 30 or width > 325:        # ancho de la taza (7..65 semanas)
+                continue
+            rim = max(H[p0], H[p2])
+            # --- simetría de bordes ---
+            if abs(H[p0] - H[p2]) / H[p0] > 0.05:            # bordes a nivel similar
+                continue
+            if H[p2] > H[p0] * 1.05 or H[p2] < H[p0] * 0.90:  # der. no supera >5% ni cae >10%
+                continue
+            # --- fondo P1 (mínimo absoluto de lows entre P0 y P2) ---
+            seg = L[p0:p2 + 1]
+            p1low = min(seg)
+            p1 = p0 + seg.index(p1low)
+            depth_abs = rim - p1low
+            if depth_abs <= 0:
+                continue
+            depth = depth_abs / rim
+            if not (0.12 <= depth <= 0.50):       # rechaza taza plana (<12%) o abismal (>50%)
+                continue
+            wide_base = depth > 0.33              # base ancha/laxa (solo mercados bajistas)
+            # fondo centrado (no pegado a un borde) -> U, no medio-tazón
+            if not (0.20 <= (p1 - p0) / width <= 0.80):
+                continue
+            # --- forma 'U' NO 'V': suelo redondeado ---
+            lower_third = p1low + 0.33 * depth_abs
+            nb = [i for i in range(p0, p2 + 1) if L[i] <= lower_third]
+            if len(nb) < 5:                       # una V toca fondo en 1-2 velas
+                continue
+            if (nb[-1] - nb[0]) < 0.20 * width:   # el fondo debe abarcar >=20% del ancho
+                continue
+            midcup = p1low + 0.50 * depth_abs
+            # DESCARTA doble suelo (W): un repunte por encima de la mitad DENTRO del basin
+            # implica dos valles con pico intermedio, no un único fondo redondeado.
+            if max(H[nb[0]:nb[-1] + 1]) > midcup:
+                continue
+            # curvatura: la parábola de los lows debe abrir hacia arriba (cóncava = U).
+            if _quad_curvature(seg) <= 0:
+                continue
+            # --- ASA: desde justo tras P2 hasta el final de la ventana ---
+            hstart = p2 + 1
+            hh = H[hstart:]; hl = L[hstart:]
+            if len(hl) < 3:                       # sin consolidación -> 'cup without handle'
+                continue
+            p3high = max(H[p2], max(hh))          # techo del asa ~ borde derecho (buy line)
+            p3 = p2 if H[p2] >= max(hh) else hstart + hh.index(max(hh))
+            p4low = min(hl)
+            p4 = hstart + hl.index(p4low)
+            # REGLA CLAVE 'halfway' (O'Neil/Bulkowski): P4 en la MITAD SUPERIOR de la taza.
+            if p4low <= midcup:                   # si cae bajo la mitad -> reanudación bajista
+                continue
+            # profundidad del asa 5..15% (tol. 3..18%) y retroceso < 1/3 de la taza.
+            hdepth = (p3high - p4low) / p3high
+            if not (0.03 <= hdepth <= 0.18):
+                continue
+            if (p3high - p4low) >= (depth_abs / 3.0):
+                continue
+            # deriva del asa: sus máximos NO deben ascender (plana o ligeramente bajista).
+            if _lsq_slope(hh) > rim * 0.002:      # tolerancia ~0.2%/vela; una cuña sube fuerte
+                continue
+            # --- tendencia previa alcista >=30% que desemboca en P0 (si hay histórico) ---
+            gi = p0 + off
+            if gi >= 20:
+                prev = lows[max(0, gi - 60):gi]
+                if prev:
+                    base = min(prev)
+                    if base > 0 and (H[p0] - base) / base < 0.30:
+                        continue
+            # --- volumen (opcional): seco en el asa; si sube más que en la taza, sospechoso ---
+            if V:
+                cv = V[p0:p2 + 1]; hv = V[hstart:]
+                if cv and hv and (sum(hv) / len(hv)) > (sum(cv) / len(cv)):
+                    continue
+            # puntuación: preferimos taza en el centro del rango O'Neil (~22%) y más ancha.
+            score = (1.0 - abs(depth - 0.22), width)
+            if best is None or score > best[0]:
+                best = (score, dict(p0=p0, p1=p1, p2=p2, p3=p3, p4=p4, rim=rim,
+                                    p1low=p1low, p3high=p3high, p4low=p4low, midcup=midcup,
+                                    depth=depth, depth_abs=depth_abs, hdepth=hdepth,
+                                    wide=wide_base))
+    if best is None:
         return None
-    if abs(left_rim - right_rim) / left_rim > 0.06:  # bordes a nivel similar
-        return None
-    handle_pull = (right_rim - min(w[-6:])) / right_rim if right_rim else 1
-    if handle_pull > 0.15:                           # el asa es un retroceso suave
-        return None
-    # CLAVE: la taza debe ser una "U" REDONDEADA, no una "V" puntiaguda. Dos filtros:
-    lo = min(w)
-    depth_abs = left_rim - lo
-    if depth_abs <= 0:
-        return None
-    # (a) Fondo ANCHO: bastantes velas cerca del mínimo (una V tiene el mínimo aislado).
-    near_bottom = sum(1 for x in w if x <= lo + 0.30 * depth_abs)
-    if near_bottom < max(5, int(0.33 * m)):
-        return None
-    # (b) Mínimo CENTRADO: en una taza el fondo está en la zona media, no pegado a un borde.
-    bi = w.index(lo)
-    if not (0.20 * m <= bi <= 0.80 * m):
-        return None
-    return {"tipo": "taza_asa", "nombre": "Taza con asa", "sentido": "alcista",
-            "descripcion": "Fondo redondeado (taza) y una pequeña consolidación (asa) cerca del "
-            "borde. Patrón alcista de O'Neil: se compra en la ruptura del borde con volumen."}
+
+    b = best[1]
+    last = n - 1
+    def gi(i):        # índice ventana -> índice del array completo
+        return int(i + off)
+    def pt(i, price):
+        return {"index": gi(i), "price": round(float(price), 2)}
+
+    pivote = max(b["rim"], b["p3high"])           # buy point = techo asa / borde derecho
+    objetivo = pivote + b["depth_abs"]            # measure rule (Bulkowski): pivote + altura
+
+    puntos = [
+        {"label": "P0", "index": gi(b["p0"]), "price": round(float(H[b["p0"]]), 2)},  # borde izq.
+        {"label": "P1", "index": gi(b["p1"]), "price": round(float(b["p1low"]), 2)},  # fondo
+        {"label": "P2", "index": gi(b["p2"]), "price": round(float(H[b["p2"]]), 2)},  # borde der.
+        {"label": "P3", "index": gi(b["p3"]), "price": round(float(b["p3high"]), 2)}, # techo asa
+        {"label": "P4", "index": gi(b["p4"]), "price": round(float(b["p4low"]), 2)},  # min asa
+    ]
+    lineas = [
+        # (1) arco inferior de la taza sobre los lows P0 -> P1 -> P2.
+        {"tipo": "arco_taza", "points": [pt(b["p0"], b["rim"]), pt(b["p1"], b["p1low"]),
+                                         pt(b["p2"], b["rim"])]},
+        # (2) buy line / resistencia horizontal (pivote de ruptura).
+        {"tipo": "resistencia", "kind": "buy_line",
+         "points": [pt(b["p0"], pivote), pt(last, pivote)]},
+        # (3) canal del asa: techo P3 -> mínimo P4 (deriva plana/bajista).
+        {"tipo": "asa", "points": [{"index": gi(b["p3"]), "price": round(float(b["p3high"]), 2)},
+                                   {"index": gi(b["p4"]), "price": round(float(b["p4low"]), 2)}]},
+        # (4) línea de mitad de taza (guía de validez del asa: P4 debe quedar por encima).
+        {"tipo": "mitad_taza", "points": [pt(b["p0"], b["midcup"]), pt(last, b["midcup"])]},
+        # (5) objetivo (proyección): pivote + altura de la taza.
+        {"tipo": "objetivo", "points": [pt(b["p2"], objetivo), pt(last, objetivo)]},
+    ]
+
+    nota = " Base ancha/laxa (profundidad >33%, típica de mercado bajista)." if b["wide"] else ""
+    return {
+        "tipo": "taza_asa", "nombre": "Taza con asa", "sentido": "alcista",
+        "descripcion": (
+            "Fondo redondeado en 'U' (taza) seguido de una pequeña consolidación de deriva "
+            "plana/bajista en la mitad superior (asa). Patrón alcista de continuación (O'Neil). "
+            "Compra en la ruptura del pivote %.2f con volumen >=1.4x la media de 50; objetivo "
+            "%.2f (pivote + altura de la taza); stop bajo el mínimo del asa %.2f." % (
+                round(pivote, 2), round(objetivo, 2), round(b["p4low"], 2)) + nota),
+        "pivote": round(float(pivote), 2),
+        "objetivo": round(float(objetivo), 2),
+        "profundidad_taza": round(float(b["depth"]), 3),
+        "profundidad_asa": round(float(b["hdepth"]), 3),
+        "puntos": puntos,
+        "lineas": lineas,
+    }
 
 
 def _detect_flat_base(closes):
@@ -396,7 +574,7 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
 
     # Taza con asa y base plana (favoritos de ruptura de máximos): prioridad alta.
     if pattern is None:
-        pattern = _detect_cup_handle(closes)
+        pattern = _detect_cup_handle(closes, highs, lows)
     if pattern is None:
         pattern = _detect_flat_base(closes)
     # Cabeza y hombros tiene prioridad sobre los patrones de directriz.
