@@ -84,7 +84,7 @@ export default function ChartistPanel({ symbol }) {
 
           {/* Veredicto */}
           {data.veredicto && (
-            <div className="text-[12px] text-[#0e1f1a] bg-[#f7f4ee] rounded p-2 leading-snug">
+            <div className="text-[12px] border border-[#e5e0d8] rounded p-2 leading-snug">
               {data.veredicto}
             </div>
           )}
