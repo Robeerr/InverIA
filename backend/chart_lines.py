@@ -758,17 +758,527 @@ def _detect_flat_base(closes, highs=None, lows=None, volumes=None):
     return None
 
 
-def _detect_broadening(highs, lows):
-    """Megáfono (ensanchamiento): máximos crecientes + mínimos decrecientes = volatilidad
-    en expansión. Patrón a EVITAR (inestabilidad/distribución)."""
-    hp = _pivots(highs, "high")
-    lp = _pivots(lows, "low")
-    if len(hp) >= 2 and len(lp) >= 2:
-        if highs[hp[-1]] > highs[hp[-2]] and lows[lp[-1]] < lows[lp[-2]]:
-            return {"tipo": "megafono", "nombre": "Megáfono (ensanchamiento)", "sentido": "bajista",
-                    "descripcion": "Máximos crecientes y mínimos decrecientes: volatilidad en expansión "
-                    "e indecisión. Patrón a EVITAR — suele indicar distribución/inestabilidad."}
+def _alternating_swings(highs, lows, left: int = 3, right: int = 3):
+    """Secuencia ALTERNANTE de pivotes H-L-H-L... (colapsa consecutivos del mismo tipo al más
+    extremo). Devuelve tuplas (index, 'H'/'L', price)."""
+    hp = [(i, "H", highs[i]) for i in _pivots(highs, "high", left, right)]
+    lp = [(i, "L", lows[i]) for i in _pivots(lows, "low", left, right)]
+    piv = sorted(hp + lp, key=lambda t: t[0])
+    seq = []
+    for p in piv:
+        if not seq:
+            seq.append(p)
+        elif p[1] == seq[-1][1]:
+            if (p[1] == "H" and p[2] > seq[-1][2]) or (p[1] == "L" and p[2] < seq[-1][2]):
+                seq[-1] = p
+        else:
+            seq.append(p)
+    return seq
+
+
+def _monotonic(prices, direction: str, margin: float) -> bool:
+    """HH crecientes ('up') o LL decrecientes ('down') con margen mínimo. Tolera 1 violación."""
+    if direction == "up":
+        if prices[-1] - prices[0] < margin:
+            return False
+        bad = sum(1 for k in range(1, len(prices)) if prices[k] < prices[k - 1] - 0.5 * margin)
+    else:
+        if prices[0] - prices[-1] < margin:
+            return False
+        bad = sum(1 for k in range(1, len(prices)) if prices[k] > prices[k - 1] + 0.5 * margin)
+    return bad <= 1
+
+
+def _detect_broadening(highs, lows, closes=None, recent: int = 140):
+    """Megáfono / ensanchamiento (broadening) y variantes. Volatilidad CRECIENTE: dos rectas
+    DIVERGENTES (cono abierto a la derecha, apex a la izquierda). Rechaza triángulo (convergen),
+    canal/bandera (paralelas), cuña clásica y ruido (<5 pivotes, R²<0.85, no monótonos)."""
+    n = len(highs)
+    if n < 15:
+        return None
+    if closes is None:
+        closes = [(highs[i] + lows[i]) / 2 for i in range(n)]
+
+    off = max(0, n - recent)
+    H, L, C = highs[off:], lows[off:], closes[off:]
+    m = len(H)
+    if m < 15:
+        return None
+
+    seq = _alternating_swings(H, L)
+    if len(seq) < 5:
+        return None
+    seq = seq[-9:]
+    if len(seq) < 5:
+        return None
+    hi_piv = [(i, pr) for (i, _t, pr) in seq if _t == "H"]
+    lo_piv = [(i, pr) for (i, _t, pr) in seq if _t == "L"]
+    if len(hi_piv) < 2 or len(lo_piv) < 2:
+        return None
+    if len(hi_piv) + len(lo_piv) < 5:
+        return None
+    if max(len(hi_piv), len(lo_piv)) < 3:
+        return None
+
+    price = sum(C) / m
+    atr = _atr(H, L, C, 14) or (price * 0.01)
+    margin = max(0.005 * price, 0.3 * atr)
+
+    hh = [pr for _i, pr in hi_piv]
+    ll = [pr for _i, pr in lo_piv]
+    if not _monotonic(hh, "up", margin):
+        return None
+    if not _monotonic(ll, "down", margin):
+        return None
+
+    xs_h = [i for i, _pr in hi_piv]; ys_h = [pr for _i, pr in hi_piv]
+    xs_l = [i for i, _pr in lo_piv]; ys_l = [pr for _i, pr in lo_piv]
+    b_s, a_s, r2_s = _linreg(xs_h, ys_h)
+    b_i, a_i, r2_i = _linreg(xs_l, ys_l)
+
+    if len(hi_piv) >= 3 and r2_s < 0.85:
+        return None
+    if len(lo_piv) >= 3 and r2_i < 0.85:
+        return None
+
+    def sup_y(x): return a_s + b_s * x
+    def inf_y(x): return a_i + b_i * x
+
+    x_first = min(xs_h + xs_l)
+    x_last = max(xs_h + xs_l)
+    if x_last - x_first < 15:
+        return None
+
+    w_first = sup_y(x_first) - inf_y(x_first)
+    w_last = sup_y(x_last) - inf_y(x_last)
+    if w_first <= 0 or w_last <= 0:
+        return None
+    ratio = w_last / w_first
+    if ratio < 1.3:
+        return None
+
+    xs_all = sorted(set(xs_h + xs_l))
+    if len(xs_all) >= 2:
+        x_pen = xs_all[-2]
+        w_pen = sup_y(x_pen) - inf_y(x_pen)
+        if not (w_pen > w_first * 1.15):
+            return None
+
+    denom = b_s - b_i
+    if denom == 0:
+        return None
+    x_apex = (a_i - a_s) / denom
+    if x_apex >= x_first:
+        return None
+
+    tol_line = max(0.02 * price, 1.0 * atr)
+    pen_tol = 0.5 * atr
+    for i, pr in hi_piv:
+        if abs(pr - sup_y(i)) > tol_line:
+            return None
+        if pr < inf_y(i) - pen_tol:
+            return None
+    for i, pr in lo_piv:
+        if abs(pr - inf_y(i)) > tol_line:
+            return None
+        if pr > sup_y(i) + pen_tol:
+            return None
+
+    def near_flat(a, b):
+        return abs(a) < 0.1 * abs(b) if b != 0 else False
+
+    if b_s > 0 and b_i < 0:
+        if near_flat(b_s, b_i):
+            variante = "angulo_recto_desc"
+        elif near_flat(b_i, b_s):
+            variante = "angulo_recto_asc"
+        else:
+            ratio_sl = abs(b_s) / abs(b_i) if b_i != 0 else 999
+            variante = "simetrico" if 0.5 <= ratio_sl <= 2.0 else "asimetrico"
+    elif b_s > 0 and b_i > 0:
+        variante = "cuna_ensanchada_asc"
+    elif b_s < 0 and b_i < 0:
+        variante = "cuna_ensanchada_desc"
+    else:
+        return None
+
+    pre = C[:x_first] if x_first > 0 else []
+    prev_up = bool(pre) and (C[x_first] - pre[0]) / (abs(pre[0]) or 1) > 0.10
+    prev_dn = bool(pre) and (C[x_first] - pre[0]) / (abs(pre[0]) or 1) < -0.10
+
+    if variante == "cuna_ensanchada_asc":
+        sentido = "bajista"
+        desc = ("Cuña ENSANCHADA ascendente: ambas directrices suben y DIVERGEN. Pese a la apariencia "
+                "alcista, sesgo BAJISTA — suele resolverse a la baja.")
+        nombre = "Cuña ensanchada ascendente"
+    elif variante == "cuna_ensanchada_desc":
+        sentido = "alcista"
+        desc = ("Cuña ENSANCHADA descendente: ambas directrices bajan y DIVERGEN. Sesgo ALCISTA — suele "
+                "resolverse al alza.")
+        nombre = "Cuña ensanchada descendente"
+    elif variante in ("angulo_recto_asc", "angulo_recto_desc"):
+        sentido = "bajista" if prev_up else ("alcista" if prev_dn else "bilateral")
+        nombre = "Ensanchamiento de ángulo recto"
+        desc = ("Megáfono de ángulo recto: una directriz casi horizontal y la otra inclinada; volatilidad "
+                "creciente. Bilateral: la dirección la confirma el cierre de ruptura.")
+    else:
+        if prev_up:
+            sentido = "bajista"
+            desc = ("Megáfono (BROADENING TOP): máximos crecientes y mínimos decrecientes tras una subida; "
+                    "volatilidad en expansión y distribución. Reversal con ligero sesgo BAJISTA.")
+        elif prev_dn:
+            sentido = "alcista"
+            desc = ("Megáfono (BROADENING BOTTOM): oscilaciones cada vez más amplias tras una caída. Sesgo "
+                    "ALCISTA.")
+        else:
+            sentido = "bilateral"
+            desc = ("Megáfono simétrico: dos directrices divergentes (volatilidad creciente). BILATERAL casi "
+                    "neutro; la ruptura confirma el lado. A EVITAR sin confirmación.")
+        nombre = "Megáfono simétrico" if variante == "simetrico" else "Megáfono asimétrico"
+
+    def _line(kind, slope, yfun):
+        return {
+            "type": "trendline", "kind": kind,
+            "points": [
+                {"index": int(x_first + off), "price": round(float(yfun(x_first)), 2)},
+                {"index": int(n - 1),         "price": round(float(yfun(m - 1)), 2)},
+            ],
+            "direction": "alcista" if slope > 0 else "bajista",
+        }
+
+    trendlines = [_line("resistencia", b_s, sup_y), _line("soporte", b_i, inf_y)]
+    seg = range(x_first, x_last + 1)
+    altura = max(H[i] for i in seg) - min(L[i] for i in seg)
+
+    return {
+        "tipo": "megafono", "nombre": nombre + " (ensanchamiento)", "sentido": sentido,
+        "descripcion": desc, "trendlines": trendlines,
+        "meta": {"variante": variante, "ratio_divergencia": round(ratio, 2),
+                 "altura": round(float(altura), 2), "span": int(x_last - x_first)},
+    }
+
+
+def _alternating_pivots(highs, lows, left: int = 3, right: int = 3):
+    """Como _alternating_swings pero devuelve etiquetas 'high'/'low' (para el detector triple)."""
+    hi = [(i, "high", highs[i]) for i in _pivots(highs, "high", left, right)]
+    lo = [(i, "low", lows[i]) for i in _pivots(lows, "low", left, right)]
+    piv = sorted(hi + lo, key=lambda p: p[0])
+    seq = []
+    for p in piv:
+        if seq and seq[-1][1] == p[1]:
+            prev = seq[-1]
+            mejor = (p[2] >= prev[2]) if p[1] == "high" else (p[2] <= prev[2])
+            if mejor:
+                seq[-1] = p
+        else:
+            seq.append(p)
+    return seq
+
+
+def _validar_triple(seq, start, lado, highs, lows, closes,
+                    tol_ig=0.03, tol_nk=0.05, retro_min=0.03, retro_max=0.33,
+                    alt_min=0.03, tend_min=0.15, ancho_min=15):
+    """Valida 5 pivotes A-B-A-B-A como triple techo/suelo. Rechaza HCH, doble, rectángulo,
+    triángulo/cuña, V y ruido. Devuelve el dict del patrón (con puntos de dibujo) o None."""
+    win = seq[start:start + 5]
+    (i1, _, e1), (j1, _, c1), (i2, _, e2), (j2, _, c2), (i3, _, e3) = win
+    extremos = [e1, e2, e3]
+    contras = [c1, c2]
+    if min(extremos) <= 0 or min(contras) <= 0:
+        return None
+
+    if max(extremos) / min(extremos) - 1 > tol_ig:
+        return None
+    ext_media = sum(extremos) / 3.0
+    con_media = sum(contras) / 2.0
+
+    lat = (e1 + e3) / 2.0
+    if lado == "techo":
+        if (e2 - lat) / lat > 0.03:
+            return None
+    else:
+        if (lat - e2) / lat > 0.03:
+            return None
+
+    if abs(c1 - c2) / con_media > tol_nk:
+        return None
+    pend = (c2 - c1) / max(j2 - j1, 1)
+    if abs(pend) / con_media > 0.005:
+        return None
+
+    for c in contras:
+        retro = (ext_media - c) / ext_media if lado == "techo" else (c - ext_media) / ext_media
+        if retro < retro_min or retro > retro_max:
+            return None
+
+    if i3 - i1 < ancho_min:
+        return None
+    d1, d2 = i2 - i1, i3 - i2
+    if d1 <= 0 or d2 <= 0 or not (1.0 / 3.0 <= d2 / d1 <= 3.0):
+        return None
+
+    H = abs(ext_media - con_media)
+    if H / ext_media < alt_min:
+        return None
+
+    ini = max(0, i1 - 120)
+    if i1 - ini < 10:
+        return None
+    if lado == "techo":
+        base = min(lows[ini:i1])
+        if base <= 0 or (e1 - base) / base < tend_min:
+            return None
+    else:
+        base = max(highs[ini:i1])
+        if base <= 0 or (base - e1) / base < tend_min:
+            return None
+
+    mismo = "high" if lado == "techo" else "low"
+    for pos in (start - 1, start + 5):
+        if 0 <= pos < len(seq):
+            v = seq[pos]
+            if v[1] == mismo and abs(v[2] - ext_media) / ext_media <= tol_ig:
+                return None
+
+    neckline = min(contras) if lado == "techo" else max(contras)
+    margen = neckline * 0.005
+    ruptura = None
+    for k in range(i3 + 1, len(closes)):
+        if lado == "techo" and closes[k] < neckline - margen:
+            ruptura = {"index": int(k), "price": round(float(closes[k]), 2)}
+            break
+        if lado == "suelo" and closes[k] > neckline + margen:
+            ruptura = {"index": int(k), "price": round(float(closes[k]), 2)}
+            break
+    confirmado = ruptura is not None
+    objetivo = round(float(neckline - H if lado == "techo" else neckline + H), 2)
+
+    tags = ["P1", "V1", "P2", "V2", "P3"] if lado == "techo" else ["V1", "P1", "V2", "P2", "V3"]
+    pivotes = [{"index": int(p[0]), "price": round(float(p[2]), 2), "punto": t}
+               for p, t in zip(win, tags)]
+    nivel_ext = round(float(ext_media), 2)
+    linea_extremos = {"type": "trendline", "kind": "resistencia" if lado == "techo" else "soporte",
+                      "points": [{"index": int(i1), "price": nivel_ext}, {"index": int(i3), "price": nivel_ext}]}
+    fin_nk = ruptura["index"] if ruptura else len(closes) - 1
+    linea_neckline = {"type": "trendline", "kind": "neckline",
+                      "points": [{"index": int(j1), "price": round(float(neckline), 2)},
+                                 {"index": int(fin_nk), "price": round(float(neckline), 2)}]}
+
+    if lado == "techo":
+        tipo, nombre, sentido = "triple_techo", "Triple techo", "bajista"
+        desc = ("Tres máximos al mismo nivel separados por dos mínimos: rechazado tres veces en la "
+                "resistencia. Reversión BAJISTA que se confirma al cerrar bajo la neckline. Objetivo = "
+                "neckline - altura.")
+    else:
+        tipo, nombre, sentido = "triple_suelo", "Triple suelo", "alcista"
+        desc = ("Tres mínimos al mismo nivel separados por dos máximos: rebotó tres veces en el soporte. "
+                "Reversión ALCISTA que se confirma al cerrar sobre la neckline. Objetivo = neckline + altura.")
+    if not confirmado:
+        desc += " Patrón aún PENDIENTE: falta el cierre de ruptura para confirmar."
+
+    return {
+        "tipo": tipo, "nombre": nombre, "sentido": sentido, "descripcion": desc,
+        "confirmado": confirmado, "pivotes": pivotes,
+        "lineas": [linea_extremos, linea_neckline], "ruptura": ruptura,
+        "objetivo": objetivo, "altura": round(float(H), 2),
+    }
+
+
+def _detect_triple_top_bottom(highs, lows, closes):
+    """TRIPLE TECHO / TRIPLE SUELO (espejo). Busca la ventana más reciente de 5 pivotes
+    alternados A-B-A-B-A y la valida. Devuelve el dict con puntos de dibujo o None."""
+    n = len(closes)
+    if n < 30:
+        return None
+    seq = _alternating_pivots(highs, lows)
+    if len(seq) < 5:
+        return None
+    for start in range(len(seq) - 5, -1, -1):
+        tipos = [p[1] for p in seq[start:start + 5]]
+        lado = None
+        if tipos == ["high", "low", "high", "low", "high"]:
+            lado = "techo"
+        elif tipos == ["low", "high", "low", "high", "low"]:
+            lado = "suelo"
+        if lado:
+            r = _validar_triple(seq, start, lado, highs, lows, closes)
+            if r:
+                return r
     return None
+
+
+def _linreg_ab(xs, ys):
+    """Regresión lineal mínima → (pendiente, intercepto). (2 valores; no confundir con _linreg)."""
+    n = len(xs)
+    if n < 2:
+        return 0.0, (ys[0] if ys else 0.0)
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    den = sum((x - mx) ** 2 for x in xs)
+    if den == 0:
+        return 0.0, my
+    slope = sum((xs[i] - mx) * (ys[i] - my) for i in range(n)) / den
+    return slope, my - slope * mx
+
+
+def _spread(idxs, gap: int = 3):
+    """Filtra índices para que estén separados >= `gap` velas (evita contar toques contiguos)."""
+    kept = []
+    for i in sorted(idxs):
+        if not kept or i - kept[-1] >= gap:
+            kept.append(i)
+    return kept
+
+
+def _cluster_by_price(idxs, prices, tol):
+    """Agrupa pivotes por NIVEL de precio cercano (<= tol)."""
+    clusters = []
+    for i in sorted(idxs, key=lambda k: prices[k]):
+        p = prices[i]
+        placed = False
+        for cl in clusters:
+            avg = sum(prices[j] for j in cl) / len(cl)
+            if abs(p - avg) <= tol:
+                cl.append(i)
+                placed = True
+                break
+        if not placed:
+            clusters.append([i])
+    return clusters
+
+
+def _detect_rectangle(highs, lows, closes, volumes=None):
+    """Rectángulo / rango lateral de acumulación-distribución. Canal HORIZONTAL: resistencia y
+    soporte planos, paralelos y equidistantes; el precio oscila de lado a lado. Neutral/bilateral.
+    Rechaza triángulo, cuña, canal inclinado, bandera, doble techo/suelo, megáfono y ruido."""
+    n = len(closes)
+    if n < 20:
+        return None
+
+    look = min(n, 90)
+    off = n - look
+    H_, L_, C_ = highs[off:], lows[off:], closes[off:]
+    V_ = volumes[off:] if volumes else None
+    m = len(C_)
+    atr = _atr(highs, lows, closes)
+
+    ph = _pivots(H_, "high", 2, 2)
+    pl = _pivots(L_, "low", 2, 2)
+    if len(ph) < 2 or len(pl) < 2:
+        return None
+
+    mean_p = sum(C_) / m
+    tol0 = max(0.5 * atr, 0.012 * mean_p)
+    if tol0 <= 0:
+        return None
+
+    res_cl = [cl for cl in _cluster_by_price(ph, H_, tol0) if len(_spread(cl)) >= 2]
+    sup_cl = [cl for cl in _cluster_by_price(pl, L_, tol0) if len(_spread(cl)) >= 2]
+    if not res_cl or not sup_cl:
+        return None
+    res_cluster = max(res_cl, key=lambda cl: sum(H_[j] for j in cl) / len(cl))
+    sup_cluster = min(sup_cl, key=lambda cl: sum(L_[j] for j in cl) / len(cl))
+
+    r_prices = sorted(H_[j] for j in res_cluster)
+    s_prices = sorted(L_[j] for j in sup_cluster)
+    R = r_prices[len(r_prices) // 2]
+    S = s_prices[len(s_prices) // 2]
+    H = R - S
+    if H <= 0:
+        return None
+
+    if H < max(0.03 * mean_p, 1.5 * atr):
+        return None
+    if H / mean_p > 0.30:
+        return None
+
+    tol_touch = max(0.5 * atr, 0.15 * H)
+    res_touch = _spread([off + j for j in ph if abs(H_[j] - R) <= tol_touch], 3)
+    sup_touch = _spread([off + j for j in pl if abs(L_[j] - S) <= tol_touch], 3)
+    if len(res_touch) < 2 or len(sup_touch) < 2:
+        return None
+
+    start = min(res_touch[0], sup_touch[0])
+    end = max(res_touch[-1], sup_touch[-1])
+    width = end - start
+    if width < 15:
+        return None
+
+    if (max(r_prices) - min(r_prices)) / H > 0.2 or (max(r_prices) - min(r_prices)) / R > 0.03:
+        return None
+    if (max(s_prices) - min(s_prices)) / H > 0.2 or (max(s_prices) - min(s_prices)) / S > 0.03:
+        return None
+
+    sl_r, ic_r = _linreg_ab([float(i) for i in res_touch], [closes[i] for i in res_touch])
+    sl_s, ic_s = _linreg_ab([float(i) for i in sup_touch], [closes[i] for i in sup_touch])
+    if abs(sl_r * width) / H > 0.15 or abs(sl_s * width) / H > 0.15:
+        return None
+
+    r_ini, r_fin = ic_r + sl_r * start, ic_r + sl_r * end
+    s_ini, s_fin = ic_s + sl_s * start, ic_s + sl_s * end
+    H_ini, H_fin = r_ini - s_ini, r_fin - s_fin
+    if H_ini <= 0 or H_fin <= 0 or not (0.8 <= H_fin / H_ini <= 1.25):
+        return None
+
+    region = closes[start:end + 1]
+    tol_c = max(0.5 * atr, 0.10 * H)
+    inside = sum(1 for c in region if S - tol_c <= c <= R + tol_c)
+    if inside / len(region) < 0.90:
+        return None
+
+    up_band, lo_band = R - H / 3.0, S + H / 3.0
+    frac_up = sum(1 for c in region if c >= up_band) / len(region)
+    frac_lo = sum(1 for c in region if c <= lo_band) / len(region)
+    if frac_up > 0.70 or frac_lo > 0.70:
+        return None
+    zone, transits = None, 0
+    for c in region:
+        z = "U" if c >= up_band else ("L" if c <= lo_band else None)
+        if z is None:
+            continue
+        if zone and z != zone:
+            transits += 1
+        zone = z
+    if transits < 3:
+        return None
+
+    margin = max(0.5 * atr, 0.005 * mean_p)
+    ruptura = None
+    for k in range(end + 1, n):
+        if closes[k] > R + margin:
+            ruptura = {"index": int(k), "price": round(float(closes[k]), 2), "direccion": "alcista"}
+            break
+        if closes[k] < S - margin:
+            ruptura = {"index": int(k), "price": round(float(closes[k]), 2), "direccion": "bajista"}
+            break
+
+    if ruptura and ruptura["direccion"] == "alcista":
+        sentido = "alcista"; objetivo = round(float(R + H), 2)
+        desc_rup = "Ruptura ALCISTA confirmada (cierre sobre resistencia)."
+    elif ruptura and ruptura["direccion"] == "bajista":
+        sentido = "bajista"; objetivo = round(float(S - H), 2)
+        desc_rup = "Ruptura BAJISTA confirmada (cierre bajo soporte)."
+    else:
+        sentido = "neutral"; objetivo = None
+        desc_rup = "Sin ruptura aún: rango en curso (acumulación/distribución)."
+
+    fin = ruptura["index"] if ruptura else (n - 1)
+    linea_resistencia = {"type": "trendline", "kind": "resistencia", "points": [
+        {"index": int(start), "price": round(float(R), 2)}, {"index": int(fin), "price": round(float(R), 2)}]}
+    linea_soporte = {"type": "trendline", "kind": "soporte", "points": [
+        {"index": int(start), "price": round(float(S), 2)}, {"index": int(fin), "price": round(float(S), 2)}]}
+
+    desc = ("Canal HORIZONTAL: el precio oscila lateralmente entre una resistencia y un soporte planos "
+            "y paralelos (equilibrio). Patrón neutral/bilateral: la ruptura con volumen define el sesgo; "
+            "objetivo = altura del rango proyectada. " + desc_rup)
+
+    return {
+        "tipo": "rectangulo",
+        "nombre": "Rectángulo (rango lateral)", "sentido": sentido, "descripcion": desc,
+        "resistencia": round(float(R), 2), "soporte": round(float(S), 2),
+        "altura_H": round(float(H), 2), "objetivo": objetivo, "ruptura": ruptura,
+        "lineas": [linea_resistencia, linea_soporte],
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1967,6 +2477,9 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
     # tendencia previa, simetría; rechaza V, redondeado, triple, H&S y fakeout).
     price_range = max(highs) - min(lows) if highs else 0
     pattern = _detect_double(highs, lows, closes)
+    # Triple techo / triple suelo (reversión mayor de 5 pivotes): prioridad alta.
+    if pattern is None:
+        pattern = _detect_triple_top_bottom(highs, lows, closes)
     # BANDERA / BANDERÍN RIGUROSO (mástil impulsivo + consolidación breve contra-tendencia).
     if pattern is None:
         pattern = _detect_flag_pennant(highs, lows, closes, volumes)
@@ -1988,12 +2501,17 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
     # Canal ASC/DESC (rectas paralelas): antes de la lógica laxa de directrices.
     if pattern is None:
         pattern = _detect_channel(highs, lows, closes)
+    # Rectángulo / rango lateral horizontal.
+    if pattern is None:
+        pattern = _detect_rectangle(highs, lows, closes, volumes)
     # Si nada de lo anterior, prueba la lógica laxa de directrices (canal/consolidación).
     if pattern is None:
         pattern = _detect_pattern(trendlines, levels, closes, current_price)
-    # Megáfono (a evitar): último recurso, solo si no hay nada mejor.
+    # Megáfono (a evitar): último recurso, solo si no hay nada mejor. Dibuja sus dos rectas.
     if pattern is None:
-        pattern = _detect_broadening(highs, lows)
+        pattern = _detect_broadening(highs, lows, closes)
+        if pattern:
+            trendlines.extend(pattern.pop("trendlines", []))
 
     # Patrón de VELAS reciente (independiente del patrón chartista de estructura).
     candlestick = _detect_candlesticks(candles)
