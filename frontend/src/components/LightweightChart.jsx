@@ -105,22 +105,27 @@ export default function LightweightChart({ candles, indicators, buyLevels, lines
       const c = candles[i];
       return c && c.date ? Math.floor(new Date(c.date).getTime() / 1000) : null;
     };
-    (lines?.trendlines || []).forEach((tl) => {
-      const pts = tl.points || [];
-      if (pts.length < 2) return;
-      const a = pts[0], b = pts[1];
-      const slope = (b.price - a.price) / ((b.index - a.index) || 1);
-      const lastIdx = candles.length - 1;
-      const tA = idxTime(a.index);
-      const tB = idxTime(lastIdx);
-      if (tA == null || tB == null || tB <= tA) return;
-      const col = tl.kind === "resistencia" ? "#d85c41" : "#4a7c59";
-      const seg = chart.addLineSeries({ color: col, lineWidth: 2, lineStyle: LineStyle.Solid, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-      seg.setData([
-        { time: tA, value: +a.price.toFixed(2) },
-        { time: tB, value: +(a.price + slope * (lastIdx - a.index)).toFixed(2) },
-      ]);
-    });
+    // Directrices genéricas (soporte/resistencia diagonales): SOLO cuando no hay un patrón
+    // con su propia geometría, para no ensuciar el gráfico con líneas redundantes.
+    const hasPatternLines = !!lines?.pattern_draw?.lines?.length;
+    if (!hasPatternLines) {
+      (lines?.trendlines || []).forEach((tl) => {
+        const pts = tl.points || [];
+        if (pts.length < 2) return;
+        const a = pts[0], b = pts[1];
+        const slope = (b.price - a.price) / ((b.index - a.index) || 1);
+        const lastIdx = candles.length - 1;
+        const tA = idxTime(a.index);
+        const tB = idxTime(lastIdx);
+        if (tA == null || tB == null || tB <= tA) return;
+        const col = tl.kind === "resistencia" ? "#d85c41" : "#4a7c59";
+        const seg = chart.addLineSeries({ color: col, lineWidth: 2, lineStyle: LineStyle.Solid, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+        seg.setData([
+          { time: tA, value: +a.price.toFixed(2) },
+          { time: tB, value: +(a.price + slope * (lastIdx - a.index)).toFixed(2) },
+        ]);
+      });
+    }
 
     // PATRÓN DIBUJADO (Fase final): el backend normaliza la geometría de cualquier patrón
     // (arco de taza, neckline, directrices, objetivo, pivotes) a pattern_draw. Lo pintamos.
