@@ -2994,7 +2994,9 @@ def _pattern_drawables(pattern, n=None, lo=None, hi=None):
     # clampan a esta banda para NO distorsionar la escala del gráfico (caso ORCL objetivo=32).
     if lo is not None and hi is not None and hi > lo:
         rng = hi - lo
-        pmin, pmax = lo - 0.5 * rng, hi + 0.5 * rng
+        # Banda CEÑIDA al rango real del gráfico (+5%): un objetivo por debajo del mínimo
+        # histórico distorsiona la escala (TradingView autoescala). Clampar al borde real.
+        pmin, pmax = lo - 0.05 * rng, hi + 0.05 * rng
     else:
         pmin = pmax = None
 
