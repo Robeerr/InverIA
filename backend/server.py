@@ -431,6 +431,60 @@ async def get_chart(symbol: str, timeframe: str = "1Y"):
     return result
 
 
+@api_router.get("/debug/patterns")
+async def debug_patterns(symbols: str = "", timeframes: str = "1D,4H,1W"):
+    """DIAGNÓSTICO: escanea varias acciones × temporalidades y devuelve, por cada una, el
+    patrón detectado + chequeos de dibujo (coordenadas fuera de rango, nº de líneas/marcadores).
+    Para validar la detección sobre datos reales sin capturas. Ej:
+    /api/debug/patterns?symbols=AAPL,NVDA,META&timeframes=1D,4H"""
+    syms = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+    if not syms:
+        syms = ["AAPL", "NVDA", "MSFT", "META", "AMZN", "GOOGL", "AVGO", "PLTR",
+                "TSLA", "AMD", "NFLX", "SPY", "QQQ", "HOOD", "SOFI", "COIN"]
+    tfs = [t.strip() for t in timeframes.split(",") if t.strip()]
+    out = []
+    for sym in syms:
+        for tf in tfs:
+            row = {"symbol": sym, "tf": tf}
+            try:
+                df = await asyncio.to_thread(market_data.get_stock_data, sym, tf)
+                if df is None or df.empty:
+                    row["error"] = "sin datos"
+                    out.append(row)
+                    continue
+                candles = market_data.df_to_candles(df)
+                lines = _compute_chart_lines(candles)
+                n = len(candles)
+                pat = lines.get("pattern") or {}
+                pd = lines.get("pattern_draw") or {}
+                px = candles[-1].get("close")
+                lo = min(c.get("low", px) for c in candles)
+                hi = max(c.get("high", px) for c in candles)
+                bad = []
+                for ln in pd.get("lines", []):
+                    for q in ln.get("points", []):
+                        idx, pr = q.get("index"), q.get("price")
+                        if idx is None or not (0 <= idx < n):
+                            bad.append("linea_idx:%s" % idx)
+                        elif pr is not None and not (lo * 0.5 <= pr <= hi * 1.5):
+                            bad.append("linea_precio:%s=%s" % (ln.get("tipo"), pr))
+                for m in pd.get("markers", []):
+                    if not (0 <= m.get("index", -1) < n):
+                        bad.append("marker_idx:%s" % m.get("index"))
+                row.update({
+                    "n": n, "precio": round(px, 2) if px else None,
+                    "patron": pat.get("nombre"), "sentido": pat.get("sentido"),
+                    "confirmado": pat.get("confirmado"),
+                    "vela": (lines.get("candlestick") or {}).get("nombre"),
+                    "dibujo": {"lineas": len(pd.get("lines", [])), "markers": len(pd.get("markers", [])),
+                               "problemas": bad[:5]},
+                })
+            except Exception as e:
+                row["error"] = str(e)[:120]
+            out.append(row)
+    return {"total": len(out), "resultados": out}
+
+
 @api_router.get("/chartist/{symbol}")
 async def chartist_verdict(symbol: str, refresh: bool = False):
     """Veredicto del Chartista IA: análisis multi-timeframe (geometría real + Gemini +
