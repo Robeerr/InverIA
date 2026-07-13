@@ -456,6 +456,28 @@ def _quad_curvature(ys):
     return A[0][3]  # coeficiente 'a' (curvatura)
 
 
+def _parabola_arc(x0, y0, xb, yb, x2, y2, n=22):
+    """Traza una U CURVA (no una V de líneas rectas) ajustando una parábola por los 3 puntos
+    ancla (borde izq., fondo, borde der.) y muestreándola en `n` puntos. Devuelve la polilínea
+    {index, price} del arco de la taza."""
+    # Resolver y = A x² + B x + C por los tres puntos.
+    d = (x0 - xb) * (x0 - x2) * (xb - x2)
+    if d == 0:
+        return [{"index": int(x0), "price": round(float(y0), 2)},
+                {"index": int(x2), "price": round(float(y2), 2)}]
+    A = (x2 * (yb - y0) + xb * (y0 - y2) + x0 * (y2 - yb)) / d
+    B = (x2 * x2 * (y0 - yb) + xb * xb * (y2 - y0) + x0 * x0 * (yb - y2)) / d
+    C = (xb * x2 * (xb - x2) * y0 + x2 * x0 * (x2 - x0) * yb + x0 * xb * (x0 - xb) * y2) / d
+    pts = []
+    if x2 <= x0:
+        return [{"index": int(x0), "price": round(float(y0), 2)}]
+    for k in range(n + 1):
+        x = x0 + (x2 - x0) * k / n
+        y = A * x * x + B * x + C
+        pts.append({"index": int(round(x)), "price": round(float(y), 2)})
+    return pts
+
+
 def _detect_cup_handle(closes, highs=None, lows=None, volumes=None):
     """Taza con asa (cup & handle, O'Neil) — detector RIGUROSO sobre highs/lows/closes.
 
@@ -598,9 +620,9 @@ def _detect_cup_handle(closes, highs=None, lows=None, volumes=None):
         {"label": "P4", "index": gi(b["p4"]), "price": round(float(b["p4low"]), 2)},  # min asa
     ]
     lineas = [
-        # (1) arco inferior de la taza sobre los lows P0 -> P1 -> P2.
-        {"tipo": "arco_taza", "points": [pt(b["p0"], b["rim"]), pt(b["p1"], b["p1low"]),
-                                         pt(b["p2"], b["rim"])]},
+        # (1) arco inferior de la taza: U CURVA (parábola muestreada), no una V de rectas.
+        {"tipo": "arco_taza", "points": _parabola_arc(
+            gi(b["p0"]), b["rim"], gi(b["p1"]), b["p1low"], gi(b["p2"]), b["rim"])},
         # (2) buy line / resistencia horizontal (pivote de ruptura).
         {"tipo": "resistencia", "kind": "buy_line",
          "points": [pt(b["p0"], pivote), pt(last, pivote)]},
@@ -2600,10 +2622,8 @@ def _detect_rounding(highs, lows, closes):
             return None
     vi = int(round(vx))
     r = lambda x: round(float(x), 2)
-    arco = {"tipo": "arco", "points": [
-        {"index": int(off), "price": r(C[0])},
-        {"index": int(off + vi), "price": r(min(C) if suelo else max(C))},
-        {"index": int(n - 1), "price": r(C[-1])}]}
+    arco = {"tipo": "arco", "points": _parabola_arc(
+        int(off), C[0], int(off + vi), (min(C) if suelo else max(C)), int(n - 1), C[-1])}
     if suelo:
         return {"tipo": "suelo_redondeado", "nombre": "Suelo redondeado", "sentido": "alcista",
                 "descripcion": ("Giro suave en 'U' ancha (platillo): reversión ALCISTA de largo plazo. "
@@ -2881,9 +2901,8 @@ def _detect_cup_no_handle(closes, highs=None, lows=None):
             "puntos": [{"index": gi(p0), "price": r(H[p0]), "punto": "P1"},
                        {"index": gi(p1), "price": r(lo), "punto": "P2"},
                        {"index": gi(p2), "price": r(H[p2]), "punto": "P3"}],
-            "lineas": [{"tipo": "arco_taza", "points": [{"index": gi(p0), "price": r(rim)},
-                                                        {"index": gi(p1), "price": r(lo)},
-                                                        {"index": gi(p2), "price": r(rim)}]},
+            "lineas": [{"tipo": "arco_taza", "points": _parabola_arc(
+                            gi(p0), rim, gi(p1), lo, gi(p2), rim)},
                        {"tipo": "resistencia", "points": [{"index": gi(p0), "price": r(pivote)},
                                                           {"index": int(n - 1), "price": r(pivote)}]}]}
 
