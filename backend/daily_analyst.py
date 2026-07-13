@@ -415,21 +415,6 @@ async def scan(db, universe=None, notify: bool = True) -> dict:
         }
 
 
-def _build_digest_html(ideas: list, market_date: str) -> str:
-    """Email del RESUMEN DIARIO: recopila las ideas detectadas hoy. Si no hubo ninguna,
-    lo dice con honestidad (mejor 'hoy nada destacable' que inventar señales)."""
-    if not ideas:
-        return f"""
-        <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:600px;margin:0 auto;padding:24px;">
-          <p style="font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#5c6b66;margin:0 0 4px 0;">InverIA · Resumen diario</p>
-          <h1 style="font-size:22px;color:#0e1f1a;margin:0 0 12px 0;">📊 {market_date}</h1>
-          <p style="font-size:15px;color:#0e1f1a;">Hoy el Analista <b>no ha detectado ninguna acción</b> con confluencia de catalizadores de alta convicción.</p>
-          <p style="font-size:13px;color:#5c6b66;">Ninguna señal fuerte es también información: no fuerza operaciones donde no las hay.</p>
-        </div>"""
-    # Reutiliza las tarjetas del email de ideas, con cabecera de resumen diario.
-    body = _build_email_html(ideas)
-    return body.replace("🎯", f"📊 Resumen diario · {market_date} —", 1)
-
 
 async def _top_screener_ideas(db, n: int, exclude: set):
     """Top-N del screener de crecimiento (mejor score), YA investigadas. Garantiza que el

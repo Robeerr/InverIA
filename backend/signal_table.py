@@ -112,10 +112,6 @@ async def list_entries(db) -> list:
     return await db.signal_entries.find({}, {"_id": 0}).to_list(500)
 
 
-async def get_entry(db, entry_id: str) -> Optional[dict]:
-    return await db.signal_entries.find_one({"id": entry_id}, {"_id": 0})
-
-
 async def create_entry(db, data: dict) -> dict:
     clean = {k: v for k, v in data.items() if k in ALLOWED_CREATE and v is not None}
     # bools default to True even if not sent

@@ -43,7 +43,6 @@ export const api = {
   popular: () => client.get(`/market/popular`).then((r) => r.data),
   analyst: (symbol) => client.get(`/analyst/${symbol}`).then((r) => r.data),
   sentiment: (symbol) => client.get(`/sentiment/${symbol}`).then((r) => r.data),
-  backtest: (payload) => client.post(`/backtest`, payload).then((r) => r.data),
   compare: (symbols) => client.post(`/compare`, { symbols }).then((r) => r.data),
   history: (symbol) =>
     client.get(symbol ? `/history/${symbol}` : `/history`).then((r) => r.data),

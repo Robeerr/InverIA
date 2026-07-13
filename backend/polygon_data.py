@@ -129,31 +129,3 @@ def get_volume_profile(symbol: str, days: int = 365) -> dict:
     if not bars:
         return {}
     return compute_volume_profile(bars)
-
-
-def get_support_resistance_from_vp(volume_profile: dict, current_price: float, n: int = 4) -> dict:
-    """
-    From the volume profile, extract the most relevant HVN levels
-    split into supports (below price) and resistances (above price).
-    """
-    if not volume_profile:
-        return {"supports": [], "resistances": []}
-
-    hvn = volume_profile.get("hvn", [])
-    poc = volume_profile.get("poc")
-    vah = volume_profile.get("vah")
-    val = volume_profile.get("val")
-
-    # Combine POC, VAH, VAL with HVN levels
-    all_levels = set(hvn)
-    if poc:
-        all_levels.add(poc)
-    if vah:
-        all_levels.add(vah)
-    if val:
-        all_levels.add(val)
-
-    supports = sorted([p for p in all_levels if p < current_price], reverse=True)[:n]
-    resistances = sorted([p for p in all_levels if p > current_price])[:n]
-
-    return {"supports": supports, "resistances": resistances}

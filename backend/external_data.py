@@ -499,30 +499,6 @@ def finnhub_basic_financials(symbol: str):
         return None
 
 
-def finnhub_quote(symbol: str):
-    """Real-time quote from Finnhub (current, prev close, day high/low, %)."""
-    key = _finnhub_key()
-    if not key:
-        return None
-    try:
-        r = _finnhub_get("/quote", {"symbol": symbol.upper(), "token": key}, timeout=8)
-        if r.status_code != 200:
-            return None
-        d = r.json() or {}
-        if not d.get("c"):
-            return None
-        return {
-            "current": d.get("c"),
-            "high": d.get("h"),
-            "low": d.get("l"),
-            "open": d.get("o"),
-            "previous_close": d.get("pc"),
-            "change": d.get("d"),
-            "change_percent": d.get("dp"),
-        }
-    except Exception:
-        return None
-
 
 def aggregate_recommendation(trends):
     """Aggregate finnhub trends into a single sentiment."""
