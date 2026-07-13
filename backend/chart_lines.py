@@ -2710,13 +2710,18 @@ def _detect_three_rising(highs, lows, closes):
         return None
     lo = _swing_extremes(lows, "low")     # deduplicados (suelos planos no cuentan doble)
     hi = _swing_extremes(highs, "high")
+    cur = closes[-1]
     # 3 valles ascendentes
     if len(lo) >= 3:
         v1, v2, v3 = lo[-3], lo[-2], lo[-1]
         l1, l2, l3 = lows[v1], lows[v2], lows[v3]
         if l1 > 0 and (l2 - l1) / l1 >= 0.01 and (l3 - l2) / l2 >= 0.01:
             # sin violación: entre v2 y v3 ningún cierre bajo l2
-            if min(closes[v2:v3 + 1]) >= l2 * 0.995 and (v3 - v1) >= 12:
+            # VIGENCIA: el 3er valle debe ser RECIENTE y el precio NO haber roto el soporte
+            # ascendente (V1->V3 extendido) a la baja (si lo rompió, la estructura alcista murió).
+            sop_now = l1 + (l3 - l1) / ((v3 - v1) or 1) * ((n - 1) - v1)
+            reciente = v3 >= n - max(30, int(0.25 * n))
+            if min(closes[v2:v3 + 1]) >= l2 * 0.995 and (v3 - v1) >= 12 and reciente and cur >= sop_now * 0.99:
                 r = lambda x: round(float(x), 2)
                 pts = [{"index": int(v), "price": r(lows[v]), "punto": f"V{k+1}"} for k, v in enumerate((v1, v2, v3))]
                 return {"tipo": "tres_valles", "nombre": "Tres valles ascendentes", "sentido": "alcista",
@@ -2729,7 +2734,11 @@ def _detect_three_rising(highs, lows, closes):
         p1, p2, p3 = hi[-3], hi[-2], hi[-1]
         h1, h2, h3 = highs[p1], highs[p2], highs[p3]
         if h1 > 0 and (h1 - h2) / h1 >= 0.01 and (h2 - h3) / h2 >= 0.01:
-            if max(closes[p2:p3 + 1]) <= h2 * 1.005 and (p3 - p1) >= 12:
+            # VIGENCIA: 3er pico RECIENTE y el precio NO haber roto al ALZA la resistencia
+            # descendente (P1->P3 extendida). Si rompió arriba (caso NVDA recuperando), muerta.
+            res_now = h1 + (h3 - h1) / ((p3 - p1) or 1) * ((n - 1) - p1)
+            reciente = p3 >= n - max(30, int(0.25 * n))
+            if max(closes[p2:p3 + 1]) <= h2 * 1.005 and (p3 - p1) >= 12 and reciente and cur <= res_now * 1.01:
                 r = lambda x: round(float(x), 2)
                 pts = [{"index": int(p), "price": r(highs[p]), "punto": f"P{k+1}"} for k, p in enumerate((p1, p2, p3))]
                 return {"tipo": "tres_picos", "nombre": "Tres picos descendentes", "sentido": "bajista",
