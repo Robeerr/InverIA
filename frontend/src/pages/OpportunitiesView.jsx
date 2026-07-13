@@ -1,10 +1,11 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { Lightning, TrendDown, TrendUp, Sparkle, Pulse, Sun, ArrowRight, ArrowClockwise, Funnel, Fire } from "@phosphor-icons/react";
+import { Lightning, TrendDown, TrendUp, Sparkle, Pulse, Sun, ArrowRight, ArrowClockwise, Funnel, Fire, Target } from "@phosphor-icons/react";
 import { Button } from "../components/ui/button";
 import { api } from "../lib/api";
 import { fmtPrice, fmtPct, fmtNum } from "../lib/format";
 import MiniChart from "../components/MiniChart";
+import RadarView from "./RadarView";
 
 const CATEGORY_META = {
   OVERSOLD: { label: "Sobrevendidas (RSI<30)", icon: TrendDown, color: "#4a7c59", desc: "RSI muy bajo, posible rebote técnico" },
@@ -358,7 +359,11 @@ export default function OpportunitiesView({ setSymbol }) {
         <TabButton id="signals" icon={Lightning}>Señales del día</TabButton>
         <TabButton id="screener" icon={Funnel}>Screener Crecimiento</TabButton>
         <TabButton id="movers" icon={Fire}>Movers del mercado</TabButton>
+        <TabButton id="fuentes" icon={Target}>Tus fuentes</TabButton>
       </div>
+
+      {/* ============ TUS FUENTES (antes /radar) ============ */}
+      {mode === "fuentes" && <RadarView setSymbol={setSymbol} />}
 
       {/* ============ SIGNALS MODE ============ */}
       {mode === "signals" && (

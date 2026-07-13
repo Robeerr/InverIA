@@ -1,6 +1,6 @@
 import React, { useState, useEffect, Suspense } from "react";
 import "./App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Header from "./components/Header";
@@ -10,7 +10,6 @@ const Dashboard        = React.lazy(() => import("./pages/Dashboard"));
 const OpportunitiesView = React.lazy(() => import("./pages/OpportunitiesView"));
 const CalendarView     = React.lazy(() => import("./pages/CalendarView"));
 const SignalsView      = React.lazy(() => import("./pages/SignalsView"));
-const RadarView        = React.lazy(() => import("./pages/RadarView"));
 const TrackRecordView  = React.lazy(() => import("./pages/TrackRecordView"));
 const TelegramConnectView = React.lazy(() => import("./pages/TelegramConnectView"));
 const BrainView        = React.lazy(() => import("./pages/BrainView"));
@@ -79,7 +78,7 @@ function AppInner() {
           <Route path="/oportunidades" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><OpportunitiesView setSymbol={setSymbol} /></div>} />
           <Route path="/calendario" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><CalendarView setSymbol={setSymbol} /></div>} />
           <Route path="/signals" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><SignalsView setSymbol={setSymbol} /></div>} />
-          <Route path="/radar" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><RadarView setSymbol={setSymbol} /></div>} />
+          <Route path="/radar" element={<Navigate to="/oportunidades" replace />} />
           <Route path="/track-record" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><TrackRecordView /></div>} />
           <Route path="/telegram" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><TelegramConnectView /></div>} />
           <Route path="/cerebro" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><BrainView /></div>} />

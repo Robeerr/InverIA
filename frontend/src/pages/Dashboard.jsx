@@ -2,11 +2,9 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import QuoteHeader from "../components/QuoteHeader";
-import PriceChart from "../components/PriceChart";
 import LightweightChart from "../components/LightweightChart";
 import ChartistPanel from "../components/ChartistPanel";
 import RecommendationPanel from "../components/RecommendationPanel";
-import AnalysisSummaryPanel from "../components/AnalysisSummaryPanel";
 import SourcesPanel from "../components/SourcesPanel";
 import { AlternativePanel } from "../components/MoreInsights";
 import WatchlistStrip from "../components/WatchlistStrip";
@@ -63,7 +61,6 @@ function MarketRegimeBar({ regime }) {
 
 export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const [timeframe, setTimeframe] = useState("1D");
-  const [chartPro, setChartPro] = useState(() => localStorage.getItem("inveria-chart-pro") === "1");
   const [quote, setQuote] = useState(null);
   const [candles, setCandles] = useState([]);
   const [indicators, setIndicators] = useState(null);
@@ -320,40 +317,14 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6">
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5 mb-2">
-            <span className="text-[10px] uppercase tracking-wider text-[#5c6b66] font-mono">Gráfico</span>
-            {[["clasico", "Clásico"], ["pro", "Pro (nuevo)"]].map(([k, l]) => {
-              const on = (k === "pro") === chartPro;
-              return (
-                <button key={k}
-                  onClick={() => { const v = k === "pro"; setChartPro(v); localStorage.setItem("inveria-chart-pro", v ? "1" : "0"); }}
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${on ? "bg-[#1a3a32] text-white border-[#1a3a32]" : "border-[#e5e0d8] text-[#5c6b66]"}`}>
-                  {l}
-                </button>
-              );
-            })}
-          </div>
-          {chartPro ? (
-            <LightweightChart
-              candles={candles}
-              indicators={indicators}
-              buyLevels={buyLevels}
-              lines={chartLines}
-              timeframe={timeframe}
-              setTimeframe={refreshTimeframe}
-            />
-          ) : (
-            <PriceChart
-              candles={candles}
-              timeframe={timeframe}
-              setTimeframe={refreshTimeframe}
-              analysis={analysis}
-              indicators={indicators}
-              signalEntry={signalEntry}
-              buyLevels={buyLevels}
-              lines={chartLines}
-            />
-          )}
+          <LightweightChart
+            candles={candles}
+            indicators={indicators}
+            buyLevels={buyLevels}
+            lines={chartLines}
+            timeframe={timeframe}
+            setTimeframe={refreshTimeframe}
+          />
           <div className="mt-4">
             <ChartistPanel symbol={symbol} />
           </div>
@@ -365,13 +336,6 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
             onAnalyze={runAnalysis}
             model={model}
             setModel={setModel}
-          />
-          <AnalysisSummaryPanel
-            analysis={analysis}
-            indicators={indicators}
-            buyLevels={buyLevels}
-            lines={chartLines}
-            quote={quote}
           />
           <SourcesPanel symbol={symbol} />
           <AlternativePanel symbol={symbol} onPick={setSymbol} />
