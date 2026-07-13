@@ -2823,11 +2823,21 @@ def _detect_diamond(highs, lows, closes):
     spread_R = hR[-1] - lR[-1]
     if spread_L <= 0 or spread_R <= 0 or spread_c <= 0:
         return None
-    if spread_c / spread_L < 1.3 or spread_c / spread_R < 1.3:   # ensancha y luego contrae
+    # El diamante es RARO: exigimos ensanche y contracción FUERTES (>=60%), no marginales.
+    if spread_c / spread_L < 1.6 or spread_c / spread_R < 1.6:
         return None
-    price = sum(closes[off:]) / look
+    # Reversión: hace falta una TENDENCIA previa que revertir (>=10%). Sin ella no es diamante.
+    if idxs[-1] < look - 35:                    # y el patrón debe ser RECIENTE (aún vigente)
+        return None
     prev = closes[max(0, off - 30):off]
-    up = bool(prev) and (closes[off] - prev[0]) / (abs(prev[0]) or 1) > 0.08
+    move = (closes[off] - prev[0]) / (abs(prev[0]) or 1) if prev else 0
+    if move > 0.10:
+        up = True                               # subida previa -> diamante de TECHO (bajista)
+    elif move < -0.10:
+        up = False                              # caída previa -> diamante de SUELO (alcista)
+    else:
+        return None                             # sin tendencia previa clara: no es reversión
+    price = sum(closes[off:]) / look
     r = lambda x: round(float(x), 2)
     T = max(seq, key=lambda p: p[2]); B = min(seq, key=lambda p: p[2])
     vertices = [{"index": int(idxs[0] + off), "price": r(seq[0][2]), "punto": "L"},
@@ -2960,7 +2970,7 @@ _LINE_KEYS = {"superior", "inferior", "base", "neckline", "cuello", "soporte", "
               "resistencia_desc", "banda_hueco", "buy_line"}
 
 
-def _pattern_drawables(pattern, n=None):
+def _pattern_drawables(pattern, n=None, lo=None, hi=None):
     """Normaliza la geometría heterogénea de cualquier patrón (lineas/puntos/trendlines/
     pivotes/neckline) a un formato ÚNICO para el frontend:
         {"lines": [{"tipo", "points":[{index,price}...]}], "markers": [{index,price,tipo}]}
@@ -2970,11 +2980,23 @@ def _pattern_drawables(pattern, n=None):
         return None
     lines, markers = [], []
     last = (n - 1) if n else None
+    # Banda de precio válida: los objetivos/proyecciones absurdos (measure rule agresivo) se
+    # clampan a esta banda para NO distorsionar la escala del gráfico (caso ORCL objetivo=32).
+    if lo is not None and hi is not None and hi > lo:
+        rng = hi - lo
+        pmin, pmax = lo - 0.5 * rng, hi + 0.5 * rng
+    else:
+        pmin = pmax = None
 
     def clamp(idx):
         if last is None or idx is None:
             return idx
         return max(0, min(int(idx), last))       # nunca fuera del gráfico (evita apex/objetivo perdidos)
+
+    def clampp(price):
+        if pmin is None or price is None:
+            return price
+        return max(pmin, min(float(price), pmax))
 
     def is_point(d):
         return isinstance(d, dict) and "index" in d and "price" in d and "points" not in d
@@ -2986,10 +3008,10 @@ def _pattern_drawables(pattern, n=None):
         # Los marcadores proyectados fuera del gráfico (apex/objetivo futuros) no se dibujan.
         if last is not None and (q["index"] < 0 or q["index"] > last):
             return
-        markers.append({"index": q["index"], "price": q["price"], "tipo": key, "label": label_of(q)})
+        markers.append({"index": q["index"], "price": clampp(q["price"]), "tipo": key, "label": label_of(q)})
 
     def add_line(pts, tipo):
-        p = [{"index": clamp(q["index"]), "price": q["price"]} for q in pts
+        p = [{"index": clamp(q["index"]), "price": clampp(q["price"])} for q in pts
              if isinstance(q, dict) and q.get("index") is not None and q.get("price") is not None]
         if len(p) >= 2:
             lines.append({"tipo": tipo, "points": p})
@@ -3134,4 +3156,6 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
 
     return {"trendlines": trendlines, "levels": levels, "pattern": pattern,
             "candlestick": candlestick, "zones": zones,
-            "pattern_draw": _pattern_drawables(pattern, len(closes))}
+            "pattern_draw": _pattern_drawables(pattern, len(closes),
+                                               min(lows) if lows else None,
+                                               max(highs) if highs else None)}
