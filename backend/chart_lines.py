@@ -2711,41 +2711,51 @@ def _detect_three_rising(highs, lows, closes):
     lo = _swing_extremes(lows, "low")     # deduplicados (suelos planos no cuentan doble)
     hi = _swing_extremes(highs, "high")
     cur = closes[-1]
-    # 3 valles ascendentes
-    if len(lo) >= 3:
+    # 3 valles ascendentes — ENDURECIDO: pasos >=2%, homogéneos, impulso alcista REAL
+    # (los picos intermedios también suben = HH+HL, no 3 mínimos sueltos en un rango).
+    if len(lo) >= 3 and len(hi) >= 2:
         v1, v2, v3 = lo[-3], lo[-2], lo[-1]
         l1, l2, l3 = lows[v1], lows[v2], lows[v3]
-        if l1 > 0 and (l2 - l1) / l1 >= 0.01 and (l3 - l2) / l2 >= 0.01:
-            # sin violación: entre v2 y v3 ningún cierre bajo l2
-            # VIGENCIA: el 3er valle debe ser RECIENTE y el precio NO haber roto el soporte
-            # ascendente (V1->V3 extendido) a la baja (si lo rompió, la estructura alcista murió).
-            sop_now = l1 + (l3 - l1) / ((v3 - v1) or 1) * ((n - 1) - v1)
-            reciente = v3 >= n - max(30, int(0.25 * n))
-            if min(closes[v2:v3 + 1]) >= l2 * 0.995 and (v3 - v1) >= 12 and reciente and cur >= sop_now * 0.99:
-                r = lambda x: round(float(x), 2)
-                pts = [{"index": int(v), "price": r(lows[v]), "punto": f"V{k+1}"} for k, v in enumerate((v1, v2, v3))]
-                return {"tipo": "tres_valles", "nombre": "Tres valles ascendentes", "sentido": "alcista",
-                        "descripcion": ("Tres mínimos consecutivos cada vez más altos: la presión compradora "
-                                        "gana terreno. Sesgo ALCISTA; ruptura del último pico lo confirma."),
-                        "puntos": pts,
-                        "lineas": [{"tipo": "soporte_asc", "points": [pts[0], pts[2]]}]}
-    # 3 picos descendentes
-    if len(hi) >= 3:
+        s1, s2 = (l2 - l1) / l1 if l1 else 0, (l3 - l2) / l2 if l2 else 0
+        # picos intermedios (uno entre v1-v2, otro entre v2-v3)
+        pk_a = [highs[p] for p in hi if v1 < p < v2]
+        pk_b = [highs[p] for p in hi if v2 < p < v3]
+        peaks_ok = bool(pk_a) and bool(pk_b) and max(pk_b) > max(pk_a)   # máximos crecientes (HH)
+        homog = min(s1, s2) >= 0.4 * max(s1, s2) if max(s1, s2) else False  # pasos parecidos
+        sop_now = l1 + (l3 - l1) / ((v3 - v1) or 1) * ((n - 1) - v1)
+        reciente = v3 >= n - max(30, int(0.25 * n))
+        if (l1 > 0 and s1 >= 0.02 and s2 >= 0.02 and peaks_ok and homog
+                and min(closes[v2:v3 + 1]) >= l2 * 0.995 and 12 <= (v3 - v1) <= 80
+                and reciente and cur >= sop_now * 0.99):
+            r = lambda x: round(float(x), 2)
+            pts = [{"index": int(v), "price": r(lows[v]), "punto": f"V{k+1}"} for k, v in enumerate((v1, v2, v3))]
+            return {"tipo": "tres_valles", "nombre": "Tres valles ascendentes", "sentido": "alcista",
+                    "descripcion": ("Tres mínimos consecutivos cada vez más altos: la presión compradora "
+                                    "gana terreno. Sesgo ALCISTA; ruptura del último pico lo confirma."),
+                    "puntos": pts,
+                    "lineas": [{"tipo": "soporte_asc", "points": [pts[0], pts[2]]}]}
+    # 3 picos descendentes — ENDURECIDO: pasos >=2%, homogéneos, impulso bajista REAL
+    # (los valles intermedios también bajan = LH+LL, no 3 máximos sueltos en un rango).
+    if len(hi) >= 3 and len(lo) >= 2:
         p1, p2, p3 = hi[-3], hi[-2], hi[-1]
         h1, h2, h3 = highs[p1], highs[p2], highs[p3]
-        if h1 > 0 and (h1 - h2) / h1 >= 0.01 and (h2 - h3) / h2 >= 0.01:
-            # VIGENCIA: 3er pico RECIENTE y el precio NO haber roto al ALZA la resistencia
-            # descendente (P1->P3 extendida). Si rompió arriba (caso NVDA recuperando), muerta.
-            res_now = h1 + (h3 - h1) / ((p3 - p1) or 1) * ((n - 1) - p1)
-            reciente = p3 >= n - max(30, int(0.25 * n))
-            if max(closes[p2:p3 + 1]) <= h2 * 1.005 and (p3 - p1) >= 12 and reciente and cur <= res_now * 1.01:
-                r = lambda x: round(float(x), 2)
-                pts = [{"index": int(p), "price": r(highs[p]), "punto": f"P{k+1}"} for k, p in enumerate((p1, p2, p3))]
-                return {"tipo": "tres_picos", "nombre": "Tres picos descendentes", "sentido": "bajista",
-                        "descripcion": ("Tres máximos consecutivos cada vez más bajos: la presión vendedora "
-                                        "domina. Sesgo BAJISTA; pérdida del último valle lo confirma."),
-                        "puntos": pts,
-                        "lineas": [{"tipo": "resistencia_desc", "points": [pts[0], pts[2]]}]}
+        s1, s2 = (h1 - h2) / h1 if h1 else 0, (h2 - h3) / h2 if h2 else 0
+        vl_a = [lows[v] for v in lo if p1 < v < p2]
+        vl_b = [lows[v] for v in lo if p2 < v < p3]
+        valleys_ok = bool(vl_a) and bool(vl_b) and min(vl_b) < min(vl_a)   # mínimos decrecientes (LL)
+        homog = min(s1, s2) >= 0.4 * max(s1, s2) if max(s1, s2) else False
+        res_now = h1 + (h3 - h1) / ((p3 - p1) or 1) * ((n - 1) - p1)
+        reciente = p3 >= n - max(30, int(0.25 * n))
+        if (h1 > 0 and s1 >= 0.02 and s2 >= 0.02 and valleys_ok and homog
+                and max(closes[p2:p3 + 1]) <= h2 * 1.005 and 12 <= (p3 - p1) <= 80
+                and reciente and cur <= res_now * 1.01):
+            r = lambda x: round(float(x), 2)
+            pts = [{"index": int(p), "price": r(highs[p]), "punto": f"P{k+1}"} for k, p in enumerate((p1, p2, p3))]
+            return {"tipo": "tres_picos", "nombre": "Tres picos descendentes", "sentido": "bajista",
+                    "descripcion": ("Tres máximos consecutivos cada vez más bajos: la presión vendedora "
+                                    "domina. Sesgo BAJISTA; pérdida del último valle lo confirma."),
+                    "puntos": pts,
+                    "lineas": [{"tipo": "resistencia_desc", "points": [pts[0], pts[2]]}]}
     return None
 
 
