@@ -2,6 +2,7 @@ import React from "react";
 import { Brain, ArrowUpRight, ArrowDownRight, Minus, Target, Shield, TrendUp, Lightning } from "@phosphor-icons/react";
 import { Button } from "../components/ui/button";
 import { fmtPrice } from "../lib/format";
+import { TierBadge } from "./ChartistPanel";
 
 const FREE_MODELS = [
   { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash (Recomendado)" },
@@ -133,6 +134,7 @@ export default function RecommendationPanel({ analysis, isLoading, onAnalyze, mo
           <h3 className="font-heading font-semibold text-lg text-[#0e1f1a]">
             Recomendación IA
           </h3>
+          {analysis._ai_tier && <TierBadge tier={analysis._ai_tier} />}
         </div>
         <RecPill rec={analysis.recommendation} />
       </div>

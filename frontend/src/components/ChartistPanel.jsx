@@ -51,6 +51,7 @@ export default function ChartistPanel({ symbol }) {
             {data.sentido.toUpperCase()}
           </span>
         )}
+        {data?._ai_tier && <TierBadge tier={data._ai_tier} />}
         <button
           onClick={() => run(!!data)}
           disabled={loading}
@@ -141,6 +142,22 @@ export default function ChartistPanel({ symbol }) {
         </div>
       )}
     </div>
+  );
+}
+
+// Badge FREE / PAY: indica si el análisis lo sirvió la clave Gemini gratis o la de pago.
+export function TierBadge({ tier }) {
+  if (!tier) return null;
+  const paid = tier === "paid";
+  return (
+    <span
+      title={paid ? "Servido por la clave Gemini de PAGO (consume tu crédito)" : "Servido por la clave Gemini GRATIS"}
+      className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-wide ${
+        paid ? "bg-[#fbe9e6] text-[#c0392b]" : "bg-[#e6f4ea] text-[#1e7a3a]"
+      }`}
+    >
+      {paid ? "PAY" : "FREE"}
+    </span>
   );
 }
 

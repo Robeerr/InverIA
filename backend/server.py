@@ -842,6 +842,8 @@ async def analyze(req: AnalyzeRequest):
         "model": used_model,
         "requested_model": requested_model,
         "fellback": used_model != requested_model,
+        # Tier de Gemini que sirvió el análisis (free/paid) para el badge de la UI.
+        "ai_tier": (result.get("_ai_tier") if isinstance(result, dict) else None),
         "quote": quote,
         "indicators": indicators_data,
         "analysis": result,
