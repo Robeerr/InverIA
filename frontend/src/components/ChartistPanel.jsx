@@ -106,8 +106,22 @@ export default function ChartistPanel({ symbol }) {
                 </span>
                 {plan.gatillo && <span className="text-[11px] text-[#0e1f1a] font-medium">{plan.gatillo}</span>}
               </div>
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <Lvl label="Entrada" val={plan.entrada} color="#1e7a3a" />
+
+              {/* Compra ESCALONADA por niveles (anclados a estructura real) */}
+              {Array.isArray(plan.niveles_entrada) && plan.niveles_entrada.length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-[9px] uppercase tracking-wide text-[#8a958f]">Compra escalonada</div>
+                  {plan.niveles_entrada.map((nv, i) => (
+                    <div key={i} className="flex items-center gap-2 text-[11px]">
+                      <span className="w-5 h-5 shrink-0 rounded-full bg-[#e6f4ea] text-[#1e7a3a] font-mono font-bold text-[10px] flex items-center justify-center">{i + 1}</span>
+                      <span className="font-mono font-bold text-[#1e7a3a]">{nv.precio != null ? `$${Number(nv.precio).toFixed(2)}` : "—"}</span>
+                      {nv.porcentaje != null && <span className="font-mono text-[#0e1f1a] font-semibold">· {Number(nv.porcentaje)}%</span>}
+                      {nv.motivo && <span className="text-[#5c6b66] truncate">· {nv.motivo}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2 text-center">
                 <Lvl label="Invalidación" val={plan.invalidacion} color="#c0392b" />
                 <Lvl label="Objetivo" val={plan.objetivo} color="#2563eb" />
               </div>

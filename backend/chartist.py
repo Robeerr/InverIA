@@ -62,6 +62,17 @@ def _tf_snapshot(sym: str, tf: str) -> dict | None:
         for tl in lines.get("trendlines", []):
             tls.append({"tipo": tl.get("kind"), "direccion": tl.get("direction")})
         closes = [c.get("close") for c in candles if c.get("close") is not None]
+        # NIVELES REALES para anclar las compras escalonadas (nada inventado):
+        # todos los soportes por DEBAJO del precio + las medias móviles (soporte dinámico).
+        soportes = sorted({round(float(l["price"]), 2) for l in levels
+                           if l.get("role") == "soporte" and l.get("price") and l["price"] < px},
+                          reverse=True)[:4]
+        sma50 = round(sum(closes[-50:]) / 50, 2) if len(closes) >= 50 else None
+        sma200 = round(sum(closes[-200:]) / 200, 2) if len(closes) >= 200 else None
+        # nivel del patrón (p.ej. soporte de la taza/directriz) si el patrón lo trae
+        niv_patron = None
+        if pat and pat.get("pivote"):
+            niv_patron = round(float(pat["pivote"]), 2)
         return {
             "timeframe": tf,
             "precio": round(float(px), 2) if px is not None else None,
@@ -69,6 +80,10 @@ def _tf_snapshot(sym: str, tf: str) -> dict | None:
             "vela": {"nombre": cs.get("nombre"), "sentido": cs.get("sentido")} if cs else None,
             "resistencia": res.get("price") if res else None,
             "soporte": sop.get("price") if sop else None,
+            "soportes_reales": soportes,
+            "sma50": sma50,
+            "sma200": sma200,
+            "nivel_patron": niv_patron,
             "directrices": tls,
             "forma_precio_0a100": _silhouette(closes),
         }
@@ -97,6 +112,17 @@ respuesta VÁLIDA y honesta. No inventes un patrón para rellenar.
 
 NO inventes niveles: usa los precios reales que te doy.
 
+CÓMO OPERA EL USUARIO — MUY IMPORTANTE: compra ESCALONANDO por niveles (no todo de golpe).
+Por eso el plan debe dar 2-3 NIVELES DE COMPRA, NO un solo precio. Y una regla innegociable:
+**cada nivel de entrada debe caer EXACTAMENTE sobre un nivel REAL de la radiografía**
+(`soportes_reales`, `sma50`, `sma200`, `nivel_patron`, o el mínimo de una directriz/zona de
+demanda que te doy). NADA de precios inventados o "redondos" al azar. Ordena los niveles de
+más cercano al precio (compra menos) al más profundo (compra más), y reparte el % en cada
+uno (ej: 30% / 30% / 40%). En el `motivo` di SIEMPRE a qué nivel real corresponde
+(ej: "soporte 1D de 188.5", "SMA200", "mínimo de la cuña"). Si no hay soportes reales por
+debajo (acción en máximos sin estructura), dilo y deja `niveles_entrada: []` con acción
+ESPERAR — mejor no forzar niveles aleatorios.
+
 RADIOGRAFÍA POR TIMEFRAME:
 {snapshots}
 
@@ -114,11 +140,14 @@ Devuelve SOLO un JSON con esta estructura EXACTA (en ESPAÑOL, tono cercano y di
   "veredicto": "2-4 frases: la foto global. ¿Tendencia sana o rota? ¿Fase de acumulación, ruptura, o hay que esperar? Habla como a un principiante.",
   "plan": {{
     "accion": "COMPRAR" | "ESPERAR" | "EVITAR",
-    "gatillo": "El evento y PRECIO concreto que activa la entrada. Ej: 'Compra si rompe $X con volumen'. Si es ESPERAR, di qué esperas.",
-    "entrada": <precio number o null>,
-    "invalidacion": <precio number: dónde te has equivocado y sales, o null>,
+    "gatillo": "El evento/condición que activa el plan. Ej: 'Compra escalonada en los niveles de abajo' o, si es ESPERAR, qué esperas.",
+    "niveles_entrada": [
+      {{"precio": <number, un nivel REAL de la radiografía>, "porcentaje": <number, % de la posición a comprar aquí>, "motivo": "a qué nivel real corresponde (soporte 1D X / SMA200 / mínimo del patrón)"}}
+      // 2-3 niveles ordenados de más cercano a más profundo; [] si no hay estructura real y toca ESPERAR
+    ],
+    "invalidacion": <precio number: bajo el nivel más profundo, donde la tesis se rompe y sales, o null>,
     "objetivo": <precio number del siguiente objetivo lógico, o null>,
-    "por_que": "2-3 frases explicando el PORQUÉ del plan, para que el usuario APRENDA el razonamiento (no solo el qué)."
+    "por_que": "2-3 frases explicando el PORQUÉ del plan y por qué esos niveles (no otros), para que el usuario APRENDA el razonamiento."
   }},
   "para_aprender": "1 frase de enseñanza general que el usuario se pueda llevar de este caso (el concepto técnico detrás)."
 }}
