@@ -231,7 +231,7 @@ async def analyze(symbol: str) -> dict:
         ai_analysis.GEMINI_MODEL,
         user_msg,
         system_prompt="Eres un analista técnico senior, honesto y didáctico. Respondes SOLO con JSON válido.",
-        max_tokens=8000,  # sube: el veredicto (multi-TF + niveles escalonados) no cabía en 4000
+        max_tokens=16000,  # el veredicto (multi-TF + niveles escalonados + pedagógico) se cortaba a 8000
     )
     verdict["snapshots"] = snaps
     return verdict
