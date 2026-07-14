@@ -194,11 +194,15 @@ export default function LightweightChart({ candles, indicators, buyLevels, lines
       </div>
       <div ref={boxRef} style={{ width: "100%", height: 460 }} />
       {lines?.pattern && (
-        <div className="mt-2 flex items-start gap-2 text-[11px]">
-          <span className={`px-1.5 py-0.5 rounded font-mono font-semibold ${lines.pattern.sentido === "alcista" ? "bg-[#e6f4ea] text-[#1e7a3a]" : lines.pattern.sentido === "bajista" ? "bg-[#fbe9e6] text-[#c0392b]" : "bg-[#f0ece3] text-[#5c6b66]"}`}>
-            {lines.pattern.nombre}
-          </span>
-          <span className="text-[#5c6b66] flex-1">{lines.pattern.descripcion}</span>
+        <div className="mt-2 space-y-1">
+          <div className="flex items-start gap-2 text-[11px]">
+            <span className={`px-1.5 py-0.5 rounded font-mono font-semibold ${lines.pattern.sentido === "alcista" ? "bg-[#e6f4ea] text-[#1e7a3a]" : lines.pattern.sentido === "bajista" ? "bg-[#fbe9e6] text-[#c0392b]" : "bg-[#f0ece3] text-[#5c6b66]"}`}>
+              {lines.pattern.nombre}
+            </span>
+            <span className="px-1.5 py-0.5 rounded bg-[#f0ece3] text-[#8a958f] text-[9px] font-mono uppercase tracking-wide shrink-0">auto</span>
+            <span className="text-[#5c6b66] flex-1">{lines.pattern.descripcion}</span>
+          </div>
+          <p className="text-[10px] text-[#8a958f] italic">Detección automática por geometría (puede fallar). El veredicto fiable lo da el 🎯 Chartista IA de abajo.</p>
         </div>
       )}
       <p className="text-[10px] text-[#8a958f] mt-2">Diagonales: directrices · Azul: zonas de compra · Verde/rojo punteado: soporte/resistencia · SMA 50 (azul) / 200 (dorado).</p>

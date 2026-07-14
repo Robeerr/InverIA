@@ -1735,8 +1735,9 @@ def _detect_wedge(highs, lows, closes, volumes=None):
     a_h, b_h, r2_h = _linreg(h_idx, [highs[i] for i in h_idx])
     a_l, b_l, r2_l = _linreg(l_idx, [lows[i] for i in l_idx])
 
-    # Criterio nº2 (ajuste): R^2 >= 0.85 en ambas líneas.
-    if r2_h < 0.85 or r2_l < 0.85:
+    # Criterio nº2 (ajuste): R^2 >= 0.90 en ambas líneas (apretado: una caída irregular no
+    # ajusta a una recta limpia -> se rechaza, como pedía el Chartista en ORCL).
+    if r2_h < 0.90 or r2_l < 0.90:
         return None
 
     t_ini = min(h_idx[0], l_idx[0])
@@ -1756,8 +1757,10 @@ def _detect_wedge(highs, lows, closes, volumes=None):
     if abs(a_h * L) < 0.01 * P or abs(a_l * L) < 0.01 * P:
         return None
 
-    # --- Discriminador CUÑA vs CANAL/BANDERA: separación de pendientes suficiente.
-    if abs(a_l - a_h) < 0.15 * max(abs(a_h), abs(a_l)):
+    # --- Discriminador CUÑA vs CANAL/BANDERA: las pendientes deben SEPARARSE claramente
+    # (apretado a 25%). Un canal alcista tiene máximos y mínimos ~paralelos -> se rechaza,
+    # como pedía el Chartista en AAPL.
+    if abs(a_l - a_h) < 0.25 * max(abs(a_h), abs(a_l)):
         return None
 
     # --- Convergencia (nº4) + discriminador vs MEGÁFONO: la amplitud DECRECE.
@@ -1765,7 +1768,7 @@ def _detect_wedge(highs, lows, closes, volumes=None):
     w_fin = recta_max(t_fin) - recta_min(t_fin)
     if w_ini <= 0 or w_fin <= 0:                  # deben mantener techo>suelo (aún no cruzan)
         return None
-    if w_fin / w_ini > 0.66:                       # exigir contracción >= 34%
+    if w_fin / w_ini > 0.60:                       # exigir contracción >= 40% (convergencia real)
         return None
 
     # Apex = intersección. Debe estar POR DELANTE y CERCA (a <= 3*L velas desde el inicio).
