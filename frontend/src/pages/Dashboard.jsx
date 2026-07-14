@@ -325,8 +325,11 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
             timeframe={timeframe}
             setTimeframe={refreshTimeframe}
           />
-          <div className="mt-4">
+          <div className="mt-4 space-y-4 sm:space-y-6">
             <ChartistPanel symbol={symbol} />
+            {/* Bajo el gráfico (rellenan la columna en escritorio, junto a 'Tus fuentes') */}
+            <AnalystConsensusCard data={analystData} />
+            <IndicatorsPanel indicators={indicators} analysis={analysis} />
           </div>
         </div>
         <div className="space-y-4">
@@ -343,11 +346,6 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       </div>
 
       {analysis && <PricePredictionCard analysis={analysis} quote={quote} />}
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <AnalystConsensusCard data={analystData} />
-        <IndicatorsPanel indicators={indicators} analysis={analysis} />
-      </div>
 
       <FundamentalsCard quote={quote} analysis={analysis} />
 
