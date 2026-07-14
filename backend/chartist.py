@@ -228,7 +228,7 @@ async def analyze(symbol: str) -> dict:
         brain=brain,
     )
     verdict = await ai_analysis._analyze_with_gemini_free(
-        "gemini-2.5-flash",
+        ai_analysis.GEMINI_MODEL,
         user_msg,
         system_prompt="Eres un analista técnico senior, honesto y didáctico. Respondes SOLO con JSON válido.",
         max_tokens=4000,

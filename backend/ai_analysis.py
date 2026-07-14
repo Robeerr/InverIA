@@ -23,11 +23,16 @@ except ImportError:
     genai_types = None
 
 
+# Modelo Gemini a usar. `gemini-2.5-flash` fue RETIRADO para usuarios nuevos (404), así que
+# usamos el alias `gemini-flash-latest` (apunta siempre al Flash vigente). Configurable por
+# env GEMINI_MODEL por si Google cambia el nombre otra vez.
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+
 # (provider, model_id, is_free)
 MODEL_MAP = {
     "gpt-oss-120b": ("groq", "openai/gpt-oss-120b", True),
     "llama-3.3-70b": ("groq", "llama-3.3-70b-versatile", True),
-    "gemini-2.5-flash": ("google_free", "gemini-2.5-flash", True),
+    "gemini-2.5-flash": ("google_free", GEMINI_MODEL, True),
     "gpt-5.2": ("openai", "gpt-5.2", False),
     "claude-sonnet-4.5": ("anthropic", "claude-sonnet-4-5-20250929", False),
 }
@@ -587,7 +592,7 @@ async def research_stock_web(symbol: str, name: str = "", catalysts: str = "") -
         symbol=symbol, name=name or symbol, catalysts=catalysts or "señales técnicas positivas")
     response = await asyncio.to_thread(
         client.models.generate_content,
-        model="gemini-2.5-flash",
+        model=GEMINI_MODEL,
         contents=prompt,
         config=config,
     )
@@ -787,7 +792,7 @@ async def extract_watchlist_from_image(image_bytes: bytes, mime_type: str = "ima
     image_part = genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
     response = await asyncio.to_thread(
         client.models.generate_content,
-        model="gemini-2.5-flash",
+        model=GEMINI_MODEL,
         contents=[image_part, _WATCHLIST_OCR_PROMPT],
         config=config,
     )
@@ -882,7 +887,7 @@ async def analyze_youtube(url: str) -> dict:
         config = genai_types.GenerateContentConfig(**base_kwargs)
     response = await asyncio.to_thread(
         client.models.generate_content,
-        model="gemini-2.5-flash",
+        model=GEMINI_MODEL,
         contents=[video_part, _YT_PROMPT],
         config=config,
     )
@@ -934,7 +939,7 @@ async def describe_image_text(image_bytes: bytes, mime_type: str = "image/jpeg")
         image_part = genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
         response = await asyncio.to_thread(
             client.models.generate_content,
-            model="gemini-2.5-flash",
+            model=GEMINI_MODEL,
             contents=[image_part, _IMAGE_PROMPT],
         )
         text = (getattr(response, "text", "") or "").strip()
