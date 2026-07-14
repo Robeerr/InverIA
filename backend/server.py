@@ -500,7 +500,13 @@ async def chartist_verdict(symbol: str, refresh: bool = False):
     except RuntimeError as e:
         raise HTTPException(422, str(e))
     except Exception as e:
-        raise HTTPException(500, f"El Chartista IA falló: {e}")
+        msg = str(e)
+        low = msg.lower()
+        # Límite de la API de Gemini (plan gratis): mensaje limpio en vez del JSON crudo.
+        if "429" in msg or "resource_exhausted" in low or "quota" in low or "rate limit" in low:
+            raise HTTPException(429, "Límite de la API de Gemini alcanzado (plan gratis: 20 análisis/día). "
+                                     "Espera un momento y reintenta, o activa el plan de pago de Gemini para subir el tope.")
+        raise HTTPException(500, "El Chartista IA no pudo generar el análisis. Inténtalo de nuevo en un momento.")
     _cache.set(key, result, ttl=1800)  # 30 min
     return result
 
