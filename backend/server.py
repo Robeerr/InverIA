@@ -1024,6 +1024,27 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y"):
     # Fill missing fundamentals from Finnhub if yfinance returned an incomplete quote
     quote = await _timed("enrich", _enrich_quote_fundamentals, quote, sym)
 
+    # Extended hours (pre-market / after-hours): añade estado + precio + % al quote para que
+    # el header del dashboard lo muestre igual que la watchlist. Cacheado 60s (dato volátil).
+    if quote:
+        try:
+            ext = _cache.get(f"ext:{sym}")
+            if ext is None:
+                ext = await asyncio.to_thread(market_data.get_extended_quote, sym)
+                _cache.set(f"ext:{sym}", ext or {}, ttl=60)
+            state = (ext or {}).get("market_state")
+            ext_price = (ext or {}).get("extended_price")
+            reg_close = (ext or {}).get("regular_close") or quote.get("price")
+            quote["market_state"] = state
+            if state == "PRE":
+                quote["pre_market_price"] = ext_price
+            elif state == "POST":
+                quote["post_market_price"] = ext_price
+            if ext_price and reg_close:
+                quote["extended_change_percent"] = round((ext_price - reg_close) / reg_close * 100, 2)
+        except Exception:
+            pass
+
     candles = []
     if df_chart is not None and not isinstance(df_chart, Exception):
         try:

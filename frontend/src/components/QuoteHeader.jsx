@@ -73,6 +73,22 @@ export default function QuoteHeader({ quote }) {
               {up ? "+" : ""}{fmtPrice(quote.change)} ({fmtPct(quote.change_percent)})
             </span>
           </div>
+          {(() => {
+            // Pre-market / after-hours: precio y % fuera de sesión (como en la watchlist).
+            const st = quote.market_state;
+            const extPx = st === "PRE" ? quote.pre_market_price : st === "POST" ? quote.post_market_price : null;
+            if (extPx == null) return null;
+            const extPct = quote.extended_change_percent;
+            const extUp = (extPct ?? 0) >= 0;
+            return (
+              <div className={`font-mono text-xs flex items-center justify-end gap-1.5 ${extUp ? "text-[#4a7c59]" : "text-[#d85c41]"}`}>
+                <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[#f0ece3] text-[#5c6b66]">
+                  {st === "PRE" ? "PRE-MARKET" : "AFTER-HOURS"}
+                </span>
+                <span>${fmtPrice(extPx)}{extPct != null ? ` (${extUp ? "+" : ""}${fmtPct(extPct)})` : ""}</span>
+              </div>
+            );
+          })()}
           {/* Quick alert button */}
           <button
             onClick={() => { setAlertOpen((o) => !o); setAlertPrice(fmtPrice(quote.price)); }}
