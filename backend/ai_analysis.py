@@ -468,22 +468,41 @@ async def _analyze_with_groq(model_id: str, user_msg: str,
     return _parse_model_json(content)
 
 
+def _gemini_keys() -> list:
+    """Keys de Gemini en orden de preferencia: primero la GRATIS (GEMINI_API_KEY), y si se
+    agota su cuota (429), la de PAGO (GEMINI_API_KEY_PAID). Así se gasta lo gratis primero y
+    solo se paga cuando se acaba. Si solo hay una configurada, se usa esa."""
+    free = os.environ.get("GEMINI_API_KEY")
+    paid = os.environ.get("GEMINI_API_KEY_PAID")
+    keys = []
+    if free:
+        keys.append(free)
+    if paid and paid != free:
+        keys.append(paid)
+    return keys
+
+
+def _is_quota_error(e) -> bool:
+    s = str(e).lower()
+    return "429" in s or "resource_exhausted" in s or "quota" in s or "rate limit" in s
+
+
 async def _analyze_with_gemini_free(model_id: str, user_msg: str,
                                     system_prompt: str = SYSTEM_PROMPT,
                                     max_tokens: int = 16384) -> dict:
-    """Google Gemini via the free AI Studio API (GEMINI_API_KEY)."""
+    """Google Gemini via AI Studio. Usa la key GRATIS primero y cae a la de PAGO
+    (GEMINI_API_KEY_PAID) si la gratis agota su cuota diaria."""
     if not GEMINI_AVAILABLE:
         raise RuntimeError(
             "La librería google-genai no está instalada en el servidor. "
             "Añádela a requirements.txt y vuelve a desplegar."
         )
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
+    keys = _gemini_keys()
+    if not keys:
         raise RuntimeError(
             "GEMINI_API_KEY no configurada. Crea una key gratis en "
             "https://aistudio.google.com/apikey y añádela en Render."
         )
-    client = genai.Client(api_key=api_key)
     config_kwargs = dict(
         system_instruction=system_prompt,
         temperature=0.3,
@@ -493,28 +512,39 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
     # Gemini 2.5 Flash gasta tokens en "thinking" interno ANTES de escribir. Por defecto
     # ese presupuesto es DINÁMICO (ilimitado) y se comía todo el espacio, truncando el
     # JSON a mitad. Lo ACOTAMOS a min(2048, max_tokens//2) para garantizar que queda al
-    # menos la mitad del presupuesto para la respuesta. Para análisis completo (8000) esto
-    # da 2048; para el daily-move (2000) da 1000. Try/except por compatibilidad del SDK.
+    # menos la mitad del presupuesto para la respuesta. Try/except por compatibilidad del SDK.
     try:
         budget = min(2048, max_tokens // 2)
         config_kwargs["thinking_config"] = genai_types.ThinkingConfig(thinking_budget=budget)
     except Exception:
         pass
     config = genai_types.GenerateContentConfig(**config_kwargs)
-    # SDK call is synchronous — run off the event loop
-    response = await asyncio.to_thread(
-        client.models.generate_content,
-        model=model_id,
-        contents=user_msg,
-        config=config,
-    )
-    text = getattr(response, "text", "") or ""
-    if not text:
-        raise RuntimeError(
-            "Gemini no devolvió texto (posible límite de tokens agotado en 'thinking'). "
-            "Intenta otra vez o usa GPT-OSS 120B."
-        )
-    return _parse_model_json(text)
+
+    last_err = None
+    for i, api_key in enumerate(keys):
+        client = genai.Client(api_key=api_key)
+        try:
+            response = await asyncio.to_thread(
+                client.models.generate_content,
+                model=model_id,
+                contents=user_msg,
+                config=config,
+            )
+        except Exception as e:
+            last_err = e
+            # Si es error de cuota y aún queda otra key (la de pago), reintenta con ella.
+            if _is_quota_error(e) and i < len(keys) - 1:
+                continue
+            raise
+        text = getattr(response, "text", "") or ""
+        if not text:
+            raise RuntimeError(
+                "Gemini no devolvió texto (posible límite de tokens agotado en 'thinking'). "
+                "Intenta otra vez o usa GPT-OSS 120B."
+            )
+        return _parse_model_json(text)
+    # Solo se llega aquí si todas las keys dieron cuota agotada.
+    raise last_err if last_err else RuntimeError("Gemini falló con todas las keys.")
 
 
 _RESEARCH_PROMPT = """Eres un analista financiero senior. Investiga en internet (usa la búsqueda)
