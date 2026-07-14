@@ -315,8 +315,12 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
 
       {quote && <BacktestCard symbol={symbol} />}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6">
-        <div className="min-w-0">
+      {/* Móvil: flex-col con orden explícito → gráfico+Chartista, LUEGO la Recomendación IA
+          (columna derecha), y por último Consenso/Indicadores. Antes la columna derecha
+          quedaba enterrada al final y parecía no existir. Escritorio (xl): 2 columnas. */}
+      <div className="flex flex-col xl:grid xl:grid-cols-[1fr_360px] xl:grid-rows-[auto_auto] gap-6">
+        {/* A: gráfico + Chartista */}
+        <div className="min-w-0 order-1 xl:col-start-1 xl:row-start-1">
           <LightweightChart
             candles={candles}
             indicators={indicators}
@@ -325,14 +329,13 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
             timeframe={timeframe}
             setTimeframe={refreshTimeframe}
           />
-          <div className="mt-4 space-y-4 sm:space-y-6">
+          <div className="mt-4">
             <ChartistPanel symbol={symbol} />
-            {/* Bajo el gráfico (rellenan la columna en escritorio, junto a 'Tus fuentes') */}
-            <AnalystConsensusCard data={analystData} />
-            <IndicatorsPanel indicators={indicators} analysis={analysis} />
           </div>
         </div>
-        <div className="space-y-4">
+        {/* B: columna derecha (Recomendación IA + Fuentes + Alternativa). En móvil va justo
+            debajo del gráfico; en escritorio ocupa la 2ª columna a lo alto. */}
+        <div className="space-y-4 order-2 xl:col-start-2 xl:row-start-1 xl:row-span-2">
           <RecommendationPanel
             analysis={analysis}
             isLoading={loadingAnalysis}
@@ -342,6 +345,11 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
           />
           <SourcesPanel symbol={symbol} />
           <AlternativePanel symbol={symbol} onPick={setSymbol} />
+        </div>
+        {/* C: Consenso + Indicadores. En escritorio bajo el gráfico (col 1); en móvil al final. */}
+        <div className="space-y-4 sm:space-y-6 order-3 xl:col-start-1 xl:row-start-2">
+          <AnalystConsensusCard data={analystData} />
+          <IndicatorsPanel indicators={indicators} analysis={analysis} />
         </div>
       </div>
 
