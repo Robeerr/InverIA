@@ -165,19 +165,8 @@ function LevelCard({ icon, label, primary, sub, tone, testId }) {
 }
 
 export default function TradingLevels({ quote, analysis, analystConsensus, priceTarget, volumeProfile, buyLevels }) {
-  if (!analysis) {
-    return (
-      <section data-testid="trading-levels-empty" className="card-flat p-6 border-2 border-dashed">
-        <div className="flex items-center gap-2 mb-2">
-          <Crosshair size={20} weight="bold" className="text-[#1a3a32]" />
-          <h3 className="font-heading font-bold text-xl text-[#0e1f1a]">Niveles de Compra y Venta</h3>
-        </div>
-        <p className="text-sm text-[#5c6b66]">
-          Genera un análisis IA para ver tus niveles operativos: zona de entrada, stop-loss, take-profits y consenso de analistas.
-        </p>
-      </section>
-    );
-  }
+  // Sin análisis: ocultamos la sección por completo (aparece al generar el análisis IA).
+  if (!analysis) return null;
 
   const current = quote?.price;
   const vpLevels = buildVpLevels(volumeProfile);
