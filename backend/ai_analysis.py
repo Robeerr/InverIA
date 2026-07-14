@@ -1,9 +1,12 @@
 """AI analysis service supporting Groq + Google Gemini (both free) + premium via emergentintegrations."""
 import asyncio
 import json
+import logging
 import os
 import uuid
 from groq import AsyncGroq
+
+logger = logging.getLogger("ai_analysis")
 
 try:
     from emergentintegrations.llm.chat import LlmChat, UserMessage
@@ -549,6 +552,9 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
                 "Gemini no devolvió texto (posible límite de tokens agotado en 'thinking'). "
                 "Intenta otra vez o usa GPT-OSS 120B."
             )
+        # Deja constancia en el log de qué key sirvió: la 1ª es la GRATIS, la 2ª la de PAGO.
+        tier = "GRATIS" if i == 0 else "PAGO"
+        logger.info("Gemini OK con key #%d (%s) · modelo=%s", i + 1, tier, model_id)
         return _parse_model_json(text)
     # Solo se llega aquí si todas las keys dieron cuota agotada.
     raise last_err if last_err else RuntimeError("Gemini falló con todas las keys.")
