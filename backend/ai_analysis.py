@@ -543,6 +543,11 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
             # Si la key falla por LO QUE SEA (cuota agotada, 404 del modelo, etc.) y aún queda
             # otra key (la de pago), reintenta con ella. Así una key gratis con problemas no
             # tumba el análisis: la de pago toma el relevo.
+            # Dejamos constancia del MOTIVO para poder distinguir "cuota agotada" (esperado)
+            # de "API no habilitada / key inválida" (config a arreglar).
+            tier = "GRATIS" if i == 0 else "PAGO"
+            logger.warning("Gemini key #%d (%s) falló: %s", i + 1, tier,
+                           str(e)[:300].replace("\n", " "))
             if i < len(keys) - 1:
                 continue
             raise
