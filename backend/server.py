@@ -506,7 +506,12 @@ async def chartist_verdict(symbol: str, refresh: bool = False):
         if "429" in msg or "resource_exhausted" in low or "quota" in low or "rate limit" in low:
             raise HTTPException(429, "Límite de la API de Gemini alcanzado (plan gratis: 20 análisis/día). "
                                      "Espera un momento y reintenta, o activa el plan de pago de Gemini para subir el tope.")
-        raise HTTPException(500, "El Chartista IA no pudo generar el análisis. Inténtalo de nuevo en un momento.")
+        # Errores de config/clave frecuentes -> mensaje útil.
+        if "api key" in low or "api_key" in low or "permission" in low or "invalid" in low or "no configurada" in low:
+            raise HTTPException(500, "Problema con la API key de Gemini: " + msg[:200])
+        if "billing" in low or "consumer" in low or "disabled" in low or "suspend" in low:
+            raise HTTPException(500, "La cuenta de Gemini de pago tiene un problema de facturación: " + msg[:200])
+        raise HTTPException(500, "El Chartista IA no pudo generar el análisis (" + msg[:180] + ")")
     _cache.set(key, result, ttl=1800)  # 30 min
     return result
 
