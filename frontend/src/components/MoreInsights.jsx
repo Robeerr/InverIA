@@ -17,9 +17,13 @@ export function AlternativePanel({ symbol, onPick }) {
     <section className="card-flat p-5 animate-fade-up">
       <div className="flex items-center gap-2 mb-1">
         <ArrowFatRight size={18} weight="fill" className="text-[#b8860b]" />
-        <h3 className="font-heading font-semibold text-base text-[#0e1f1a]">Alternativa en {d.sector}</h3>
+        <h3 className="font-heading font-semibold text-base text-[#0e1f1a]">Alternativa en {d.grupo || d.sector}</h3>
       </div>
-      <p className="text-[11px] text-[#5c6b66] mb-3">Otras del mismo sector con mejor potencial que {d.symbol}:</p>
+      <p className="text-[11px] text-[#5c6b66] mb-3">
+        {d.industry && d.grupo === d.industry
+          ? `Del mismo sector (${d.industry}) con mejor potencial que ${d.symbol}:`
+          : `Del mismo sector con mejor potencial que ${d.symbol}:`}
+      </p>
       <div className="space-y-2">
         {d.alternativas.map((a) => (
           <button key={a.symbol} onClick={() => onPick?.(a.symbol)}

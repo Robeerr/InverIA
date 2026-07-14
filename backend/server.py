@@ -1757,27 +1757,45 @@ async def alternativa_sectorial(symbol: str):
     sym = symbol.strip().upper()
     data = await opportunities.scan_growth_screener()
     results = data.get("results") or []
-    # Sector de la acción: del screener si está, si no de la cotización.
+    # Sector e INDUSTRIA de la acción: del screener si está, si no de la cotización.
     propia = next((r for r in results if (r.get("symbol") or "").upper() == sym), None)
     sector = propia.get("sector") if propia else None
+    industry = propia.get("industry") if propia else None
     mi_score = propia.get("potential_score") if propia else None
-    if not sector:
+    if not sector or not industry:
         try:
             q = await asyncio.to_thread(market_data.get_quote, sym)
-            sector = (q or {}).get("sector")
+            sector = sector or (q or {}).get("sector")
+            industry = industry or (q or {}).get("industry")
         except Exception:
-            sector = None
-    if not sector:
+            pass
+    if not sector and not industry:
         return {"symbol": sym, "sector": None, "alternativas": []}
-    cands = [r for r in results
-             if r.get("sector") == sector and (r.get("symbol") or "").upper() != sym
+
+    def _mejores(pred):
+        c = [r for r in results
+             if pred(r) and (r.get("symbol") or "").upper() != sym
              and (mi_score is None or (r.get("potential_score") or 0) > (mi_score or 0))]
-    cands.sort(key=lambda x: x.get("potential_score") or 0, reverse=True)
+        c.sort(key=lambda x: x.get("potential_score") or 0, reverse=True)
+        return c
+
+    # 1) Peers REALES: misma industria (p.ej. "Semiconductors", no todo "Technology").
+    #    Comparar ASTS (satélites) con NVDA (GPUs) no tiene sentido aunque compartan sector.
+    cands, grupo = [], industry
+    if industry:
+        cands = _mejores(lambda r: r.get("industry") == industry)
+        # Conocemos la industria: si no hay peer real, NO caemos a sector (evita comparar
+        # satélites con GPUs). El panel se ocultará — mejor eso que una alternativa absurda.
+    elif sector:
+        # 2) Solo si NO sabemos la industria usamos el sector amplio como último recurso.
+        cands = _mejores(lambda r: r.get("sector") == sector)
+        grupo = sector
     alts = [{"symbol": r["symbol"], "name": r.get("name"),
              "potential_score": r.get("potential_score"),
              "revenue_growth": r.get("revenue_growth"),
              "dist_52w_high": r.get("dist_52w_high")} for r in cands[:2]]
-    return {"symbol": sym, "sector": sector, "mi_score": mi_score, "alternativas": alts}
+    return {"symbol": sym, "sector": sector, "industry": industry,
+            "grupo": grupo, "alternativas": alts}
 
 
 # ---------- Analista Institucional ----------

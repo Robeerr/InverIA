@@ -424,6 +424,7 @@ async def _run_screener_scan():
                     "pe_ratio": round(pe, 1) if pe else None,
                     "dist_52w_high": dist_r,
                     "sector": q.get("sector"),
+                    "industry": q.get("industry"),
                     "change_percent": cp,
                     "potential_score": pot_score,
                     "valuation": val_label,
