@@ -85,7 +85,7 @@ export default function QuoteHeader({ quote }) {
                 <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[#f0ece3] text-[#5c6b66]">
                   {st === "PRE" ? "PRE-MARKET" : "AFTER-HOURS"}
                 </span>
-                <span>${fmtPrice(extPx)}{extPct != null ? ` (${extUp ? "+" : ""}${fmtPct(extPct)})` : ""}</span>
+                <span>${fmtPrice(extPx)}{extPct != null ? ` (${fmtPct(extPct)})` : ""}</span>
               </div>
             );
           })()}
