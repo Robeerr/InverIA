@@ -16,6 +16,39 @@ import market_data
 import chart_lines
 import knowledge_base
 import ai_analysis
+import levels_engine
+
+
+def _buy_zones(sym: str) -> list:
+    """Zonas de compra por CONFLUENCIA (levels_engine): combina Volume Profile, Fibonacci,
+    pivotes, SMA50/200 y swing lows sobre el DIARIO, rankeadas por fuerza. Es el mejor método
+    de la casa (pesos validados empíricamente) y da niveles ESPACIADOS y reales para escalonar.
+    Devuelve hasta 5 zonas con precio, banda, fuerza y el porqué. [] si falla."""
+    try:
+        df = market_data.get_stock_data(sym, timeframe="1D")
+        if df is None or df.empty:
+            return []
+        candles = market_data.df_to_candles(df)
+        closes = [c.get("close") for c in candles if c.get("close") is not None]
+        if len(closes) < 30:
+            return []
+        px = closes[-1]
+        sma = {"50": round(sum(closes[-50:]) / 50, 2) if len(closes) >= 50 else None,
+               "200": round(sum(closes[-200:]) / 200, 2) if len(closes) >= 200 else None}
+        zones = levels_engine.compute_buy_levels(df, None, px, sma) or []
+        out = []
+        for z in zones[:5]:
+            motivo = " + ".join(z.get("reasons", [])[:3]) or z.get("label") or "confluencia"
+            out.append({
+                "precio": z.get("price"),
+                "banda": [z.get("zone_low"), z.get("zone_high")],
+                "fuerza_0a100": z.get("strength"),
+                "distancia_pct": z.get("distance_pct"),
+                "por_que": motivo,
+            })
+        return out
+    except Exception:
+        return []
 
 
 def _silhouette(closes, buckets: int = 24) -> list:
@@ -113,15 +146,21 @@ respuesta VÁLIDA y honesta. No inventes un patrón para rellenar.
 NO inventes niveles: usa los precios reales que te doy.
 
 CÓMO OPERA EL USUARIO — MUY IMPORTANTE: compra ESCALONANDO por niveles (no todo de golpe).
-Por eso el plan debe dar 2-3 NIVELES DE COMPRA, NO un solo precio. Y una regla innegociable:
-**cada nivel de entrada debe caer EXACTAMENTE sobre un nivel REAL de la radiografía**
-(`soportes_reales`, `sma50`, `sma200`, `nivel_patron`, o el mínimo de una directriz/zona de
-demanda que te doy). NADA de precios inventados o "redondos" al azar. Ordena los niveles de
-más cercano al precio (compra menos) al más profundo (compra más), y reparte el % en cada
-uno (ej: 30% / 30% / 40%). En el `motivo` di SIEMPRE a qué nivel real corresponde
-(ej: "soporte 1D de 188.5", "SMA200", "mínimo de la cuña"). Si no hay soportes reales por
-debajo (acción en máximos sin estructura), dilo y deja `niveles_entrada: []` con acción
-ESPERAR — mejor no forzar niveles aleatorios.
+El plan debe dar 2-3 NIVELES DE COMPRA, NO un solo precio.
+
+De DÓNDE salen esos niveles (regla innegociable): usa las ZONAS DE COMPRA por confluencia
+que te doy abajo (`zonas_de_compra`). Es el mejor método: combina Volume Profile, Fibonacci,
+pivotes y medias sobre el DIARIO, ya rankeadas por FUERZA y bien ESPACIADAS. Elige 2-3 de
+esas zonas (preferiendo las de más `fuerza_0a100`) para escalonar, con separación real entre
+ellas (evita niveles pegados a <1%). Si `zonas_de_compra` está vacío, cae a los
+`soportes_reales`/`sma200` de la radiografía diaria/semanal (NO a los intradía de 15M/1H).
+NADA de precios inventados ni redondos al azar. Reparte el % (ej: 30/30/40, más peso a las
+zonas más profundas/fuertes). En cada `motivo` cita la confluencia real (ej: "POC + Fib 61.8%",
+"SMA200"). Si no hay ninguna zona real por debajo (acción en máximos sin estructura), deja
+`niveles_entrada: []` y acción ESPERAR — mejor no forzar niveles aleatorios.
+
+ZONAS DE COMPRA POR CONFLUENCIA (diario, rankeadas — úsalas para escalonar):
+{zonas}
 
 RADIOGRAFÍA POR TIMEFRAME:
 {snapshots}
@@ -161,8 +200,12 @@ async def analyze(symbol: str) -> dict:
     """Genera el veredicto del Chartista IA para un símbolo. Lanza RuntimeError si no hay
     datos suficientes o si el modelo falla (el endpoint traduce a HTTP)."""
     sym = symbol.upper()
-    # Descarga y radiografía de todos los timeframes en paralelo (cada uno cachea 15 min).
-    snaps = await asyncio.gather(*[asyncio.to_thread(_tf_snapshot, sym, tf) for tf in _TFS])
+    # Descarga y radiografía de todos los timeframes en paralelo (cada uno cachea 15 min) +
+    # las zonas de compra por confluencia (el mejor método de la casa) para escalonar.
+    snaps, zonas = await asyncio.gather(
+        asyncio.gather(*[asyncio.to_thread(_tf_snapshot, sym, tf) for tf in _TFS]),
+        asyncio.to_thread(_buy_zones, sym),
+    )
     snaps = [s for s in snaps if s]
     if not snaps:
         raise RuntimeError(f"No hay datos suficientes para analizar '{sym}'.")
@@ -180,6 +223,7 @@ async def analyze(symbol: str) -> dict:
 
     user_msg = _PROMPT.format(
         symbol=sym,
+        zonas=json.dumps(zonas, ensure_ascii=False, indent=2) if zonas else "(sin zonas de confluencia; usa soportes diarios/semanales)",
         snapshots=json.dumps(snaps, ensure_ascii=False, indent=2),
         brain=brain,
     )
