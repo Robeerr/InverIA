@@ -34,7 +34,7 @@ export default function SourcesPanel({ symbol }) {
         {data.positivos > 0 && <span className="text-[#4a7c59]">👍 {data.positivos}</span>}
         {data.negativos > 0 && <span className="text-[#d85c41]">👎 {data.negativos}</span>}
       </div>
-      <div className="space-y-2">
+      <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
         {data.menciones.map((m, i) => {
           const c = m.sentimiento === "POSITIVO" ? "#4a7c59" : m.sentimiento === "NEGATIVO" ? "#d85c41" : "#5c6b66";
           return (
