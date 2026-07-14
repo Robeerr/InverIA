@@ -532,8 +532,10 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
             )
         except Exception as e:
             last_err = e
-            # Si es error de cuota y aún queda otra key (la de pago), reintenta con ella.
-            if _is_quota_error(e) and i < len(keys) - 1:
+            # Si la key falla por LO QUE SEA (cuota agotada, 404 del modelo, etc.) y aún queda
+            # otra key (la de pago), reintenta con ella. Así una key gratis con problemas no
+            # tumba el análisis: la de pago toma el relevo.
+            if i < len(keys) - 1:
                 continue
             raise
         text = getattr(response, "text", "") or ""
