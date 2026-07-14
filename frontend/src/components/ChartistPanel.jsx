@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { api } from "../lib/api";
 
 const SENT_COLOR = {
@@ -18,6 +18,14 @@ export default function ChartistPanel({ symbol }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
+
+  // Al cambiar de acción, limpiar el veredicto anterior: vuelve a "Analizar" en vez de
+  // dejar el análisis de la acción previa.
+  useEffect(() => {
+    setData(null);
+    setErr(null);
+    setLoading(false);
+  }, [symbol]);
 
   async function run(refresh = false) {
     setLoading(true);
