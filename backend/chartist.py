@@ -231,10 +231,11 @@ async def analyze(symbol: str) -> dict:
     import logging
     _log = logging.getLogger("chartist")
 
-    # CASCADA DE PROVEEDORES — el de PAGO es el ÚLTIMO recurso (solo si todo lo gratis falla):
+    # CASCADA DE PROVEEDORES — prioriza la CALIDAD del análisis (Gemini es muy superior a Groq
+    # para esta tarea). Groq es solo la red de seguridad final:
     #   1) Gemini con la key GRATIS (+1 reintento corto ante 503 transitorio)
-    #   2) Groq gpt-oss-120b (otro proveedor GRATIS, rápido y rara vez saturado)
-    #   3) Gemini con la key de PAGO (consume crédito → solo como último recurso)
+    #   2) Gemini con la key de PAGO (mismo modelo top; consume crédito solo si la gratis falla)
+    #   3) Groq gpt-oss-120b (último recurso GRATIS, análisis más flojo, para no quedarte sin nada)
     verdict = None
     # 1) Gemini GRATIS
     try:
@@ -243,20 +244,20 @@ async def analyze(symbol: str) -> dict:
             max_tokens=16000, only="free",  # el veredicto se cortaba a 8000
         )
     except Exception as e:
-        _log.warning("Gemini GRATIS falló (%s); paso a Groq", str(e)[:150].replace("\n", " "))
-    # 2) Groq (gratis)
+        _log.warning("Gemini GRATIS falló (%s); paso a Gemini PAGO", str(e)[:150].replace("\n", " "))
+    # 2) Gemini de PAGO (mismo modelo, calidad top; consume crédito)
     if verdict is None:
         try:
-            verdict = await ai_analysis._run_model("gpt-oss-120b", system_prompt, user_msg, max_tokens=3000)
-            if isinstance(verdict, dict):
-                verdict["_ai_tier"] = "groq"
+            verdict = await ai_analysis._analyze_with_gemini_free(
+                ai_analysis.GEMINI_MODEL, user_msg, system_prompt=system_prompt,
+                max_tokens=16000, only="paid",
+            )
         except Exception as e:
-            _log.warning("Groq falló (%s); último recurso: Gemini PAGO", str(e)[:150].replace("\n", " "))
-    # 3) Gemini de PAGO (último recurso; consume crédito)
+            _log.warning("Gemini PAGO falló (%s); último recurso: Groq", str(e)[:150].replace("\n", " "))
+    # 3) Groq (gratis, más flojo) — solo si Gemini gratis Y pago han fallado
     if verdict is None:
-        verdict = await ai_analysis._analyze_with_gemini_free(
-            ai_analysis.GEMINI_MODEL, user_msg, system_prompt=system_prompt,
-            max_tokens=16000, only="paid",
-        )
+        verdict = await ai_analysis._run_model("gpt-oss-120b", system_prompt, user_msg, max_tokens=3000)
+        if isinstance(verdict, dict):
+            verdict["_ai_tier"] = "groq"
     verdict["snapshots"] = snaps
     return verdict
