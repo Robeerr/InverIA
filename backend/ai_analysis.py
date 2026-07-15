@@ -419,9 +419,13 @@ def _parse_model_json(content: str) -> dict:
         text = text.strip()
     if not text:
         raise RuntimeError("El modelo devolvió una respuesta vacía. Intenta otra vez o cambia de modelo.")
+    # strict=False tolera SALTOS DE LÍNEA y tabs SIN ESCAPAR dentro de las cadenas: los LLMs
+    # los meten a menudo en textos largos (veredicto/explicación multilínea en español) y con
+    # strict=True (por defecto) json.loads peta con "Invalid control character" aunque el JSON
+    # esté COMPLETO. Era la causa real del falso "se cortó a mitad".
     # 1) Direct parse
     try:
-        return json.loads(text)
+        return json.loads(text, strict=False)
     except json.JSONDecodeError:
         pass
     # 2) Substring between first { and last }
@@ -429,18 +433,22 @@ def _parse_model_json(content: str) -> dict:
     end = text.rfind("}")
     if start != -1 and end != -1 and end > start:
         try:
-            return json.loads(text[start: end + 1])
+            return json.loads(text[start: end + 1], strict=False)
         except json.JSONDecodeError:
             pass
     # 3) Repair truncated JSON (token limit hit mid-output)
     repaired = _repair_truncated_json(text)
     if repaired:
         try:
-            return json.loads(repaired)
+            return json.loads(repaired, strict=False)
         except json.JSONDecodeError:
             pass
+    # Log del inicio del texto crudo para diagnosticar si vuelve a fallar (no es truncado
+    # necesariamente: puede ser JSON mal formado por otra razón).
+    logger.warning("JSON no parseable (%d chars). Head: %s", len(text),
+                   text[:400].replace("\n", "\\n"))
     raise RuntimeError(
-        "La respuesta del modelo se cortó a mitad (límite de tokens alcanzado). "
+        "La respuesta del modelo no se pudo interpretar. "
         "Intenta otra vez — normalmente funciona al segundo intento."
     )
 
