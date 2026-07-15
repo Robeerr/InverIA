@@ -503,6 +503,15 @@ def _is_quota_error(e) -> bool:
     return "429" in s or "resource_exhausted" in s or "quota" in s or "rate limit" in s
 
 
+def _is_transient_error(e) -> bool:
+    """Error TEMPORAL del lado de Google (no es que se agote tu cuota): saturación puntual.
+    En estos casos la MISMA key funciona reintentando; NO hay que saltar a la de pago."""
+    s = str(e).lower()
+    return ("503" in s or "unavailable" in s or "high demand" in s
+            or "overloaded" in s or "try again" in s or "500" in s
+            or "internal" in s or "deadline" in s or "timeout" in s)
+
+
 async def _analyze_with_gemini_free(model_id: str, user_msg: str,
                                     system_prompt: str = SYSTEM_PROMPT,
                                     max_tokens: int = 16384) -> dict:
@@ -567,26 +576,39 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
     last_err = None
     for i, api_key in enumerate(keys):
         client = genai.Client(api_key=api_key)
-        try:
-            response = await asyncio.to_thread(
-                client.models.generate_content,
-                model=model_id,
-                contents=user_msg,
-                config=config,
-            )
-        except Exception as e:
-            last_err = e
-            # Si la key falla por LO QUE SEA (cuota agotada, 404 del modelo, etc.) y aún queda
-            # otra key (la de pago), reintenta con ella. Así una key gratis con problemas no
-            # tumba el análisis: la de pago toma el relevo.
-            # Dejamos constancia del MOTIVO para poder distinguir "cuota agotada" (esperado)
-            # de "API no habilitada / key inválida" (config a arreglar).
-            tier = "GRATIS" if i == 0 else "PAGO"
-            logger.warning("Gemini key #%d (%s) falló: %s", i + 1, tier,
-                           str(e)[:300].replace("\n", " "))
+        tier = "GRATIS" if i == 0 else "PAGO"
+        # Reintentos de la MISMA key ante errores TRANSITORIOS (503/high demand/overloaded):
+        # son hipos temporales de Google, la misma key funciona esperando un poco. Solo así
+        # evitamos gastar la key de PAGO por una saturación puntual de la gratis. Backoff
+        # 1.5s, 3s, 6s. Los errores NO transitorios (cuota, 404, key inválida) no reintentan.
+        response = None
+        for attempt in range(3):
+            try:
+                response = await asyncio.to_thread(
+                    client.models.generate_content,
+                    model=model_id,
+                    contents=user_msg,
+                    config=config,
+                )
+                break
+            except Exception as e:
+                last_err = e
+                if _is_transient_error(e) and not _is_quota_error(e) and attempt < 2:
+                    wait = 1.5 * (2 ** attempt)
+                    logger.warning("Gemini key #%d (%s) transitorio (%s); reintento en %.1fs "
+                                   "(intento %d/3)", i + 1, tier,
+                                   str(e)[:120].replace("\n", " "), wait, attempt + 1)
+                    await asyncio.sleep(wait)
+                    continue
+                # No transitorio (o agotados los reintentos): registra y decide fallback de key.
+                logger.warning("Gemini key #%d (%s) falló: %s", i + 1, tier,
+                               str(e)[:300].replace("\n", " "))
+                break
+        if response is None:
+            # Esta key no dio respuesta. Si queda otra (la de pago), toma el relevo.
             if i < len(keys) - 1:
                 continue
-            raise
+            raise last_err
         _log_usage(response)
         text = getattr(response, "text", "") or ""
         # Intento de parseo; si falla por truncado/ilegible, reintenta UNA vez con la misma
