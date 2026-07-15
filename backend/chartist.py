@@ -228,23 +228,35 @@ async def analyze(symbol: str) -> dict:
         brain=brain,
     )
     system_prompt = "Eres un analista técnico senior, honesto y didáctico. Respondes SOLO con JSON válido."
+    import logging
+    _log = logging.getLogger("chartist")
+
+    # CASCADA DE PROVEEDORES — el de PAGO es el ÚLTIMO recurso (solo si todo lo gratis falla):
+    #   1) Gemini con la key GRATIS (+1 reintento corto ante 503 transitorio)
+    #   2) Groq gpt-oss-120b (otro proveedor GRATIS, rápido y rara vez saturado)
+    #   3) Gemini con la key de PAGO (consume crédito → solo como último recurso)
+    verdict = None
+    # 1) Gemini GRATIS
     try:
         verdict = await ai_analysis._analyze_with_gemini_free(
-            ai_analysis.GEMINI_MODEL,
-            user_msg,
-            system_prompt=system_prompt,
-            max_tokens=16000,  # el veredicto (multi-TF + niveles + pedagógico) se cortaba a 8000
+            ai_analysis.GEMINI_MODEL, user_msg, system_prompt=system_prompt,
+            max_tokens=16000, only="free",  # el veredicto se cortaba a 8000
         )
     except Exception as e:
-        # Gemini caído/saturado (503 high demand afecta a AMBAS keys porque es el modelo, no
-        # la key). En vez de fallar y hacer esperar al usuario, tiramos de Groq (gpt-oss-120b):
-        # otro proveedor, rápido y rara vez saturado. Así casi siempre hay veredicto.
-        import logging
-        logging.getLogger("chartist").warning(
-            "Gemini falló (%s); respaldo con Groq gpt-oss-120b", str(e)[:150].replace("\n", " "))
-        verdict = await ai_analysis._run_model(
-            "gpt-oss-120b", system_prompt, user_msg, max_tokens=3000)
-        if isinstance(verdict, dict):
-            verdict["_ai_tier"] = "groq"
+        _log.warning("Gemini GRATIS falló (%s); paso a Groq", str(e)[:150].replace("\n", " "))
+    # 2) Groq (gratis)
+    if verdict is None:
+        try:
+            verdict = await ai_analysis._run_model("gpt-oss-120b", system_prompt, user_msg, max_tokens=3000)
+            if isinstance(verdict, dict):
+                verdict["_ai_tier"] = "groq"
+        except Exception as e:
+            _log.warning("Groq falló (%s); último recurso: Gemini PAGO", str(e)[:150].replace("\n", " "))
+    # 3) Gemini de PAGO (último recurso; consume crédito)
+    if verdict is None:
+        verdict = await ai_analysis._analyze_with_gemini_free(
+            ai_analysis.GEMINI_MODEL, user_msg, system_prompt=system_prompt,
+            max_tokens=16000, only="paid",
+        )
     verdict["snapshots"] = snaps
     return verdict

@@ -514,15 +514,26 @@ def _is_transient_error(e) -> bool:
 
 async def _analyze_with_gemini_free(model_id: str, user_msg: str,
                                     system_prompt: str = SYSTEM_PROMPT,
-                                    max_tokens: int = 16384) -> dict:
+                                    max_tokens: int = 16384,
+                                    only: str = None) -> dict:
     """Google Gemini via AI Studio. Usa la key GRATIS primero y cae a la de PAGO
-    (GEMINI_API_KEY_PAID) si la gratis agota su cuota diaria."""
+    (GEMINI_API_KEY_PAID) si la gratis agota su cuota diaria.
+    `only`: 'free' usa SOLO la key gratis; 'paid' usa SOLO la de pago; None ambas.
+    Sirve para intercalar otro proveedor (Groq) entre la gratis y la de pago."""
     if not GEMINI_AVAILABLE:
         raise RuntimeError(
             "La librería google-genai no está instalada en el servidor. "
             "Añádela a requirements.txt y vuelve a desplegar."
         )
+    _free = os.environ.get("GEMINI_API_KEY")
+    _paid = os.environ.get("GEMINI_API_KEY_PAID")
     keys = _gemini_keys()
+    if only == "free":
+        keys = [k for k in keys if k == _free]
+    elif only == "paid":
+        keys = [k for k in keys if k == _paid and k != _free]
+    if not keys:
+        raise RuntimeError(f"No hay key de Gemini para el tier '{only or 'auto'}'.")
     if not keys:
         raise RuntimeError(
             "GEMINI_API_KEY no configurada. Crea una key gratis en "
@@ -576,7 +587,7 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
     last_err = None
     for i, api_key in enumerate(keys):
         client = genai.Client(api_key=api_key)
-        tier = "GRATIS" if i == 0 else "PAGO"
+        tier = "GRATIS" if api_key == _free else "PAGO"
         # Reintentos de la MISMA key ante errores TRANSITORIOS (503/high demand/overloaded):
         # son hipos temporales de Google, la misma key funciona esperando un poco. Solo así
         # evitamos gastar la key de PAGO por una saturación puntual de la gratis. Backoff
@@ -632,7 +643,7 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
             except Exception as e:
                 last_err = e
                 if i < len(keys) - 1:
-                    tier = "GRATIS" if i == 0 else "PAGO"
+                    tier = "GRATIS" if api_key == _free else "PAGO"
                     logger.warning("Gemini key #%d (%s) falló en reintento: %s", i + 1, tier,
                                    str(e)[:200].replace("\n", " "))
                     continue
@@ -647,11 +658,11 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
                 )
             data = _parse_model_json(text)  # si sigue truncado, esto lanza el error claro
         # Deja constancia en el log de qué key sirvió: la 1ª es la GRATIS, la 2ª la de PAGO.
-        tier = "GRATIS" if i == 0 else "PAGO"
+        tier = "GRATIS" if api_key == _free else "PAGO"
         logger.info("Gemini OK con key #%d (%s) · modelo=%s", i + 1, tier, model_id)
         # Marca qué tier sirvió para que la UI pueda mostrar un badge FREE/PAY.
         if isinstance(data, dict):
-            data["_ai_tier"] = "free" if i == 0 else "paid"
+            data["_ai_tier"] = "free" if api_key == _free else "paid"
         return data
     # Solo se llega aquí si todas las keys dieron cuota agotada.
     raise last_err if last_err else RuntimeError("Gemini falló con todas las keys.")
