@@ -528,6 +528,34 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
         pass
     config = genai_types.GenerateContentConfig(**config_kwargs)
 
+    # Config de RESPALDO con el thinking DESACTIVADO (budget=0): si la respuesta primaria
+    # sale truncada/ilegible, reintentamos con esta para dar TODO el presupuesto a la
+    # respuesta (nada de tokens gastados en pensar). Suele arreglar el "se cortó a mitad".
+    config_nothink = config
+    try:
+        kw2 = dict(config_kwargs)
+        kw2["thinking_config"] = genai_types.ThinkingConfig(thinking_budget=0)
+        config_nothink = genai_types.GenerateContentConfig(**kw2)
+    except Exception:
+        pass
+
+    def _log_usage(resp):
+        try:
+            cands = getattr(resp, "candidates", None) or []
+            fr = getattr(cands[0], "finish_reason", None) if cands else None
+            um = getattr(resp, "usage_metadata", None)
+            logger.info(
+                "Gemini usage · finish=%s · prompt=%s thoughts=%s output=%s total=%s · max=%s",
+                fr,
+                getattr(um, "prompt_token_count", None),
+                getattr(um, "thoughts_token_count", None),
+                getattr(um, "candidates_token_count", None),
+                getattr(um, "total_token_count", None),
+                max_tokens,
+            )
+        except Exception:
+            pass
+
     last_err = None
     for i, api_key in enumerate(keys):
         client = genai.Client(api_key=api_key)
@@ -551,16 +579,48 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
             if i < len(keys) - 1:
                 continue
             raise
+        _log_usage(response)
         text = getattr(response, "text", "") or ""
-        if not text:
-            raise RuntimeError(
-                "Gemini no devolvió texto (posible límite de tokens agotado en 'thinking'). "
-                "Intenta otra vez o usa GPT-OSS 120B."
-            )
+        # Intento de parseo; si falla por truncado/ilegible, reintenta UNA vez con la misma
+        # key pero SIN thinking (budget=0), que libera todo el presupuesto para la respuesta.
+        data = None
+        try:
+            if text:
+                data = _parse_model_json(text)
+        except Exception as pe:
+            last_err = pe
+        if data is None:
+            logger.warning("Gemini key #%d: respuesta truncada/ilegible; reintento SIN thinking",
+                           i + 1)
+            try:
+                response = await asyncio.to_thread(
+                    client.models.generate_content,
+                    model=model_id,
+                    contents=user_msg,
+                    config=config_nothink,
+                )
+                _log_usage(response)
+                text = getattr(response, "text", "") or ""
+            except Exception as e:
+                last_err = e
+                if i < len(keys) - 1:
+                    tier = "GRATIS" if i == 0 else "PAGO"
+                    logger.warning("Gemini key #%d (%s) falló en reintento: %s", i + 1, tier,
+                                   str(e)[:200].replace("\n", " "))
+                    continue
+                raise
+        if data is None:
+            if not text:
+                if i < len(keys) - 1:
+                    continue
+                raise RuntimeError(
+                    "Gemini no devolvió texto (posible límite de tokens agotado en 'thinking'). "
+                    "Intenta otra vez o usa GPT-OSS 120B."
+                )
+            data = _parse_model_json(text)  # si sigue truncado, esto lanza el error claro
         # Deja constancia en el log de qué key sirvió: la 1ª es la GRATIS, la 2ª la de PAGO.
         tier = "GRATIS" if i == 0 else "PAGO"
         logger.info("Gemini OK con key #%d (%s) · modelo=%s", i + 1, tier, model_id)
-        data = _parse_model_json(text)
         # Marca qué tier sirvió para que la UI pueda mostrar un badge FREE/PAY.
         if isinstance(data, dict):
             data["_ai_tier"] = "free" if i == 0 else "paid"
