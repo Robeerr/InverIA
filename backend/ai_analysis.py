@@ -582,7 +582,7 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
         # evitamos gastar la key de PAGO por una saturación puntual de la gratis. Backoff
         # 1.5s, 3s, 6s. Los errores NO transitorios (cuota, 404, key inválida) no reintentan.
         response = None
-        for attempt in range(3):
+        for attempt in range(2):  # 2 intentos por key: 1 reintento corto ante transitorio
             try:
                 response = await asyncio.to_thread(
                     client.models.generate_content,
@@ -593,14 +593,12 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
                 break
             except Exception as e:
                 last_err = e
-                if _is_transient_error(e) and not _is_quota_error(e) and attempt < 2:
-                    wait = 1.5 * (2 ** attempt)
-                    logger.warning("Gemini key #%d (%s) transitorio (%s); reintento en %.1fs "
-                                   "(intento %d/3)", i + 1, tier,
-                                   str(e)[:120].replace("\n", " "), wait, attempt + 1)
-                    await asyncio.sleep(wait)
+                if _is_transient_error(e) and not _is_quota_error(e) and attempt < 1:
+                    logger.warning("Gemini key #%d (%s) transitorio (%s); 1 reintento en 1.5s",
+                                   i + 1, tier, str(e)[:120].replace("\n", " "))
+                    await asyncio.sleep(1.5)
                     continue
-                # No transitorio (o agotados los reintentos): registra y decide fallback de key.
+                # No transitorio (o agotado el reintento): registra y decide fallback de key.
                 logger.warning("Gemini key #%d (%s) falló: %s", i + 1, tier,
                                str(e)[:300].replace("\n", " "))
                 break

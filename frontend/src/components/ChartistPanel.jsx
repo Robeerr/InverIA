@@ -148,15 +148,18 @@ export default function ChartistPanel({ symbol }) {
 // Badge FREE / PAY: indica si el análisis lo sirvió la clave Gemini gratis o la de pago.
 export function TierBadge({ tier }) {
   if (!tier) return null;
-  const paid = tier === "paid";
+  const meta = {
+    free: { label: "FREE", cls: "bg-[#e6f4ea] text-[#1e7a3a]", title: "Servido por la clave Gemini GRATIS" },
+    paid: { label: "PAY", cls: "bg-[#fbe9e6] text-[#c0392b]", title: "Servido por la clave Gemini de PAGO (consume tu crédito)" },
+    groq: { label: "ALT", cls: "bg-[#eef0f3] text-[#5c6b66]", title: "Gemini estaba saturado: servido por el modelo de respaldo (Groq, gratis)" },
+  }[tier] || null;
+  if (!meta) return null;
   return (
     <span
-      title={paid ? "Servido por la clave Gemini de PAGO (consume tu crédito)" : "Servido por la clave Gemini GRATIS"}
-      className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-wide ${
-        paid ? "bg-[#fbe9e6] text-[#c0392b]" : "bg-[#e6f4ea] text-[#1e7a3a]"
-      }`}
+      title={meta.title}
+      className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-wide ${meta.cls}`}
     >
-      {paid ? "PAY" : "FREE"}
+      {meta.label}
     </span>
   );
 }
