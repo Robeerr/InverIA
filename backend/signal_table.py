@@ -315,15 +315,15 @@ async def signal_worker_loop(db, interval: int = 10):
                     if not market_open:
                         continue
 
-                    # ── ANTI-PÁNICO ──────────────────────────────────────────
-                    # Si una acción de la cartera cae fuerte HOY, recordamos la tesis
-                    # ANTES de que el usuario venda por impulso (opera en DeGiro, así que
-                    # el aviso proactivo es la única forma de frenarle a tiempo). 1/día.
-                    if daily_chg is not None and float(daily_chg) <= _PANIC_DROP_PCT:
-                        cd_key = f"{symbol}_panic_{today}"
-                        if not await _is_in_cooldown(db, cd_key):
-                            await _set_cooldown(db, cd_key)
-                            await _fire_panic_alert(entry, symbol, price, float(daily_chg), db=db)
+                    # ── ANTI-PÁNICO (DESACTIVADO) ────────────────────────────
+                    # El recordatorio "RESPIRA — antes de vender" generaba demasiado ruido en
+                    # Telegram, así que se desactiva a petición del usuario. Se deja el código
+                    # de _fire_panic_alert por si se quiere reactivar en el futuro.
+                    # if daily_chg is not None and float(daily_chg) <= _PANIC_DROP_PCT:
+                    #     cd_key = f"{symbol}_panic_{today}"
+                    #     if not await _is_in_cooldown(db, cd_key):
+                    #         await _set_cooldown(db, cd_key)
+                    #         await _fire_panic_alert(entry, symbol, price, float(daily_chg), db=db)
 
                     # Niveles de compra — disparo con margen anticipado (_ALERT_MARGIN_PCT)
                     # para que la alerta llegue ligeramente ANTES de tocar el nivel exacto.
