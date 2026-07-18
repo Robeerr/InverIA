@@ -118,6 +118,15 @@ class SafeJSONResponse(JSONResponse):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ----- Startup -----
+    # Diagnóstico de memoria opcional: con MEM_TRACE=1 arranca tracemalloc desde el
+    # principio para que /api/debug/memory pueda mostrar las líneas que más asignan.
+    if os.environ.get("MEM_TRACE") == "1":
+        try:
+            import tracemalloc
+            tracemalloc.start(25)  # guarda hasta 25 frames de traceback por asignación
+            logger.info("tracemalloc ACTIVO (MEM_TRACE=1)")
+        except Exception as e:
+            logger.warning("No se pudo arrancar tracemalloc: %s", e)
     # DB indexes
     await db.signal_entries.create_index("symbol")
     await db.signal_entries.create_index("active")
@@ -483,6 +492,85 @@ async def debug_patterns(symbols: str = "", timeframes: str = "1D,4H,1W"):
                 row["error"] = str(e)[:120]
             out.append(row)
     return {"total": len(out), "resultados": out}
+
+
+@api_router.get("/debug/memory")
+async def debug_memory(top: int = 25):
+    """DIAGNÓSTICO DE MEMORIA: dónde se está yendo la RAM del proceso.
+    - rss_mb: memoria real que usa el proceso (lo que Render mide contra el límite de 512MB).
+    - objetos: recuento de objetos vivos por tipo (top N). Un tipo que crece sin parar entre
+      llamadas = el sospechoso del leak (p.ej. DataFrame, dict, list acumulándose).
+    - caches: tamaño de las cachés en memoria conocidas.
+    - tracemalloc: si está activo (env MEM_TRACE=1), las líneas de código que más han
+      asignado memoria — el diagnóstico más preciso.
+    Uso: llama 2-3 veces separadas en el tiempo y compara qué recuentos suben."""
+    import gc
+    import sys
+
+    # 1) RSS del proceso desde /proc (Linux/Render), sin depender de psutil.
+    rss_mb = None
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    rss_mb = round(int(line.split()[1]) / 1024, 1)  # kB -> MB
+                    break
+    except Exception:
+        pass
+
+    # 2) Recuento de objetos vivos por tipo (top N). El mejor indicador de acumulación.
+    gc.collect()
+    counts = {}
+    for obj in gc.get_objects():
+        t = type(obj).__name__
+        counts[t] = counts.get(t, 0) + 1
+    top_types = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:top]
+
+    # 3) Tamaño de las cachés en memoria conocidas.
+    caches = {}
+    try:
+        caches["server._cache (TTL)"] = len(_cache._store)
+    except Exception:
+        pass
+    try:
+        import market_data as _md
+        caches["market_data._history_cache"] = len(getattr(_md, "_history_cache", {}))
+        caches["market_data._info_cache"] = len(getattr(_md, "_info_cache", {}))
+        caches["market_data._fh_quote_cache"] = len(getattr(_md, "_fh_quote_cache", {}))
+    except Exception:
+        pass
+    try:
+        import opportunities as _op
+        sc = (_op._screener_cache.get("data") or {}).get("results") or []
+        caches["opportunities._screener_cache (results)"] = len(sc)
+    except Exception:
+        pass
+
+    # 4) tracemalloc (solo si se arrancó con MEM_TRACE=1): top asignaciones por línea.
+    trace = None
+    try:
+        import tracemalloc
+        if tracemalloc.is_tracing():
+            snap = tracemalloc.take_snapshot()
+            stats = snap.statistics("lineno")[:15]
+            trace = [
+                {"donde": f"{st.traceback[0].filename.split('/')[-1]}:{st.traceback[0].lineno}",
+                 "mb": round(st.size / 1024 / 1024, 2), "bloques": st.count}
+                for st in stats
+            ]
+        else:
+            trace = "inactivo (arranca el backend con MEM_TRACE=1 para el detalle por línea)"
+    except Exception as e:
+        trace = f"error: {str(e)[:100]}"
+
+    return {
+        "rss_mb": rss_mb,
+        "limite_mb": 512,
+        "objetos_totales": len(gc.get_objects()),
+        "objetos_por_tipo_top": [{"tipo": t, "n": n} for t, n in top_types],
+        "caches": caches,
+        "tracemalloc": trace,
+    }
 
 
 @api_router.get("/chartist/{symbol}")
