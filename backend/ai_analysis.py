@@ -459,7 +459,7 @@ async def _analyze_with_groq(model_id: str, user_msg: str,
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         raise RuntimeError("GROQ_API_KEY no configurada")
-    client = AsyncGroq(api_key=api_key)
+    client = _groq_client(api_key)
 
     async def _call(use_json_format: bool):
         kwargs = dict(
@@ -498,10 +498,12 @@ def _gemini_keys() -> list:
     return keys
 
 
-# Clientes de Gemini REUTILIZADOS por clave. Crear un genai.Client() nuevo en cada llamada
-# abre canales gRPC/conexiones que NO se cierran y se acumulan hasta agotar la RAM (leak que
-# tumbaba la instancia de 512MB cada ~2 días). Cacheamos uno por api_key y lo reusamos.
+# Clientes de IA REUTILIZADOS por clave. Crear un genai.Client()/AsyncGroq() nuevo en cada
+# llamada abre canales gRPC/httpx (pools de conexiones) que NO se cierran y se acumulan hasta
+# agotar la RAM (leak que tumbaba la instancia de 512MB cada ~2 días). Cacheamos uno por
+# api_key y lo reusamos. El nº de keys es ínfimo (1-2), así que estos dicts no crecen.
 _GENAI_CLIENTS: dict = {}
+_GROQ_CLIENTS: dict = {}
 
 
 def _genai_client(api_key: str):
@@ -509,6 +511,14 @@ def _genai_client(api_key: str):
     if c is None:
         c = genai.Client(api_key=api_key)
         _GENAI_CLIENTS[api_key] = c
+    return c
+
+
+def _groq_client(api_key: str):
+    c = _GROQ_CLIENTS.get(api_key)
+    if c is None:
+        c = AsyncGroq(api_key=api_key)
+        _GROQ_CLIENTS[api_key] = c
     return c
 
 
@@ -1035,7 +1045,7 @@ async def transcribe_audio(audio_bytes: bytes, filename: str = "audio.ogg",
     if not api_key or not audio_bytes:
         return ""
     try:
-        client = AsyncGroq(api_key=api_key)
+        client = _groq_client(api_key)
         resp = await client.audio.transcriptions.create(
             file=(filename, audio_bytes),
             model="whisper-large-v3-turbo",

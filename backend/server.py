@@ -2422,6 +2422,10 @@ class _QuoteManager:
             task = self._rest_tasks.pop(symbol, None)
             if task:
                 task.cancel()
+            # Libera también el estado por-símbolo: si no, _baseline y _last acumulan una
+            # entrada por cada símbolo distinto visto en toda la vida del proceso (leak lento).
+            self._baseline.pop(symbol, None)
+            self._last.pop(symbol, None)
             # Defer the Finnhub unsubscribe / stream teardown to a lock-guarded coroutine
             # so it can't race with a concurrent connect (which would spawn a 2nd stream).
             asyncio.create_task(self._cleanup_symbol(symbol))
