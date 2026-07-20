@@ -498,6 +498,20 @@ def _gemini_keys() -> list:
     return keys
 
 
+# Clientes de Gemini REUTILIZADOS por clave. Crear un genai.Client() nuevo en cada llamada
+# abre canales gRPC/conexiones que NO se cierran y se acumulan hasta agotar la RAM (leak que
+# tumbaba la instancia de 512MB cada ~2 días). Cacheamos uno por api_key y lo reusamos.
+_GENAI_CLIENTS: dict = {}
+
+
+def _genai_client(api_key: str):
+    c = _GENAI_CLIENTS.get(api_key)
+    if c is None:
+        c = genai.Client(api_key=api_key)
+        _GENAI_CLIENTS[api_key] = c
+    return c
+
+
 def _is_quota_error(e) -> bool:
     s = str(e).lower()
     return "429" in s or "resource_exhausted" in s or "quota" in s or "rate limit" in s
@@ -586,7 +600,7 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
 
     last_err = None
     for i, api_key in enumerate(keys):
-        client = genai.Client(api_key=api_key)
+        client = _genai_client(api_key)
         tier = "GRATIS" if api_key == _free else "PAGO"
         # Reintentos de la MISMA key ante errores TRANSITORIOS (503/high demand/overloaded):
         # son hipos temporales de Google, la misma key funciona esperando un poco. Solo así
@@ -694,7 +708,7 @@ async def research_stock_web(symbol: str, name: str = "", catalysts: str = "") -
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY no configurada.")
-    client = genai.Client(api_key=api_key)
+    client = _genai_client(api_key)
     # Herramienta de búsqueda de Google: permite a Gemini consultar la web en tiempo real.
     tools = [genai_types.Tool(google_search=genai_types.GoogleSearch())]
     config = genai_types.GenerateContentConfig(
@@ -897,7 +911,7 @@ async def extract_watchlist_from_image(image_bytes: bytes, mime_type: str = "ima
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY no configurada — necesaria para leer la foto.")
-    client = genai.Client(api_key=api_key)
+    client = _genai_client(api_key)
     config = genai_types.GenerateContentConfig(
         temperature=0.0,
         max_output_tokens=8000,
@@ -986,7 +1000,7 @@ async def analyze_youtube(url: str) -> dict:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY no configurada — necesaria para leer el vídeo.")
-    client = genai.Client(api_key=api_key)
+    client = _genai_client(api_key)
     video_part = genai_types.Part(file_data=genai_types.FileData(file_uri=url))
     base_kwargs = dict(temperature=0.2, max_output_tokens=6000,
                        response_mime_type="application/json")
@@ -1049,7 +1063,7 @@ async def describe_image_text(image_bytes: bytes, mime_type: str = "image/jpeg")
     if not api_key:
         return ""
     try:
-        client = genai.Client(api_key=api_key)
+        client = _genai_client(api_key)
         image_part = genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
         response = await asyncio.to_thread(
             client.models.generate_content,
