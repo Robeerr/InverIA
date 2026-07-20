@@ -820,8 +820,31 @@ async def _analyze_with_emergent(provider: str, model_id: str, user_msg: str,
         session_id=f"stock-analysis-{uuid.uuid4()}",
         system_message=system_prompt,
     ).with_model(provider, model_id)
-    response = await chat.send_message(UserMessage(text=user_msg))
-    return _parse_model_json(str(response))
+    try:
+        response = await chat.send_message(UserMessage(text=user_msg))
+        return _parse_model_json(str(response))
+    finally:
+        # LlmChat no es reutilizable (session_id único por llamada) y su httpx interno no se
+        # cierra solo → pool de conexiones filtrado. Cierre best-effort del cliente subyacente
+        # (probamos los nombres de atributo/método habituales; si no existen, no pasa nada).
+        for attr in ("aclose", "close"):
+            fn = getattr(chat, attr, None)
+            if callable(fn):
+                try:
+                    r = fn()
+                    if asyncio.iscoroutine(r):
+                        await r
+                    break
+                except Exception:
+                    pass
+        for cattr in ("_client", "client", "_http", "_httpx_client"):
+            cli = getattr(chat, cattr, None)
+            aclose = getattr(cli, "aclose", None)
+            if callable(aclose):
+                try:
+                    await aclose()
+                except Exception:
+                    pass
 
 
 async def _run_model(model_key: str, system_prompt: str, user_msg: str,

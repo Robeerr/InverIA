@@ -2117,19 +2117,18 @@ async def inbound_newsletter_debug(token: str = ""):
     }
 
 
-_backtest_cache: dict = {}
-
-
 @api_router.get("/backtest/{symbol}")
 async def backtest_levels(symbol: str, window: int = 60):
     """Walk-forward backtest of the confluence buy-levels engine for one symbol.
     Returns empirical hold rates by strength bucket (how often price actually
     bounced at each level type, with no lookahead). Cached 6h per symbol."""
     sym = symbol.upper()
-    ck = f"{sym}:{window}"
-    cached = _backtest_cache.get(ck)
-    if cached and (datetime.now(timezone.utc) - cached["ts"]).total_seconds() < 21600:
-        return cached["data"]
+    # Usa la caché ACOTADA (_TTLCache): antes era un dict de módulo sin límite que retenía
+    # un resultado pesado por cada symbol:window distinto para siempre (leak con el uso).
+    ck = f"bt:{sym}:{window}"
+    cached = _cache.get(ck)
+    if cached is not None:
+        return cached
 
     loop = asyncio.get_event_loop()
     df = await loop.run_in_executor(None, market_data.get_full_indicator_history, sym)
@@ -2140,11 +2139,10 @@ async def backtest_levels(symbol: str, window: int = 60):
         None, lambda: backtest.backtest_symbol(df, forward_window=window)
     )
     result["symbol"] = sym
-    _backtest_cache[ck] = {"data": result, "ts": datetime.now(timezone.utc)}
+    _cache.set(ck, result, ttl=21600)  # 6h
     return result
 
 
-_universe_bt_cache: dict = {}
 _universe_bt_lock = asyncio.Lock()
 
 
@@ -2153,17 +2151,19 @@ async def backtest_universe_endpoint(window: int = 60, limit: int = 30):
     """Aggregate walk-forward backtest across the opportunities universe. Pools
     hundreds of point-in-time touches so the hold-rate-by-strength is statistically
     meaningful (single symbols give too few samples). Heavy: cached 24h."""
-    ck = f"{window}:{limit}"
-    cached = _universe_bt_cache.get(ck)
-    if cached and (datetime.now(timezone.utc) - cached["ts"]).total_seconds() < 86400:
-        return cached["data"]
+    ck = f"btuniv:{window}:{limit}"
+    cached = _cache.get(ck)  # caché acotada (antes dict de módulo sin límite)
+    if cached is not None:
+        return cached
 
     if _universe_bt_lock.locked():
-        if cached:
-            return cached["data"]
         return {"status": "running", "message": "Backtest del universo en curso, vuelve en un minuto."}
 
     async with _universe_bt_lock:
+        # Re-chequea dentro del lock por si otro request lo calculó mientras esperábamos.
+        cached = _cache.get(ck)
+        if cached is not None:
+            return cached
         symbols = opportunities.UNIVERSE[:limit]
         loop = asyncio.get_event_loop()
 
@@ -2173,7 +2173,7 @@ async def backtest_universe_endpoint(window: int = 60, limit: int = 30):
         result = await loop.run_in_executor(
             None, lambda: backtest.backtest_universe(_load, symbols, forward_window=window)
         )
-        _universe_bt_cache[ck] = {"data": result, "ts": datetime.now(timezone.utc)}
+        _cache.set(ck, result, ttl=86400)  # 24h
         return result
 
 
