@@ -1,6 +1,7 @@
 """Daily opportunities scanner — analyzes a universe of stocks and detects buy signals."""
 import asyncio
 import gc
+import mem
 import logging
 from datetime import datetime, timezone, timedelta
 import market_data
@@ -481,7 +482,7 @@ async def _run_screener_scan():
         except Exception:
             pass
         finally:
-            gc.collect()
+            mem.trim()  # devuelve al SO la RAM de los DataFrames del escaneo
 
 
 async def scan_growth_screener(force_refresh: bool = False):
@@ -714,5 +715,5 @@ async def scan_daily_opportunities(force_refresh: bool = False):
         _cache["ts"] = now
         await _save_snapshot("daily", data)
         # Devuelve al SO la memoria de los DataFrames del escaneo cuanto antes.
-        gc.collect()
+        mem.trim()
         return data

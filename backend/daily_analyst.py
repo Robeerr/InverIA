@@ -23,6 +23,7 @@ import os
 
 import external_data
 import market_data
+import mem
 import opportunities
 import telegram_notifier
 
@@ -404,6 +405,7 @@ async def scan(db, universe=None, notify: bool = True) -> dict:
                     else:
                         logger.warning(f"daily_analyst: Telegram falló para {c['symbol']}: {err}")
 
+        mem.trim()  # el barrido del universo crea muchos DataFrames: devuelve la RAM al SO
         return {
             "channel": "email" if email_ok else "telegram",
             "scanned": len(universe),

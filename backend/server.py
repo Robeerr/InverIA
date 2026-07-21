@@ -35,6 +35,7 @@ import newsletter_ingest
 import market_regime
 import chart_lines
 import chartist
+import mem
 import levels_engine
 import auth
 
@@ -245,6 +246,19 @@ async def lifespan(app: FastAPI):
                 logger.warning(f"Auto-refresh opportunities failed: {e}")
 
     asyncio.create_task(_auto_refresh_opportunities())
+
+    # Trimmer periódico: devuelve al SO la memoria libre que glibc retiene tras los jobs
+    # pesados (pandas). Coste ínfimo (1 vez cada 10 min) y evita que la RSS se quede en el
+    # máximo alcanzado y trepe hacia el límite de 512MB.
+    async def _mem_trim_loop():
+        while True:
+            await asyncio.sleep(600)  # 10 min
+            try:
+                mem.trim()
+            except Exception:
+                pass
+
+    asyncio.create_task(_mem_trim_loop())
 
     yield
 
@@ -2140,6 +2154,7 @@ async def backtest_levels(symbol: str, window: int = 60):
     )
     result["symbol"] = sym
     _cache.set(ck, result, ttl=21600)  # 6h
+    mem.trim()  # el histórico (2 años) es un DataFrame grande: devuélvelo al SO
     return result
 
 
@@ -2174,6 +2189,7 @@ async def backtest_universe_endpoint(window: int = 60, limit: int = 30):
             None, lambda: backtest.backtest_universe(_load, symbols, forward_window=window)
         )
         _cache.set(ck, result, ttl=86400)  # 24h
+        mem.trim()  # backtest del universo: carga histórico de decenas de símbolos → libera al SO
         return result
 
 
