@@ -4,8 +4,10 @@ import { Button } from "../components/ui/button";
 import { fmtPrice } from "../lib/format";
 import { TierBadge } from "./ChartistPanel";
 
+// El id "gemini-2.5-flash" es la clave INTERNA de routing (el backend la enruta a
+// GEMINI_MODEL = gemini-3.6-flash); solo actualizamos la etiqueta visible.
 const FREE_MODELS = [
-  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash (Recomendado)" },
+  { id: "gemini-2.5-flash", label: "Gemini 3.6 Flash (Recomendado)" },
   { id: "gpt-oss-120b", label: "GPT-OSS 120B" },
   { id: "llama-3.3-70b", label: "Llama 3.3 70B" },
 ];
