@@ -26,10 +26,10 @@ except ImportError:
     genai_types = None
 
 
-# Modelo Gemini a usar. `gemini-2.5-flash` fue RETIRADO para usuarios nuevos (404), así que
-# usamos el alias `gemini-flash-latest` (apunta siempre al Flash vigente). Configurable por
-# env GEMINI_MODEL por si Google cambia el nombre otra vez.
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+# Modelo Gemini a usar. Fijamos `gemini-3.6-flash` (GA jul-2026): más capaz y además más
+# barato en salida ($7.50 vs $9.00/1M del 3.5 Flash). Sigue siendo overridable por la env
+# GEMINI_MODEL por si Google lo retira/renombra (ej. volver a `gemini-flash-latest`).
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 
 # (provider, model_id, is_free)
 MODEL_MAP = {
