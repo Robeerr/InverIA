@@ -259,5 +259,6 @@ async def analyze(symbol: str) -> dict:
         verdict = await ai_analysis._run_model("gpt-oss-120b", system_prompt, user_msg, max_tokens=3000)
         if isinstance(verdict, dict):
             verdict["_ai_tier"] = "groq"
+            verdict["_ai_model"] = "gpt-oss-120b"
     verdict["snapshots"] = snaps
     return verdict

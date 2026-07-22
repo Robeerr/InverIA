@@ -134,7 +134,7 @@ export default function RecommendationPanel({ analysis, isLoading, onAnalyze, mo
           <h3 className="font-heading font-semibold text-lg text-[#0e1f1a]">
             Recomendación IA
           </h3>
-          {analysis._ai_tier && <TierBadge tier={analysis._ai_tier} />}
+          {analysis._ai_tier && <TierBadge tier={analysis._ai_tier} model={analysis._ai_model} />}
         </div>
         <RecPill rec={analysis.recommendation} />
       </div>

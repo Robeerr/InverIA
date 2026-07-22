@@ -51,7 +51,7 @@ export default function ChartistPanel({ symbol }) {
             {data.sentido.toUpperCase()}
           </span>
         )}
-        {data?._ai_tier && <TierBadge tier={data._ai_tier} />}
+        {data?._ai_tier && <TierBadge tier={data._ai_tier} model={data._ai_model} />}
         <button
           onClick={() => run(!!data)}
           disabled={loading}
@@ -146,7 +146,7 @@ export default function ChartistPanel({ symbol }) {
 }
 
 // Badge FREE / PAY: indica si el análisis lo sirvió la clave Gemini gratis o la de pago.
-export function TierBadge({ tier }) {
+export function TierBadge({ tier, model }) {
   if (!tier) return null;
   const meta = {
     free: { label: "FREE", cls: "bg-[#e6f4ea] text-[#1e7a3a]", title: "Servido por la clave Gemini GRATIS" },
@@ -155,11 +155,14 @@ export function TierBadge({ tier }) {
   }[tier] || null;
   if (!meta) return null;
   return (
-    <span
-      title={meta.title}
-      className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-wide ${meta.cls}`}
-    >
-      {meta.label}
+    <span className="inline-flex items-center gap-1">
+      <span
+        title={meta.title}
+        className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-wide ${meta.cls}`}
+      >
+        {meta.label}
+      </span>
+      {model && <span className="text-[9px] font-mono text-[#8a958f]">{model}</span>}
     </span>
   );
 }

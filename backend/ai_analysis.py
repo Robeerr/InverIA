@@ -684,9 +684,10 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
         # Deja constancia en el log de qué key sirvió: la 1ª es la GRATIS, la 2ª la de PAGO.
         tier = "GRATIS" if api_key == _free else "PAGO"
         logger.info("Gemini OK con key #%d (%s) · modelo=%s", i + 1, tier, model_id)
-        # Marca qué tier sirvió para que la UI pueda mostrar un badge FREE/PAY.
+        # Marca qué tier y qué modelo sirvió para que la UI lo muestre.
         if isinstance(data, dict):
             data["_ai_tier"] = "free" if api_key == _free else "paid"
+            data["_ai_model"] = model_id
         return data
     # Solo se llega aquí si todas las keys dieron cuota agotada.
     raise last_err if last_err else RuntimeError("Gemini falló con todas las keys.")
