@@ -70,6 +70,102 @@ function ExtendedBadge({ entry }) {
   );
 }
 
+// ── Posición / P&L (#20) ──────────────────────────────────────────────────────
+const posCost = (e) => (Number(e.acciones) > 0 && Number(e.compra) > 0) ? Number(e.acciones) * Number(e.compra) : 0;
+const posValue = (e) => (Number(e.acciones) > 0 && e.last_price != null) ? Number(e.acciones) * Number(e.last_price) : 0;
+const pnlAbs = (e) => (Number(e.acciones) > 0 && Number(e.compra) > 0 && e.last_price != null) ? (Number(e.last_price) - Number(e.compra)) * Number(e.acciones) : null;
+const pnlPct = (e) => (Number(e.compra) > 0 && e.last_price != null) ? ((Number(e.last_price) - Number(e.compra)) / Number(e.compra)) * 100 : null;
+const eur0 = (x) => x == null ? "—" : x.toLocaleString("es-ES", { maximumFractionDigits: 0 });
+
+function PnlText({ abs, pct, size = "sm" }) {
+  if (abs == null) return <span className="text-neutral-300">—</span>;
+  const up = abs >= 0;
+  return (
+    <span className={`font-mono font-bold ${size === "sm" ? "text-sm" : "text-base"} ${up ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+      {up ? "+" : ""}${eur0(abs)}{pct != null && <span className="text-[11px] font-semibold"> · {up ? "+" : ""}{pct.toFixed(1)}%</span>}
+    </span>
+  );
+}
+
+// ── Resumen de cartera: P&L total (#20) + diversificación por sector (#21) ───────
+const SECTOR_COLORS = ["#1a3a32", "#4a7c59", "#c9a14a", "#d85c41", "#2563eb", "#7c3aed", "#0891b2", "#9333ea"];
+function PortfolioSummary({ entries }) {
+  const conPos = entries.filter((e) => Number(e.acciones) > 0);
+  const totalCost = conPos.reduce((s, e) => s + posCost(e), 0);
+  const totalValue = conPos.reduce((s, e) => s + posValue(e), 0);
+  const hasCost = conPos.some((e) => Number(e.compra) > 0);
+  const totalPnl = hasCost ? totalValue - conPos.reduce((s, e) => s + (Number(e.compra) > 0 ? posCost(e) : posValue(e)), 0) : null;
+  const totalPnlPct = totalCost > 0 && totalPnl != null ? (totalPnl / totalCost) * 100 : null;
+
+  // Diversificación: por valor de mercado si hay posiciones; si no, por nº de acciones.
+  const useValue = totalValue > 0;
+  const bySector = {};
+  for (const e of entries) {
+    const sec = (e.sector || "Sin sector").trim() || "Sin sector";
+    const w = useValue ? posValue(e) : 1;
+    if (w > 0) bySector[sec] = (bySector[sec] || 0) + w;
+  }
+  const totalW = Object.values(bySector).reduce((s, v) => s + v, 0);
+  const sectors = Object.entries(bySector)
+    .map(([name, w]) => ({ name, pct: totalW > 0 ? (w / totalW) * 100 : 0 }))
+    .sort((a, b) => b.pct - a.pct);
+  const topPct = sectors[0]?.pct || 0;
+
+  if (!entries.length) return null;
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-[minmax(0,320px)_1fr] gap-3">
+      {/* P&L total */}
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
+        <p className="text-[11px] uppercase tracking-wide text-neutral-400 font-mono mb-1">Rendimiento de la cartera</p>
+        {conPos.length === 0 ? (
+          <p className="text-xs text-neutral-400 mt-2">Añade tu <b>precio de compra</b> y <b>nº de acciones</b> en cada acción para ver tu P&amp;L real.</p>
+        ) : (
+          <>
+            <div className="flex items-baseline gap-2">
+              <PnlText abs={totalPnl} pct={totalPnlPct} size="base" />
+            </div>
+            <div className="grid grid-cols-2 gap-2 mt-2 text-[11px] font-mono">
+              <div><span className="text-neutral-400">Invertido</span><br /><b>${eur0(totalCost)}</b></div>
+              <div><span className="text-neutral-400">Valor actual</span><br /><b>${eur0(totalValue)}</b></div>
+            </div>
+          </>
+        )}
+      </div>
+      {/* Diversificación */}
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[11px] uppercase tracking-wide text-neutral-400 font-mono">Diversificación {useValue ? "(por valor)" : "(por nº acciones)"}</p>
+          {topPct >= 40 && (
+            <span className="text-[10px] font-bold text-[#d85c41] bg-red-50 dark:bg-red-900/30 px-2 py-0.5 rounded-full">
+              ⚠ Concentración alta: {topPct.toFixed(0)}% en {sectors[0].name}
+            </span>
+          )}
+        </div>
+        {sectors.length === 0 ? (
+          <p className="text-xs text-neutral-400">Añade el <b>sector</b> a tus acciones para ver el reparto.</p>
+        ) : (
+          <>
+            <div className="flex h-3 rounded-full overflow-hidden mb-2">
+              {sectors.map((s, i) => (
+                <div key={s.name} style={{ width: `${s.pct}%`, background: SECTOR_COLORS[i % SECTOR_COLORS.length] }} title={`${s.name}: ${s.pct.toFixed(0)}%`} />
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+              {sectors.slice(0, 6).map((s, i) => (
+                <span key={s.name} className="flex items-center gap-1 text-neutral-600 dark:text-neutral-300">
+                  <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: SECTOR_COLORS[i % SECTOR_COLORS.length] }} />
+                  {s.name} <b>{s.pct.toFixed(0)}%</b>
+                </span>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const RIESGO_STYLE = {
   BAJO:  { bg: "bg-green-100 dark:bg-green-900/40",  text: "text-green-700 dark:text-green-300" },
   MEDIO: { bg: "bg-yellow-100 dark:bg-yellow-900/40", text: "text-yellow-700 dark:text-yellow-300" },
@@ -203,7 +299,7 @@ function parseExcelText(text) {
 }
 
 // ── Empty form states ───────────────────────────────────────────────────────────
-const EMPTY = { symbol: "", name: "", mercado: "", deseado: "", nivel1: "", nivel2: "", nivel3: "", nivel4: "", nivel5: "", riesgo: "", sector: "", posibles_ganancias: "", notes: "" };
+const EMPTY = { symbol: "", name: "", mercado: "", deseado: "", nivel1: "", nivel2: "", nivel3: "", nivel4: "", nivel5: "", riesgo: "", sector: "", posibles_ganancias: "", notes: "", compra: "", acciones: "" };
 
 // Configuración de campos del formulario "Añadir" por grupo
 const ADD_FIELDS = {
@@ -217,12 +313,14 @@ const ADD_FIELDS = {
     { key: "nivel3",   label: "Nivel 3",     placeholder: "160" },
     { key: "nivel4",   label: "Nivel 4",     placeholder: "150" },
     { key: "nivel5",   label: "Nivel 5 Extra", placeholder: "140" },
+    { key: "compra",   label: "Precio compra", placeholder: "155.20" },
+    { key: "acciones", label: "Nº acciones",   placeholder: "10" },
     { key: "riesgo",   label: "Riesgo",      placeholder: "MEDIO" },
     { key: "sector",   label: "Sector",      placeholder: "TECH" },
     { key: "posibles_ganancias", label: "Posibles Ganancias %", placeholder: "25.5" },
   ],
 };
-const NUM_KEYS = new Set(["deseado", "nivel1", "nivel2", "nivel3", "nivel4", "nivel5", "posibles_ganancias", "bz", "objetivo_5a"]);
+const NUM_KEYS = new Set(["deseado", "nivel1", "nivel2", "nivel3", "nivel4", "nivel5", "posibles_ganancias", "bz", "objetivo_5a", "compra", "acciones"]);
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function SignalsView({ setSymbol }) {
@@ -428,6 +526,9 @@ export default function SignalsView({ setSymbol }) {
       </div>
       )}
 
+      {/* Resumen de cartera: P&L total + diversificación (#20 + #21) */}
+      {!loading && visible.length > 0 && <PortfolioSummary entries={visible} />}
+
       {/* Legend */}
       <div className="flex flex-wrap gap-4 text-xs text-neutral-500">
         <span className="flex items-center gap-1"><Bell size={12} weight="fill" className="text-[#c9a14a]" /> Alerta activa</span>
@@ -538,6 +639,23 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol }) {
                 <button onClick={() => deleteEntry(e.id)} className="text-neutral-300 hover:text-red-500 text-xl p-1"><Trash size={16} /></button>
               </div>
             </div>
+            {/* Posición + P&L (#20) */}
+            <div className="flex items-center justify-between bg-neutral-50 dark:bg-neutral-800/40 border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-2">
+              <div className="flex gap-4">
+                <div>
+                  <p className="text-[9px] text-neutral-400 uppercase font-mono">Compra</p>
+                  <EditableCell value={e.compra} onChange={(v) => updateField(e.id, "compra", v)} className="font-mono text-sm font-semibold" />
+                </div>
+                <div>
+                  <p className="text-[9px] text-neutral-400 uppercase font-mono">Nº acc.</p>
+                  <EditableCell value={e.acciones} onChange={(v) => updateField(e.id, "acciones", v)} format={(v) => v != null && v !== "" ? Number(v).toLocaleString("es-ES", { maximumFractionDigits: 2 }) : "—"} className="font-mono text-sm font-semibold" />
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-[9px] text-neutral-400 uppercase font-mono">P&amp;L</p>
+                <PnlText abs={pnlAbs(e)} pct={pnlPct(e)} />
+              </div>
+            </div>
             <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg px-3 py-2">
               <div>
                 <p className="text-[10px] text-blue-500 uppercase font-mono font-bold">Deseado / Venta</p>
@@ -579,6 +697,9 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol }) {
               <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Acción</th>
               <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Mdo.</th>
               <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Precio actual</th>
+              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Compra</th>
+              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Nº acc.</th>
+              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">P&amp;L</th>
               <th className="px-3 py-3 text-xs whitespace-nowrap text-right bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 font-bold border-l border-blue-200 dark:border-blue-800">🎯 Deseado / Venta</th>
               {[1,2,3,4,5].map((n) => (
                 <th key={n} className="px-3 py-3 text-xs whitespace-nowrap text-right bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 font-bold border-l border-green-200 dark:border-green-800">Nivel {n}{n === 5 ? " ⭐" : ""}</th>
@@ -608,6 +729,15 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol }) {
                 <td className="px-3 py-2.5 text-right whitespace-nowrap">
                   <span className="font-mono font-bold text-neutral-900 dark:text-white text-sm">{fmtP(e.last_price)}</span>
                   <ExtendedBadge entry={e} />
+                </td>
+                <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                  <EditableCell value={e.compra} onChange={(v) => updateField(e.id, "compra", v)} className="font-mono text-sm text-neutral-700 dark:text-neutral-300" />
+                </td>
+                <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                  <EditableCell value={e.acciones} onChange={(v) => updateField(e.id, "acciones", v)} isNumber format={(v) => v != null && v !== "" ? Number(v).toLocaleString("es-ES", { maximumFractionDigits: 2 }) : "—"} className="font-mono text-sm text-neutral-700 dark:text-neutral-300" />
+                </td>
+                <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                  <PnlText abs={pnlAbs(e)} pct={pnlPct(e)} />
                 </td>
                 <td className="px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 border-l border-blue-100 dark:border-blue-900">
                   <div className="flex items-center justify-end gap-1">

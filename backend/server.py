@@ -423,6 +423,8 @@ class SignalEntryCreate(BaseModel):
     divisa: Optional[str] = ""
     bz: Optional[float] = None
     objetivo_5a: Optional[float] = None
+    compra: Optional[float] = None
+    acciones: Optional[float] = None
 
 
 class SignalEntryUpdate(BaseModel):
@@ -449,6 +451,8 @@ class SignalEntryUpdate(BaseModel):
     divisa: Optional[str] = None
     bz: Optional[float] = None
     objetivo_5a: Optional[float] = None
+    compra: Optional[float] = None
+    acciones: Optional[float] = None
 
 
 class SignalBulkImport(BaseModel):

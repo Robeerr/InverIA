@@ -37,6 +37,7 @@ ALLOWED_CREATE = (
     "alert_deseado", "alert_nivel1", "alert_nivel2", "alert_nivel3", "alert_nivel4", "alert_nivel5",
     "riesgo", "sector", "posibles_ganancias", "notes", "active",
     "divisa", "bz", "objetivo_5a",
+    "compra", "acciones",  # posición real (precio medio de compra y nº de acciones) para el P&L
 )
 
 ALLOWED_UPDATE = (
@@ -45,6 +46,7 @@ ALLOWED_UPDATE = (
     "alert_deseado", "alert_nivel1", "alert_nivel2", "alert_nivel3", "alert_nivel4", "alert_nivel5",
     "riesgo", "sector", "posibles_ganancias", "notes", "active",
     "divisa", "bz", "objetivo_5a",
+    "compra", "acciones",
 )
 
 
@@ -73,6 +75,8 @@ def _make_entry(
     divisa: str = "",
     bz: Optional[float] = None,
     objetivo_5a: Optional[float] = None,
+    compra: Optional[float] = None,
+    acciones: Optional[float] = None,
 ) -> dict:
     return {
         "id": str(uuid.uuid4()),
@@ -100,6 +104,8 @@ def _make_entry(
         "divisa": (divisa or "").strip().upper(),
         "bz": bz,
         "objetivo_5a": objetivo_5a,
+        "compra": compra,
+        "acciones": acciones,
         "created_at": _now(),
         "updated_at": _now(),
         "last_price": None,
