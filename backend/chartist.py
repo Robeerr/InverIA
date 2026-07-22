@@ -196,9 +196,14 @@ coherentes con la radiografía (entrada cerca de soporte/ruptura, invalidación 
 objetivo hacia resistencia)."""
 
 
-async def analyze(symbol: str) -> dict:
+async def analyze(symbol: str, free_only: bool = False) -> dict:
     """Genera el veredicto del Chartista IA para un símbolo. Lanza RuntimeError si no hay
-    datos suficientes o si el modelo falla (el endpoint traduce a HTTP)."""
+    datos suficientes o si el modelo falla (el endpoint traduce a HTTP).
+
+    free_only=True (pre-cálculo en segundo plano): usa SOLO la key Gemini GRATIS y NUNCA
+    la de pago ni Groq. Si la cuota gratis se agota, lanza error y el worker se salta el
+    símbolo — el gasto de crédito queda reservado EXCLUSIVAMENTE a análisis que el usuario
+    pide con el botón. (Un worker de fondo quemó 3.65 EUR en un día; nunca más.)"""
     sym = symbol.upper()
     # Descarga y radiografía de todos los timeframes en paralelo (cada uno cachea 15 min) +
     # las zonas de compra por confluencia (el mejor método de la casa) para escalonar.
@@ -244,6 +249,10 @@ async def analyze(symbol: str) -> dict:
             max_tokens=16000, only="free",  # el veredicto se cortaba a 8000
         )
     except Exception as e:
+        if free_only:
+            # Pre-cálculo: sin cuota gratis NO se continúa (ni pago ni Groq). El worker
+            # detecta el motivo y decide si saltar el símbolo o parar el ciclo.
+            raise RuntimeError(f"free-only: {str(e)[:200]}")
         _log.warning("Gemini GRATIS falló (%s); paso a Gemini PAGO", str(e)[:150].replace("\n", " "))
     # 2) Gemini de PAGO (mismo modelo, calidad top; consume crédito)
     if verdict is None:

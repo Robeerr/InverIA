@@ -295,13 +295,13 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_auto_refresh_opportunities())
 
-    # PRE-CÁLCULO del Chartista para la watchlist + la cartera: aprovecha la cuota gratis de
-    # Gemini (1.500/día, usamos una fracción) para dejar los veredictos listos EN CACHÉ, de
-    # modo que al abrir una de tus acciones el Chartista salga al instante (0s en vez de
-    # 20-40s). Solo calcula lo que está caducado, en horario de mercado, de a poco para no
-    # saturar los datos ni la IA.
+    # PRE-CÁLCULO del Chartista para la watchlist + la cartera. REGLAS DE COSTE (tras quemar
+    # 3.65 EUR en un día): SOLO usa la key Gemini GRATIS (free_only=True — jamás la de pago
+    # ni Groq); corre cada 2 HORAS (no cada 25 min) y los veredictos pre-calculados cachean
+    # 2h; si la cuota gratis se agota (429), CORTA el ciclo entero hasta la siguiente vuelta.
+    # El crédito de pago queda reservado a los análisis que el usuario pide con el botón.
     async def _prewarm_chartist():
-        await asyncio.sleep(60)  # deja que el arranque respire antes de empezar
+        await asyncio.sleep(120)  # deja que el arranque respire antes de empezar
         while True:
             try:
                 now = datetime.now(timezone.utc)
@@ -315,21 +315,28 @@ async def lifespan(app: FastAPI):
                     for it in await db.signal_entries.find({"active": True}, {"_id": 0, "symbol": 1}).to_list(200):
                         if it.get("symbol"):
                             syms.add(it["symbol"].upper())
-                    for sym in list(syms)[:40]:  # techo de seguridad
+                    for sym in list(syms)[:30]:  # techo de seguridad
                         if _cache.get(f"chartist:{sym}") is not None:
                             continue  # ya está fresco en caché
                         try:
-                            result = await chartist.analyze(sym)
-                            _cache.set(f"chartist:{sym}", result, ttl=1800)
+                            result = await chartist.analyze(sym, free_only=True)
+                            _cache.set(f"chartist:{sym}", result, ttl=7200)  # 2h
                             await _chartist_vigilante(sym, result)  # #1 avisa si cambia algo
-                            logger.info("Chartista pre-calculado para %s", sym)
+                            logger.info("Chartista pre-calculado para %s (gratis)", sym)
                         except Exception as e:
-                            logger.warning("Pre-cálculo Chartista %s falló: %s", sym, str(e)[:120])
-                        await asyncio.sleep(8)  # espacia las llamadas (datos + IA)
+                            msg = str(e)
+                            low = msg.lower()
+                            # Cuota gratis agotada → parar TODO el ciclo (los demás también
+                            # fallarían y no queremos ni un reintento de más).
+                            if "429" in msg or "resource_exhausted" in low or "quota" in low:
+                                logger.warning("Pre-cálculo: cuota GRATIS agotada; ciclo cortado hasta la próxima vuelta")
+                                break
+                            logger.warning("Pre-cálculo Chartista %s falló: %s", sym, msg[:120])
+                        await asyncio.sleep(10)  # espacia las llamadas (datos + IA)
                     mem.trim()  # el pre-cálculo crea muchos DataFrames: devuélvelos al SO
             except Exception as e:
                 logger.warning("Prewarm chartist loop error: %s", e)
-            await asyncio.sleep(1500)  # ~25 min: la caché dura 30, así se mantiene caliente
+            await asyncio.sleep(7200)  # cada 2 HORAS (~4 ciclos por sesión de mercado)
 
     asyncio.create_task(_prewarm_chartist())
 
