@@ -81,6 +81,7 @@ export const api = {
   },
   signals: () => client.get(`/signals`).then((r) => r.data),
   signalsCreate: (payload) => client.post(`/signals`, payload).then((r) => r.data),
+  portfolioCorrelation: () => client.get(`/portfolio/correlation`, { timeout: 60000 }).then((r) => r.data),
   calendar: {
     earnings: (days = 14, symbols = null, refresh = false) =>
       client.get(`/calendar/earnings`, { params: { days, symbols: symbols || undefined, refresh: refresh || undefined } }).then((r) => r.data),

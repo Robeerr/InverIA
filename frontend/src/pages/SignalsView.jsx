@@ -166,6 +166,71 @@ function PortfolioSummary({ entries }) {
   );
 }
 
+// ── Correlación de la cartera (#22): detecta acciones que se mueven a la vez ─────
+function corrNivel(avg) {
+  if (avg == null) return { txt: "—", cls: "text-neutral-400" };
+  if (avg < 0.3) return { txt: "Bien diversificada", cls: "text-green-600 dark:text-green-400" };
+  if (avg < 0.5) return { txt: "Diversificación moderada", cls: "text-[#c9a14a]" };
+  if (avg < 0.7) return { txt: "Poco diversificada", cls: "text-orange-500" };
+  return { txt: "Muy correlacionada (riesgo de bloque)", cls: "text-red-600 dark:text-red-400" };
+}
+
+function CorrelationCard() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const run = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`${API}/api/portfolio/correlation`, { headers: authHeaders() });
+      setData(await r.json());
+      setDone(true);
+    } catch { toast.error("No se pudo calcular la correlación"); }
+    finally { setLoading(false); }
+  };
+
+  const nivel = corrNivel(data?.avg_corr);
+  return (
+    <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <p className="text-[11px] uppercase tracking-wide text-neutral-400 font-mono">🔗 Correlación (concentración oculta)</p>
+        <button onClick={run} disabled={loading}
+          className="px-2.5 py-1 rounded text-[11px] font-mono font-semibold bg-[#1a3a32] text-white disabled:opacity-50">
+          {loading ? "Calculando…" : done ? "Recalcular" : "Analizar"}
+        </button>
+      </div>
+      {!done && !loading && (
+        <p className="text-xs text-neutral-400">Mide si tus acciones se mueven a la vez (aunque sean de sectores distintos). Si están muy correlacionadas, una caída del mercado te afecta a todas por igual.</p>
+      )}
+      {data?.message && <p className="text-xs text-neutral-500 mt-1">{data.message}</p>}
+      {done && data && data.avg_corr != null && (
+        <div className="space-y-2 mt-1">
+          <div className="flex items-baseline gap-2">
+            <span className="font-mono font-bold text-lg text-neutral-900 dark:text-white">{data.avg_corr}</span>
+            <span className={`text-xs font-semibold ${nivel.cls}`}>{nivel.txt}</span>
+            <span className="text-[10px] text-neutral-400">· {data.n} acciones</span>
+          </div>
+          {(data.high || []).length > 0 ? (
+            <div>
+              <p className="text-[10px] uppercase text-neutral-400 font-mono mb-1">Se mueven casi igual (riesgo de bloque)</p>
+              <div className="flex flex-wrap gap-1.5">
+                {data.high.slice(0, 6).map((p) => (
+                  <span key={`${p.a}-${p.b}`} className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-300">
+                    {p.a} ↔ {p.b} · {p.corr}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-green-600 dark:text-green-400">✓ Ningún par se mueve en exceso al unísono. Buena señal.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const RIESGO_STYLE = {
   BAJO:  { bg: "bg-green-100 dark:bg-green-900/40",  text: "text-green-700 dark:text-green-300" },
   MEDIO: { bg: "bg-yellow-100 dark:bg-yellow-900/40", text: "text-yellow-700 dark:text-yellow-300" },
@@ -528,6 +593,9 @@ export default function SignalsView({ setSymbol }) {
 
       {/* Resumen de cartera: P&L total + diversificación (#20 + #21) */}
       {!loading && visible.length > 0 && <PortfolioSummary entries={visible} />}
+
+      {/* Correlación de la cartera (#22) */}
+      {!loading && visible.length >= 2 && <CorrelationCard />}
 
       {/* Legend */}
       <div className="flex flex-wrap gap-4 text-xs text-neutral-500">

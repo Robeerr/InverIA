@@ -1659,6 +1659,69 @@ async def remove_watchlist(symbol: str):
     return {"deleted": symbol.upper()}
 
 
+# ---------- Correlación de la cartera (#22) ----------
+@api_router.get("/portfolio/correlation")
+async def portfolio_correlation():
+    """Correlación entre las acciones de la Cartera: detecta 'concentración oculta' —
+    acciones que se mueven a la vez aunque sean de sectores distintos (si cae una, caen
+    todas). Bajo demanda, cacheado 6h, con liberación de RAM (mem.trim) tras el cálculo."""
+    cached = _cache.get("portfolio_corr")
+    if cached is not None:
+        return cached
+    import pandas as pd
+    import numpy as np
+
+    rows = await db.signal_entries.find({"active": True}, {"_id": 0, "symbol": 1}).to_list(200)
+    syms, seen = [], set()
+    for r in rows:
+        s = (r.get("symbol") or "").upper()
+        if s and s not in seen:
+            seen.add(s)
+            syms.append(s)
+    syms = syms[:25]  # techo: bounded en memoria
+    if len(syms) < 2:
+        return {"pairs": [], "avg_corr": None, "n": len(syms),
+                "message": "Necesitas al menos 2 acciones en la Cartera para medir la correlación."}
+
+    loop = asyncio.get_running_loop()
+    series = {}
+    for s in syms:
+        try:
+            df = await loop.run_in_executor(None, market_data.get_stock_data, s, "1Y")
+            if df is None or df.empty or "Close" not in df.columns:
+                continue
+            series[s] = df.set_index("Date")["Close"].astype(float).tail(160)
+        except Exception:
+            continue
+    mem.trim()
+    if len(series) < 2:
+        return {"pairs": [], "avg_corr": None, "n": len(series),
+                "message": "No hay histórico suficiente para las acciones de la Cartera."}
+    mat = pd.DataFrame(series).dropna()
+    if len(mat) < 20:
+        return {"pairs": [], "avg_corr": None, "n": len(series),
+                "message": "Histórico común insuficiente entre las acciones."}
+    corr = mat.pct_change().dropna().corr()
+    cols = list(corr.columns)
+    pairs = []
+    for i in range(len(cols)):
+        for j in range(i + 1, len(cols)):
+            c = corr.iloc[i, j]
+            if pd.notna(c):
+                pairs.append({"a": cols[i], "b": cols[j], "corr": round(float(c), 2)})
+    pairs.sort(key=lambda x: x["corr"], reverse=True)
+    avg = round(float(np.mean([p["corr"] for p in pairs])), 2) if pairs else None
+    result = {
+        "n": len(cols),
+        "avg_corr": avg,
+        "pairs": pairs[:8],
+        "high": [p for p in pairs if p["corr"] >= 0.7],
+    }
+    _cache.set("portfolio_corr", result, ttl=21600)  # 6h
+    mem.trim()
+    return result
+
+
 # ---------- Price Alerts ----------
 @api_router.get("/alerts")
 async def list_alerts():
