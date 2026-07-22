@@ -59,6 +59,27 @@ function MarketRegimeBar({ regime }) {
   );
 }
 
+// Termómetro Miedo/Codicia del mercado (#28): 0 = pánico, 100 = euforia.
+function FearGreedBar({ data }) {
+  if (!data || data.score == null) return null;
+  const s = data.score;
+  const color = s < 25 ? "#d85c41" : s < 45 ? "#e08a3c" : s <= 55 ? "#c9a14a" : "#4a7c59";
+  return (
+    <div className="card-flat px-4 py-2.5 flex items-center gap-3 flex-wrap">
+      <span className="text-[10px] uppercase tracking-[0.2em] text-[#5c6b66] font-mono shrink-0">Miedo / Codicia</span>
+      <div className="flex items-center gap-2 min-w-[140px] flex-1">
+        <div className="relative h-2 rounded-full flex-1 overflow-hidden" style={{ background: "linear-gradient(90deg,#d85c41,#c9a14a,#4a7c59)" }}>
+          <div className="absolute top-1/2 -translate-y-1/2 w-1 h-3.5 bg-[#0e1f1a] rounded-full" style={{ left: `calc(${s}% - 2px)` }} />
+        </div>
+        <span className="font-mono font-bold text-sm shrink-0" style={{ color }}>{s}</span>
+      </div>
+      <span className="text-xs font-semibold shrink-0" style={{ color }}>{data.label}</span>
+      {data.vix != null && <span className="text-[11px] text-[#5c6b66] font-mono shrink-0">VIX {data.vix}</span>}
+      {data.advice && <span className="text-[11px] text-[#5c6b66] w-full sm:w-auto sm:ml-auto sm:max-w-[380px] leading-snug">{data.advice}</span>}
+    </div>
+  );
+}
+
 export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const [timeframe, setTimeframe] = useState("1D");
   const [quote, setQuote] = useState(null);
@@ -83,6 +104,12 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
     queryFn: api.marketFutures,
     refetchInterval: 60_000,
     staleTime: 60_000,
+  });
+  const { data: sentiment } = useQuery({
+    queryKey: ["market-sentiment"],
+    queryFn: api.marketSentiment,
+    refetchInterval: 15 * 60_000,
+    staleTime: 15 * 60_000,
   });
 
   // Contador de petición: descarta respuestas que llegan tarde tras cambiar de símbolo
@@ -295,6 +322,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       <WatchlistStrip symbol={symbol} setSymbol={setSymbol} className="lg:hidden" />
       <MarketFuturesBar futures={futures} />
       <MarketRegimeBar regime={marketRegime} />
+      <FearGreedBar data={sentiment} />
 
       {loadingQuote && !quote ? (
         <div className="card-flat p-8 text-center text-[#5c6b66]">Cargando datos...</div>

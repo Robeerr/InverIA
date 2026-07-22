@@ -1333,6 +1333,13 @@ async def market_regime_endpoint():
     return market_regime.get_market_regime()
 
 
+@api_router.get("/market/sentiment")
+async def market_sentiment_endpoint():
+    """Termómetro Miedo/Codicia del mercado (0-100) a partir del VIX y el momento del S&P.
+    Cacheado 15 min internamente."""
+    return await asyncio.to_thread(market_regime.get_fear_greed)
+
+
 import re as _re_mod
 
 
