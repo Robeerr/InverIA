@@ -80,6 +80,7 @@ export const api = {
     setCapture: (token, chat_ids) => client.post(`/telegram/capture`, { chat_ids }, { params: { token } }).then((r) => r.data),
   },
   signals: () => client.get(`/signals`).then((r) => r.data),
+  signalsCreate: (payload) => client.post(`/signals`, payload).then((r) => r.data),
   calendar: {
     earnings: (days = 14, symbols = null, refresh = false) =>
       client.get(`/calendar/earnings`, { params: { days, symbols: symbols || undefined, refresh: refresh || undefined } }).then((r) => r.data),

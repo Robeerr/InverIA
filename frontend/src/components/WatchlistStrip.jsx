@@ -8,16 +8,29 @@ export default function WatchlistStrip({ symbol, setSymbol, vertical = false, cl
   const { data: signals } = useSignals();
   const entries = React.useMemo(() => {
     const arr = Array.isArray(signals) ? signals : (signals?.items || signals?.entries || []);
-    // Únicas por símbolo, orden por ticker.
+    // Distancia (%) del precio a su zona de compra más cercana: los niveles de compra están
+    // por DEBAJO del precio (compras en caídas). Cuanto menor, más cerca de entrar.
+    const distBuy = (e) => {
+      const px = Number(e.last_price);
+      if (!px) return Infinity;
+      const niveles = ["nivel1", "nivel2", "nivel3", "nivel4", "nivel5"]
+        .map((k) => Number(e[k])).filter((v) => v > 0);
+      if (!niveles.length) return Infinity;
+      // El nivel de compra alcanzable más alto (el primero que tocaría al caer).
+      const below = niveles.filter((v) => v <= px);
+      if (below.length) return ((px - Math.max(...below)) / px) * 100;   // aún por encima
+      return ((px - Math.max(...niveles)) / px) * 100;                    // ya dentro/por debajo (negativo)
+    };
     const seen = new Set();
     const out = [];
     for (const e of arr) {
       const s = (e.symbol || "").toUpperCase();
       if (!s || seen.has(s)) continue;
       seen.add(s);
-      out.push(e);
+      out.push({ ...e, _distBuy: distBuy(e) });
     }
-    return out.sort((a, b) => (a.symbol || "").localeCompare(b.symbol || ""));
+    // Orden: más cerca de su zona de compra primero (las "en zona" arriba).
+    return out.sort((a, b) => a._distBuy - b._distBuy);
   }, [signals]);
 
   if (!entries.length) return null;

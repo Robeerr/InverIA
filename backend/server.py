@@ -116,6 +116,53 @@ class SafeJSONResponse(JSONResponse):
         return json.dumps(_clean_nans(content), ensure_ascii=False).encode("utf-8")
 
 
+async def _chartist_vigilante(sym: str, result: dict):
+    """VIGILANTE DEL CHARTISTA (#1): al recalcular el veredicto, compara con el estado
+    anterior y avisa por Telegram SOLO cuando cambia algo accionable (el plan activa COMPRA,
+    o el sentido gira a alcista/bajista). Muy selectivo + 1 aviso/día por acción para que sea
+    señal y no ruido. Guarda el estado en Mongo (db.chartist_state)."""
+    try:
+        plan = result.get("plan") or {}
+        accion = (plan.get("accion") or "").upper()
+        sentido = (result.get("sentido") or "").lower()
+        prev = await db.chartist_state.find_one({"symbol": sym}, {"_id": 0})
+        today = datetime.now(timezone.utc).date().isoformat()
+        await db.chartist_state.update_one(
+            {"symbol": sym},
+            {"$set": {"symbol": sym, "accion": accion, "sentido": sentido,
+                      "updated_at": datetime.now(timezone.utc).isoformat()}},
+            upsert=True,
+        )
+        if not prev:
+            return  # primera vez: solo guardamos, no avisamos (evita avalancha al arrancar)
+        if prev.get("last_notify_date") == today:
+            return  # ya avisamos hoy de esta acción: no spameamos
+
+        msg = None
+        prev_accion = (prev.get("accion") or "").upper()
+        prev_sentido = (prev.get("sentido") or "").lower()
+        # 1) El plan ACTIVA compra (antes esperabas, ahora toca entrar).
+        if accion == "COMPRAR" and prev_accion and prev_accion != "COMPRAR":
+            niveles = [n.get("precio") for n in (plan.get("niveles_entrada") or []) if n.get("precio") is not None]
+            nivstr = ", ".join(f"${float(p):.2f}" for p in niveles[:3]) if niveles else "ver plan"
+            msg = (f"🎯 {sym}: el Chartista IA ha activado COMPRA.\n"
+                   f"Niveles escalonados: {nivstr}.\n"
+                   f"Invalidación: ${float(plan['invalidacion']):.2f}." if plan.get("invalidacion") else
+                   f"🎯 {sym}: el Chartista IA ha activado COMPRA.\nNiveles: {nivstr}.")
+        # 2) Giro de sentido a una dirección firme (alcista/bajista), distinto del anterior.
+        elif sentido in ("alcista", "bajista") and prev_sentido and sentido != prev_sentido:
+            flecha = "📈" if sentido == "alcista" else "📉"
+            msg = f"{flecha} {sym}: el Chartista IA ha girado a {sentido.upper()} (antes {prev_sentido or '—'})."
+
+        if msg:
+            import telegram_notifier
+            await telegram_notifier.send_message(msg, parse_mode="", grupo="ideas_javi")
+            await db.chartist_state.update_one({"symbol": sym}, {"$set": {"last_notify_date": today}})
+            logger.info("Vigilante Chartista avisó de %s", sym)
+    except Exception as e:
+        logger.warning("Vigilante Chartista %s falló: %s", sym, str(e)[:120])
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ----- Startup -----
@@ -144,6 +191,7 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Purga de Cimientos falló: {e}")
     await db.analyses.create_index([("symbol", 1), ("created_at", -1)])
     await db.watchlist.create_index("symbol")
+    await db.chartist_state.create_index("symbol", unique=True)
     await db.alerts.create_index("symbol")
     await db.analyst_ideas.create_index([("symbol", 1), ("detected_at", -1)])
 
@@ -273,6 +321,7 @@ async def lifespan(app: FastAPI):
                         try:
                             result = await chartist.analyze(sym)
                             _cache.set(f"chartist:{sym}", result, ttl=1800)
+                            await _chartist_vigilante(sym, result)  # #1 avisa si cambia algo
                             logger.info("Chartista pre-calculado para %s", sym)
                         except Exception as e:
                             logger.warning("Pre-cálculo Chartista %s falló: %s", sym, str(e)[:120])

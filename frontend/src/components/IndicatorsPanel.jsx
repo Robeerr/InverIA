@@ -2,6 +2,7 @@ import React from "react";
 import { ChartBar, Pulse, ArrowsHorizontal, Triangle } from "@phosphor-icons/react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
 import { fmtPrice } from "../lib/format";
+import InfoDot from "./InfoDot";
 
 function rsiTone(v) {
   if (v == null) return "text-[#5c6b66]";
@@ -45,34 +46,34 @@ export default function IndicatorsPanel({ indicators, analysis }) {
         </TabsList>
 
         <TabsContent value="momentum" className="space-y-3">
-          <Row icon={<Pulse size={14} weight="bold" />} label="RSI (14)" testId="rsi" value={
+          <Row icon={<Pulse size={14} weight="bold" />} label="RSI (14)" testId="rsi" info="RSI" value={
             <span className={`font-mono ${rsiTone(rsi)}`}>
               {rsi ?? "—"} <span className="text-[10px] uppercase ml-1">{rsiLabel(rsi)}</span>
             </span>
           } />
-          <Row label="MACD" testId="macd" value={
+          <Row label="MACD" testId="macd" info="MACD" value={
             <span className={`font-mono ${macdTone(macd?.macd)}`}>{fmtPrice(macd?.macd)}</span>
           } />
-          <Row label="Signal" testId="macd-signal" value={<span className="font-mono">{fmtPrice(macd?.signal)}</span>} />
-          <Row label="Histograma" testId="macd-hist" value={
+          <Row label="Signal" testId="macd-signal" info="Signal" value={<span className="font-mono">{fmtPrice(macd?.signal)}</span>} />
+          <Row label="Histograma" testId="macd-hist" info="Histograma" value={
             <span className={`font-mono ${macdTone(macd?.histogram)}`}>{fmtPrice(macd?.histogram)}</span>
           } />
         </TabsContent>
 
         <TabsContent value="trend" className="space-y-3">
-          <Row label="SMA 20" value={<span className="font-mono">${fmtPrice(sma?.["20"])}</span>} />
+          <Row label="SMA 20" info="SMA" value={<span className="font-mono">${fmtPrice(sma?.["20"])}</span>} />
           <Row label="SMA 50" value={<span className="font-mono">${fmtPrice(sma?.["50"])}</span>} />
           <Row label="SMA 200" value={<span className="font-mono">${fmtPrice(sma?.["200"])}</span>} />
-          <Row label="EMA 12" value={<span className="font-mono">${fmtPrice(ema?.["12"])}</span>} />
+          <Row label="EMA 12" info="EMA" value={<span className="font-mono">${fmtPrice(ema?.["12"])}</span>} />
           <Row label="EMA 26" value={<span className="font-mono">${fmtPrice(ema?.["26"])}</span>} />
           <div className="divider-soft my-2" />
-          <Row icon={<ArrowsHorizontal size={14} weight="bold" />} label="Bollinger Sup." value={<span className="font-mono text-[#d85c41]">${fmtPrice(bollinger?.upper)}</span>} />
+          <Row icon={<ArrowsHorizontal size={14} weight="bold" />} label="Bollinger Sup." info="Bollinger" value={<span className="font-mono text-[#d85c41]">${fmtPrice(bollinger?.upper)}</span>} />
           <Row label="Bollinger Med." value={<span className="font-mono">${fmtPrice(bollinger?.middle)}</span>} />
           <Row label="Bollinger Inf." value={<span className="font-mono text-[#4a7c59]">${fmtPrice(bollinger?.lower)}</span>} />
         </TabsContent>
 
         <TabsContent value="levels" className="space-y-3">
-          <h4 className="label-small">Soportes</h4>
+          <h4 className="label-small flex items-center gap-1.5">Soportes <InfoDot term="Soporte" /></h4>
           {(support_resistance?.supports || []).map((s, i) => (
             <Row key={`s-${i}`} label={`S${i + 1}`} value={<span className="font-mono text-[#4a7c59]">${fmtPrice(s)}</span>} />
           ))}
@@ -80,7 +81,7 @@ export default function IndicatorsPanel({ indicators, analysis }) {
             <p className="text-xs text-[#5c6b66]">Sin soportes detectados.</p>
           )}
           <div className="divider-soft my-2" />
-          <h4 className="label-small">Resistencias</h4>
+          <h4 className="label-small flex items-center gap-1.5">Resistencias <InfoDot term="Resistencia" /></h4>
           {(support_resistance?.resistances || []).map((s, i) => (
             <Row key={`r-${i}`} label={`R${i + 1}`} value={<span className="font-mono text-[#d85c41]">${fmtPrice(s)}</span>} />
           ))}
@@ -88,7 +89,7 @@ export default function IndicatorsPanel({ indicators, analysis }) {
             <p className="text-xs text-[#5c6b66]">Sin resistencias detectadas.</p>
           )}
           <div className="divider-soft my-2" />
-          <h4 className="label-small">Fibonacci (52sem)</h4>
+          <h4 className="label-small flex items-center gap-1.5">Fibonacci (52sem) <InfoDot term="Fibonacci" /></h4>
           {Object.entries(fibonacci || {}).map(([k, v]) => (
             <Row key={k} label={`Fib ${k}%`} value={<span className="font-mono">${fmtPrice(v)}</span>} />
           ))}
@@ -117,12 +118,13 @@ export default function IndicatorsPanel({ indicators, analysis }) {
   );
 }
 
-function Row({ icon, label, value, testId }) {
+function Row({ icon, label, value, testId, info }) {
   return (
     <div data-testid={testId} className="flex items-center justify-between py-1.5 border-b border-[#f0ebe1] last:border-0">
       <span className="text-xs text-[#5c6b66] flex items-center gap-1.5">
         {icon}
         {label}
+        {info && <InfoDot term={info} />}
       </span>
       <span className="text-sm">{value}</span>
     </div>
