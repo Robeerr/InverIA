@@ -80,6 +80,38 @@ function FearGreedBar({ data }) {
   );
 }
 
+// Heatmap de sectores (#27): variación del día por sector, para leer el mercado de un vistazo.
+function SectorHeatmap({ data, onPick }) {
+  const sectors = data?.sectors;
+  if (!Array.isArray(sectors) || !sectors.length) return null;
+  const tone = (chg) => {
+    const v = Math.max(-3, Math.min(3, chg)) / 3;  // normaliza a ±3%
+    if (v >= 0) return `rgba(74,124,89,${0.12 + v * 0.55})`;   // verde
+    return `rgba(216,92,65,${0.12 + Math.abs(v) * 0.55})`;      // rojo
+  };
+  return (
+    <div className="card-flat px-4 py-3">
+      <p className="text-[10px] uppercase tracking-[0.2em] text-[#5c6b66] font-mono mb-2">Sectores hoy</p>
+      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-1.5">
+        {sectors.map((s) => (
+          <button
+            key={s.symbol}
+            onClick={() => onPick && onPick(s.symbol)}
+            title={`${s.sector} (${s.symbol})`}
+            className="rounded-md px-2 py-1.5 text-left transition-transform hover:scale-[1.03]"
+            style={{ background: tone(s.change_percent) }}
+          >
+            <div className="text-[11px] font-semibold text-[#0e1f1a] truncate leading-tight">{s.sector}</div>
+            <div className="text-[12px] font-mono font-bold text-[#0e1f1a]">
+              {s.change_percent >= 0 ? "+" : ""}{s.change_percent.toFixed(2)}%
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const [timeframe, setTimeframe] = useState("1D");
   const [quote, setQuote] = useState(null);
@@ -110,6 +142,12 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
     queryFn: api.marketSentiment,
     refetchInterval: 15 * 60_000,
     staleTime: 15 * 60_000,
+  });
+  const { data: heatmap } = useQuery({
+    queryKey: ["market-heatmap"],
+    queryFn: api.marketHeatmap,
+    refetchInterval: 5 * 60_000,
+    staleTime: 5 * 60_000,
   });
 
   // Contador de petición: descarta respuestas que llegan tarde tras cambiar de símbolo
@@ -323,6 +361,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       <MarketFuturesBar futures={futures} />
       <MarketRegimeBar regime={marketRegime} />
       <FearGreedBar data={sentiment} />
+      <SectorHeatmap data={heatmap} onPick={setSymbol} />
 
       {loadingQuote && !quote ? (
         <div className="card-flat p-8 text-center text-[#5c6b66]">Cargando datos...</div>

@@ -1340,6 +1340,45 @@ async def market_sentiment_endpoint():
     return await asyncio.to_thread(market_regime.get_fear_greed)
 
 
+# 11 ETFs sectoriales SPDR: representan el rendimiento de cada sector del S&P 500.
+_SECTOR_ETFS = [
+    ("XLK", "Tecnología"), ("XLC", "Comunicaciones"), ("XLY", "Consumo discr."),
+    ("XLP", "Consumo básico"), ("XLE", "Energía"), ("XLF", "Financiero"),
+    ("XLV", "Salud"), ("XLI", "Industrial"), ("XLB", "Materiales"),
+    ("XLRE", "Inmobiliario"), ("XLU", "Servicios públ."),
+]
+
+
+@api_router.get("/market/heatmap")
+async def market_heatmap():
+    """Mapa de calor de sectores: variación del día de cada sector del S&P (vía sus ETFs).
+    Contexto de mercado de un vistazo. Cotizaciones ligeras (Finnhub), cacheado 5 min."""
+    cached = _cache.get("market_heatmap")
+    if cached is not None:
+        return cached
+    loop = asyncio.get_running_loop()
+    sem = asyncio.Semaphore(6)
+
+    async def _q(sym):
+        async with sem:
+            q = await loop.run_in_executor(None, market_data.get_quote_fast, sym)
+            if not q:
+                q = await loop.run_in_executor(None, market_data.get_quote, sym)
+            return q
+
+    quotes = await asyncio.gather(*[_q(s) for s, _ in _SECTOR_ETFS], return_exceptions=True)
+    out = []
+    for (sym, name), q in zip(_SECTOR_ETFS, quotes):
+        if isinstance(q, dict) and q.get("change_percent") is not None:
+            out.append({"symbol": sym, "sector": name,
+                        "change_percent": round(float(q["change_percent"]), 2)})
+    out.sort(key=lambda x: x["change_percent"], reverse=True)
+    result = {"sectors": out}
+    if out:
+        _cache.set("market_heatmap", result, ttl=300)  # 5 min
+    return result
+
+
 import re as _re_mod
 
 
