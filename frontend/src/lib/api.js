@@ -34,6 +34,14 @@ export const api = {
     client.get(`/chart/${symbol}`, { params: { timeframe } }).then((r) => r.data),
   chartist: (symbol, refresh = false) =>
     client.get(`/chartist/${symbol}`, { params: { refresh }, timeout: 90000 }).then((r) => r.data),
+  // Solo devuelve el veredicto si ya está pre-calculado (no gasta IA ni espera).
+  chartistCached: (symbol) =>
+    client.get(`/chartist/${symbol}`, { params: { cached_only: true }, timeout: 15000 }).then((r) => r.data),
+  watchlist: {
+    symbols: () => client.get(`/watchlist/symbols`).then((r) => r.data),
+    add: (symbol) => client.post(`/watchlist`, { symbol }).then((r) => r.data),
+    remove: (symbol) => client.delete(`/watchlist/${symbol}`).then((r) => r.data),
+  },
   indicators: (symbol) => client.get(`/indicators/${symbol}`).then((r) => r.data),
   news: (symbol) => client.get(`/news/${symbol}`).then((r) => r.data),
   analyze: (symbol, model) =>

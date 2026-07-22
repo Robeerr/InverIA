@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { TrendUp, TrendDown, Buildings, Bell, X, Check } from "@phosphor-icons/react";
+import React, { useState, useEffect } from "react";
+import { TrendUp, TrendDown, Buildings, Bell, X, Check, Heart } from "@phosphor-icons/react";
 import { fmtPrice, fmtPct, fmtNum } from "../lib/format";
 import { api } from "../lib/api";
 import { toast } from "sonner";
@@ -9,6 +9,40 @@ export default function QuoteHeader({ quote }) {
   const [alertPrice, setAlertPrice] = useState("");
   const [alertDir, setAlertDir] = useState("below");
   const [saving, setSaving] = useState(false);
+  const [inWatch, setInWatch] = useState(false);
+  const [watchBusy, setWatchBusy] = useState(false);
+
+  const sym = quote?.symbol;
+  // ¿La acción actual ya está en la watchlist? (para pintar el corazón lleno/vacío)
+  useEffect(() => {
+    let ok = true;
+    if (!sym) return;
+    api.watchlist.symbols()
+      .then((list) => { if (ok) setInWatch(Array.isArray(list) && list.map((s) => (s || "").toUpperCase()).includes(sym.toUpperCase())); })
+      .catch(() => {});
+    return () => { ok = false; };
+  }, [sym]);
+
+  const toggleWatch = async () => {
+    if (!sym || watchBusy) return;
+    setWatchBusy(true);
+    const next = !inWatch;
+    setInWatch(next);  // optimista
+    try {
+      if (next) {
+        await api.watchlist.add(sym);
+        toast.success(`${sym} añadida a tu watchlist · se pre-analizará sola`);
+      } else {
+        await api.watchlist.remove(sym);
+        toast.success(`${sym} quitada de la watchlist`);
+      }
+    } catch (err) {
+      setInWatch(!next);  // revierte si falla
+      toast.error(err?.response?.data?.detail || "No se pudo actualizar la watchlist");
+    } finally {
+      setWatchBusy(false);
+    }
+  };
 
   if (!quote) return null;
   const up = (quote.change ?? 0) >= 0;
@@ -50,6 +84,19 @@ export default function QuoteHeader({ quote }) {
               <span className="text-[10px] uppercase tracking-[0.2em] text-[#5c6b66]">
                 {quote.currency}
               </span>
+              <button
+                onClick={toggleWatch}
+                disabled={watchBusy}
+                title={inWatch ? "Quitar de la watchlist" : "Añadir a la watchlist (se pre-analiza sola)"}
+                aria-label={inWatch ? "Quitar de la watchlist" : "Añadir a la watchlist"}
+                className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all disabled:opacity-50 ${
+                  inWatch
+                    ? "border-[#d85c41] text-[#d85c41] bg-[#fbe9e6]"
+                    : "border-[#e5e0d8] text-[#8a958f] hover:border-[#d85c41] hover:text-[#d85c41]"
+                }`}
+              >
+                <Heart size={15} weight={inWatch ? "fill" : "regular"} />
+              </button>
             </div>
             <p data-testid="quote-name" className="text-sm text-[#5c6b66] mt-1 truncate max-w-md">
               {quote.name}

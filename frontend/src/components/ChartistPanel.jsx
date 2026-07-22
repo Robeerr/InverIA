@@ -19,12 +19,23 @@ export default function ChartistPanel({ symbol }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
 
-  // Al cambiar de acción, limpiar el veredicto anterior: vuelve a "Analizar" en vez de
-  // dejar el análisis de la acción previa.
+  // Al cambiar de acción: limpiar el veredicto anterior y, si el pre-cálculo de la watchlist
+  // ya dejó uno listo en caché, mostrarlo AL INSTANTE (sin pulsar ni gastar cuota). Si no hay
+  // pre-cálculo, se queda el botón "Analizar" como siempre.
   useEffect(() => {
     setData(null);
     setErr(null);
     setLoading(false);
+    if (!symbol) return;
+    let ok = true;
+    api.chartistCached(symbol)
+      .then((d) => {
+        if (ok && d && d.cached !== false && (d.sentido || d.veredicto || d.plan)) {
+          setData(d);
+        }
+      })
+      .catch(() => {});
+    return () => { ok = false; };
   }, [symbol]);
 
   async function run(refresh = false) {
@@ -52,6 +63,9 @@ export default function ChartistPanel({ symbol }) {
           </span>
         )}
         {data?._ai_tier && <TierBadge tier={data._ai_tier} model={data._ai_model} />}
+        {data?._precomputed && (
+          <span title="Pre-calculado en segundo plano para tu watchlist" className="text-[9px] font-mono text-[#b8860b]">⚡ listo</span>
+        )}
         <button
           onClick={() => run(!!data)}
           disabled={loading}

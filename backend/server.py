@@ -247,6 +247,43 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_auto_refresh_opportunities())
 
+    # PRE-CÁLCULO del Chartista para la watchlist + la cartera: aprovecha la cuota gratis de
+    # Gemini (1.500/día, usamos una fracción) para dejar los veredictos listos EN CACHÉ, de
+    # modo que al abrir una de tus acciones el Chartista salga al instante (0s en vez de
+    # 20-40s). Solo calcula lo que está caducado, en horario de mercado, de a poco para no
+    # saturar los datos ni la IA.
+    async def _prewarm_chartist():
+        await asyncio.sleep(60)  # deja que el arranque respire antes de empezar
+        while True:
+            try:
+                now = datetime.now(timezone.utc)
+                in_window = now.weekday() < 5 and 13 <= now.hour < 22
+                if in_window:
+                    # Símbolos que te importan: watchlist (corazón) + cartera (signals).
+                    syms = set()
+                    for it in await db.watchlist.find({}, {"_id": 0, "symbol": 1}).to_list(200):
+                        if it.get("symbol"):
+                            syms.add(it["symbol"].upper())
+                    for it in await db.signal_entries.find({"active": True}, {"_id": 0, "symbol": 1}).to_list(200):
+                        if it.get("symbol"):
+                            syms.add(it["symbol"].upper())
+                    for sym in list(syms)[:40]:  # techo de seguridad
+                        if _cache.get(f"chartist:{sym}") is not None:
+                            continue  # ya está fresco en caché
+                        try:
+                            result = await chartist.analyze(sym)
+                            _cache.set(f"chartist:{sym}", result, ttl=1800)
+                            logger.info("Chartista pre-calculado para %s", sym)
+                        except Exception as e:
+                            logger.warning("Pre-cálculo Chartista %s falló: %s", sym, str(e)[:120])
+                        await asyncio.sleep(8)  # espacia las llamadas (datos + IA)
+                    mem.trim()  # el pre-cálculo crea muchos DataFrames: devuélvelos al SO
+            except Exception as e:
+                logger.warning("Prewarm chartist loop error: %s", e)
+            await asyncio.sleep(1500)  # ~25 min: la caché dura 30, así se mantiene caliente
+
+    asyncio.create_task(_prewarm_chartist())
+
     # Trimmer periódico: devuelve al SO la memoria libre que glibc retiene tras los jobs
     # pesados (pandas). Coste ínfimo (1 vez cada 10 min) y evita que la RSS se quede en el
     # máximo alcanzado y trepe hacia el límite de 512MB.
@@ -588,15 +625,20 @@ async def debug_memory(top: int = 25):
 
 
 @api_router.get("/chartist/{symbol}")
-async def chartist_verdict(symbol: str, refresh: bool = False):
+async def chartist_verdict(symbol: str, refresh: bool = False, cached_only: bool = False):
     """Veredicto del Chartista IA: análisis multi-timeframe (geometría real + Gemini +
-    cerebro) con plan accionable y explicación pedagógica. Cacheado 30 min."""
+    cerebro) con plan accionable y explicación pedagógica. Cacheado 30 min.
+    cached_only=true: devuelve el veredicto SOLO si ya está pre-calculado (no consume IA);
+    si no lo está, responde {"cached": false}. Lo usa el panel para mostrar al instante los
+    análisis que el pre-cálculo de la watchlist ya dejó listos."""
     sym = symbol.upper()
     key = f"chartist:{sym}"
     if not refresh:
         cached = _cache.get(key)
         if cached:
-            return cached
+            return {**cached, "_precomputed": True} if cached_only else cached
+    if cached_only:
+        return {"cached": False}
     try:
         result = await chartist.analyze(sym)
     except RuntimeError as e:
@@ -1526,6 +1568,14 @@ async def list_watchlist():
     ]
     _cache.set("watchlist_with_quotes", result, ttl=45)
     return result
+
+
+@api_router.get("/watchlist/symbols")
+async def list_watchlist_symbols():
+    """Solo los tickers de la watchlist (sin cotizaciones). Ligero: para que el botón de
+    corazón sepa al instante si la acción actual ya está guardada."""
+    items = await db.watchlist.find({}, {"_id": 0, "symbol": 1}).to_list(500)
+    return [it["symbol"] for it in items if it.get("symbol")]
 
 
 @api_router.post("/watchlist")
