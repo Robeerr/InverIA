@@ -875,9 +875,13 @@ def _apply_regime_filter(result: dict) -> dict:
     return result
 
 
-def _enforce_rr(result: dict, price) -> dict:
-    """Guardián de riesgo/recompensa: garantiza R/R mínimo en TP1 ciñendo el stop si el
-    motor lo dejó demasiado ancho. Determinista (ver risk_rules.min_rr_stop)."""
+def _enforce_rr(result: dict, price, atr=None) -> dict:
+    """Guardián de riesgo/recompensa + distancia mínima del stop. Determinista.
+    1) DISTANCIA MÍNIMA: si el modelo devuelve un stop absurdamente pegado a la entrada
+       (bug: p.ej. stop 367.12 con entrada 367.25 = 0.03%), lo recoloca a un stop por ATR
+       (entrada − 1.5×ATR). Sin ATR, usa un suelo del 3%.
+    2) R/R: si tras eso el stop queda demasiado ancho, lo ciñe para cumplir R/R mínimo en TP1.
+    """
     import risk_rules
     if not isinstance(result, dict):
         return result
@@ -887,6 +891,21 @@ def _enforce_rr(result: dict, price) -> dict:
     stop = result.get("stop_loss")
     if not all(isinstance(x, (int, float)) for x in (entry, tp1, stop)):
         return result
+
+    # 1) Stop demasiado PEGADO a la entrada → recolócalo a una distancia sensata.
+    try:
+        atr = float(atr) if atr else None
+    except (TypeError, ValueError):
+        atr = None
+    min_dist = max(atr, entry * 0.02) if atr and atr > 0 else entry * 0.02  # ≥1×ATR o 2%
+    if (entry - stop) < min_dist:
+        nuevo_stop = round(entry - (1.5 * atr if atr and atr > 0 else entry * 0.03), 2)
+        if nuevo_stop < stop:  # solo hacia abajo (stop más sano, no más arriesgado que el modelo)
+            stop = nuevo_stop
+            result["stop_loss"] = stop
+            result["stop_corregido_distancia"] = True
+
+    # 2) R/R: tensar si quedó demasiado ancho.
     nuevo, ajustado = risk_rules.min_rr_stop(entry, tp1, stop)
     if ajustado:
         result["stop_loss"] = nuevo
@@ -1026,7 +1045,7 @@ async def analyze(req: AnalyzeRequest):
         result["key_levels"] = kl
     result = _ensure_key_levels(result, indicators_data, vp, quote.get("price"))
     result = _cap_take_profits(result, quote.get("high_52w"))
-    result = _enforce_rr(result, quote.get("price"))
+    result = _enforce_rr(result, quote.get("price"), atr=(indicators_data or {}).get("atr"))
     result = _apply_regime_filter(result)
 
     # Persist
