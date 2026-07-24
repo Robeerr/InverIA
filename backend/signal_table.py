@@ -217,6 +217,28 @@ async def _set_cooldown(db, cd_key: str):
     )
 
 
+async def _volume_ratio(symbol: str):
+    """Volumen de HOY / media de las últimas ~20 sesiones, desde el histórico diario
+    (cacheado). >1.5 ≈ volumen alto → un rebote en soporte es más fiable. None si no hay
+    datos. Se calcula SOLO al disparar una alerta (raro), así que el coste es mínimo.
+    Antes esto se sacaba de get_quote_fast, que no trae volumen → salía siempre None."""
+    try:
+        df = await asyncio.to_thread(market_data.get_stock_data, symbol, "3M")
+        if df is None or df.empty or "Volume" not in df.columns:
+            return None
+        vols = df["Volume"].dropna().astype(float)
+        if len(vols) < 6:
+            return None
+        hoy = float(vols.iloc[-1])
+        prev = vols.iloc[-21:-1] if len(vols) >= 21 else vols.iloc[:-1]
+        media = float(prev.mean())
+        if media <= 0:
+            return None
+        return round(hoy / media, 2)
+    except Exception:
+        return None
+
+
 async def signal_worker_loop(db, interval: int = 10):
     """Background: comprueba precios vs niveles activos lo más rápido posible.
 
@@ -365,14 +387,9 @@ async def signal_worker_loop(db, interval: int = 10):
                         level_num = level_key.replace("nivel", "Nivel ")
                         approaching = price > target  # precio en zona pero aún sobre el nivel exacto
                         # Confirmación por VOLUMEN: un rebote en soporte con volumen alto es
-                        # mucho más fiable. Ratio volumen-hoy / media (si hay datos).
-                        vol_ratio = None
-                        try:
-                            v, av = quote.get("volume"), quote.get("avg_volume")
-                            if v and av and av > 0:
-                                vol_ratio = round(v / av, 2)
-                        except Exception:
-                            pass
+                        # mucho más fiable. Ratio volumen-hoy / media, desde el histórico diario
+                        # (el quote rápido no trae volumen, por eso antes salía siempre None).
+                        vol_ratio = await _volume_ratio(symbol)
                         await _fire_alert(
                             entry, symbol, level_num, target, price, diff_pct, "COMPRA",
                             db=db, approaching=approaching, vol_ratio=vol_ratio,

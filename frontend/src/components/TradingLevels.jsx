@@ -165,17 +165,20 @@ function LevelCard({ icon, label, primary, sub, tone, testId }) {
 }
 
 export default function TradingLevels({ quote, analysis, analystConsensus, priceTarget, volumeProfile, buyLevels }) {
-  // Sin análisis: ocultamos la sección por completo (aparece al generar el análisis IA).
-  if (!analysis) return null;
-
   const current = quote?.price;
   const vpLevels = buildVpLevels(volumeProfile);
   const hasVp = vpLevels.length > 0;
-  const entryMid = analysis.entry_zone ? (analysis.entry_zone.min + analysis.entry_zone.max) / 2 : null;
+  const hasBuyLevels = Array.isArray(buyLevels) && buyLevels.length > 0;
+  // Los niveles por confluencia (motor determinista) y el Volume Profile NO dependen de la IA:
+  // se muestran ya al abrir la acción, sin gastar cuota. El plan de la IA (entrada/stop/TP,
+  // recomendación) aparece cuando generas el análisis. Solo ocultamos todo si no hay NADA.
+  if (!analysis && !hasBuyLevels && !hasVp && !priceTarget?.target_mean) return null;
+
+  const entryMid = analysis?.entry_zone ? (analysis.entry_zone.min + analysis.entry_zone.max) / 2 : null;
   const distEntry = current && entryMid ? ((entryMid - current) / current) * 100 : null;
-  const distSL = current && analysis.stop_loss ? ((analysis.stop_loss - current) / current) * 100 : null;
-  const distTP1 = current && analysis.take_profit_1 ? ((analysis.take_profit_1 - current) / current) * 100 : null;
-  const distTP2 = current && analysis.take_profit_2 ? ((analysis.take_profit_2 - current) / current) * 100 : null;
+  const distSL = current && analysis?.stop_loss ? ((analysis.stop_loss - current) / current) * 100 : null;
+  const distTP1 = current && analysis?.take_profit_1 ? ((analysis.take_profit_1 - current) / current) * 100 : null;
+  const distTP2 = current && analysis?.take_profit_2 ? ((analysis.take_profit_2 - current) / current) * 100 : null;
   const distTarget = current && priceTarget?.target_mean ? ((priceTarget.target_mean - current) / current) * 100 : null;
 
   return (
@@ -190,7 +193,9 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
             </h3>
           </div>
           <p className="text-sm text-[#5c6b66] mt-1">
-            Plan operativo sugerido por IA · Precio actual: <span className="font-mono font-semibold text-[#0e1f1a]">${fmtPrice(current)}</span>
+            {analysis
+              ? <>Plan operativo sugerido por IA · Precio actual: <span className="font-mono font-semibold text-[#0e1f1a]">${fmtPrice(current)}</span></>
+              : <>Niveles por confluencia (motor, sin IA) · Precio actual: <span className="font-mono font-semibold text-[#0e1f1a]">${fmtPrice(current)}</span> · <span className="text-[#8a6508]">genera el análisis IA para el plan completo</span></>}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -202,7 +207,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
               <p className="font-heading font-semibold text-sm text-[#0e1f1a]">{analystConsensus.consensus}</p>
             </div>
           )}
-          <RecBig rec={analysis.recommendation} />
+          {analysis && <RecBig rec={analysis.recommendation} />}
         </div>
       </div>
 
@@ -248,7 +253,8 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
         </div>
       )}
 
-      {/* 4 main level cards */}
+      {/* 4 main level cards (solo con análisis IA) */}
+      {analysis && (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {analysis.entry_zone && (
           <LevelCard
@@ -291,9 +297,10 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
           />
         )}
       </div>
+      )}
 
       {/* Multi-level lists: 3 entries, 3 SL, 3 TP */}
-      {(analysis.entry_zones?.length || analysis.stop_losses?.length || analysis.take_profits?.length) && (
+      {analysis && (analysis.entry_zones?.length || analysis.stop_losses?.length || analysis.take_profits?.length) && (
         <div className="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-4">
           {analysis.entry_zones?.length > 0 && (
             <div data-testid="entry-zones-list" className="border border-[#e5e0d8] rounded-md p-4">
@@ -377,7 +384,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
       )}
 
       {/* Support / Resistance bands */}
-      {analysis.key_levels && (
+      {analysis?.key_levels && (
         <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div data-testid="key-supports" className="border border-[#e5e0d8] rounded-md p-4">
             <div className="flex items-center gap-2 mb-3">
@@ -458,7 +465,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
       )}
 
       {/* Summary line */}
-      {analysis.summary && (
+      {analysis?.summary && (
         <p className="mt-5 text-sm text-[#0e1f1a] leading-relaxed border-l-2 border-[#1a3a32] pl-3">
           {analysis.summary}
         </p>
