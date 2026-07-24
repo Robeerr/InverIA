@@ -20,6 +20,24 @@ ACCESS_TOKEN_EXPIRE_DAYS = 30
 APP_USERNAME = os.environ.get("APP_USERNAME", "rober")
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "inveria2024")  # fallback solo en dev
 
+_DEFAULT_SECRET = "inveria-dev-secret-change-in-prod-please"
+
+# GUARDARRAIL DE PRODUCCIÓN: un JWT_SECRET por defecto es FORJABLE (cualquiera firma sus
+# propios tokens y anula toda la auth). En Render (que fija RENDER=true) nos negamos a
+# arrancar sin secreto propio. En local se permite el default para desarrollar.
+if os.environ.get("RENDER") and SECRET_KEY == _DEFAULT_SECRET:
+    raise RuntimeError(
+        "SEGURIDAD: falta la variable de entorno JWT_SECRET en produccion. Sin ella, los "
+        "tokens de sesion son forjables y la autenticacion no protege nada. Define JWT_SECRET "
+        "en Render con un valor aleatorio largo y vuelve a desplegar."
+    )
+# Aviso (no bloqueante) si en produccion se usa la contrasena por defecto sin hash.
+if os.environ.get("RENDER") and not os.environ.get("APP_PASSWORD_HASH") and APP_PASSWORD == "inveria2024":
+    import logging
+    logging.getLogger("auth").warning(
+        "SEGURIDAD: usando la contrasena por defecto. Define APP_PASSWORD_HASH (o APP_PASSWORD) en Render."
+    )
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
