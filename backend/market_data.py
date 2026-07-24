@@ -302,6 +302,7 @@ def get_stock_data(ticker: str, timeframe: str = "1Y"):
 
     # Try yfinance high-level API first (con tope de tiempo: en cloud puede colgarse)
     df = None
+    source = None
     try:
         t = _ticker(ticker)
         df = _call_with_timeout(
@@ -313,6 +314,7 @@ def get_stock_data(ticker: str, timeframe: str = "1Y"):
             date_col = "Date" if "Date" in df.columns else "Datetime"
             df = df.rename(columns={date_col: "Date"})
             df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
+            source = "yfinance"
         else:
             df = None
     except Exception:
@@ -321,6 +323,8 @@ def get_stock_data(ticker: str, timeframe: str = "1Y"):
     # Fallback 1: direct Yahoo chart API (survives some IP blocks via curl_cffi)
     if df is None or df.empty:
         df = _fetch_yahoo_chart(ticker, interval, period)
+        if df is not None and not df.empty:
+            source = "yahoo_chart"
 
     # Fallback 2: Stooq (only daily-or-larger — no intraday support on free tier)
     if df is None or df.empty:
@@ -328,6 +332,7 @@ def get_stock_data(ticker: str, timeframe: str = "1Y"):
         df = _fetch_stooq_history(ticker, stooq_interval)
         if df is not None:
             df = _filter_period(df, period)
+            source = "stooq"
 
     if df is None or df.empty:
         return None
@@ -343,6 +348,7 @@ def get_stock_data(ticker: str, timeframe: str = "1Y"):
         except Exception:
             pass
 
+    _stamp_source(df, source)
     _cache_set(cache_key, df)
     return df
 
@@ -355,6 +361,7 @@ def get_full_indicator_history(ticker: str):
         return cached
 
     df = None
+    source = None
     try:
         t = _ticker(ticker)
         df = _call_with_timeout(
@@ -366,6 +373,7 @@ def get_full_indicator_history(ticker: str):
             date_col = "Date" if "Date" in df.columns else "Datetime"
             df = df.rename(columns={date_col: "Date"})
             df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
+            source = "yfinance"
         else:
             df = None
     except Exception:
@@ -374,18 +382,62 @@ def get_full_indicator_history(ticker: str):
     # Fallback 1: Yahoo direct chart API
     if df is None or df.empty:
         df = _fetch_yahoo_chart(ticker, "1d", "2y")
+        if df is not None and not df.empty:
+            source = "yahoo_chart"
 
     # Fallback 2: Stooq
     if df is None or df.empty:
         df = _fetch_stooq_history(ticker, "d")
         if df is not None:
             df = _filter_period(df, "2y")
+            source = "stooq"
 
     if df is None or df.empty:
         return None
 
+    _stamp_source(df, source)
     _cache_set(cache_key, df)
     return df
+
+
+def _stamp_source(df, source):
+    """Marca en df.attrs la FUENTE que sirvió los datos y la fecha del último dato, para
+    poder avisar al usuario de fallbacks silenciosos (#7). No invasivo: quien no lo mire,
+    lo ignora."""
+    if df is None or getattr(df, "empty", True):
+        return df
+    try:
+        df.attrs["source"] = source or "desconocida"
+        df.attrs["as_of"] = pd.to_datetime(df["Date"].iloc[-1]).isoformat()
+    except Exception:
+        pass
+    return df
+
+
+def data_health(df) -> Optional[dict]:
+    """Salud de los datos de un DataFrame de mercado: {source, as_of, degraded, note}.
+    Marca 'degraded' cuando la fuente es de RESPALDO (Stooq: diario, sin volumen, ajuste
+    distinto) o cuando el último dato es demasiado viejo (fallback silencioso o mercado
+    caído). Sirve para avisar de forma discreta en la UI y modular la confianza del análisis."""
+    if df is None or getattr(df, "empty", True):
+        return {"source": None, "as_of": None, "degraded": True, "note": "sin datos"}
+    attrs = getattr(df, "attrs", {}) or {}
+    src = attrs.get("source")
+    as_of = attrs.get("as_of")
+    degraded = False
+    notes = []
+    if src == "stooq":
+        degraded = True
+        notes.append("fuente de respaldo (Stooq): diario, sin volumen y ajuste distinto")
+    try:
+        last = pd.to_datetime(df["Date"].iloc[-1])
+        age = (datetime.now() - last.to_pydatetime()).days
+        if age is not None and age > 4:  # > fin de semana largo → datos con retraso
+            degraded = True
+            notes.append(f"último dato de hace {age} días")
+    except Exception:
+        pass
+    return {"source": src, "as_of": as_of, "degraded": degraded, "note": " · ".join(notes) or None}
 
 
 def get_quote_fast(ticker: str) -> Optional[dict]:

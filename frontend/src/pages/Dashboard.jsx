@@ -59,6 +59,19 @@ function MarketRegimeBar({ regime }) {
   );
 }
 
+// Aviso de frescura/origen de datos (#7): fuente de respaldo (Stooq) o datos con retraso.
+function DataHealthBar({ health }) {
+  if (!health || !health.degraded) return null;
+  return (
+    <div className="card-flat px-4 py-2 flex items-center gap-2 border border-[#c9a14a]/40 bg-[#c9a14a]/[0.06]">
+      <span className="text-sm">⚠️</span>
+      <span className="text-[11px] text-[#8a6508] leading-snug">
+        <b>Datos de respaldo o con retraso</b>{health.note ? ` · ${health.note}` : ""}. El análisis puede no reflejar el precio en vivo — trátalo con cautela.
+      </span>
+    </div>
+  );
+}
+
 // Termómetro Miedo/Codicia del mercado (#28): 0 = pánico, 100 = euforia.
 function FearGreedBar({ data }) {
   if (!data || data.score == null) return null;
@@ -124,6 +137,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const [buyLevels, setBuyLevels] = useState(null);
   const [chartLines, setChartLines] = useState(null);
   const [marketRegime, setMarketRegime] = useState(null);
+  const [dataHealth, setDataHealth] = useState(null);
   const [news, setNews] = useState([]);
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
@@ -162,6 +176,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
     setVolumeProfile(null);
     setBuyLevels(null);
     setChartLines(null);
+    setDataHealth(null);
     // 1 reintento rápido ante un fallo de red puntual.
     const fetchWithRetry = async () => {
       try {
@@ -189,6 +204,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       if (data.lines) setChartLines(data.lines);
       if (data.volume_profile) setVolumeProfile(data.volume_profile);
       if (data.market_regime) setMarketRegime(data.market_regime);
+      setDataHealth(data.data_health || null);
     } catch (e) {
       if (my === reqId.current) {
         const st = e?.response?.status;
@@ -369,6 +385,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
         <QuoteHeader quote={quote} />
       ) : null}
 
+      {quote && <DataHealthBar health={dataHealth} />}
       {quote && <WhyMovingCard symbol={symbol} model={model} />}
 
       <TradingLevels

@@ -1266,6 +1266,18 @@ async def analyze(req: AnalyzeRequest, _user: str = Depends(auth.get_current_use
     result = _apply_regime_filter(result)
     result = _validate_analysis(result, quote.get("price"))
 
+    # #7 — Si los datos son de una fuente de respaldo o con retraso, avisa en el análisis y
+    # recorta la confianza (el análisis se calculó sobre datos degradados; que se sepa).
+    try:
+        health = market_data.data_health(df)
+        if isinstance(result, dict) and health and health.get("degraded"):
+            result["data_warning"] = "⚠️ Datos de respaldo/con retraso (" + (health.get("note") or "fuente degradada") + "). Trátalo con cautela."
+            c = result.get("confidence")
+            if isinstance(c, (int, float)):
+                result["confidence"] = min(c, 60)
+    except Exception:
+        pass
+
     # Persist
     doc = {
         "id": str(uuid.uuid4()),
@@ -1554,6 +1566,18 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y"):
         _cache.set(f"news:{sym}", {"symbol": sym, "items": news_list}, ttl=1800)
     _cache.set(f"analyst:{sym}", analyst, ttl=604800)
 
+    # #7 — Salud de los datos: avisa si los datos vienen de una fuente de respaldo (Stooq,
+    # sin volumen) o con retraso, para que no operes sobre un fallback silencioso.
+    health = None
+    try:
+        for _dfh in (df_chart, df_ind):
+            if _dfh is not None and not isinstance(_dfh, Exception):
+                h = market_data.data_health(_dfh)
+                if h and (health is None or (h.get("degraded") and not health.get("degraded"))):
+                    health = h  # nos quedamos con la peor (degradada gana)
+    except Exception:
+        health = None
+
     result = {
         "symbol": sym,
         "timeframe": timeframe,
@@ -1566,6 +1590,7 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y"):
         "buy_levels": buy_levels or [],
         "volume_profile": vp_dict or None,
         "market_regime": market_regime.get_market_regime(),
+        "data_health": health,
     }
     _cache.set(cache_key, result, ttl=300)
     return result
