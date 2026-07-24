@@ -221,7 +221,7 @@ def _build_payload(quote: dict, indicators: dict, news: list,
                    volume_profile: dict = None, insider: dict = None,
                    earnings_history: dict = None, buy_levels: list = None,
                    next_earnings_date: str = None, days_to_earnings: int = None,
-                   company_profile: dict = None) -> str:
+                   company_profile: dict = None, final_levels: dict = None) -> str:
     ind = indicators or {}
     price = quote.get("price") or 0
     # Prefer yfinance 52w values; fallback to indicator-computed values
@@ -343,13 +343,35 @@ def _build_payload(quote: dict, indicators: dict, news: list,
             "calculadas son la referencia principal."
         )
 
+    # #6 — NIVELES DEFINITIVOS ya calculados por el motor determinista. Si vienen, la IA NO
+    # inventa números: los COPIA tal cual y su valor añadido es la NARRATIVA coherente.
+    final_block = ""
+    closing = (
+        "Genera el análisis completo con todos los niveles operativos. "
+        "Usa los niveles Fibonacci y soportes técnicos proporcionados como base para los precios. "
+    )
+    if final_levels:
+        final_block = (
+            "\n\nNIVELES DEFINITIVOS (ya calculados por el motor determinista de la casa — "
+            "entradas por confluencia, stops por ATR, objetivos por resistencia/Fibonacci; "
+            "el número YA cuadra con su etiqueta):\n"
+            + json.dumps(final_levels, ensure_ascii=False, separators=(',', ':'))
+            + "\n\nINSTRUCCIÓN CRÍTICA: COPIA estos números EXACTAMENTE en entry_zones, "
+            "stop_losses, take_profits, entry_zone, stop_loss, take_profit_1, take_profit_2, "
+            "risk_reward_ratio y key_levels. NO los cambies ni inventes otros. Tu trabajo es la "
+            "NARRATIVA (technical_analysis, fibonacci_analysis, summary, business_overview, "
+            "investment_case), la recomendación y la confianza — y deben ser 100% COHERENTES con "
+            "estos números. En fibonacci_analysis y en los comentarios, describe SOLO estos "
+            "niveles; no cites ratios Fibonacci que no correspondan a estos precios."
+        )
+        closing = "Genera el análisis NARRANDO los niveles definitivos dados (cópialos exactos). "
+
     return (
         f"Analiza en profundidad la acción {quote.get('symbol')} con precio actual ${price}.\n\n"
         f"DATOS:\n{json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}"
-        f"{levels_block}\n\n"
-        f"Genera el análisis completo con todos los niveles operativos. "
-        f"Usa los niveles Fibonacci y soportes técnicos proporcionados como base para los precios. "
-        f"Rellena OBLIGATORIAMENTE risks (mínimo 4), catalysts (mínimo 3) y key_levels con valores reales. "
+        f"{levels_block}{final_block}\n\n"
+        f"{closing}"
+        f"Rellena OBLIGATORIAMENTE risks (mínimo 4), catalysts (mínimo 3) con valores reales. "
         f"Responde SOLO con JSON válido."
     )
 
@@ -879,10 +901,12 @@ async def analyze_stock(
     next_earnings_date: str = None,
     days_to_earnings: int = None,
     company_profile: dict = None,
+    final_levels: dict = None,
 ) -> dict:
     user_msg = _build_payload(quote, indicators, news, analyst_consensus, price_target,
                               volume_profile, insider, earnings_history, buy_levels,
-                              next_earnings_date, days_to_earnings, company_profile)
+                              next_earnings_date, days_to_earnings, company_profile,
+                              final_levels)
     # Inyecta el conocimiento acumulado de las newsletters (cerebro que crece con cada
     # correo), SELECCIONADO por relevancia al sector/situación de esta acción.
     system = SYSTEM_PROMPT

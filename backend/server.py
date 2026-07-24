@@ -971,6 +971,154 @@ def _enforce_rr(result: dict, price, atr=None) -> dict:
     return result
 
 
+def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_target) -> dict:
+    """#6 — Calcula el conjunto COMPLETO de niveles de forma DETERMINISTA, con etiquetas que
+    CUADRAN con el número (el número ES lo que la etiqueta promete). Mata el desajuste
+    'la etiqueta dice Fibonacci 161.8% pero el número es otro'. Se pasan a la IA como
+    definitivos (solo los narra) y se sobrescriben al final. Devuelve None si no hay zonas de
+    confluencia (entonces se usa el flujo clásico con guardianes).
+
+    - entradas: del motor de confluencia (levels_engine, ya rankeado por fuerza)
+    - stops: 1.5/2/3×ATR reales bajo la entrada (monótonos)
+    - objetivos: resistencia cercana + extensiones Fibonacci + objetivo de analistas (cap 15% s/ máx 52s)
+    """
+    ind = indicators or {}
+    price = quote.get("price")
+    if not price or not isinstance(buy_levels, list) or not buy_levels:
+        return None
+
+    def _f(x):
+        try:
+            return float(x)
+        except (TypeError, ValueError):
+            return None
+
+    atr = _f(ind.get("atr"))
+    if atr is not None and atr <= 0:
+        atr = None
+    high_52w = _f(quote.get("high_52w")) or _f(ind.get("high_52w")) or price * 1.3
+    low_52w = _f(quote.get("low_52w")) or _f(ind.get("low_52w")) or price * 0.7
+    ceiling = round(high_52w * 1.15, 2)
+
+    # ── ENTRADAS: del motor de confluencia (top 3) ──
+    ez = []
+    for z in buy_levels[:3]:
+        p = _f(z.get("price"))
+        if p is None:
+            continue
+        lo = _f(z.get("zone_low")) or p
+        hi = _f(z.get("zone_high")) or p
+        motivo = " + ".join((z.get("reasons") or [])[:3]) or (z.get("label") or "confluencia")
+        ez.append({"label": z.get("label") or f"NIVEL {len(ez) + 1}",
+                   "min": round(min(lo, hi), 2), "max": round(max(lo, hi), 2),
+                   "comment": f"Fuerza {z.get('strength')}/100 · {motivo}"})
+    if not ez:
+        return None
+    entry_hi = ez[0]["max"]   # borde alto de la zona 1 (primer punto de compra) — ancla del stop
+    entry_lo = ez[0]["min"]
+
+    # ── STOPS: ATR reales, monótonos ──
+    stops = []
+    if atr:
+        min_dist = max(atr, entry_hi * 0.02)
+        d = [max(1.5 * atr, min_dist)]
+        d.append(max(2.0 * atr, d[0] * 1.3))
+        d.append(max(3.0 * atr, d[1] * 1.3))
+        labels = ["STOP AJUSTADO (1.5×ATR)", "STOP ESTÁNDAR (2×ATR)", "STOP AMPLIO (3×ATR)"]
+        comments = ["1.5×ATR bajo la entrada — swing", "2×ATR — invalida la tesis técnica",
+                    "3×ATR — bajo soporte estructural, largo plazo"]
+        for i in range(3):
+            stops.append({"label": labels[i], "price": round(entry_hi - d[i], 2), "comment": comments[i]})
+    else:
+        for pct, lbl in [(0.03, "STOP AJUSTADO (~3%)"), (0.05, "STOP ESTÁNDAR (~5%)"), (0.08, "STOP AMPLIO (~8%)")]:
+            stops.append({"label": lbl, "price": round(entry_hi * (1 - pct), 2), "comment": f"~{int(pct*100)}% bajo la entrada"})
+    stop_scalar = stops[0]["price"]
+
+    # ── OBJETIVOS: resistencias + Fibonacci + analistas ──
+    sr = ind.get("support_resistance") or {}
+    res_up = sorted(r for r in (_f(x) for x in (sr.get("resistances") or [])) if r and r > price * 1.01)
+    rng = high_52w - low_52w
+    fib127 = round(low_52w + rng * 1.272, 2) if rng > 0 else None
+    fib161 = round(low_52w + rng * 1.618, 2) if rng > 0 else None
+    analyst = _f((price_target or {}).get("target_mean")) if isinstance(price_target, dict) else None
+
+    def _cap(x):
+        return min(x, ceiling) if x else x
+
+    # TP1: primera resistencia que dé R/R >= 1.5 sobre el stop ajustado (evita objetivos
+    # pegados al precio que darían un R/R absurdo). Si ninguna, la extensión Fibonacci.
+    risk = entry_hi - stop_scalar
+    min_tp1 = entry_hi + 1.5 * risk if risk > 0 else price * 1.04
+    tp1 = next((r for r in res_up if r >= min_tp1), None) or fib127 or round(min_tp1, 2)
+    tp2 = fib127 if (fib127 and fib127 > tp1 * 1.01) else (next((r for r in res_up if r > tp1 * 1.01), None) or round(tp1 * 1.06, 2))
+    tp3 = (analyst if analyst and analyst > tp2 * 1.01 else None) or fib161 or round(tp1 * 1.12, 2)
+    tp_labels = ["TP1 — Resistencia / R/R ≥ 1.5", "TP2 — Extensión Fibonacci 127.2%", "TP3 — Fibonacci 161.8% / Analistas"]
+    # capar, quedarnos con los que están por encima del precio, ordenar y hacerlos crecientes
+    raw = sorted({round(_cap(t), 2) for t in (tp1, tp2, tp3) if t and t > price})
+    if not raw:
+        raw = [round(price * 1.05, 2)]
+    tps = [{"label": tp_labels[i] if i < len(tp_labels) else f"TP{i + 1}", "price": raw[i], "comment": ""}
+           for i in range(min(3, len(raw)))]
+    tp1s = tps[0]["price"]
+    tp2s = tps[1]["price"] if len(tps) > 1 else None
+    rr = round((tp1s - entry_hi) / (entry_hi - stop_scalar), 1) if (entry_hi - stop_scalar) > 0 else None
+
+    # ── key_levels ──
+    supports = sorted({e["min"] for e in ez} |
+                      {r for r in (_f(x) for x in (sr.get("supports") or [])) if r and r < price}, reverse=True)[:4]
+    resistances = sorted(set(res_up) | {t["price"] for t in tps})[:4]
+
+    return {
+        "entry_zones": ez,
+        "stop_losses": stops,
+        "take_profits": tps,
+        "entry_zone": {"min": entry_lo, "max": entry_hi},
+        "stop_loss": stop_scalar,
+        "take_profit_1": tp1s,
+        "take_profit_2": tp2s,
+        "risk_reward_ratio": rr,
+        "key_levels": {"support": supports, "resistance": resistances},
+    }
+
+
+def _validate_analysis(result: dict, price) -> dict:
+    """Validación determinista de la salida del LLM (independiente de si se usó el flujo
+    determinista o el clásico). Normaliza enums, acota la confianza y descarta números
+    incoherentes que el modelo pueda colar (TP por debajo de la entrada, confianza 150, etc.)."""
+    if not isinstance(result, dict):
+        return result
+    # Recomendación y tendencia a enums conocidos.
+    rec_map = {"BUY": "COMPRAR", "COMPRA": "COMPRAR", "SELL": "VENDER", "VENTA": "VENDER",
+               "HOLD": "MANTENER", "NEUTRAL": "MANTENER", "MANTENER": "MANTENER",
+               "COMPRAR": "COMPRAR", "VENDER": "VENDER"}
+    rec = (result.get("recommendation") or "").strip().upper()
+    if rec:
+        result["recommendation"] = rec_map.get(rec, "MANTENER")
+    # Confianza acotada a 0-100.
+    conf = result.get("confidence")
+    if isinstance(conf, (int, float)):
+        result["confidence"] = max(0, min(100, round(conf)))
+    # Zona de entrada: min <= max.
+    ez = result.get("entry_zone")
+    if isinstance(ez, dict) and isinstance(ez.get("min"), (int, float)) and isinstance(ez.get("max"), (int, float)):
+        if ez["min"] > ez["max"]:
+            ez["min"], ez["max"] = ez["max"], ez["min"]
+    entry_ref = ez.get("min") if isinstance(ez, dict) and isinstance(ez.get("min"), (int, float)) else price
+    # Take-profits deben estar POR ENCIMA de la entrada (para un largo); descarta los que no.
+    if isinstance(entry_ref, (int, float)) and isinstance(result.get("take_profits"), list):
+        result["take_profits"] = [t for t in result["take_profits"]
+                                  if isinstance(t, dict) and isinstance(t.get("price"), (int, float)) and t["price"] > entry_ref]
+    for k in ("take_profit_1", "take_profit_2"):
+        v = result.get(k)
+        if isinstance(v, (int, float)) and isinstance(entry_ref, (int, float)) and v <= entry_ref:
+            result[k] = None
+    # R/R: número positivo o nada.
+    rr = result.get("risk_reward_ratio")
+    if not (isinstance(rr, (int, float)) and rr > 0):
+        result.pop("risk_reward_ratio", None) if rr is not None else None
+    return result
+
+
 # ---------- AI Analysis ----------
 @api_router.post("/analyze")
 async def analyze(req: AnalyzeRequest, _user: str = Depends(auth.get_current_user)):
@@ -1055,6 +1203,12 @@ async def analyze(req: AnalyzeRequest, _user: str = Depends(auth.get_current_use
     except Exception:
         company_profile = None
 
+    # #6 — NIVELES DETERMINISTAS: calculamos TODO (entradas/stops/objetivos/key_levels) con
+    # etiquetas que cuadran con el número. Se pasan a la IA como definitivos (solo los narra)
+    # y se sobrescriben al final → la prosa nunca contradice a los números. None si no hay
+    # confluencia (entonces se usa el flujo clásico con guardianes).
+    det_levels = _deterministic_levels(quote, indicators_data, buy_levels, price_target)
+
     requested_model = req.model or ai_analysis.DEFAULT_MODEL
     analyze_kwargs = dict(
         analyst_consensus=analyst_consensus,
@@ -1066,6 +1220,7 @@ async def analyze(req: AnalyzeRequest, _user: str = Depends(auth.get_current_use
         next_earnings_date=next_earnings_date,
         days_to_earnings=days_to_earnings,
         company_profile=company_profile,
+        final_levels=det_levels,
     )
     used_model = requested_model
     # Cadena de fallback en orden de preferencia, ENTRE PROVEEDORES distintos: si Gemini
@@ -1093,18 +1248,23 @@ async def analyze(req: AnalyzeRequest, _user: str = Depends(auth.get_current_use
         logger.exception("AI analysis failed (all models in fallback chain)")
         raise HTTPException(503, f"Los modelos de IA están saturados ahora mismo. Inténtalo en unos minutos. ({last_err})")
 
-    # Guarantee real support/resistance levels and realistic take-profits regardless
-    # of how the model filled them (key_levels can come back empty -> NaN in the UI).
-    # Seed the supports with the confluence engine's zones so the floor is always solid.
-    if buy_levels and isinstance(result, dict):
-        kl = result.get("key_levels") if isinstance(result.get("key_levels"), dict) else {}
-        existing = kl.get("support") if isinstance(kl.get("support"), list) else []
-        kl["support"] = [z["price"] for z in buy_levels] + list(existing)
-        result["key_levels"] = kl
-    result = _ensure_key_levels(result, indicators_data, vp, quote.get("price"))
-    result = _cap_take_profits(result, quote.get("high_52w"))
-    result = _enforce_rr(result, quote.get("price"), atr=(indicators_data or {}).get("atr"))
+    if det_levels and isinstance(result, dict):
+        # FLUJO DETERMINISTA: sobrescribimos los campos numéricos con los del motor (la IA solo
+        # narra). No hace falta pasar por los guardianes de números: ya son coherentes.
+        for k, v in det_levels.items():
+            result[k] = v
+    else:
+        # FLUJO CLÁSICO (sin confluencia): la IA produjo los números → guardianes deterministas.
+        if buy_levels and isinstance(result, dict):
+            kl = result.get("key_levels") if isinstance(result.get("key_levels"), dict) else {}
+            existing = kl.get("support") if isinstance(kl.get("support"), list) else []
+            kl["support"] = [z["price"] for z in buy_levels] + list(existing)
+            result["key_levels"] = kl
+        result = _ensure_key_levels(result, indicators_data, vp, quote.get("price"))
+        result = _cap_take_profits(result, quote.get("high_52w"))
+        result = _enforce_rr(result, quote.get("price"), atr=(indicators_data or {}).get("atr"))
     result = _apply_regime_filter(result)
+    result = _validate_analysis(result, quote.get("price"))
 
     # Persist
     doc = {
