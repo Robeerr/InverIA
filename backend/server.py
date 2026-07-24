@@ -877,40 +877,97 @@ def _apply_regime_filter(result: dict) -> dict:
 
 
 def _enforce_rr(result: dict, price, atr=None) -> dict:
-    """Guardián de riesgo/recompensa + distancia mínima del stop. Determinista.
-    1) DISTANCIA MÍNIMA: si el modelo devuelve un stop absurdamente pegado a la entrada
-       (bug: p.ej. stop 367.12 con entrada 367.25 = 0.03%), lo recoloca a un stop por ATR
-       (entrada − 1.5×ATR). Sin ATR, usa un suelo del 3%.
-    2) R/R: si tras eso el stop queda demasiado ancho, lo ciñe para cumplir R/R mínimo en TP1.
+    """Guardián determinista de niveles de riesgo. Arregla el 'stop pegado a la entrada' de
+    forma COHERENTE entre los campos escalares y los arrays que pinta la UI:
+      1) Deriva los escalares (entry/stop/tp1) de los arrays si el modelo solo llenó estos
+         (antes el guardián se saltaba entero y el análisis salía sin protección).
+      2) Distancia mínima del stop (>=1×ATR o 2%); si viene pegado, lo recoloca por ATR,
+         nunca más cerca que ese mínimo (antes en baja volatilidad el 'arreglo' se quedaba corto).
+      3) Ciñe por R/R, pero la DISTANCIA MÍNIMA SIEMPRE gana (clamp final). Antes el paso R/R
+         volvía a pegar el stop a la entrada y reintroducía el stop degenerado.
+      4) Recalcula stop_losses[] (AJUSTADO/2×ATR/3×ATR) desde el ATR: así el número cuadra con
+         la etiqueta y NADIE (ni TradingLevels ni la barra) pinta un stop degenerado.
     """
     import risk_rules
     if not isinstance(result, dict):
         return result
-    ez = result.get("entry_zone") if isinstance(result.get("entry_zone"), dict) else {}
-    entry = ez.get("min") if isinstance(ez.get("min"), (int, float)) else price
-    tp1 = result.get("take_profit_1")
-    stop = result.get("stop_loss")
-    if not all(isinstance(x, (int, float)) for x in (entry, tp1, stop)):
-        return result
 
-    # 1) Stop demasiado PEGADO a la entrada → recolócalo a una distancia sensata.
+    def _num(x):
+        return x if isinstance(x, (int, float)) else None
+
+    # 1) Derivar escalares desde los arrays si faltan.
+    ez = result.get("entry_zone") if isinstance(result.get("entry_zone"), dict) else {}
+    ezs = result.get("entry_zones")
+    entry = _num(ez.get("min"))
+    if entry is None:
+        if isinstance(ezs, list) and ezs and isinstance(ezs[0], dict):
+            entry = _num(ezs[0].get("min"))
+        if entry is None:
+            entry = _num(price)
+        if entry is not None:
+            emax = _num(ez.get("max"))
+            if emax is None and isinstance(ezs, list) and ezs and isinstance(ezs[0], dict):
+                emax = _num(ezs[0].get("max"))
+            result["entry_zone"] = {"min": entry, "max": emax if emax is not None else entry}
+
+    tp1 = _num(result.get("take_profit_1"))
+    if tp1 is None:
+        tps = result.get("take_profits")
+        if isinstance(tps, list) and tps and isinstance(tps[0], dict):
+            tp1 = _num(tps[0].get("price"))
+            if tp1 is not None:
+                result["take_profit_1"] = tp1
+
+    stop = _num(result.get("stop_loss"))
+    if stop is None:
+        sls0 = result.get("stop_losses")
+        if isinstance(sls0, list) and sls0 and isinstance(sls0[0], dict):
+            stop = _num(sls0[0].get("price"))
+
+    if entry is None or tp1 is None or stop is None:
+        return result  # aún sin datos suficientes para proteger
+
     try:
         atr = float(atr) if atr else None
     except (TypeError, ValueError):
         atr = None
-    min_dist = max(atr, entry * 0.02) if atr and atr > 0 else entry * 0.02  # ≥1×ATR o 2%
-    if (entry - stop) < min_dist:
-        nuevo_stop = round(entry - (1.5 * atr if atr and atr > 0 else entry * 0.03), 2)
-        if nuevo_stop < stop:  # solo hacia abajo (stop más sano, no más arriesgado que el modelo)
-            stop = nuevo_stop
-            result["stop_loss"] = stop
-            result["stop_corregido_distancia"] = True
+    if atr is not None and atr <= 0:
+        atr = None
 
-    # 2) R/R: tensar si quedó demasiado ancho.
+    min_dist = max(atr, entry * 0.02) if atr else entry * 0.02  # >=1×ATR o 2%
+
+    # 2) Stop demasiado PEGADO → recolócalo a una distancia sensata (nunca < min_dist).
+    if (entry - stop) < min_dist:
+        repl_dist = max(1.5 * atr, min_dist) if atr else max(entry * 0.03, min_dist)
+        stop = round(entry - repl_dist, 2)
+        result["stop_corregido_distancia"] = True
+
+    # 3) R/R: ciñe si quedó demasiado ancho...
     nuevo, ajustado = risk_rules.min_rr_stop(entry, tp1, stop)
     if ajustado:
-        result["stop_loss"] = nuevo
+        stop = nuevo
         result["stop_ajustado_rr"] = True
+    # ...pero la DISTANCIA MÍNIMA gana: el stop nunca puede quedar más cerca que min_dist.
+    max_stop = round(entry - min_dist, 2)
+    if stop > max_stop:
+        stop = max_stop
+    result["stop_loss"] = stop
+
+    # 4) Recalcular los stop_losses[] MONÓTONOS: ajustado = stop saneado; estándar y amplio
+    #    siempre más anchos (nunca más cerca de la entrada que el ajustado). Así ninguno sale
+    #    degenerado y el orden ajustado→estándar→amplio se respeta aunque el R/R haya movido
+    #    el ajustado.
+    sls = result.get("stop_losses")
+    if isinstance(sls, list) and sls:
+        d0 = entry - stop  # distancia del ajustado (>= min_dist, ya saneada)
+        precios = [
+            stop,
+            round(entry - (max(2.0 * atr, d0 * 1.3) if atr else d0 * 1.3), 2),
+            round(entry - (max(3.0 * atr, d0 * 1.7) if atr else d0 * 1.7), 2),
+        ]
+        for i, sl in enumerate(sls[:3]):
+            if isinstance(sl, dict):
+                sl["price"] = precios[i]
     return result
 
 
