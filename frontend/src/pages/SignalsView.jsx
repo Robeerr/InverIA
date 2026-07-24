@@ -77,6 +77,25 @@ const pnlAbs = (e) => (Number(e.acciones) > 0 && Number(e.compra) > 0 && e.last_
 const pnlPct = (e) => (Number(e.compra) > 0 && e.last_price != null) ? ((Number(e.last_price) - Number(e.compra)) / Number(e.compra)) * 100 : null;
 const eur0 = (x) => x == null ? "—" : x.toLocaleString("es-ES", { maximumFractionDigits: 0 });
 
+// Distancia % del precio a un nivel de compra (negativo = el nivel está por debajo, aún sin tocar).
+const nivelDist = (e, n) => {
+  const px = Number(e.last_price), lv = Number(e[`nivel${n}`]);
+  if (!px || !lv) return null;
+  return ((lv - px) / px) * 100;
+};
+// Próximo nivel de compra en tocarse al caer = el más alto que aún está por debajo del precio.
+const nextNivelKey = (e) => {
+  const px = Number(e.last_price);
+  if (!px) return null;
+  let best = null, gap = Infinity;
+  for (let n = 1; n <= 5; n++) {
+    const lv = Number(e[`nivel${n}`]);
+    if (!lv || lv > px) continue;
+    if (px - lv < gap) { gap = px - lv; best = n; }
+  }
+  return best;
+};
+
 function PnlText({ abs, pct, size = "sm" }) {
   if (abs == null) return <span className="text-neutral-300">—</span>;
   const up = abs >= 0;
@@ -735,21 +754,24 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol }) {
               </div>
             </div>
             <div className="grid grid-cols-3 gap-2">
-              {[1,2,3,4,5].map((n) => {
+              {(() => { const nextN = nextNivelKey(e); return [1,2,3,4,5].map((n) => {
                 const val = e[`nivel${n}`];
                 const alertKey = `alert_nivel${n}`;
                 const alertOn = e[alertKey] !== false;
                 if (val == null) return null;
+                const d = nivelDist(e, n);
+                const isNext = n === nextN;
                 return (
-                  <div key={n} className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-2">
+                  <div key={n} className={`bg-green-50 dark:bg-green-900/20 rounded-lg p-2 ${isNext ? "border-2 border-[#c9a14a]" : "border border-green-200 dark:border-green-800"}`}>
                     <div className="flex items-center justify-between mb-0.5">
-                      <p className="text-[9px] text-green-600 uppercase font-mono font-bold">Nivel {n}</p>
+                      <p className="text-[9px] text-green-600 uppercase font-mono font-bold">Nivel {n}{isNext ? " ◀" : ""}</p>
                       <BellToggle active={alertOn} onClick={() => updateField(e.id, alertKey, !alertOn)} />
                     </div>
                     <EditableCell value={val} onChange={(v) => updateField(e.id, `nivel${n}`, v)} className="font-mono font-bold text-green-800 dark:text-green-300 text-sm" />
+                    {d != null && <p className="text-[9px] font-mono text-neutral-400 mt-0.5">{d >= 0 ? "+" : ""}{d.toFixed(1)}%</p>}
                   </div>
                 );
-              })}
+              }); })()}
             </div>
             {saving[e.id] && <p className="text-[10px] text-neutral-400 animate-pulse">guardando…</p>}
           </div>
@@ -813,19 +835,22 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol }) {
                     <BellToggle active={e.alert_deseado !== false} onClick={() => updateField(e.id, "alert_deseado", !e.alert_deseado)} />
                   </div>
                 </td>
-                {[1,2,3,4,5].map((n) => {
+                {(() => { const nextN = nextNivelKey(e); return [1,2,3,4,5].map((n) => {
                   const val = e[`nivel${n}`];
                   const alertKey = `alert_nivel${n}`;
                   const alertOn = e[alertKey] !== false;
+                  const d = nivelDist(e, n);
+                  const isNext = n === nextN;
                   return (
-                    <td key={n} className="px-3 py-2.5 bg-green-50 dark:bg-green-900/10 border-l border-green-100 dark:border-green-900">
+                    <td key={n} className={`px-3 py-2.5 border-l border-green-100 dark:border-green-900 ${isNext ? "bg-[#c9a14a]/15" : "bg-green-50 dark:bg-green-900/10"}`}>
                       <div className="flex items-center justify-end gap-1">
                         <EditableCell value={val} onChange={(v) => updateField(e.id, `nivel${n}`, v)} className="font-mono text-sm font-semibold text-green-900 dark:text-green-300" />
                         <BellToggle active={alertOn} onClick={() => updateField(e.id, alertKey, !alertOn)} />
                       </div>
+                      {d != null && <p className={`text-[9px] font-mono text-right mt-0.5 ${isNext ? "text-[#8a6508] font-bold" : "text-neutral-400"}`}>{isNext ? "◀ " : ""}{d >= 0 ? "+" : ""}{d.toFixed(1)}%</p>}
                     </td>
                   );
-                })}
+                }); })()}
                 <td className="px-3 py-2.5 whitespace-nowrap border-l border-neutral-100 dark:border-neutral-800"><RiesgoBadge value={e.riesgo} /></td>
                 <td className="px-3 py-2.5 whitespace-nowrap max-w-[150px] truncate">
                   <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">{e.sector || "—"}</span>

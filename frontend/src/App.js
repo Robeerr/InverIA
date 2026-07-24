@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Header from "./components/Header";
+import ErrorBoundary from "./components/ErrorBoundary";
 import LoginPage from "./pages/LoginPage";
 
 const Dashboard        = React.lazy(() => import("./pages/Dashboard"));
@@ -72,6 +73,7 @@ function AppInner() {
         darkMode={darkMode}
         setDarkMode={setDarkMode}
       />
+      <ErrorBoundary>
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/" element={<Dashboard symbol={symbol} setSymbol={setSymbol} model={model} setModel={setModel} />} />
@@ -85,6 +87,7 @@ function AppInner() {
           <Route path="*" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><Dashboard symbol={symbol} setSymbol={setSymbol} model={model} setModel={setModel} /></div>} />
         </Routes>
       </Suspense>
+      </ErrorBoundary>
 
       <footer className="border-t border-[#e5e0d8] mt-12 py-6 text-center space-y-2">
         <p className="text-xs text-[#5c6b66]">
