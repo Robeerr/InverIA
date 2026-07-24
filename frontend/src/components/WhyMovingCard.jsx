@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Lightning, Sparkle, Newspaper } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
@@ -23,9 +23,15 @@ const MOVE_TYPE = {
   SIN_CATALIZADOR_CLARO: "Sin catalizador claro (movimiento técnico)",
 };
 
-export default function WhyMovingCard({ symbol, model }) {
+export default function WhyMovingCard({ symbol, model, runSignal }) {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
+
+  // Disparo externo desde el botón "Análisis completo" del Dashboard.
+  useEffect(() => {
+    if (runSignal) run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runSignal]);
 
   const run = async () => {
     if (!symbol) return;

@@ -16,7 +16,7 @@ const ACCION_COLOR = {
 
 // Chartista IA: veredicto técnico multi-timeframe con plan accionable y explicación
 // pedagógica (para que el usuario aprenda cuándo entrar y por qué).
-export default function ChartistPanel({ symbol }) {
+export default function ChartistPanel({ symbol, runSignal }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
@@ -74,6 +74,12 @@ export default function ChartistPanel({ symbol }) {
       .catch(() => {});
     return () => { ok = false; };
   }, [symbol]);
+
+  // Disparo externo desde el botón "Análisis completo" del Dashboard.
+  useEffect(() => {
+    if (runSignal) run(!!data);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runSignal]);
 
   async function run(refresh = false) {
     setLoading(true);

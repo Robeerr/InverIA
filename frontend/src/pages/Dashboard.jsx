@@ -139,6 +139,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const [marketRegime, setMarketRegime] = useState(null);
   const [dataHealth, setDataHealth] = useState(null);
   const [ctxOpen, setCtxOpen] = useState(false);  // contexto de mercado plegado en móvil
+  const [runAllTrigger, setRunAllTrigger] = useState(0);  // #3 dispara los 3 análisis a la vez
   const [news, setNews] = useState([]);
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
@@ -282,6 +283,13 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
     }
   }, [symbol, model]);
 
+  // #3 Análisis completo: dispara los 3 (Recomendación + Chartista + ¿Por qué se mueve?) de un toque.
+  const runAll = useCallback(() => {
+    if (!symbol) return;
+    runAnalysis();
+    setRunAllTrigger((t) => t + 1);
+  }, [symbol, runAnalysis]);
+
   useEffect(() => {
     loadSymbolData(symbol, timeframe);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -407,7 +415,20 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       ) : null}
 
       {quote && <DataHealthBar health={dataHealth} />}
-      {quote && <WhyMovingCard symbol={symbol} model={model} />}
+
+      {/* #3 Análisis completo IA: lanza Recomendación + Chartista + ¿Por qué se mueve? de un toque */}
+      {quote && (
+        <button
+          onClick={runAll}
+          disabled={loadingAnalysis}
+          className="w-full card-flat px-4 py-3 flex items-center justify-center gap-2 bg-[#1a3a32] text-[#f5f3ef] hover:bg-[#0e1f1a] disabled:opacity-60 transition-colors font-mono text-sm font-semibold"
+        >
+          🧠 {loadingAnalysis ? "Analizando…" : "Análisis completo IA"}
+          <span className="hidden sm:inline text-[11px] font-normal opacity-70">· Recomendación + Chartista + ¿Por qué se mueve?</span>
+        </button>
+      )}
+
+      {quote && <WhyMovingCard symbol={symbol} model={model} runSignal={runAllTrigger} />}
 
       <TradingLevels
         quote={quote}
@@ -435,7 +456,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
             setTimeframe={refreshTimeframe}
           />
           <div className="mt-4">
-            <ChartistPanel symbol={symbol} />
+            <ChartistPanel symbol={symbol} runSignal={runAllTrigger} />
           </div>
         </div>
         {/* B: columna derecha (Recomendación IA + Fuentes + Alternativa). En móvil va justo
