@@ -1,6 +1,6 @@
 import React from "react";
 import { ArrowUpRight, ArrowDownRight, Minus, Target, Shield, TrendUp, TrendDown, Crosshair, Star } from "@phosphor-icons/react";
-import { fmtPrice, fmtPct } from "../lib/format";
+import { fmtPrice } from "../lib/format";
 
 // Build the list of high-conviction price levels from the Volume Profile.
 function buildVpLevels(vp) {

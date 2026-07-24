@@ -1,5 +1,5 @@
 import React from "react";
-import { ChartLineUp, MagnifyingGlass, House, CalendarBlank, Lightning, Moon, Sun, TelegramLogo, Crosshair, List, X, Bell, SignOut, User, Brain } from "@phosphor-icons/react";
+import { ChartLineUp, MagnifyingGlass, House, CalendarBlank, Lightning, Moon, Sun, TelegramLogo, List, X, Bell, SignOut, User, Brain } from "@phosphor-icons/react";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { Link, useLocation } from "react-router-dom";

@@ -685,7 +685,8 @@ async def debug_memory(top: int = 25):
 
 
 @api_router.get("/chartist/{symbol}")
-async def chartist_verdict(symbol: str, refresh: bool = False, cached_only: bool = False):
+async def chartist_verdict(symbol: str, refresh: bool = False, cached_only: bool = False,
+                           _user: str = Depends(auth.get_current_user)):
     """Veredicto del Chartista IA: análisis multi-timeframe (geometría real + Gemini +
     cerebro) con plan accionable y explicación pedagógica. Cacheado 30 min.
     cached_only=true: devuelve el veredicto SOLO si ya está pre-calculado (no consume IA);
@@ -915,7 +916,7 @@ def _enforce_rr(result: dict, price, atr=None) -> dict:
 
 # ---------- AI Analysis ----------
 @api_router.post("/analyze")
-async def analyze(req: AnalyzeRequest):
+async def analyze(req: AnalyzeRequest, _user: str = Depends(auth.get_current_user)):
     symbol = req.symbol.upper()
     loop = asyncio.get_running_loop()
 
@@ -1082,7 +1083,8 @@ async def analyze(req: AnalyzeRequest):
 
 # ---------- "¿Por qué se mueve hoy?" ----------
 @api_router.get("/why-moving/{symbol}")
-async def why_moving(symbol: str, model: Optional[str] = None):
+async def why_moving(symbol: str, model: Optional[str] = None,
+                     _user: str = Depends(auth.get_current_user)):
     """Explicación breve y barata de por qué la acción se mueve hoy: conecta el
     cambio del día con los titulares recientes mediante IA. Cacheado 10 min."""
     sym = symbol.upper()
