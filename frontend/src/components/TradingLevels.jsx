@@ -1,6 +1,7 @@
 import React from "react";
 import { ArrowUpRight, ArrowDownRight, Minus, Target, Shield, TrendUp, TrendDown, Crosshair, Star } from "@phosphor-icons/react";
 import { fmtPrice } from "../lib/format";
+import InfoDot from "./InfoDot";
 
 // Build the list of high-conviction price levels from the Volume Profile.
 function buildVpLevels(vp) {
@@ -57,6 +58,7 @@ function SmartBuyLevels({ levels, current }) {
         <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#4a7c59]">
           Niveles de compra por confluencia · calculados sobre estructura real
         </p>
+        <InfoDot term="Confluencia" />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {levels.map((z, i) => {
@@ -69,7 +71,10 @@ function SmartBuyLevels({ levels, current }) {
                 <div className="flex items-baseline gap-2">
                   <span className="font-mono text-[10px] font-semibold text-[#1a3a32] uppercase tracking-wider">{z.label}</span>
                   {z.tactical && (
-                    <span title="Entrada táctica: rellena un hueco grande entre niveles fuertes. Tamaño de posición menor — sirve para suavizar la entrada, no es un soporte estructural de roca." className="inline-flex items-center bg-[#b8860b]/15 text-[#8a6508] rounded px-1.5 py-0.5 text-[9px] font-mono font-semibold uppercase tracking-wider">Táctico</span>
+                    <span className="inline-flex items-center gap-0.5">
+                      <span className="inline-flex items-center bg-[#b8860b]/15 text-[#8a6508] rounded px-1.5 py-0.5 text-[9px] font-mono font-semibold uppercase tracking-wider">Táctico</span>
+                      <InfoDot term="Tactico" />
+                    </span>
                   )}
                   <span className="font-mono font-bold text-lg text-[#0e1f1a]">${fmtPrice(z.price)}</span>
                   {z.zone_low != null && z.zone_high != null && z.zone_low !== z.zone_high && (
@@ -226,14 +231,14 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
           <div className="flex flex-wrap gap-x-6 gap-y-1">
             {volumeProfile.poc != null && (
               <div className="flex items-baseline gap-1.5">
-                <span className="text-[10px] uppercase tracking-wider text-[#5c6b66]">POC</span>
+                <span className="text-[10px] uppercase tracking-wider text-[#5c6b66] inline-flex items-center gap-1">POC <InfoDot term="POC" /></span>
                 <span className="font-mono text-sm font-semibold text-[#8a6508]">${fmtPrice(volumeProfile.poc)}</span>
                 <span className="text-[9px] text-[#5c6b66]">(más negociado)</span>
               </div>
             )}
             {volumeProfile.vah != null && (
               <div className="flex items-baseline gap-1.5">
-                <span className="text-[10px] uppercase tracking-wider text-[#5c6b66]">VAH</span>
+                <span className="text-[10px] uppercase tracking-wider text-[#5c6b66] inline-flex items-center gap-1">VAH <InfoDot term="VAH" /></span>
                 <span className="font-mono text-sm font-semibold text-[#0e1f1a]">${fmtPrice(volumeProfile.vah)}</span>
                 {current && Math.abs((volumeProfile.vah - current) / current) > 0.15 && (
                   <span className="text-[9px] text-[#5c6b66]" title="Volumen acumulado hace meses, lejos del precio actual — contexto, no nivel accionable a corto plazo.">(histórico)</span>
@@ -242,7 +247,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
             )}
             {volumeProfile.val != null && (
               <div className="flex items-baseline gap-1.5">
-                <span className="text-[10px] uppercase tracking-wider text-[#5c6b66]">VAL</span>
+                <span className="text-[10px] uppercase tracking-wider text-[#5c6b66] inline-flex items-center gap-1">VAL <InfoDot term="VAL" /></span>
                 <span className="font-mono text-sm font-semibold text-[#0e1f1a]">${fmtPrice(volumeProfile.val)}</span>
                 {current && Math.abs((volumeProfile.val - current) / current) > 0.15 && (
                   <span className="text-[9px] text-[#5c6b66]" title="Volumen acumulado hace meses, lejos del precio actual — contexto, no nivel accionable a corto plazo.">(histórico)</span>

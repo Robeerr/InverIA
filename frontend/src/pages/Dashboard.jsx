@@ -138,6 +138,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const [chartLines, setChartLines] = useState(null);
   const [marketRegime, setMarketRegime] = useState(null);
   const [dataHealth, setDataHealth] = useState(null);
+  const [ctxOpen, setCtxOpen] = useState(false);  // contexto de mercado plegado en móvil
   const [news, setNews] = useState([]);
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
@@ -374,10 +375,30 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       <main data-testid="main-dashboard" className="flex-1 min-w-0 space-y-4 sm:space-y-6">
       {/* Móvil: watchlist como tira horizontal arriba. */}
       <WatchlistStrip symbol={symbol} setSymbol={setSymbol} className="lg:hidden" />
-      <MarketFuturesBar futures={futures} />
-      <MarketRegimeBar regime={marketRegime} />
-      <FearGreedBar data={sentiment} />
-      <SectorHeatmap data={heatmap} onPick={setSymbol} />
+
+      {/* Contexto de mercado — plegable en MÓVIL para llegar antes a la acción buscada.
+          En escritorio siempre visible. El botón muestra un resumen compacto (semáforo +
+          miedo/codicia) aunque esté plegado. */}
+      <button
+        onClick={() => setCtxOpen((o) => !o)}
+        className="lg:hidden card-flat px-4 py-2.5 flex items-center gap-2 w-full text-left"
+      >
+        <span className="text-[10px] uppercase tracking-[0.2em] text-[#5c6b66] font-mono">Mercado hoy</span>
+        {marketRegime?.light && marketRegime.light !== "desconocido" && (
+          <span className="w-2 h-2 rounded-full" style={{ background: marketRegime.light === "rojo" ? "#d85c41" : marketRegime.light === "amarillo" ? "#c9a14a" : "#4a7c59" }} />
+        )}
+        {sentiment?.score != null && (
+          <span className="text-[11px] font-mono text-[#5c6b66]">M/C {sentiment.score}</span>
+        )}
+        <span className="ml-auto text-[11px] text-[#5c6b66]">{ctxOpen ? "ocultar ▲" : "ver ▼"}</span>
+      </button>
+
+      <div className={`${ctxOpen ? "block" : "hidden"} lg:block space-y-4 sm:space-y-6`}>
+        <MarketFuturesBar futures={futures} />
+        <MarketRegimeBar regime={marketRegime} />
+        <FearGreedBar data={sentiment} />
+        <SectorHeatmap data={heatmap} onPick={setSymbol} />
+      </div>
 
       {loadingQuote && !quote ? (
         <div className="card-flat p-8 text-center text-[#5c6b66]">Cargando datos...</div>

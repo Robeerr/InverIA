@@ -16,6 +16,11 @@ export const GLOSARIO = {
   ADX: "Mide la FUERZA de la tendencia (no la dirección). Por encima de 25 = tendencia fuerte y fiable; por debajo de 20 = mercado sin rumbo (rango), donde las señales de tendencia fallan más.",
   OBV: "Suma el volumen según el precio suba o baje. Si el OBV sube aunque el precio no, sugiere que el dinero fuerte está acumulando (comprando) por debajo.",
   ATR: "La volatilidad real diaria de la acción. Se usa para poner el stop a una distancia sensata (ej. 1,5×ATR): ni tan cerca que te salte el ruido, ni tan lejos que arriesgues de más.",
+  Confluencia: "Un nivel es más fiable cuantos MÁS métodos independientes coinciden en él (volumen real, Fibonacci, soportes históricos, medias, pivotes). La 'fuerza 0-100' mide justo eso: 100 = varios métodos apuntan al mismo precio.",
+  POC: "Point of Control: el precio donde MÁS se ha negociado en el periodo (el pico del Volume Profile). Suele actuar como imán y como soporte/resistencia fuerte.",
+  VAH: "Value Area High: el techo de la zona donde se concentró el 70% del volumen. Por encima, el precio está 'caro' respecto a lo negociado.",
+  VAL: "Value Area Low: el suelo de la zona donde se concentró el 70% del volumen. Por debajo, el precio está 'barato' — suele ser buena zona de compra.",
+  Tactico: "Entrada TÁCTICA: rellena un hueco grande entre dos niveles fuertes. No es un soporte estructural de roca, así que se usa con tamaño de posición menor, solo para suavizar la entrada.",
 };
 
 // Punto de interrogación que muestra una explicación al TOCARLO (funciona en móvil, sin hover).
