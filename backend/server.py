@@ -1622,6 +1622,45 @@ async def market_sentiment_endpoint():
     return await asyncio.to_thread(market_regime.get_fear_greed)
 
 
+@api_router.get("/search")
+async def search_symbols(q: str = "", _user: str = Depends(auth.get_current_user)):
+    """Autocompletado del buscador: busca acciones por NOMBRE o ticker (Finnhub search),
+    para no tener que memorizar el ticker exacto. Devuelve [{symbol, name}]. Cacheado 1h."""
+    q = (q or "").strip()
+    if len(q) < 1:
+        return []
+    ck = f"search:{q.lower()}"
+    cached = _cache.get(ck)
+    if cached is not None:
+        return cached
+    key = os.environ.get("FINNHUB_API_KEY")
+    if not key:
+        return []
+    try:
+        r = await asyncio.to_thread(
+            lambda: market_data.get_http_session().get(
+                "https://finnhub.io/api/v1/search",
+                params={"q": q, "token": key}, timeout=6,
+            )
+        )
+        data = r.json() if r.status_code == 200 else {}
+    except Exception:
+        data = {}
+    out, seen = [], set()
+    for it in (data.get("result") or []):
+        sym = (it.get("symbol") or "").upper()
+        desc = it.get("description") or ""
+        # Solo acciones "limpias": sin sufijos raros (.PA, :HK...) y con nombre. Prioriza US.
+        if not sym or not desc or "." in sym or ":" in sym or sym in seen:
+            continue
+        seen.add(sym)
+        out.append({"symbol": sym, "name": desc.title()})
+        if len(out) >= 8:
+            break
+    _cache.set(ck, out, ttl=3600)
+    return out
+
+
 # 11 ETFs sectoriales SPDR: representan el rendimiento de cada sector del S&P 500.
 _SECTOR_ETFS = [
     ("XLK", "Tecnología"), ("XLC", "Comunicaciones"), ("XLY", "Consumo discr."),

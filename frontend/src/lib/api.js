@@ -66,6 +66,7 @@ export const api = {
   marketFutures: () => client.get(`/market/futures`).then((r) => r.data),
   marketSentiment: () => client.get(`/market/sentiment`).then((r) => r.data),
   marketHeatmap: () => client.get(`/market/heatmap`).then((r) => r.data),
+  search: (q) => client.get(`/search`, { params: { q }, timeout: 8000 }).then((r) => r.data),
   radar: (days = 14) => client.get(`/radar`, { params: { days } }).then((r) => r.data),
   brain: () => client.get(`/brain`).then((r) => r.data),
   fuentes: (symbol) => client.get(`/fuentes/${symbol}`).then((r) => r.data),

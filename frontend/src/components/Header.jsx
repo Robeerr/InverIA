@@ -23,7 +23,37 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
   const [query, setQuery] = React.useState(symbol || "");
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [backendOk, setBackendOk] = React.useState(null); // null=checking, true=ok, false=down
+  const [suggestions, setSuggestions] = React.useState([]);
+  const [showSug, setShowSug] = React.useState(false);
+  const searchRef = React.useRef(null);
   const location = useLocation();
+
+  // #4 Autocompletado: busca por nombre o ticker (debounce 250ms) para no memorizar el ticker.
+  React.useEffect(() => {
+    const q = (query || "").trim();
+    if (q.length < 1 || q === (symbol || "")) { setSuggestions([]); return; }
+    let alive = true;
+    const id = setTimeout(() => {
+      api.search(q).then((r) => { if (alive) { setSuggestions(Array.isArray(r) ? r : []); setShowSug(true); } }).catch(() => {});
+    }, 250);
+    return () => { alive = false; clearTimeout(id); };
+  }, [query, symbol]);
+
+  // Cierra el desplegable al tocar fuera.
+  React.useEffect(() => {
+    const onDoc = (e) => { if (searchRef.current && !searchRef.current.contains(e.target)) setShowSug(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("touchstart", onDoc);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("touchstart", onDoc); };
+  }, []);
+
+  const pick = (sym) => {
+    setSymbol(sym);
+    onSearch(sym);
+    setQuery(sym);
+    setShowSug(false);
+    setSuggestions([]);
+  };
 
   // Status check cada 2 min (el indicador Online/Offline no necesita más frecuencia)
   React.useEffect(() => {
@@ -105,18 +135,37 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
           })}
         </nav>
 
-        {/* Search */}
+        {/* Search + autocompletado */}
         {showSearch && (
-          <form onSubmit={submit} className="flex-1 relative min-w-0">
-            <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5c6b66]" />
-            <Input
-              data-testid="stock-search-input"
-              value={query}
-              onChange={(e) => setQuery(e.target.value.toUpperCase())}
-              placeholder="Ticker (ej: AAPL)"
-              className="pl-9 h-10 bg-white border-[#e5e0d8] font-mono text-sm placeholder:text-[#5c6b66] focus-visible:ring-[#1a3a32]"
-            />
-          </form>
+          <div ref={searchRef} className="flex-1 relative min-w-0">
+            <form onSubmit={submit} className="relative">
+              <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5c6b66]" />
+              <Input
+                data-testid="stock-search-input"
+                value={query}
+                onChange={(e) => setQuery(e.target.value.toUpperCase())}
+                onFocus={() => { if (suggestions.length) setShowSug(true); }}
+                placeholder="Ticker o nombre (ej: AAPL o Apple)"
+                className="pl-9 h-10 bg-white border-[#e5e0d8] font-mono text-sm placeholder:text-[#5c6b66] focus-visible:ring-[#1a3a32]"
+                autoComplete="off"
+              />
+            </form>
+            {showSug && suggestions.length > 0 && (
+              <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-[#e5e0d8] rounded-md shadow-lg overflow-hidden max-h-72 overflow-y-auto">
+                {suggestions.map((s) => (
+                  <button
+                    key={s.symbol}
+                    type="button"
+                    onClick={() => pick(s.symbol)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-[#f5f3ef] transition-colors"
+                  >
+                    <span className="font-mono font-bold text-sm text-[#1a3a32] shrink-0 w-16">{s.symbol}</span>
+                    <span className="text-xs text-[#5c6b66] truncate">{s.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Actions */}
