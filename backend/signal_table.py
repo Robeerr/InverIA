@@ -34,7 +34,9 @@ def _now() -> str:
 ALLOWED_CREATE = (
     "symbol", "name", "mercado", "grupo",
     "deseado", "nivel1", "nivel2", "nivel3", "nivel4", "nivel5",
+    "venta1", "venta2", "venta3",  # objetivos de venta escalonada
     "alert_deseado", "alert_nivel1", "alert_nivel2", "alert_nivel3", "alert_nivel4", "alert_nivel5",
+    "alert_venta1", "alert_venta2", "alert_venta3",
     "riesgo", "sector", "posibles_ganancias", "notes", "active",
     "divisa", "bz", "objetivo_5a",
     "compra", "acciones",  # posición real (precio medio de compra y nº de acciones) para el P&L
@@ -43,7 +45,9 @@ ALLOWED_CREATE = (
 ALLOWED_UPDATE = (
     "name", "mercado", "grupo",
     "deseado", "nivel1", "nivel2", "nivel3", "nivel4", "nivel5",
+    "venta1", "venta2", "venta3",  # objetivos de venta escalonada
     "alert_deseado", "alert_nivel1", "alert_nivel2", "alert_nivel3", "alert_nivel4", "alert_nivel5",
+    "alert_venta1", "alert_venta2", "alert_venta3",
     "riesgo", "sector", "posibles_ganancias", "notes", "active",
     "divisa", "bz", "objetivo_5a",
     "compra", "acciones",
@@ -61,12 +65,18 @@ def _make_entry(
     nivel3: Optional[float] = None,
     nivel4: Optional[float] = None,
     nivel5: Optional[float] = None,
+    venta1: Optional[float] = None,
+    venta2: Optional[float] = None,
+    venta3: Optional[float] = None,
     alert_deseado: bool = True,
     alert_nivel1: bool = True,
     alert_nivel2: bool = True,
     alert_nivel3: bool = True,
     alert_nivel4: bool = True,
     alert_nivel5: bool = True,
+    alert_venta1: bool = True,
+    alert_venta2: bool = True,
+    alert_venta3: bool = True,
     riesgo: str = "",
     sector: str = "",
     posibles_ganancias: Optional[float] = None,
@@ -90,12 +100,18 @@ def _make_entry(
         "nivel3": nivel3,
         "nivel4": nivel4,
         "nivel5": nivel5,
+        "venta1": venta1,
+        "venta2": venta2,
+        "venta3": venta3,
         "alert_deseado": alert_deseado,
         "alert_nivel1": alert_nivel1,
         "alert_nivel2": alert_nivel2,
         "alert_nivel3": alert_nivel3,
         "alert_nivel4": alert_nivel4,
         "alert_nivel5": alert_nivel5,
+        "alert_venta1": alert_venta1,
+        "alert_venta2": alert_venta2,
+        "alert_venta3": alert_venta3,
         "riesgo": (riesgo or "").strip().upper(),
         "sector": (sector or "").strip(),
         "posibles_ganancias": posibles_ganancias,
@@ -121,7 +137,8 @@ async def list_entries(db) -> list:
 async def create_entry(db, data: dict) -> dict:
     clean = {k: v for k, v in data.items() if k in ALLOWED_CREATE and v is not None}
     # bools default to True even if not sent
-    for toggle in ("alert_deseado", "alert_nivel1", "alert_nivel2", "alert_nivel3", "alert_nivel4", "alert_nivel5"):
+    for toggle in ("alert_deseado", "alert_nivel1", "alert_nivel2", "alert_nivel3", "alert_nivel4", "alert_nivel5",
+                   "alert_venta1", "alert_venta2", "alert_venta3"):
         clean.setdefault(toggle, True)
     clean.setdefault("active", True)
     entry = _make_entry(**clean)
@@ -161,7 +178,8 @@ async def bulk_upsert(db, rows: list) -> dict:
             # las campanas (una campana apagada = ese nivel YA lo compró) ni el flag
             # activo/inactivo de la fila. El Excel solo aporta precios/niveles, no ese estado.
             for protected in ("alert_deseado", "alert_nivel1", "alert_nivel2",
-                              "alert_nivel3", "alert_nivel4", "alert_nivel5", "active"):
+                              "alert_nivel3", "alert_nivel4", "alert_nivel5",
+                              "alert_venta1", "alert_venta2", "alert_venta3", "active"):
                 fields.pop(protected, None)
             fields["updated_at"] = _now()
             await db.signal_entries.update_one({"symbol": symbol}, {"$set": fields})
@@ -362,9 +380,12 @@ async def signal_worker_loop(db, interval: int = 10):
                         "nivel4": entry.get("nivel4"),
                         "nivel5": entry.get("nivel5"),
                     }
-                    # Nivel deseado/venta
+                    # Nivel deseado + objetivos de venta ESCALONADA (venta1-3)
                     sell_levels = {
                         "deseado": entry.get("deseado"),
+                        "venta1": entry.get("venta1"),
+                        "venta2": entry.get("venta2"),
+                        "venta3": entry.get("venta3"),
                     }
 
                     for level_key, target in buy_levels.items():
@@ -412,8 +433,9 @@ async def signal_worker_loop(db, interval: int = 10):
                         await _set_cooldown(db, cd_key)
                         diff_pct = round(((price - target) / target) * 100, 2)
                         approaching = price < target
+                        sell_label = "Deseado/Venta" if level_key == "deseado" else level_key.replace("venta", "Venta ")
                         await _fire_alert(
-                            entry, symbol, "Deseado/Venta", target, price, diff_pct, "VENTA",
+                            entry, symbol, sell_label, target, price, diff_pct, "VENTA",
                             db=db, approaching=approaching,
                         )
 
