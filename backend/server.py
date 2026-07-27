@@ -1019,6 +1019,12 @@ def _enforce_rr(result: dict, price, atr=None) -> dict:
 # si divergen, la IA narra un ratio que los números no cumplen.
 MIN_RR = 2.0
 
+# Profundidad máxima del plan de compra: ninguna zona de entrada puede estar más de un 30%
+# por debajo del precio actual. Es el límite que ya pedía SYSTEM_PROMPT para el NIVEL 3
+# ("de -15% a -30%") y que el motor no aplicaba. Marca dónde acaba el stop, porque el stop
+# va por debajo de la zona más profunda del plan.
+MAX_PLAN_DEPTH = float(os.environ.get("MAX_PLAN_DEPTH", "0.30"))
+
 
 def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_target) -> dict:
     """#6 — Calcula el conjunto COMPLETO de niveles de forma DETERMINISTA, con etiquetas que
@@ -1051,19 +1057,43 @@ def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_targe
     ceiling = round(high_52w * 1.15, 2)
 
     # ── ENTRADAS: del motor de confluencia (top 3) ──
-    ez = []
-    for z in buy_levels[:3]:
+    # Suelo del PLAN: una zona más profunda que esto no forma parte del plan operativo.
+    # Sin este filtro se cogían los 3 primeros niveles de confluencia sin mirar a qué
+    # profundidad estaban. En MRVL salían a -3,8%, -13,1% y -46,5%: al meter el tercero en el
+    # plan, el stop (que va por debajo de TODAS las entradas) acababa en -58%, que no es un
+    # stop, es perder media posición. El propio SYSTEM_PROMPT ya pedía que el NIVEL 3 fuera
+    # de -15% a -30%; el motor lo ignoraba.
+    # Los soportes profundos NO se pierden: siguen saliendo en key_levels/"Soportes (compra)".
+    suelo = price * (1 - MAX_PLAN_DEPTH)
+    def _zona(z, n):
         p = _f(z.get("price"))
         if p is None:
-            continue
+            return None
         lo = _f(z.get("zone_low")) or p
         hi = _f(z.get("zone_high")) or p
         motivo = " + ".join((z.get("reasons") or [])[:3]) or (z.get("label") or "confluencia")
-        ez.append({"label": z.get("label") or f"NIVEL {len(ez) + 1}",
-                   "min": round(min(lo, hi), 2), "max": round(max(lo, hi), 2),
-                   "comment": f"Fuerza {z.get('strength')}/100 · {motivo}"})
+        return {"label": z.get("label") or f"NIVEL {n}",
+                "min": round(min(lo, hi), 2), "max": round(max(lo, hi), 2),
+                "comment": f"Fuerza {z.get('strength')}/100 · {motivo}"}
+
+    ez = []
+    for z in buy_levels[:6]:
+        if len(ez) >= 3:
+            break
+        p = _f(z.get("price"))
+        if p is None or p < suelo:
+            continue
+        zona = _zona(z, len(ez) + 1)
+        if zona:
+            ez.append(zona)
     if not ez:
-        return None
+        # Ninguna zona dentro del suelo: la acción ha subido tanto que no hay soporte cercano.
+        # Nos quedamos con la MENOS profunda para seguir dando un plan (y un stop coherente)
+        # en vez de caer al flujo clásico, donde los números los inventa la IA.
+        primera = next((_zona(z, 1) for z in buy_levels if _f(z.get("price")) is not None), None)
+        if not primera:
+            return None
+        ez = [primera]
     entry_hi = ez[0]["max"]
     entry_lo = ez[0]["min"]
     # Precio medio REALISTA de una compra escalonada (el usuario reparte entre las 3 zonas):
