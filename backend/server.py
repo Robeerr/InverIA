@@ -995,6 +995,11 @@ def _enforce_rr(result: dict, price, atr=None) -> dict:
     return result
 
 
+# R/R mínimo exigible a TP1. Debe coincidir con el que pide SYSTEM_PROMPT en ai_analysis.py:
+# si divergen, la IA narra un ratio que los números no cumplen.
+MIN_RR = 2.0
+
+
 def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_target) -> dict:
     """#6 — Calcula el conjunto COMPLETO de niveles de forma DETERMINISTA, con etiquetas que
     CUADRAN con el número (el número ES lo que la etiqueta promete). Mata el desajuste
@@ -1003,7 +1008,8 @@ def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_targe
     confluencia (entonces se usa el flujo clásico con guardianes).
 
     - entradas: del motor de confluencia (levels_engine, ya rankeado por fuerza)
-    - stops: 1.5/2/3×ATR reales bajo la entrada (monótonos)
+    - stops: ATR reales bajo el soporte MÁS PROFUNDO del plan (monótonos), uno para la posición
+      completa — así el stop nunca queda por encima de los niveles 2 y 3
     - objetivos: resistencia cercana + extensiones Fibonacci + objetivo de analistas (cap 15% s/ máx 52s)
     """
     ind = indicators or {}
@@ -1082,14 +1088,18 @@ def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_targe
     def _cap(x):
         return min(x, ceiling) if x else x
 
-    # TP1 debe dar R/R >= 1.5 sobre el stop DEFINITIVO y la entrada media realista.
+    # TP1 debe dar R/R >= MIN_RR sobre el stop DEFINITIVO y la entrada media realista.
+    # 2:1 (no 1,5) porque es el mínimo profesional y porque la matemática lo exige: el umbral
+    # de rentabilidad es 1/(1+R), así que 1,5:1 necesita un 40% de aciertos y los swing traders
+    # rondan el 40-50% — es decir, 1,5 te deja justo en la línea de no ganar nada antes de
+    # comisiones. A 2:1 basta con un 33%.
     risk = entry_ref - stop_scalar
-    min_tp1 = entry_ref + 1.5 * risk if risk > 0 else price * 1.04
+    min_tp1 = entry_ref + MIN_RR * risk if risk > 0 else price * 1.04
     # Cada candidato lleva SU etiqueta pegada desde el origen (antes se asignaban por índice
     # sobre una lista deduplicada, así que al colapsar valores las etiquetas mentían).
     cands = []
     t1 = next((r for r in res_up if r >= min_tp1), None)
-    cands.append((t1, "TP1 — Resistencia con R/R ≥ 1.5") if t1 else (round(min_tp1, 2), "TP1 — Objetivo por R/R ≥ 1.5"))
+    cands.append((t1, f"TP1 — Resistencia con R/R ≥ {MIN_RR:g}") if t1 else (round(min_tp1, 2), f"TP1 — Objetivo por R/R ≥ {MIN_RR:g}"))
     if fib127:
         cands.append((fib127, "TP2 — Extensión Fibonacci 127,2%"))
     t2r = next((r for r in res_up if r > (t1 or min_tp1) * 1.02), None)
@@ -1122,7 +1132,7 @@ def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_targe
     rr = round((tp1s - entry_ref) / risk, 1) if risk > 0 else None
     # Aviso honesto si ni así se alcanza un R/R sano (antes lo garantizaba _enforce_rr, que
     # en esta rama ya no se ejecuta).
-    rr_low = bool(rr is not None and rr < 1.5)
+    rr_low = bool(rr is not None and rr < MIN_RR)
 
     # ── key_levels ──
     supports = sorted({e["min"] for e in ez} |

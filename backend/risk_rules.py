@@ -5,7 +5,13 @@ para ganar ~4.6% en TP1 → R/R 0.61). Estas reglas garantizan un R/R sano ciñe
 el stop, sin depender de que el modelo cumpla el prompt.
 """
 
-RR_MIN = 1.5  # relación riesgo/recompensa mínima exigida en TP1
+# Relación riesgo/recompensa mínima exigida en TP1. 2.0, no 1.5: el umbral de rentabilidad es
+# 1/(1+R), así que 1,5:1 exige un 40% de aciertos y los swing traders rondan el 40-50% — queda
+# justo en la línea de no ganar nada antes de comisiones. A 2:1 basta un 33%.
+# Debe coincidir con server.MIN_RR y con el mínimo que pide SYSTEM_PROMPT.
+# Ceñir el stop para cumplirlo es seguro aquí SOLO porque _enforce_rr aplica después un clamp
+# de distancia mínima (>=1×ATR o 2%) que siempre gana: nunca se produce un stop de ruido.
+RR_MIN = 2.0
 
 
 def min_rr_stop(entry, tp1, stop, rr_min: float = RR_MIN):

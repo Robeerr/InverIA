@@ -267,7 +267,14 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
             icon={<Target size={14} weight="bold" />}
             label="Zona Entrada"
             primary={`$${fmtPrice(analysis.entry_zone.min)} - $${fmtPrice(analysis.entry_zone.max)}`}
-            sub={distEntry != null ? `${distEntry >= 0 ? "+" : ""}${distEntry.toFixed(2)}% desde actual` : null}
+            sub={
+              // entry_avg es el precio medio si repartes la compra entre las 3 zonas, y es la
+              // base real del R/R que se muestra abajo. Sin enseñarlo, el ratio salía de un
+              // número que el usuario no veía por ninguna parte.
+              analysis.entry_avg != null
+                ? `Medio escalonando: $${fmtPrice(analysis.entry_avg)}`
+                : distEntry != null ? `${distEntry >= 0 ? "+" : ""}${distEntry.toFixed(2)}% desde actual` : null
+            }
             tone="neutral"
           />
         )}
@@ -302,6 +309,40 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
           />
         )}
       </div>
+      )}
+
+      {/* Riesgo/recompensa y su base. El motor calcula rr_bajo cuando TP1 no llega al mínimo
+          profesional (2:1); antes se calculaba y no lo leía nadie, así que el aviso honesto
+          "este plan no compensa" se tiraba a la basura. */}
+      {analysis?.risk_reward_ratio != null && (
+        <div
+          data-testid="level-rr"
+          className={`mt-3 px-4 py-2.5 rounded-lg flex items-start gap-2.5 flex-wrap ${
+            analysis.rr_bajo
+              ? "border border-[#c9a14a]/40 bg-[#c9a14a]/[0.07]"
+              : "bg-[#4a7c59]/[0.07]"
+          }`}
+        >
+          <span className="text-sm leading-none mt-0.5">{analysis.rr_bajo ? "⚠️" : "✅"}</span>
+          <div className="flex-1 min-w-[200px]">
+            <span className="text-[11px] uppercase tracking-[0.18em] text-[#5c6b66] font-mono">
+              Riesgo / Recompensa
+            </span>
+            <p className="text-[12px] leading-snug mt-0.5 text-[#3a4a44]">
+              <b className="font-mono text-sm">{analysis.risk_reward_ratio}:1</b>
+              {analysis.entry_avg != null && (
+                <> · calculado sobre la entrada media de <b className="font-mono">${fmtPrice(analysis.entry_avg)}</b></>
+              )}
+              {analysis.rr_bajo ? (
+                <> — <b>por debajo del mínimo de 2:1</b>. Arriesgas casi tanto como puedes ganar:
+                  necesitarías acertar más del 40% de las veces solo para no perder dinero.
+                  Plantéate esperar a un precio mejor en vez de estrechar el stop.</>
+              ) : (
+                <> — cumple el mínimo profesional de 2:1.</>
+              )}
+            </p>
+          </div>
+        </div>
       )}
 
       {/* Multi-level lists: 3 entries, 3 SL, 3 TP */}
