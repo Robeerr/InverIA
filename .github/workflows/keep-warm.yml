@@ -36,7 +36,15 @@ jobs:
           BACKEND_URL: ${{ vars.BACKEND_URL || secrets.BACKEND_URL }}
         run: |
           if [ -z "$BACKEND_URL" ]; then
-            echo "::warning::BACKEND_URL no está definida — el ping no hace nada. Créala en Settings → Secrets and variables → Actions → Variables."
+            msg="BACKEND_URL llega vacía. Créala en Settings → Secrets and variables → Actions → pestaña Variables (a nivel de REPOSITORIO, no dentro de un Environment: las de un Environment solo se ven si el job declara 'environment:')."
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              # Lanzamiento MANUAL: fallar. Si sale en verde sin hacer nada, uno se cree que
+              # el ping funciona cuando no está funcionando.
+              echo "::error::$msg"
+              exit 1
+            fi
+            # Ejecución programada: solo avisar, para no mandar un correo de fallo cada 10 min.
+            echo "::warning::$msg"
             exit 0
           fi
           URL="${BACKEND_URL%/}/api/health"
