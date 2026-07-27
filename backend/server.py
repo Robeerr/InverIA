@@ -1,6 +1,7 @@
 """FastAPI server for the InverIA stock analysis app."""
 import math
 import json
+import re
 from fastapi import FastAPI, APIRouter, HTTPException, Request, UploadFile, File, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.middleware.gzip import GZipMiddleware
@@ -3259,10 +3260,22 @@ _origins_list = [o.strip().rstrip("/") for o in _cors_origins.split(",") if o.st
 _allow_all = "*" in _origins_list
 
 # El regex de Vercel es lo que mantiene viva la web desplegada cuando no se define
-# CORS_ORIGINS. Por defecto sigue siendo el de siempre para no tumbar el despliegue, pero
-# ahora se puede acotar al proyecto concreto con CORS_ORIGIN_REGEX, que es lo recomendable:
-# el patrón por defecto acepta CUALQUIER dominio *.vercel.app, incluido el de un tercero.
-_cors_regex = os.environ.get("CORS_ORIGIN_REGEX", r"https://.*\.vercel\.app")
+# CORS_ORIGINS. El patrón por defecto acepta CUALQUIER dominio *.vercel.app, incluido el de
+# un tercero, así que conviene acotarlo. Tres formas, de más cómoda a más manual:
+#
+#   1. CORS_VERCEL_PROJECT=inveria   → construye el patrón correcto por ti. Cubre el dominio
+#      de producción (inveria.vercel.app) y los de preview, que Vercel genera como
+#      inveria-<hash>-<scope>.vercel.app y inveria-git-<rama>-<scope>.vercel.app.
+#   2. CORS_ORIGIN_REGEX=...         → si necesitas un patrón a medida.
+#   3. CORS_ORIGINS=https://...      → la más estricta: solo las URLs exactas que listes.
+#      Si la defines y no usas despliegues de preview, puedes olvidarte del regex.
+_vercel_project = os.environ.get("CORS_VERCEL_PROJECT", "").strip()
+if _vercel_project:
+    # El sufijo opcional cubre preview y rama; el proyecto queda anclado al principio.
+    _default_regex = rf"https://{re.escape(_vercel_project)}(-[a-z0-9-]+)?\.vercel\.app"
+else:
+    _default_regex = r"https://.*\.vercel\.app"
+_cors_regex = os.environ.get("CORS_ORIGIN_REGEX", _default_regex)
 
 if _allow_all:
     logger.warning(
@@ -3274,6 +3287,12 @@ elif not _origins_list:
         "CORS_ORIGINS no definido: solo se permiten %s y el patrón %s. Si tu frontend está "
         "en otro dominio, defínelo en CORS_ORIGINS o te dará error de CORS.",
         ", ".join(_DEV_ORIGINS), _cors_regex,
+    )
+
+if _cors_regex == r"https://.*\.vercel\.app":
+    logger.warning(
+        "CORS: el patrón acepta CUALQUIER dominio *.vercel.app, incluido el de un tercero. "
+        "Acótalo con CORS_VERCEL_PROJECT=<nombre-de-tu-proyecto> (o CORS_ORIGIN_REGEX)."
     )
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
