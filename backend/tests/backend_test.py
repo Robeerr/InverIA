@@ -1,10 +1,27 @@
-"""Backend tests for InverIA stock analysis app."""
+"""Tests de INTEGRACIÓN de InverIA: hablan con un servidor de verdad por HTTP.
+
+No se ejecutan salvo que definas INVERIA_TEST_URL con la URL del backend a probar. Antes
+apuntaban por defecto a una URL de preview que ya no existe, así que al lanzar `pytest tests/`
+fallaban en bloque por timeout y acababan ignorándose. Los tests unitarios (el resto del
+directorio) no necesitan servidor y corren siempre.
+
+    INVERIA_TEST_URL=https://tu-backend.onrender.com pytest tests/backend_test.py
+    # y para los que exigen credencial:
+    TEST_USERNAME=... TEST_PASSWORD=... INVERIA_TEST_URL=... pytest tests/backend_test.py
+"""
 import os
 import time
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://market-insights-294.preview.emergentagent.com").rstrip("/")
+BASE_URL = (os.environ.get("INVERIA_TEST_URL")
+            or os.environ.get("REACT_APP_BACKEND_URL") or "").rstrip("/")
+
+pytestmark = pytest.mark.skipif(
+    not BASE_URL,
+    reason="Define INVERIA_TEST_URL para lanzar los tests de integración contra un servidor",
+)
+
 API = f"{BASE_URL}/api"
 
 

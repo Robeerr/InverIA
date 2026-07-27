@@ -8,6 +8,7 @@ y toggles individuales por nivel para activar/desactivar alertas.
 
 import asyncio
 import logging
+import os
 import uuid
 from datetime import datetime, timezone, time
 from time import perf_counter
@@ -257,13 +258,22 @@ async def _volume_ratio(symbol: str):
         return None
 
 
-async def signal_worker_loop(db, interval: int = 10):
-    """Background: comprueba precios vs niveles activos lo más rápido posible.
+SIGNAL_WORKER_INTERVAL = int(os.environ.get("SIGNAL_WORKER_INTERVAL", 45))
+
+
+async def signal_worker_loop(db, interval: int = SIGNAL_WORKER_INTERVAL):
+    """Background: comprueba precios vs niveles activos.
 
     El espaciado entre símbolos lo impone el rate-limiter de Finnhub (bg_cap=40/min
     ≈ 1.5s/llamada) sin sleep artificial. Al acabar el ciclo dormimos sólo el tiempo
-    sobrante hasta `interval`, mínimo 3s. Con TTL de caché=8s y sin sleep manual la
-    latencia real de alerta baja de ~90s a ~20-40s (según número de símbolos).
+    sobrante hasta `interval`, mínimo 3s.
+
+    COSTE: a interval=10s el ciclo no llegaba a dormir en cuanto había ~7 símbolos, así que
+    el worker saturaba el cap de fondo las 16h de sesión extendida: 40/min × 60 × 16 ≈ 38.400
+    llamadas a Finnhub AL DÍA, dejando solo 10/min del límite de 50 para tu propia navegación
+    (de ahí que abrir una acción fuera lento a ratos). A 45s el ciclo respira y el consumo cae
+    a una fracción. Para una cartera de medio plazo la diferencia entre enterarse de que se
+    ha tocado un nivel en 20s o en 60s es irrelevante; la de quedarte sin cuota, no.
     """
     logger.info("Signal table worker started (interval=%ds)", interval)
 

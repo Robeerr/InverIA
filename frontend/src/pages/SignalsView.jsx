@@ -809,7 +809,10 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol }) {
               </div>
               <div className="flex items-center gap-1">
                 {e.posibles_ganancias != null && <span className="text-xs text-green-600 font-bold">{fmtPct(e.posibles_ganancias)}</span>}
-                <BellToggle active={e.alert_deseado !== false} onClick={() => updateField(e.id, "alert_deseado", !e.alert_deseado)} />
+                {/* El estado que se NIEGA debe ser el mismo que se PINTA. Con `!e.alert_deseado`, una
+    fila antigua sin el campo (undefined) se veía encendida (undefined !== false) pero al
+    pulsar mandaba `!undefined` = true: seguía encendida y el primer clic no hacía nada. */}
+<BellToggle active={e.alert_deseado !== false} onClick={() => updateField(e.id, "alert_deseado", e.alert_deseado === false)} />
               </div>
             </div>
             {/* Venta escalonada (objetivos por encima del precio) */}
@@ -917,7 +920,10 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol }) {
                 <td className="px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 border-l border-blue-100 dark:border-blue-900">
                   <div className="flex items-center justify-end gap-1">
                     <EditableCell value={e.deseado} onChange={(v) => updateField(e.id, "deseado", v)} className="font-mono text-sm font-bold text-blue-800 dark:text-blue-200" />
-                    <BellToggle active={e.alert_deseado !== false} onClick={() => updateField(e.id, "alert_deseado", !e.alert_deseado)} />
+                    {/* El estado que se NIEGA debe ser el mismo que se PINTA. Con `!e.alert_deseado`, una
+    fila antigua sin el campo (undefined) se veía encendida (undefined !== false) pero al
+    pulsar mandaba `!undefined` = true: seguía encendida y el primer clic no hacía nada. */}
+<BellToggle active={e.alert_deseado !== false} onClick={() => updateField(e.id, "alert_deseado", e.alert_deseado === false)} />
                   </div>
                 </td>
                 {(() => { const nextV = nextVentaKey(e); return [1,2,3].map((n) => {

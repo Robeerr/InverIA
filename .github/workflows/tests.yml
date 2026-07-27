@@ -1,0 +1,35 @@
+name: Tests
+
+# Sin esto nadie ejecutaba nunca la suite: test_levels_engine —que cubre el motor de niveles
+# de compra/venta, stops y objetivos— llevaba tiempo sin correr pese a que el motor cambiaba.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Instalar dependencias
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Tests unitarios
+        working-directory: backend
+        # backend_test.py son de integración: se auto-saltan si no hay INVERIA_TEST_URL,
+        # así que no hace falta excluirlos a mano.
+        run: pytest tests/ -v

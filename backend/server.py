@@ -78,6 +78,11 @@ class _TTLCache:
 
 _cache = _TTLCache()
 
+# Coste del pre-cálculo del Chartista (ver _prewarm_chartist). El ciclo va al ritmo de la
+# caché, así que subir CHARTIST_TTL baja el consumo de cuota de Gemini proporcionalmente.
+CHARTIST_TTL = int(os.environ.get("CHARTIST_TTL", 4 * 3600))   # 4h (antes 2h)
+CHARTIST_PREWARM_MAX = int(os.environ.get("CHARTIST_PREWARM_MAX", 20))  # antes 30
+
 mongo_url = os.environ.get("MONGO_URL")
 if not mongo_url:
     raise RuntimeError("MONGO_URL no está configurada. Añádela en las variables de entorno de Render.")
@@ -309,9 +314,14 @@ async def lifespan(app: FastAPI):
 
     # PRE-CÁLCULO del Chartista para la watchlist + la cartera. REGLAS DE COSTE (tras quemar
     # 3.65 EUR en un día): SOLO usa la key Gemini GRATIS (free_only=True — jamás la de pago
-    # ni Groq); corre cada 2 HORAS (no cada 25 min) y los veredictos pre-calculados cachean
-    # 2h; si la cuota gratis se agota (429), CORTA el ciclo entero hasta la siguiente vuelta.
-    # El crédito de pago queda reservado a los análisis que el usuario pide con el botón.
+    # ni Groq); si la cuota gratis se agota (429), CORTA el ciclo entero hasta la siguiente
+    # vuelta. El crédito de pago queda reservado a los análisis que pides con el botón.
+    #
+    # OJO con el volumen: a 2h de caché y 30 símbolos salían ~30 × 4,5 ciclos = ~135 llamadas
+    # a Gemini AL DÍA antes de que tocaras un botón. Este bucle no paga (es gratis), pero
+    # agota la cuota gratis diaria, y entonces son TUS análisis manuales los que caen a la
+    # key de pago. O sea: el pre-cálculo no paga, hace que pagues tú. A 4h y 20 símbolos
+    # baja a ~40-45/día (un tercio), dejando cuota gratis de sobra para el uso manual.
     async def _prewarm_chartist():
         await asyncio.sleep(120)  # deja que el arranque respire antes de empezar
         while True:
@@ -327,12 +337,12 @@ async def lifespan(app: FastAPI):
                     for it in await db.signal_entries.find({"active": True}, {"_id": 0, "symbol": 1}).to_list(200):
                         if it.get("symbol"):
                             syms.add(it["symbol"].upper())
-                    for sym in list(syms)[:30]:  # techo de seguridad
+                    for sym in list(syms)[:CHARTIST_PREWARM_MAX]:
                         if _cache.get(f"chartist:{sym}") is not None:
                             continue  # ya está fresco en caché
                         try:
                             result = await chartist.analyze(sym, free_only=True)
-                            _cache.set(f"chartist:{sym}", result, ttl=7200)  # 2h
+                            _cache.set(f"chartist:{sym}", result, ttl=CHARTIST_TTL)
                             await _chartist_vigilante(sym, result)  # #1 avisa si cambia algo
                             logger.info("Chartista pre-calculado para %s (gratis)", sym)
                         except Exception as e:
@@ -348,7 +358,7 @@ async def lifespan(app: FastAPI):
                     mem.trim()  # el pre-cálculo crea muchos DataFrames: devuélvelos al SO
             except Exception as e:
                 logger.warning("Prewarm chartist loop error: %s", e)
-            await asyncio.sleep(7200)  # cada 2 HORAS (~4 ciclos por sesión de mercado)
+            await asyncio.sleep(CHARTIST_TTL)  # el ciclo va al ritmo de la caché
 
     asyncio.create_task(_prewarm_chartist())
 
@@ -1457,7 +1467,7 @@ async def why_moving(symbol: str, model: Optional[str] = None,
 
 # ---------- Compare ----------
 @api_router.post("/compare")
-async def compare_stocks(req: CompareRequest):
+async def compare_stocks(req: CompareRequest, _user: str = Depends(auth.get_current_user)):
     """Compare up to 6 stocks side by side: quote + key indicators + 3-month candles
     for the normalized performance chart."""
     syms = []
@@ -1494,7 +1504,8 @@ async def compare_stocks(req: CompareRequest):
 
 # ---------- Combined Dashboard ----------
 @api_router.get("/dashboard/{symbol}")
-async def dashboard_data(symbol: str, timeframe: str = "1Y"):
+async def dashboard_data(symbol: str, timeframe: str = "1Y",
+                         _user: str = Depends(auth.get_current_user)):
     """Endpoint combinado: devuelve quote + chart + indicators + news + analyst en una sola llamada.
     Todas las peticiones a Yahoo Finance / Finnhub se lanzan en paralelo via thread pool."""
     sym = symbol.upper()
@@ -2368,7 +2379,9 @@ async def test_telegram(grupo: Optional[str] = None, _user: str = Depends(auth.g
 
 # ---------- Daily Opportunities ----------
 @api_router.get("/opportunities/daily")
-async def daily_opportunities(refresh: bool = False):
+async def daily_opportunities(refresh: bool = False,
+                              _user: str = Depends(auth.get_current_user)):
+    # refresh=true fuerza un rescan completo (pesado); sin auth cualquiera podía dispararlo.
     data = await opportunities.scan_daily_opportunities(force_refresh=refresh)
     return data
 
@@ -2439,7 +2452,8 @@ def _top_seleccion(results: list, heat: dict, n: int = 5) -> list:
 
 
 @api_router.get("/opportunities/screener")
-async def growth_screener(refresh: bool = False):
+async def growth_screener(refresh: bool = False,
+                          _user: str = Depends(auth.get_current_user)):
     """Growth screener: 7 hard filters (market cap, price, no dividend, volume,
     near 52w high, revenue growth, EPS growth) over a curated growth universe.
     Anota qué acciones mencionan TUS fuentes y añade la 'Top Selección' (mejores 3-5)."""
@@ -2475,7 +2489,7 @@ async def growth_screener(refresh: bool = False):
 
 
 @api_router.get("/alternativa/{symbol}")
-async def alternativa_sectorial(symbol: str):
+async def alternativa_sectorial(symbol: str, _user: str = Depends(auth.get_current_user)):
     """Sugiere otra acción del MISMO sector con mejores métricas (mayor potential_score)
     que la analizada, tomada del screener growth. Para descubrir mejores oportunidades."""
     sym = symbol.strip().upper()
