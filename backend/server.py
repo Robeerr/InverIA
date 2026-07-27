@@ -3234,15 +3234,40 @@ app.include_router(api_router)
 async def app_root():
     return {"app": "InverIA", "status": "ok"}
 
-_cors_origins = os.environ.get("CORS_ORIGINS", "*")
+# ---------- CORS ----------
+# Antes: allow_origins="*" por defecto. Con auth por Bearer eso no expone tu sesión (el
+# navegador de un tercero no tiene tu token), pero sí deja que cualquier web invoque los
+# endpoints públicos —/dashboard, /quote, /chart— desde el navegador de sus visitantes, o sea
+# gastando TU cuota de datos. El defecto pasa a ser restrictivo; para abrirlo hay que pedirlo.
+_DEV_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+_cors_origins = os.environ.get("CORS_ORIGINS", "").strip()
 _origins_list = [o.strip().rstrip("/") for o in _cors_origins.split(",") if o.strip()]
+_allow_all = "*" in _origins_list
+
+# El regex de Vercel es lo que mantiene viva la web desplegada cuando no se define
+# CORS_ORIGINS. Por defecto sigue siendo el de siempre para no tumbar el despliegue, pero
+# ahora se puede acotar al proyecto concreto con CORS_ORIGIN_REGEX, que es lo recomendable:
+# el patrón por defecto acepta CUALQUIER dominio *.vercel.app, incluido el de un tercero.
+_cors_regex = os.environ.get("CORS_ORIGIN_REGEX", r"https://.*\.vercel\.app")
+
+if _allow_all:
+    logger.warning(
+        "CORS abierto a '*' por configuración explícita. Cualquier web puede llamar a los "
+        "endpoints públicos desde el navegador de sus visitantes, gastando tu cuota de datos."
+    )
+elif not _origins_list:
+    logger.warning(
+        "CORS_ORIGINS no definido: solo se permiten %s y el patrón %s. Si tu frontend está "
+        "en otro dominio, defínelo en CORS_ORIGINS o te dará error de CORS.",
+        ", ".join(_DEV_ORIGINS), _cors_regex,
+    )
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=False,
-    allow_origins=_origins_list if "*" not in _origins_list else ["*"],
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origins=["*"] if _allow_all else (_origins_list or _DEV_ORIGINS),
+    allow_origin_regex=None if _allow_all else _cors_regex,
     allow_methods=["*"],
     allow_headers=["*"],
 )

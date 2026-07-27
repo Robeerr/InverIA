@@ -42,6 +42,19 @@ MODEL_MAP = {
 
 DEFAULT_MODEL = "gemini-2.5-flash"
 
+# Límite del free tier de Groq: tokens por minuto contando entrada + salida.
+GROQ_TPM_LIMIT = int(os.environ.get("GROQ_TPM_LIMIT", "8000"))
+# Por debajo de esto la respuesta saldría cortada igualmente: mejor fallar y pasar al
+# siguiente modelo de la cadena que gastar la llamada en un JSON inservible.
+GROQ_MIN_SALIDA = 1200
+
+
+def _estimar_tokens(texto: str) -> int:
+    """Estimación por caracteres. En español un token ronda los 3,5 caracteres; se redondea
+    a la BAJA en el divisor (3.3) para sobreestimar la entrada y quedarnos cortos de salida
+    antes que pasarnos del límite."""
+    return int(len(texto or "") / 3.3) + 1
+
 
 SYSTEM_PROMPT = """Eres un analista financiero senior especializado en inversión a medio y largo plazo en acciones de EE.UU.
 Tu metodología se basa en identificar NIVELES DE ACUMULACIÓN por zonas — como hacen los mejores gestores de fondos:
@@ -237,6 +250,60 @@ por más riesgo. Por tanto, cuando el precio esté por debajo de la SMA200 o el 
   posición debe ser REDUCIDO (media entrada, reservando pólvora para los niveles más profundos).
 - Incluye el riesgo de que el soporte ceda entre los `risks`.
 Escalonar la compra es una TÉCNICA de entrada, no un permiso para ignorar el régimen.
+"""
+
+
+# Prompt para proveedores con presupuesto de tokens ESTRECHO (Groq free tier: 8000 TPM
+# contando entrada + salida). El SYSTEM_PROMPT completo ocupa ~4050 tokens y con el digest
+# del cerebro y el payload la entrada se iba a ~5800-6800; pidiendo 3000 de salida se
+# superaba el límite, así que el respaldo o daba 429 o devolvía el JSON cortado a medias.
+#
+# Aquí se pide MENOS, no más: en esta vía los números vienen ya calculados por el motor
+# determinista y se sobrescriben después, así que lo único que hace falta de verdad es la
+# narrativa corta, la recomendación y la confianza. Se conservan las reglas de criterio
+# (R/R 2:1, régimen, etiqueta honesta) y se elimina el catálogo largo de campos de prosa.
+SYSTEM_PROMPT_COMPACTO = """Eres un analista financiero senior de inversión a medio plazo (3-12 meses)
+en acciones de EE.UU. Metodología: acumular por tramos en soportes, con riesgo/recompensa sano.
+
+CRITERIO:
+- R/R mínimo 2:1 en TP1. Si no llega, dilo y no lo presentes como entrada principal. El R/R es un
+  filtro para descartar operaciones, NO un número que se maquilla estrechando el stop.
+- El stop es UNO para la posición completa y va por DEBAJO de la zona de compra más profunda.
+- Régimen: por debajo de la SMA200 o con MACD negativo se puede comprar en soportes, pero es una
+  compra a contracorriente: recorta la confianza (rara vez >65) y di en el summary que el tamaño
+  debe ser reducido.
+- La etiqueta nunca miente: no llames Fibonacci a un objetivo que sale de una resistencia o de los
+  analistas, ni pongas un múltiplo de ATR que no sea el usado.
+
+REGLAS ESTRICTAS:
+- Responde SIEMPRE en español y ÚNICAMENTE con un objeto JSON válido (sin markdown, sin texto extra).
+- SÉ BREVE: es preferible un JSON completo y escueto que uno extenso cortado a la mitad.
+- Si te dan NIVELES DEFINITIVOS, cópialos EXACTOS y limítate a narrarlos.
+- risks: mínimo 3. catalysts: mínimo 3. Frases cortas.
+
+ESTRUCTURA JSON EXACTA (no añadas más campos):
+{
+  "recommendation": "COMPRAR" | "VENDER" | "MANTENER",
+  "confidence": 0-100,
+  "trend": "ALCISTA" | "BAJISTA" | "LATERAL",
+  "horizon": "MEDIO_PLAZO (3-12 meses)",
+  "summary": "Tesis principal en 2-3 frases, incluyendo el aviso de tamaño reducido si aplica.",
+  "investment_case": "Por qué esta acción ahora, 2-3 frases.",
+  "entry_zones": [{"label": "NIVEL 1", "min": número, "max": número, "comment": "breve"}],
+  "stop_losses": [{"label": "STOP AJUSTADO", "price": número, "comment": "breve"}],
+  "take_profits": [{"label": "TP1", "price": número, "comment": "breve"}],
+  "entry_zone": {"min": número, "max": número},
+  "stop_loss": número,
+  "take_profit_1": número,
+  "take_profit_2": número,
+  "risk_reward_ratio": número,
+  "key_levels": {"support": [número, número, número], "resistance": [número, número, número]},
+  "technical_analysis": "4-5 frases: RSI, MACD (positivo o negativo), medias, OBV y régimen.",
+  "fundamentals_view": "2-3 frases sobre valoración y crecimiento.",
+  "risks": ["riesgo 1", "riesgo 2", "riesgo 3"],
+  "catalysts": ["catalizador 1", "catalizador 2", "catalizador 3"],
+  "timeframe": "MEDIO_PLAZO"
+}
 """
 
 
@@ -901,10 +968,22 @@ async def _run_model(model_key: str, system_prompt: str, user_msg: str,
     the lightweight '¿por qué se mueve hoy?' explainer."""
     provider, model_id, _is_free = MODEL_MAP.get(model_key, MODEL_MAP[DEFAULT_MODEL])
     if provider == "groq":
-        # Groq free tier: 8000 TPM (input + output combined, max_tokens cuenta como
-        # "requested"). Input real ≈ 3700-4300 tokens (prompt + payload compacto), así
-        # que 3000 de salida deja margen (~7300) y permite el JSON completo sin truncar.
-        return await _analyze_with_groq(model_id, user_msg, system_prompt, min(max_tokens, 3000))
+        # Groq free tier: 8000 TPM contando entrada + salida, y max_tokens cuenta como
+        # "solicitado" aunque no se use. El cap fijo de 3000 daba por buena una estimación de
+        # entrada (~3700-4300) que se quedó obsoleta: SYSTEM_PROMPT creció a ~4050 tokens y
+        # además se le sumaba el digest del cerebro, así que se pedía por encima del límite
+        # y el respaldo o daba 429 o devolvía el JSON cortado.
+        # Ahora el presupuesto de salida se calcula a partir de la entrada REAL de esta
+        # llamada, dejando un colchón del 10% para el error de la estimación por caracteres.
+        entrada = _estimar_tokens(system_prompt) + _estimar_tokens(user_msg)
+        presupuesto = int((GROQ_TPM_LIMIT * 0.9) - entrada)
+        if presupuesto < GROQ_MIN_SALIDA:
+            raise RuntimeError(
+                f"La petición no cabe en el límite de Groq ({entrada} tokens de entrada sobre "
+                f"{GROQ_TPM_LIMIT} TPM): quedarían {presupuesto} para la respuesta."
+            )
+        return await _analyze_with_groq(model_id, user_msg, system_prompt,
+                                        min(max_tokens, presupuesto))
     if provider == "google_free":
         return await _analyze_with_gemini_free(model_id, user_msg, system_prompt, max_tokens)
     return await _analyze_with_emergent(provider, model_id, user_msg, system_prompt)
@@ -931,6 +1010,13 @@ async def analyze_stock(
                               volume_profile, insider, earnings_history, buy_levels,
                               next_earnings_date, days_to_earnings, company_profile,
                               final_levels)
+    # Groq (free tier, 8000 TPM entrada+salida) no admite el prompt completo: ni el catálogo
+    # largo de campos ni el digest del cerebro caben junto a la respuesta. En esa vía se usa el
+    # prompt compacto y se omite el digest — mejor un análisis breve y ENTERO que uno cortado.
+    provider = MODEL_MAP.get(model_key, MODEL_MAP[DEFAULT_MODEL])[0]
+    if provider == "groq":
+        return await _run_model(model_key, SYSTEM_PROMPT_COMPACTO, user_msg, max_tokens=8000)
+
     # Inyecta el conocimiento acumulado de las newsletters (cerebro que crece con cada
     # correo), SELECCIONADO por relevancia al sector/situación de esta acción.
     system = SYSTEM_PROMPT
