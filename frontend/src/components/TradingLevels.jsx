@@ -372,6 +372,13 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
                   );
                 })}
               </div>
+              {/* Por qué el plan puede tener menos zonas que la lista de confluencia de
+                  arriba. Sin esto, ver "NIVEL 3" arriba y solo dos zonas aquí parece un fallo. */}
+              {analysis.plan_nota && (
+                <p className="text-[11px] text-[#5c6b66] mt-2 leading-snug border-t border-[#e5e0d8] pt-2">
+                  {analysis.plan_nota}
+                </p>
+              )}
             </div>
           )}
 

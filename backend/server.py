@@ -1094,6 +1094,19 @@ def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_targe
         if not primera:
             return None
         ez = [primera]
+
+    # Si el filtro ha dejado fuera zonas que sí salen en la lista de confluencia de arriba,
+    # dilo. Ver "NIVEL 3" en el panel superior y solo dos zonas en el plan, sin explicación,
+    # parece un fallo.
+    descartadas = sum(1 for z in buy_levels
+                      if (_f(z.get("price")) or 0) < suelo and _f(z.get("price")) is not None)
+    plan_nota = None
+    if descartadas:
+        plan_nota = (
+            f"El plan usa {len(ez)} de las {len(ez) + descartadas} zonas de confluencia: "
+            f"las demás están a más de un {MAX_PLAN_DEPTH:.0%} bajo el precio y arrastrarían "
+            f"el stop hasta ahí. Siguen listadas como soportes."
+        )
     entry_hi = ez[0]["max"]
     entry_lo = ez[0]["min"]
     # Precio medio REALISTA de una compra escalonada (el usuario reparte entre las 3 zonas):
@@ -1110,8 +1123,13 @@ def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_targe
         base_d = max(1.0 * atr, deepest * 0.015)      # colchón bajo el soporte más profundo
         d = [base_d, max(1.6 * atr, base_d * 1.4), max(2.4 * atr, base_d * 1.9)]
         labels = ["STOP AJUSTADO", "STOP ESTÁNDAR", "STOP AMPLIO"]
+        # El número de compras se lee del plan: desde que las zonas se filtran por
+        # profundidad, el plan puede tener 1, 2 o 3, y decir "las 3 compras" con dos zonas
+        # en pantalla es exactamente la etiqueta mentirosa que perseguimos.
+        n = len(ez)
+        cuantas = "la compra" if n == 1 else f"las {n} compras"
         comments = [
-            "1×ATR bajo el soporte más profundo del plan — el más ceñido que respeta las 3 compras",
+            f"1×ATR bajo el soporte más profundo del plan — el más ceñido que respeta {cuantas}",
             "1,6×ATR bajo el soporte más profundo — invalida la tesis técnica",
             "2,4×ATR bajo el soporte más profundo — solo largo plazo",
         ]
@@ -1194,7 +1212,8 @@ def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_targe
         "stop_losses": stops,
         "take_profits": tps,
         "entry_zone": {"min": entry_lo, "max": entry_hi},
-        "entry_avg": entry_ref,   # precio medio si escalonas las 3 zonas (base del R/R)
+        "entry_avg": entry_ref,   # precio medio si escalonas TODAS las zonas del plan (base del R/R)
+        "plan_nota": plan_nota,   # por qué el plan tiene menos zonas que la lista de confluencia
         "stop_loss": stop_scalar,
         "take_profit_1": tp1s,
         "take_profit_2": tp2s,
