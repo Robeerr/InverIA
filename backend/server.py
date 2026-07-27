@@ -3254,52 +3254,51 @@ async def app_root():
 # navegador de un tercero no tiene tu token), pero sí deja que cualquier web invoque los
 # endpoints públicos —/dashboard, /quote, /chart— desde el navegador de sus visitantes, o sea
 # gastando TU cuota de datos. El defecto pasa a ser restrictivo; para abrirlo hay que pedirlo.
+# Origen de PRODUCCIÓN de la web. Es una URL exacta, que es la forma más segura de
+# permitir un origen: no hay patrón que pueda colarse por parecido.
+_PROD_ORIGIN = "https://inver-ia.vercel.app"
 _DEV_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
 _cors_origins = os.environ.get("CORS_ORIGINS", "").strip()
 _origins_list = [o.strip().rstrip("/") for o in _cors_origins.split(",") if o.strip()]
 _allow_all = "*" in _origins_list
 
-# El regex de Vercel es lo que mantiene viva la web desplegada cuando no se define
-# CORS_ORIGINS. El patrón por defecto acepta CUALQUIER dominio *.vercel.app, incluido el de
-# un tercero, así que conviene acotarlo. Tres formas, de más cómoda a más manual:
+# Por DEFECTO no hay patrón: solo valen las URLs exactas de arriba. Antes el defecto era
+# https://.*\.vercel\.app, que acepta CUALQUIER dominio de Vercel — cualquiera podía
+# desplegar una web ahí y llamar a esta API desde el navegador de sus visitantes.
 #
-#   1. CORS_VERCEL_PROJECT=inveria   → construye el patrón correcto por ti. Cubre el dominio
-#      de producción (inveria.vercel.app) y los de preview, que Vercel genera como
-#      inveria-<hash>-<scope>.vercel.app y inveria-git-<rama>-<scope>.vercel.app.
-#   2. CORS_ORIGIN_REGEX=...         → si necesitas un patrón a medida.
-#   3. CORS_ORIGINS=https://...      → la más estricta: solo las URLs exactas que listes.
-#      Si la defines y no usas despliegues de preview, puedes olvidarte del regex.
+# Si necesitas que funcionen los despliegues de PREVIEW de Vercel (los de cada rama/commit),
+# actívalos con CORS_VERCEL_PROJECT=inver-ia. Ten en cuenta el matiz: las URLs de preview son
+# <proyecto>-<hash>-<scope>.vercel.app, así que cualquier patrón que las acepte acepta también
+# un proyecto ajeno llamado "inver-ia-loquesea". Es el precio de tener previews; por eso no
+# viene activado. Para un patrón a medida, CORS_ORIGIN_REGEX.
 _vercel_project = os.environ.get("CORS_VERCEL_PROJECT", "").strip()
-if _vercel_project:
-    # El sufijo opcional cubre preview y rama; el proyecto queda anclado al principio.
-    _default_regex = rf"https://{re.escape(_vercel_project)}(-[a-z0-9-]+)?\.vercel\.app"
-else:
-    _default_regex = r"https://.*\.vercel\.app"
-_cors_regex = os.environ.get("CORS_ORIGIN_REGEX", _default_regex)
+_default_regex = (
+    rf"https://{re.escape(_vercel_project)}(-[a-z0-9-]+)?\.vercel\.app"
+    if _vercel_project else None
+)
+_cors_regex = os.environ.get("CORS_ORIGIN_REGEX", "").strip() or _default_regex
 
 if _allow_all:
     logger.warning(
         "CORS abierto a '*' por configuración explícita. Cualquier web puede llamar a los "
         "endpoints públicos desde el navegador de sus visitantes, gastando tu cuota de datos."
     )
-elif not _origins_list:
-    logger.warning(
-        "CORS_ORIGINS no definido: solo se permiten %s y el patrón %s. Si tu frontend está "
-        "en otro dominio, defínelo en CORS_ORIGINS o te dará error de CORS.",
-        ", ".join(_DEV_ORIGINS), _cors_regex,
-    )
+_allowed_origins = ["*"] if _allow_all else (_origins_list or [_PROD_ORIGIN] + _DEV_ORIGINS)
 
-if _cors_regex == r"https://.*\.vercel\.app":
-    logger.warning(
-        "CORS: el patrón acepta CUALQUIER dominio *.vercel.app, incluido el de un tercero. "
-        "Acótalo con CORS_VERCEL_PROJECT=<nombre-de-tu-proyecto> (o CORS_ORIGIN_REGEX)."
-    )
+if not _allow_all:
+    logger.info("CORS: orígenes permitidos %s · patrón %s",
+                ", ".join(_allowed_origins), _cors_regex or "(ninguno)")
+    if _cors_regex and ".*" in _cors_regex:
+        logger.warning(
+            "CORS: el patrón %s es muy amplio y puede aceptar dominios de terceros. "
+            "Usa CORS_VERCEL_PROJECT=<nombre> para que se genere uno acotado.", _cors_regex,
+        )
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=False,
-    allow_origins=["*"] if _allow_all else (_origins_list or _DEV_ORIGINS),
+    allow_origins=_allowed_origins,
     allow_origin_regex=None if _allow_all else _cors_regex,
     allow_methods=["*"],
     allow_headers=["*"],
