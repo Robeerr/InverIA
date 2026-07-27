@@ -78,6 +78,17 @@ body {
 .dark .bg-\[\#4a7c59\]\/5 { background-color: rgba(74, 222, 128, 0.06) !important; }
 .dark .bg-\[\#d85c41\]\/5 { background-color: rgba(248, 113, 113, 0.06) !important; }
 .dark .border-\[\#4a7c59\]\/30 { border-color: rgba(74, 222, 128, 0.3) !important; }
+
+/* Colores de texto que se escaparon del remapeo de arriba. Sobre la tarjeta oscura
+   (#131a23) daban entre 1,87:1 y 3,39:1 — todos por debajo del mínimo legible (4,5:1),
+   y justo en los paneles que más se leen: Niveles de Trading, Chartista, Backtest y
+   "Por qué se mueve hoy". Contraste medido, no estimado. */
+.dark .text-\[\#3a4a44\] { color: #cbd5e1 !important; }  /* era 1,87:1 — prácticamente invisible */
+.dark .text-\[\#8a6508\] { color: #fbbf24 !important; }  /* avisos ámbar: 3,29:1 */
+.dark .text-\[\#c0392b\] { color: #f87171 !important; }  /* bajista/riesgo: 3,22:1 */
+.dark .text-\[\#1e7a3a\] { color: #4ade80 !important; }  /* alcista: 3,25:1 */
+.dark .text-\[\#1a6a94\] { color: #60a5fa !important; }  /* 2,94:1 */
+.dark .text-\[\#2563eb\] { color: #60a5fa !important; }  /* 3,39:1 */
 .dark .border-\[\#d85c41\]\/30 { border-color: rgba(248, 113, 113, 0.3) !important; }
 /* Gold accent (warnings, "actualizando", highlights) — brighter on dark */
 .dark .text-\[\#c9a14a\] { color: #fbbf24 !important; }

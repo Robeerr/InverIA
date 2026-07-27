@@ -556,6 +556,14 @@ export default function SignalsView({ setSymbol }) {
     }
     try {
       const r = await fetch(`${API}/api/signals`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(payload) });
+      // El backend devuelve 409 si el símbolo ya está en la Cartera (evita duplicados y
+      // P&L contado dos veces). Sin este caso, el alta manual mostraba "Error al añadir"
+      // y no había forma de saber que ya estaba: el ChartistPanel sí lo trataba, esta no.
+      if (r.status === 409) {
+        toast(`${payload.symbol} ya estaba en tu Cartera`);
+        setShowAdd(false); setNewEntry(EMPTY);
+        return;
+      }
       if (!r.ok) throw new Error();
       const created = await r.json();
       lastLocalEditRef.current = Date.now();
