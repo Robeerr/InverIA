@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="InverIA">
+  <!-- Mismo lenguaje visual que el logo de la cabecera: cuadrado redondeado #1a3a32 con una
+       línea ascendente en crema (#f5f3ef). Los trazos van gruesos (22-26) a propósito: a 16px
+       en la pestaña, un icono con detalle fino se convierte en una mancha. -->
+  <rect width="256" height="256" rx="56" fill="#1a3a32"/>
+  <!-- Ejes, discretos: dan la lectura de "gráfico" sin competir con la línea. -->
+  <path d="M56 52 v148 h148"
+        fill="none" stroke="#f5f3ef" stroke-opacity="0.38"
+        stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Línea de precio ascendente: el elemento que debe sobrevivir al tamaño mínimo. -->
+  <path d="M82 166 l38 -34 l32 24 l46 -58"
+        fill="none" stroke="#f5f3ef"
+        stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Punta de flecha, cerrando arriba a la derecha. -->
+  <path d="M160 96 h42 v42"
+        fill="none" stroke="#f5f3ef"
+        stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

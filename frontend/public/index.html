@@ -9,6 +9,12 @@
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="InverIA" />
+        <!-- Iconos. El SVG es el que usan los navegadores modernos (escala sin pixelarse);
+             el .ico queda de respaldo para los que no soportan SVG. Sin esto la pestaña
+             salía con el icono genérico de "página sin favicon". -->
+        <link rel="icon" href="%PUBLIC_URL%/favicon.svg" type="image/svg+xml" />
+        <link rel="icon" href="%PUBLIC_URL%/favicon.ico" sizes="16x16 32x32 48x48" />
+        <link rel="apple-touch-icon" href="%PUBLIC_URL%/apple-touch-icon.png" />
         <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
         <link rel="preconnect" href="https://inveria-backend.onrender.com" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
