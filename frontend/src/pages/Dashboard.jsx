@@ -192,7 +192,11 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       const data = await fetchWithRetry();
       if (my !== reqId.current) return; // llegó tarde: ya cambiamos de símbolo
       if (!data?.quote) {
-        toast.error(`No se encontró el símbolo ${sym}`);
+        // OJO: esto NO significa que el símbolo no exista. El endpoint responde 404 cuando
+        // el ticker es inválido (se trata en el catch). Llegar aquí con 200 y sin quote
+        // significa que las fuentes de datos no contestaron a tiempo — normalmente cuota
+        // agotada. Decir "no se encontró AAPL" mandaba a corregir un símbolo correcto.
+        toast.error(`No se pudieron cargar los datos de ${sym}. Las fuentes de datos no respondieron a tiempo — vuelve a intentarlo en unos segundos.`);
         setQuote(null);
         return;
       }

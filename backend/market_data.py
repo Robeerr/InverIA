@@ -70,7 +70,16 @@ class _FinnhubLimiter:
         self.calls = []
         self.lock = threading.Lock()
 
-    def acquire(self):
+    def acquire(self, max_wait: float = None) -> bool:
+        """Reserva un hueco. Devuelve True si lo consigue.
+
+        max_wait acota la espera: si no hay hueco en ese tiempo, devuelve False en vez de
+        seguir bloqueando. Es lo que necesitan las llamadas que sirven una petición del
+        usuario — antes esperaban hasta 60s, el endpoint las cortaba a los 8 y la página
+        acababa diciendo "no se encontró el símbolo" cuando el símbolo existía de sobra:
+        lo que faltaba era cuota. Con un tope corto se cae al proveedor alternativo, que
+        no pasa por este limitador, y la página responde igual.
+        """
         is_bg = _finnhub_bg_ctx.get()
         cap = self.bg_cap if is_bg else self.max_per_min
         t_start = time.time()
@@ -84,8 +93,15 @@ class _FinnhubLimiter:
                     if waited > 2.0:
                         _log.warning("Finnhub limiter blocked %.1fs [bg=%s window=%d cap=%d]",
                                      waited, is_bg, len(self.calls), cap)
-                    return
+                    return True
                 sleep_for = 60 - (now - self.calls[0]) + 0.05
+            if max_wait is not None:
+                restante = max_wait - (time.time() - t_start)
+                if restante <= 0:
+                    _log.warning("Finnhub limiter: sin hueco en %.1fs [bg=%s cap=%d] — "
+                                 "se usará el proveedor alternativo", max_wait, is_bg, cap)
+                    return False
+                sleep_for = min(sleep_for, restante)
             # Dormimos FUERA del lock para no serializar al resto de callers.
             time.sleep(min(max(sleep_for, 0.05), 1.0))
 
@@ -664,7 +680,13 @@ def _try_finnhub_quote(ticker: str):
         entry = _fh_quote_cache.get(sym)
         if entry and (time.time() - entry["ts"]) < _FH_QUOTE_TTL:
             return entry["data"]
-    _finnhub_limiter.acquire()
+    # Espera acotada: si el limitador está saturado (normalmente por el vigilante de la
+    # Cartera consumiendo el cupo de fondo), no bloqueamos. Devolvemos None y get_quote cae
+    # a yfinance, que no pasa por este limitador. Antes esto se comía los 8s de margen del
+    # dashboard y la página decía que el símbolo no existía.
+    _espera = 8.0 if _finnhub_bg_ctx.get() else 2.5
+    if not _finnhub_limiter.acquire(max_wait=_espera):
+        return None
     try:
         r = _http.get(
             "https://finnhub.io/api/v1/quote",
