@@ -1,0 +1,59 @@
+name: Keep Render backend warm
+
+# El backend vive en el plan gratuito de Render, que duerme el servicio tras ~15 minutos sin
+# tráfico y tarda entre 30s y un minuto en despertar. Este ping lo mantiene despierto SOLO en
+# horario de mercado, que es cuando se usa: de noche y en fin de semana se deja dormir (así no
+# se gastan las 750 h/mes del plan gratuito manteniendo vivo algo que nadie va a abrir).
+#
+# Ventana: 13:00-21:59 UTC, de lunes a viernes. Cubre la sesión regular de EE.UU. (9:30-16:00
+# ET) tanto en horario de verano (13:30-20:00 UTC) como de invierno (14:30-21:00 UTC), con
+# margen por delante y por detrás. El cron de GitHub SIEMPRE es UTC y no entiende de cambios
+# de hora, por eso la ventana se define ancha en vez de ajustada a ET.
+#
+# Cada 10 minutos, no cada 14, porque las tareas programadas de GitHub Actions se retrasan con
+# frecuencia (a veces bastante) y con el margen justo el servicio se dormiría igual.
+
+on:
+  schedule:
+    - cron: "*/10 13-21 * * 1-5"
+  workflow_dispatch:        # para probarlo a mano sin esperar al cron
+
+# Si un ping se solapa con el anterior (Render tardando en despertar), no acumules ejecuciones.
+concurrency:
+  group: keep-warm
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Despertar el backend
+        env:
+          # URL del backend en Render, SIN barra final. Defínela en el repo como variable
+          # (Settings → Secrets and variables → Actions → Variables → New variable)
+          # con nombre BACKEND_URL, p.ej. https://inveria-backend.onrender.com
+          BACKEND_URL: ${{ vars.BACKEND_URL || secrets.BACKEND_URL }}
+        run: |
+          if [ -z "$BACKEND_URL" ]; then
+            echo "::warning::BACKEND_URL no está definida — el ping no hace nada. Créala en Settings → Secrets and variables → Actions → Variables."
+            exit 0
+          fi
+          URL="${BACKEND_URL%/}/api/health"
+          echo "Pingeando $URL"
+          # --max-time 90: un arranque en frío de Render puede tardar ~60s; hay que esperarlo,
+          # porque si cortamos antes el servicio se queda a medio despertar y no sirve de nada.
+          # 3 reintentos espaciados por si justo pilla el arranque.
+          for intento in 1 2 3; do
+            codigo=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 90 "$URL" || echo "000")
+            if [ "$codigo" = "200" ]; then
+              echo "OK (intento $intento): el backend responde 200"
+              exit 0
+            fi
+            echo "Intento $intento: respuesta $codigo"
+            [ "$intento" -lt 3 ] && sleep 20
+          done
+          echo "::warning::El backend no respondió 200 tras 3 intentos (último código: $codigo)"
+          # No se falla el job: un ping perdido no es una incidencia, y fallar cada 10 minutos
+          # llenaría el correo de avisos. El aviso queda en el resumen de la ejecución.
+          exit 0
