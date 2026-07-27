@@ -10,9 +10,31 @@ API = f"{BASE_URL}/api"
 
 @pytest.fixture(scope="session")
 def s():
+    """Sesión autenticada. Los endpoints que gastan cuota (IA, diagnóstico, envío de correo)
+    exigen Bearer token, así que sin login la mitad del suite devolvería 401.
+
+    Credenciales por entorno: TEST_USERNAME / TEST_PASSWORD. Si no están o el login falla,
+    la sesión sigue sin token — los tests públicos (quote, chart) pasan igual y los que
+    requieren auth fallarán con un 401 evidente en vez de un error críptico.
+    """
     sess = requests.Session()
     sess.headers.update({"Content-Type": "application/json"})
+    user = os.environ.get("TEST_USERNAME")
+    pwd = os.environ.get("TEST_PASSWORD")
+    if user and pwd:
+        try:
+            # /auth/login usa OAuth2PasswordRequestForm → form-encoded, no JSON.
+            r = requests.post(f"{API}/auth/login", data={"username": user, "password": pwd},
+                              timeout=30)
+            if r.status_code == 200:
+                sess.headers["Authorization"] = f"Bearer {r.json()['access_token']}"
+        except requests.RequestException:
+            pass
     return sess
+
+
+def _requiere_auth(sess):
+    return "Authorization" in sess.headers
 
 
 # ---------- Health ----------
@@ -289,6 +311,22 @@ def test_analyze_includes_analyst_fields(s):
 
 # ---------- Test email (Resend) ----------
 def test_send_test_email(s):
+    if not _requiere_auth(s):
+        pytest.skip("Requiere TEST_USERNAME/TEST_PASSWORD: el endpoint envía un email real")
     r = s.post(f"{API}/alerts/test-email", json={}, timeout=30)
     assert r.status_code == 200, r.text
     assert r.json().get("ok") is True
+
+
+# ---------- Endpoints de diagnóstico: deben exigir credencial ----------
+@pytest.mark.parametrize("ruta", ["/debug/memory", "/debug/patterns"])
+def test_debug_requiere_auth(ruta):
+    """Sin token deben responder 401/403, nunca 200: /debug/memory expone trazas con rutas
+    y líneas del código fuente, y /debug/patterns descarga histórico de hasta 48 escaneos."""
+    r = requests.get(f"{API}{ruta}", timeout=30)
+    assert r.status_code in (401, 403), f"{ruta} respondió {r.status_code} sin credencial"
+
+
+def test_test_email_requiere_auth():
+    r = requests.post(f"{API}/alerts/test-email", json={}, timeout=30)
+    assert r.status_code in (401, 403), f"test-email respondió {r.status_code} sin credencial"

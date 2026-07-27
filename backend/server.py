@@ -576,16 +576,22 @@ async def get_chart(symbol: str, timeframe: str = "1Y"):
 
 
 @api_router.get("/debug/patterns")
-async def debug_patterns(symbols: str = "", timeframes: str = "1D,4H,1W"):
+async def debug_patterns(symbols: str = "", timeframes: str = "1D,4H,1W",
+                         _user: str = Depends(auth.get_current_user)):
     """DIAGNÓSTICO: escanea varias acciones × temporalidades y devuelve, por cada una, el
     patrón detectado + chequeos de dibujo (coordenadas fuera de rango, nº de líneas/marcadores).
     Para validar la detección sobre datos reales sin capturas. Ej:
-    /api/debug/patterns?symbols=AAPL,NVDA,META&timeframes=1D,4H"""
+    /api/debug/patterns?symbols=AAPL,NVDA,META&timeframes=1D,4H
+
+    Requiere auth: cada símbolo × temporalidad descarga histórico y corre la detección, así
+    que sin credencial era un amplificador de CPU y de cuota de datos para cualquiera."""
     syms = [s.strip().upper() for s in symbols.split(",") if s.strip()]
     if not syms:
         syms = ["AAPL", "NVDA", "MSFT", "META", "AMZN", "GOOGL", "AVGO", "PLTR",
                 "TSLA", "AMD", "NFLX", "SPY", "QQQ", "HOOD", "SOFI", "COIN"]
     tfs = [t.strip() for t in timeframes.split(",") if t.strip()]
+    # Techo duro al trabajo que puede pedir una sola llamada (16 × 3 = 48 escaneos).
+    syms, tfs = syms[:16], tfs[:3]
     out = []
     for sym in syms:
         for tf in tfs:
@@ -630,8 +636,11 @@ async def debug_patterns(symbols: str = "", timeframes: str = "1D,4H,1W"):
 
 
 @api_router.get("/debug/memory")
-async def debug_memory(top: int = 25):
+async def debug_memory(top: int = 25, _user: str = Depends(auth.get_current_user)):
     """DIAGNÓSTICO DE MEMORIA: dónde se está yendo la RAM del proceso.
+
+    Requiere auth: con MEM_TRACE=1 devuelve trazas de tracemalloc, es decir rutas absolutas
+    y líneas del código fuente del servidor. Eso es información interna, no vale exponerla.
     - rss_mb: memoria real que usa el proceso (lo que Render mide contra el límite de 512MB).
     - objetos: recuento de objetos vivos por tipo (top N). Un tipo que crece sin parar entre
       llamadas = el sospechoso del leak (p.ej. DataFrame, dict, list acumulándose).
@@ -2339,7 +2348,9 @@ async def history_all(limit: int = 30):
 
 # ---------- Test email ----------
 @api_router.post("/alerts/test-email")
-async def test_email():
+async def test_email(_user: str = Depends(auth.get_current_user)):
+    """Requiere auth: cada llamada envía un email REAL. Sin credencial, cualquiera podía
+    quemar la cuota del proveedor de correo (o usarlo para machacar tu bandeja) en bucle."""
     sent, err = await alerts_worker.send_alert_email("TEST", 100.0, "above", 105.0, 5.0)
     if not sent:
         raise HTTPException(500, err or "No se pudo enviar email de prueba")
