@@ -27,9 +27,17 @@ export default function WhyMovingCard({ symbol, model, runSignal }) {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
 
+  // Al cambiar de acción, limpiar: si no, seguías leyendo la explicación de la acción
+  // ANTERIOR bajo el ticker nuevo. (No usamos key={symbol} a propósito: remontar dispararía
+  // el efecto de runSignal y gastaría una llamada de IA sin que la pidas.)
+  useEffect(() => {
+    setData(null);
+    setLoading(false);
+  }, [symbol]);
+
   // Disparo externo desde el botón "Análisis completo" del Dashboard.
   useEffect(() => {
-    if (runSignal) run();
+    if (runSignal && !loading) run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runSignal]);
 

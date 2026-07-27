@@ -127,12 +127,18 @@ function PnlText({ abs, pct, size = "sm" }) {
 // ── Resumen de cartera: P&L total (#20) + diversificación por sector (#21) ───────
 const SECTOR_COLORS = ["#1a3a32", "#4a7c59", "#c9a14a", "#d85c41", "#2563eb", "#7c3aed", "#0891b2", "#9333ea"];
 function PortfolioSummary({ entries }) {
-  const conPos = entries.filter((e) => Number(e.acciones) > 0);
+  // Solo posiciones COMPLETAS (acciones + precio de compra + precio actual). Antes bastaba
+  // con tener acciones: una recién añadida sin last_price sumaba al coste pero 0 al valor,
+  // y el total anunciaba un -100% falso.
+  const conPos = entries.filter((e) => Number(e.acciones) > 0 && Number(e.compra) > 0 && e.last_price != null);
+  const incompletas = entries.filter((e) => Number(e.acciones) > 0 && !(Number(e.compra) > 0 && e.last_price != null)).length;
   const totalCost = conPos.reduce((s, e) => s + posCost(e), 0);
   const totalValue = conPos.reduce((s, e) => s + posValue(e), 0);
-  const hasCost = conPos.some((e) => Number(e.compra) > 0);
-  const totalPnl = hasCost ? totalValue - conPos.reduce((s, e) => s + (Number(e.compra) > 0 ? posCost(e) : posValue(e)), 0) : null;
+  const totalPnl = conPos.length ? totalValue - totalCost : null;
   const totalPnlPct = totalCost > 0 && totalPnl != null ? (totalPnl / totalCost) * 100 : null;
+  // Aviso de DIVISAS: sumar EUR con USD y etiquetarlo todo con "$" da un total sin sentido.
+  const divisas = new Set(conPos.map((e) => (e.divisa || "").toUpperCase() || (/(\.MC|\.PA|\.DE|\.MI|\.AS)$/i.test(e.symbol || "") ? "EUR" : "USD")));
+  const multiDivisa = divisas.size > 1;
 
   // Diversificación: por valor de mercado si hay posiciones; si no, por nº de acciones.
   const useValue = totalValue > 0;
@@ -163,9 +169,15 @@ function PortfolioSummary({ entries }) {
               <PnlText abs={totalPnl} pct={totalPnlPct} size="base" />
             </div>
             <div className="grid grid-cols-2 gap-2 mt-2 text-[11px] font-mono">
-              <div><span className="text-neutral-400">Invertido</span><br /><b>${eur0(totalCost)}</b></div>
-              <div><span className="text-neutral-400">Valor actual</span><br /><b>${eur0(totalValue)}</b></div>
+              <div><span className="text-neutral-400">Invertido</span><br /><b>{eur0(totalCost)}</b></div>
+              <div><span className="text-neutral-400">Valor actual</span><br /><b>{eur0(totalValue)}</b></div>
             </div>
+            {(incompletas > 0 || multiDivisa) && (
+              <p className="text-[10px] text-[#c9a14a] mt-2 leading-snug">
+                {incompletas > 0 && <>⚠ {incompletas} posición{incompletas > 1 ? "es" : ""} sin precio de compra o sin cotización — no cuenta{incompletas > 1 ? "n" : ""} en el total. </>}
+                {multiDivisa && <>⚠ Hay varias divisas ({[...divisas].join(", ")}): el total es una suma sin convertir.</>}
+              </p>
+            )}
           </>
         )}
       </div>
@@ -465,8 +477,20 @@ export default function SignalsView({ setSymbol }) {
     const startedAt = Date.now();
     try {
       const r = await fetch(`${API}/api/signals`, { headers: authHeaders() });
+      // Sin este chequeo, un 401/500 devolvía {detail:"..."} y setEntries(objeto) hacía que
+      // entries.filter lanzara y toda la Cartera cayera en el ErrorBoundary.
+      if (!r.ok) {
+        if (r.status === 401) {
+          localStorage.removeItem("inveria_token");
+          localStorage.removeItem("inveria_user");
+          window.location.href = "/";
+        } else {
+          toast.error("No se pudieron cargar las señales");
+        }
+        return;
+      }
       const data = await r.json();
-      if (lastLocalEditRef.current <= startedAt) setEntries(data);
+      if (lastLocalEditRef.current <= startedAt) setEntries(Array.isArray(data) ? data : []);
     } catch { toast.error("No se pudieron cargar las señales"); }
     finally { setLoading(false); }
   };
@@ -478,8 +502,8 @@ export default function SignalsView({ setSymbol }) {
       if (document.hidden) return;
       const startedAt = Date.now();
       fetch(`${API}/api/signals`, { headers: authHeaders() })
-        .then((r) => r.json())
-        .then((data) => { if (lastLocalEditRef.current <= startedAt) setEntries(data); })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => { if (Array.isArray(data) && lastLocalEditRef.current <= startedAt) setEntries(data); })
         .catch(() => {});
     }, 30000);
     return () => clearInterval(id);
@@ -797,7 +821,7 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol }) {
                         <BellToggle active={alertOn} onClick={() => updateField(e.id, alertKey, !alertOn)} />
                       </div>
                       <EditableCell value={val} onChange={(v) => updateField(e.id, `venta${n}`, v)} className="font-mono font-bold text-blue-700 dark:text-blue-300 text-sm" />
-                      {d != null && <p className="text-[9px] font-mono text-neutral-400 mt-0.5">+{d.toFixed(1)}%</p>}
+                      {d != null && <p className={`text-[9px] font-mono mt-0.5 ${d < 0 ? "text-green-600" : "text-neutral-400"}`}>{d < 0 ? `✓ superado ${d.toFixed(1)}%` : `+${d.toFixed(1)}%`}</p>}
                     </div>
                   );
                 }); })()}
@@ -900,7 +924,7 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol }) {
                         <EditableCell value={val} onChange={(v) => updateField(e.id, `venta${n}`, v)} className="font-mono text-sm font-semibold text-blue-800 dark:text-blue-300" />
                         <BellToggle active={alertOn} onClick={() => updateField(e.id, alertKey, !alertOn)} />
                       </div>
-                      {d != null && <p className={`text-[9px] font-mono text-right mt-0.5 ${isNext ? "text-[#8a6508] font-bold" : "text-neutral-400"}`}>{isNext ? "◀ " : ""}+{d.toFixed(1)}%</p>}
+                      {d != null && <p className={`text-[9px] font-mono text-right mt-0.5 ${isNext ? "text-[#8a6508] font-bold" : d < 0 ? "text-green-600" : "text-neutral-400"}`}>{isNext ? "◀ " : ""}{d < 0 ? `✓ superado ${d.toFixed(1)}%` : `+${d.toFixed(1)}%`}</p>}
                     </td>
                   );
                 }); })()}

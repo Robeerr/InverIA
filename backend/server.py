@@ -127,15 +127,17 @@ async def _chartist_vigilante(sym: str, result: dict):
         sentido = (result.get("sentido") or "").lower()
         prev = await db.chartist_state.find_one({"symbol": sym}, {"_id": 0})
         today = datetime.now(timezone.utc).date().isoformat()
-        await db.chartist_state.update_one(
-            {"symbol": sym},
-            {"$set": {"symbol": sym, "accion": accion, "sentido": sentido,
-                      "updated_at": datetime.now(timezone.utc).isoformat()}},
-            upsert=True,
-        )
+        nuevo_estado = {"symbol": sym, "accion": accion, "sentido": sentido,
+                        "updated_at": datetime.now(timezone.utc).isoformat()}
+
+        async def _guardar():
+            await db.chartist_state.update_one({"symbol": sym}, {"$set": nuevo_estado}, upsert=True)
+
         if not prev:
+            await _guardar()
             return  # primera vez: solo guardamos, no avisamos (evita avalancha al arrancar)
         if prev.get("last_notify_date") == today:
+            await _guardar()
             return  # ya avisamos hoy de esta acción: no spameamos
 
         msg = None
@@ -154,11 +156,21 @@ async def _chartist_vigilante(sym: str, result: dict):
             flecha = "📈" if sentido == "alcista" else "📉"
             msg = f"{flecha} {sym}: el Chartista IA ha girado a {sentido.upper()} (antes {prev_sentido or '—'})."
 
-        if msg:
-            import telegram_notifier
-            await telegram_notifier.send_message(msg, parse_mode="", grupo="ideas_javi")
-            await db.chartist_state.update_one({"symbol": sym}, {"$set": {"last_notify_date": today}})
+        if not msg:
+            await _guardar()
+            return
+        # Enviar PRIMERO y guardar solo si salió: send_message NO lanza (devuelve (ok, err)),
+        # así que si se guardaba antes y Telegram fallaba, el cambio quedaba registrado como
+        # "ya avisado" y el aviso se perdía para siempre.
+        import telegram_notifier
+        ok, err = await telegram_notifier.send_message(msg, parse_mode="", grupo="ideas_javi")
+        if ok:
+            nuevo_estado["last_notify_date"] = today
+            await _guardar()
             logger.info("Vigilante Chartista avisó de %s", sym)
+        else:
+            # No guardamos: el próximo ciclo volverá a detectar el cambio y reintentará.
+            logger.warning("Vigilante %s: Telegram falló (%s); reintentaré", sym, str(err)[:120])
     except Exception as e:
         logger.warning("Vigilante Chartista %s falló: %s", sym, str(e)[:120])
 
@@ -1026,24 +1038,33 @@ def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_targe
                    "comment": f"Fuerza {z.get('strength')}/100 · {motivo}"})
     if not ez:
         return None
-    entry_hi = ez[0]["max"]   # borde alto de la zona 1 (primer punto de compra) — ancla del stop
+    entry_hi = ez[0]["max"]
     entry_lo = ez[0]["min"]
+    # Precio medio REALISTA de una compra escalonada (el usuario reparte entre las 3 zonas):
+    # es la referencia honesta para el R/R, no el borde alto de la zona 1.
+    entry_ref = round(sum((e["min"] + e["max"]) / 2 for e in ez) / len(ez), 2)
+    # Zona MÁS PROFUNDA a la que el plan invita a comprar: el stop debe quedar POR DEBAJO de
+    # ella. Anclarlo a la zona 1 (como se hacía) dejaba el stop por encima de NIVEL 2 y 3 —
+    # el plan se contradecía: "compra en 91" y "sal si pierde 94".
+    deepest = min(e["min"] for e in ez)
 
-    # ── STOPS: ATR reales, monótonos ──
+    # ── STOPS: por debajo de TODAS las entradas del plan, ATR real, monótonos ──
     stops = []
     if atr:
-        min_dist = max(atr, entry_hi * 0.02)
-        d = [max(1.5 * atr, min_dist)]
-        d.append(max(2.0 * atr, d[0] * 1.3))
-        d.append(max(3.0 * atr, d[1] * 1.3))
-        labels = ["STOP AJUSTADO (1.5×ATR)", "STOP ESTÁNDAR (2×ATR)", "STOP AMPLIO (3×ATR)"]
-        comments = ["1.5×ATR bajo la entrada — swing", "2×ATR — invalida la tesis técnica",
-                    "3×ATR — bajo soporte estructural, largo plazo"]
-        for i in range(3):
-            stops.append({"label": labels[i], "price": round(entry_hi - d[i], 2), "comment": comments[i]})
+        base_d = max(1.0 * atr, deepest * 0.015)      # colchón bajo el soporte más profundo
+        d = [base_d, max(1.6 * atr, base_d * 1.4), max(2.4 * atr, base_d * 1.9)]
+        labels = ["STOP AJUSTADO", "STOP ESTÁNDAR", "STOP AMPLIO"]
+        comments = [
+            "1×ATR bajo el soporte más profundo del plan — el más ceñido que respeta las 3 compras",
+            "1,6×ATR bajo el soporte más profundo — invalida la tesis técnica",
+            "2,4×ATR bajo el soporte más profundo — solo largo plazo",
+        ]
     else:
-        for pct, lbl in [(0.03, "STOP AJUSTADO (~3%)"), (0.05, "STOP ESTÁNDAR (~5%)"), (0.08, "STOP AMPLIO (~8%)")]:
-            stops.append({"label": lbl, "price": round(entry_hi * (1 - pct), 2), "comment": f"~{int(pct*100)}% bajo la entrada"})
+        d = [deepest * 0.03, deepest * 0.05, deepest * 0.08]
+        labels = ["STOP AJUSTADO (~3%)", "STOP ESTÁNDAR (~5%)", "STOP AMPLIO (~8%)"]
+        comments = [f"~{p}% bajo el soporte más profundo del plan" for p in (3, 5, 8)]
+    for i in range(3):
+        stops.append({"label": labels[i], "price": round(deepest - d[i], 2), "comment": comments[i]})
     stop_scalar = stops[0]["price"]
 
     # ── OBJETIVOS: resistencias + Fibonacci + analistas ──
@@ -1053,27 +1074,55 @@ def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_targe
     fib127 = round(low_52w + rng * 1.272, 2) if rng > 0 else None
     fib161 = round(low_52w + rng * 1.618, 2) if rng > 0 else None
     analyst = _f((price_target or {}).get("target_mean")) if isinstance(price_target, dict) else None
+    # Techo DEFENDIBLE: además del 15% sobre el máximo de 52s, ningún objetivo puede exceder
+    # lo que sostengan la resistencia más alta, los analistas o un +50%. En una acción que ha
+    # caído un 70%, la extensión Fibonacci del rango 52s daba objetivos de +283% (fantasía).
+    ceiling = min(ceiling, max([r for r in res_up] + [analyst or 0] + [price * 1.5]))
 
     def _cap(x):
         return min(x, ceiling) if x else x
 
-    # TP1: primera resistencia que dé R/R >= 1.5 sobre el stop ajustado (evita objetivos
-    # pegados al precio que darían un R/R absurdo). Si ninguna, la extensión Fibonacci.
-    risk = entry_hi - stop_scalar
-    min_tp1 = entry_hi + 1.5 * risk if risk > 0 else price * 1.04
-    tp1 = next((r for r in res_up if r >= min_tp1), None) or fib127 or round(min_tp1, 2)
-    tp2 = fib127 if (fib127 and fib127 > tp1 * 1.01) else (next((r for r in res_up if r > tp1 * 1.01), None) or round(tp1 * 1.06, 2))
-    tp3 = (analyst if analyst and analyst > tp2 * 1.01 else None) or fib161 or round(tp1 * 1.12, 2)
-    tp_labels = ["TP1 — Resistencia / R/R ≥ 1.5", "TP2 — Extensión Fibonacci 127.2%", "TP3 — Fibonacci 161.8% / Analistas"]
-    # capar, quedarnos con los que están por encima del precio, ordenar y hacerlos crecientes
-    raw = sorted({round(_cap(t), 2) for t in (tp1, tp2, tp3) if t and t > price})
-    if not raw:
-        raw = [round(price * 1.05, 2)]
-    tps = [{"label": tp_labels[i] if i < len(tp_labels) else f"TP{i + 1}", "price": raw[i], "comment": ""}
-           for i in range(min(3, len(raw)))]
+    # TP1 debe dar R/R >= 1.5 sobre el stop DEFINITIVO y la entrada media realista.
+    risk = entry_ref - stop_scalar
+    min_tp1 = entry_ref + 1.5 * risk if risk > 0 else price * 1.04
+    # Cada candidato lleva SU etiqueta pegada desde el origen (antes se asignaban por índice
+    # sobre una lista deduplicada, así que al colapsar valores las etiquetas mentían).
+    cands = []
+    t1 = next((r for r in res_up if r >= min_tp1), None)
+    cands.append((t1, "TP1 — Resistencia con R/R ≥ 1.5") if t1 else (round(min_tp1, 2), "TP1 — Objetivo por R/R ≥ 1.5"))
+    if fib127:
+        cands.append((fib127, "TP2 — Extensión Fibonacci 127,2%"))
+    t2r = next((r for r in res_up if r > (t1 or min_tp1) * 1.02), None)
+    if t2r:
+        cands.append((t2r, "TP — Siguiente resistencia"))
+    if analyst:
+        cands.append((analyst, "TP — Objetivo medio de analistas"))
+    if fib161:
+        cands.append((fib161, "TP — Extensión Fibonacci 161,8%"))
+
+    tps, vistos = [], set()
+    for val, lab in sorted(((v, l) for v, l in cands if v), key=lambda x: x[0]):
+        capped = round(_cap(val), 2)
+        if capped <= price or capped in vistos:   # capar ANTES de filtrar por precio
+            continue
+        vistos.add(capped)
+        # Si el cap ha mordido el valor, la etiqueta original ya no describe el número.
+        lab_final = lab if abs(capped - round(val, 2)) < 0.01 else "TP — Techo realista (máx. 52s / analistas)"
+        tps.append({"label": lab_final, "price": capped, "comment": ""})
+        if len(tps) >= 3:
+            break
+    if not tps:
+        tps = [{"label": "TP1 — Objetivo técnico", "price": round(price * 1.05, 2), "comment": ""}]
+    # Renumera TP1/TP2/TP3 respetando la etiqueta de método ya asignada.
+    for i, t in enumerate(tps):
+        t["label"] = t["label"].replace("TP1 — ", "TP — ", 1)
+        t["label"] = f"TP{i + 1} — " + t["label"].split("— ", 1)[-1]
     tp1s = tps[0]["price"]
     tp2s = tps[1]["price"] if len(tps) > 1 else None
-    rr = round((tp1s - entry_hi) / (entry_hi - stop_scalar), 1) if (entry_hi - stop_scalar) > 0 else None
+    rr = round((tp1s - entry_ref) / risk, 1) if risk > 0 else None
+    # Aviso honesto si ni así se alcanza un R/R sano (antes lo garantizaba _enforce_rr, que
+    # en esta rama ya no se ejecuta).
+    rr_low = bool(rr is not None and rr < 1.5)
 
     # ── key_levels ──
     supports = sorted({e["min"] for e in ez} |
@@ -1085,9 +1134,11 @@ def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_targe
         "stop_losses": stops,
         "take_profits": tps,
         "entry_zone": {"min": entry_lo, "max": entry_hi},
+        "entry_avg": entry_ref,   # precio medio si escalonas las 3 zonas (base del R/R)
         "stop_loss": stop_scalar,
         "take_profit_1": tp1s,
         "take_profit_2": tp2s,
+        "rr_bajo": rr_low,
         "risk_reward_ratio": rr,
         "key_levels": {"support": supports, "resistance": resistances},
     }
@@ -1100,12 +1151,17 @@ def _validate_analysis(result: dict, price) -> dict:
     if not isinstance(result, dict):
         return result
     # Recomendación y tendencia a enums conocidos.
-    rec_map = {"BUY": "COMPRAR", "COMPRA": "COMPRAR", "SELL": "VENDER", "VENTA": "VENDER",
-               "HOLD": "MANTENER", "NEUTRAL": "MANTENER", "MANTENER": "MANTENER",
-               "COMPRAR": "COMPRAR", "VENDER": "VENDER"}
+    # Mapeo por CONTENCIÓN, no por igualdad: los modelos de respaldo (Groq/Llama) devuelven
+    # variantes ("COMPRA FUERTE", "ACUMULAR", "BUY", "VENDER PARCIAL") que con un mapa cerrado
+    # se degradaban TODAS a MANTENER, matando la señal justo cuando Gemini está saturado.
     rec = (result.get("recommendation") or "").strip().upper()
     if rec:
-        result["recommendation"] = rec_map.get(rec, "MANTENER")
+        if any(k in rec for k in ("COMPR", "BUY", "ACUMUL")):
+            result["recommendation"] = "COMPRAR"
+        elif any(k in rec for k in ("VEND", "SELL", "REDUC")):
+            result["recommendation"] = "VENDER"
+        else:
+            result["recommendation"] = "MANTENER"
     # Confianza acotada a 0-100.
     conf = result.get("confidence")
     if isinstance(conf, (int, float)):
@@ -1275,8 +1331,11 @@ async def analyze(req: AnalyzeRequest, _user: str = Depends(auth.get_current_use
         result = _ensure_key_levels(result, indicators_data, vp, quote.get("price"))
         result = _cap_take_profits(result, quote.get("high_52w"))
         result = _enforce_rr(result, quote.get("price"), atr=(indicators_data or {}).get("atr"))
-    result = _apply_regime_filter(result)
+    # Normalizar ANTES de filtrar por régimen: _apply_regime_filter solo actúa si la
+    # recomendación es literalmente "COMPRAR", así que un "BUY" del modelo de respaldo se
+    # colaba sin recorte de confianza en mercado bajista.
     result = _validate_analysis(result, quote.get("price"))
+    result = _apply_regime_filter(result)
 
     # #7 — Si los datos son de una fuente de respaldo o con retraso, avisa en el análisis y
     # recorta la confianza (el análisis se calculó sobre datos degradados; que se sepa).
@@ -1580,13 +1639,13 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y"):
 
     # #7 — Salud de los datos: avisa si los datos vienen de una fuente de respaldo (Stooq,
     # sin volumen) o con retraso, para que no operes sobre un fallback silencioso.
+    # OJO: se mide SOLO sobre df_ind (siempre DIARIO). Medirlo sobre df_chart daba un falso
+    # "datos con retraso" permanente en los timeframes 1W y 1M, cuya última vela lleva la
+    # fecha de INICIO del periodo (una vela mensual "tiene" hasta 30 días de antigüedad).
     health = None
     try:
-        for _dfh in (df_chart, df_ind):
-            if _dfh is not None and not isinstance(_dfh, Exception):
-                h = market_data.data_health(_dfh)
-                if h and (health is None or (h.get("degraded") and not health.get("degraded"))):
-                    health = h  # nos quedamos con la peor (degradada gana)
+        if df_ind is not None and not isinstance(df_ind, Exception):
+            health = market_data.data_health(df_ind)
     except Exception:
         health = None
 
@@ -1636,14 +1695,20 @@ async def search_symbols(q: str = "", _user: str = Depends(auth.get_current_user
     key = os.environ.get("FINNHUB_API_KEY")
     if not key:
         return []
+    q = q[:40]  # acota la entrada (además es la clave de caché)
+    ok = False
     try:
-        r = await asyncio.to_thread(
-            lambda: market_data.get_http_session().get(
+        def _call():
+            # El límite de Finnhub es por CLAVE y /search también cuenta: sin pasar por el
+            # rate limiter, teclear en el buscador podía dejar sin precios a toda la app.
+            market_data.get_finnhub_limiter().acquire()
+            return market_data.get_http_session().get(
                 "https://finnhub.io/api/v1/search",
                 params={"q": q, "token": key}, timeout=6,
             )
-        )
-        data = r.json() if r.status_code == 200 else {}
+        r = await asyncio.to_thread(_call)
+        ok = r.status_code == 200
+        data = r.json() if ok else {}
     except Exception:
         data = {}
     out, seen = [], set()
@@ -1657,7 +1722,10 @@ async def search_symbols(q: str = "", _user: str = Depends(auth.get_current_user
         out.append({"symbol": sym, "name": desc.title()})
         if len(out) >= 8:
             break
-    _cache.set(ck, out, ttl=3600)
+    # Solo cachear 1h si la fuente respondió: antes un hipo de Finnhub dejaba el
+    # autocompletado de esa consulta devolviendo lista vacía durante una hora.
+    if ok:
+        _cache.set(ck, out, ttl=3600 if out else 60)
     return out
 
 
@@ -2028,7 +2096,7 @@ async def remove_watchlist(symbol: str):
 
 # ---------- Correlación de la cartera (#22) ----------
 @api_router.get("/portfolio/correlation")
-async def portfolio_correlation():
+async def portfolio_correlation(_user: str = Depends(auth.get_current_user)):
     """Correlación entre las acciones de la Cartera: detecta 'concentración oculta' —
     acciones que se mueven a la vez aunque sean de sectores distintos (si cae una, caen
     todas). Bajo demanda, cacheado 6h, con liberación de RAM (mem.trim) tras el cálculo."""
@@ -2778,6 +2846,12 @@ async def list_signals(_user: str = Depends(auth.get_current_user)):
 
 @api_router.post("/signals")
 async def create_signal(item: SignalEntryCreate, _user: str = Depends(auth.get_current_user)):
+    # Evita DUPLICADOS: sin esto, "Añadir a Cartera" del Chartista creaba una 2ª fila del
+    # mismo símbolo → P&L y diversificación contados dos veces y alertas de Telegram dobles.
+    # El frontend ya sabe interpretar el 409 ("ya estaba en tu Cartera").
+    sym = (item.symbol or "").upper().strip()
+    if sym and await db.signal_entries.find_one({"symbol": sym}, {"_id": 0, "id": 1}):
+        raise HTTPException(409, f"{sym} ya está en tu Cartera")
     entry = await signal_table.create_entry(db, item.model_dump())
     _cache._store.pop("signals_list", None)
     _cache._store.pop("signals_hot", None)
@@ -2786,7 +2860,9 @@ async def create_signal(item: SignalEntryCreate, _user: str = Depends(auth.get_c
 
 @api_router.patch("/signals/{entry_id}")
 async def update_signal(entry_id: str, item: SignalEntryUpdate, _user: str = Depends(auth.get_current_user)):
-    data = {k: v for k, v in item.model_dump().items() if v is not None}
+    # exclude_unset: distingue "no enviado" de "enviado como null". Antes se filtraban todos
+    # los None, así que era IMPOSIBLE borrar compra/acciones/venta1-3: el valor viejo volvía.
+    data = item.model_dump(exclude_unset=True)
     updated = await signal_table.update_entry(db, entry_id, data)
     if not updated:
         raise HTTPException(404, "Señal no encontrada")

@@ -76,8 +76,10 @@ export default function ChartistPanel({ symbol, runSignal }) {
   }, [symbol]);
 
   // Disparo externo desde el botón "Análisis completo" del Dashboard.
+  // OJO CON EL COSTE: si ya hay veredicto (pre-calculado o cacheado) NO se pide nada. Antes
+  // se llamaba con refresh=true, que salta la caché y puede acabar en la clave de PAGO.
   useEffect(() => {
-    if (runSignal) run(!!data);
+    if (runSignal && !data && !loading) run(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runSignal]);
 
