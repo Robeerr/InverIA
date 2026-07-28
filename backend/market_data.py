@@ -311,6 +311,14 @@ def get_stock_data(ticker: str, timeframe: str = "1Y"):
     timeframes. Caches results for 15 min to reduce external load.
     """
     period, interval = PERIOD_MAP.get(timeframe, PERIOD_MAP["1Y"])
+    # "1Y" y "1D" resuelven a ("2y","1d"), que es EXACTAMENTE lo que pide
+    # get_full_indicator_history: misma llamada a yfinance, mismo procesado, mismos
+    # respaldos. Solo cambiaba la clave de caché, así que el dashboard descargaba dos veces
+    # el mismo histórico —y es de las llamadas más lentas de la carga—. Delegamos para que
+    # compartan una sola descarga y una sola entrada en caché.
+    if (period, interval) == ("2y", "1d"):
+        return get_full_indicator_history(ticker)
+
     cache_key = f"hist:{ticker.upper()}:{timeframe}"
     cached = _cache_get(cache_key)
     if cached is not None:

@@ -1,11 +1,41 @@
 import React from "react";
 import { useSignals } from "../hooks/useSignals";
 import { fmtPrice } from "../lib/format";
+import { api } from "../lib/api";
+
+// Precarga: al dejar el ratón sobre una acción, pedimos su dashboard para que el backend lo
+// deje cacheado. Cuando se hace clic, la respuesta ya está lista y la carga es inmediata.
+// Guardas para no disparar peticiones de más:
+//   - 180 ms de espera: pasar el ratón por encima de camino a otro sitio no cuenta.
+//   - una sola vez por símbolo y sesión: el backend ya lo sirve de caché a partir de ahí.
+//   - nada en pantallas táctiles (no hay hover: se dispararía en el propio toque, sin ganar
+//     nada y gastando datos del móvil).
+const yaPrecargados = new Set();
+const hayHover = typeof window !== "undefined"
+  && window.matchMedia?.("(hover: hover)").matches;
+
+function usePrecarga() {
+  const timer = React.useRef(null);
+  const cancelar = React.useCallback(() => {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+  }, []);
+  const precargar = React.useCallback((sym) => {
+    if (!hayHover || !sym || yaPrecargados.has(sym)) return;
+    cancelar();
+    timer.current = setTimeout(() => {
+      yaPrecargados.add(sym);
+      api.dashboard(sym).catch(() => yaPrecargados.delete(sym));  // reintentable si falla
+    }, 180);
+  }, [cancelar]);
+  React.useEffect(() => cancelar, [cancelar]);
+  return { precargar, cancelar };
+}
 
 // Tira de watchlist (estilo terminal): tus acciones de Cartera en una fila horizontal
 // scrollable, con precio y cambio del día. Toca una para cargarla al instante. Mobile-first.
 export default function WatchlistStrip({ symbol, setSymbol, vertical = false, className = "" }) {
   const { data: signals } = useSignals();
+  const { precargar, cancelar } = usePrecarga();
   const entries = React.useMemo(() => {
     const arr = Array.isArray(signals) ? signals : (signals?.items || signals?.entries || []);
     // Distancia (%) del precio a su zona de compra más cercana: los niveles de compra están
@@ -51,6 +81,9 @@ export default function WatchlistStrip({ symbol, setSymbol, vertical = false, cl
           <button
             key={s}
             onClick={() => setSymbol?.(s)}
+            onMouseEnter={() => precargar(s)}
+            onMouseLeave={cancelar}
+            onFocus={() => precargar(s)}
             className={`rounded-lg border px-3 py-1.5 text-left transition-colors ${vertical ? "w-full" : "shrink-0"}`}
             style={{
               borderColor: active ? "#1a3a32" : "#e5e0d8",

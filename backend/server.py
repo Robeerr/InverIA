@@ -62,6 +62,21 @@ class _TTLCache:
             self._store.pop(key, None)  # drop expired
         return None
 
+    def get_stale(self, key, max_age):
+        """Devuelve (valor, fresco). Si la entrada caducó pero no supera max_age, la
+        devuelve igualmente con fresco=False, para poder servirla YA y refrescarla por
+        detrás. No purga: quien la pide se encarga de renovarla."""
+        entry = self._store.get(key)
+        if not entry:
+            return None, False
+        edad = _time.time() - entry["ts"]
+        if edad < entry["ttl"]:
+            return entry["val"], True
+        if edad < max_age:
+            return entry["val"], False
+        self._store.pop(key, None)
+        return None, False
+
     def set(self, key, val, ttl=30):
         now = _time.time()
         # Opportunistic purge of expired entries.
@@ -1553,6 +1568,32 @@ async def compare_stocks(req: CompareRequest, _user: str = Depends(auth.get_curr
 
 
 # ---------- Combined Dashboard ----------
+# Cuánto puede servirse una respuesta caducada mientras se recalcula por detrás.
+_DASHBOARD_STALE_MAX = int(os.environ.get("DASHBOARD_STALE_MAX", 1800))  # 30 min
+_refrescos_en_curso: set = set()
+
+
+def _refrescar_dashboard_en_segundo_plano(sym: str, timeframe: str, cache_key: str):
+    """Recalcula un dashboard caducado sin hacer esperar a quien lo pidió.
+
+    El candado evita la estampida: si el usuario cambia de ticker y vuelve, o si hay varias
+    pestañas abiertas, no se lanzan N recálculos simultáneos del mismo símbolo.
+    """
+    if cache_key in _refrescos_en_curso:
+        return
+    _refrescos_en_curso.add(cache_key)
+
+    async def _run():
+        try:
+            await _construir_dashboard(sym, timeframe, cache_key)
+        except Exception as e:
+            logger.warning("refresco de fondo de %s falló: %s", sym, str(e)[:120])
+        finally:
+            _refrescos_en_curso.discard(cache_key)
+
+    asyncio.create_task(_run())
+
+
 @api_router.get("/dashboard/{symbol}")
 async def dashboard_data(symbol: str, timeframe: str = "1Y",
                          _user: str = Depends(auth.get_current_user)):
@@ -1560,10 +1601,23 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y",
     Todas las peticiones a Yahoo Finance / Finnhub se lanzan en paralelo via thread pool."""
     sym = symbol.upper()
     cache_key = f"dashboard:{sym}:{timeframe}"
-    cached = _cache.get(cache_key)
-    if cached:
-        return cached
 
+    # Servir-caducado-y-refrescar: si hay una respuesta previa de menos de 30 min, se
+    # devuelve AL INSTANTE aunque haya pasado su TTL de 5 min, y se recalcula por detrás.
+    # Antes, cada 5 min el siguiente que abriera ese ticker pagaba la carga completa
+    # (7 fuentes externas); ahora solo la paga quien lo abre por primera vez.
+    cached, fresco = _cache.get_stale(cache_key, max_age=_DASHBOARD_STALE_MAX)
+    if cached is not None:
+        if not fresco:
+            _refrescar_dashboard_en_segundo_plano(sym, timeframe, cache_key)
+        return cached
+    return await _construir_dashboard(sym, timeframe, cache_key)
+
+
+async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
+    """El cálculo real. Separado del endpoint para que el refresco de fondo pueda
+    invocarlo sin pasar por la caché ni por la comprobación de credencial, y sin exponer
+    un parámetro extra como query param público."""
     loop = asyncio.get_running_loop()
 
     # Instrumentación: medimos cuánto tarda cada fuente para diagnosticar lentitud en Render.
@@ -1740,7 +1794,10 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y",
         "analyst": analyst,
         "buy_levels": buy_levels or [],
         "volume_profile": vp_dict or None,
-        "market_regime": market_regime.get_market_regime(),
+        # A un hilo: cuando su caché de 1h caduca, get_market_regime DESCARGA el histórico de
+        # SPY. Llamándolo aquí tal cual, esa descarga corría en el event loop y congelaba el
+        # servidor entero —todas las peticiones de todos— hasta que terminara.
+        "market_regime": await asyncio.to_thread(market_regime.get_market_regime),
         "data_health": health,
     }
     _cache.set(cache_key, result, ttl=300)
