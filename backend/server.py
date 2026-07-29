@@ -1609,9 +1609,37 @@ async def dashboard_data(symbol: str, timeframe: str = "1Y",
     cached, fresco = _cache.get_stale(cache_key, max_age=_DASHBOARD_STALE_MAX)
     if cached is not None:
         if not fresco:
+            # Lo pesado (histórico, indicadores, volume profile) se sirve caducado sin
+            # problema: son velas DIARIAS, media hora no las cambia. La COTIZACIÓN sí, y es
+            # lo primero que se mira, así que se refresca aquí mismo. Es barato (una llamada,
+            # cacheada 60s) y va acotado para no perder la ganancia de velocidad.
+            cached = await _refrescar_cotizacion(cached, sym)
             _refrescar_dashboard_en_segundo_plano(sym, timeframe, cache_key)
         return cached
     return await _construir_dashboard(sym, timeframe, cache_key)
+
+
+async def _refrescar_cotizacion(payload: dict, sym: str) -> dict:
+    """Devuelve una copia del payload con la cotización al día. Si no llega a tiempo,
+    devuelve el payload tal cual: mejor un precio de hace un rato que una página en blanco
+    (y el WebSocket lo corrige en segundos de todas formas)."""
+    try:
+        quote = await asyncio.wait_for(asyncio.to_thread(market_data.get_quote, sym),
+                                       timeout=2.0)
+    except Exception:   # incluye el TimeoutError de wait_for
+        return payload
+    if not quote:
+        return payload
+    nuevo = dict(payload)
+    anterior = nuevo.get("quote") or {}
+    # Fusionar sin pisar con nulos: get_quote a veces vuelve sin fundamentales (PER, beta...)
+    # y no queremos borrar los que ya teníamos.
+    fusion = dict(anterior)
+    for k, v in quote.items():
+        if v is not None:
+            fusion[k] = v
+    nuevo["quote"] = fusion
+    return nuevo
 
 
 async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
@@ -1799,6 +1827,9 @@ async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
         # servidor entero —todas las peticiones de todos— hasta que terminara.
         "market_regime": await asyncio.to_thread(market_regime.get_market_regime),
         "data_health": health,
+        # Cuándo se calculó DE VERDAD todo lo pesado. Al servirse caducado, la cotización se
+        # refresca aparte pero esta marca no cambia: así queda claro de cuándo es el resto.
+        "generado_en": datetime.now(timezone.utc).isoformat(),
     }
     _cache.set(cache_key, result, ttl=300)
     return result
