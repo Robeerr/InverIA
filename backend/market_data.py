@@ -106,7 +106,18 @@ class _FinnhubLimiter:
             time.sleep(min(max(sleep_for, 0.05), 1.0))
 
 
-_finnhub_limiter = _FinnhubLimiter(max_per_min=50, bg_reserve=10)
+# bg_reserve = cuota que las tareas de FONDO no pueden tocar, o sea la reservada a lo que
+# pide el usuario. Estaba en 10: el fondo podía comerse 40 de las 50 y dejaba 10/min para
+# navegar. Como abrir una acción gasta entre 2 y 5 llamadas, eso daba para 2-3 cambios de
+# ticker por minuto antes de quedarse sin cuota — justo el síntoma de "cambio entre acciones
+# de la watchlist y acaba petando".
+# Ahora se reparte a la mitad. El vigilante de la Cartera tardará algo más en completar sus
+# vueltas, que da igual: comprobar niveles a los 60s en vez de a los 45s no cambia nada,
+# quedarse sin poder abrir una acción sí.
+_finnhub_limiter = _FinnhubLimiter(
+    max_per_min=int(os.environ.get("FINNHUB_MAX_PER_MIN", 50)),
+    bg_reserve=int(os.environ.get("FINNHUB_FOREGROUND_RESERVE", 25)),
+)
 
 
 def _ticker(symbol: str):

@@ -169,9 +169,18 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   // Contador de petición: descarta respuestas que llegan tarde tras cambiar de símbolo
   // (una petición lenta no debe pisar datos de un símbolo posterior).
   const reqId = useRef(0);
+  // Petición en curso, para poder abortarla al cambiar de acción.
+  const abortRef = useRef(null);
 
   const loadSymbolData = useCallback(async (sym, tf) => {
     const my = ++reqId.current;
+    // Cancela la carga anterior: al ir saltando por la watchlist, esas peticiones ya no le
+    // sirven a nadie pero seguían gastando cuota de datos, y quedarse sin cuota es
+    // justamente lo que hacía fallar la carga siguiente.
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+
     setLoadingQuote(true);
     setAnalysis(null);
     setMarketSignals(null);
@@ -179,13 +188,20 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
     setBuyLevels(null);
     setChartLines(null);
     setDataHealth(null);
-    // 1 reintento rápido ante un fallo de red puntual.
+
+    const esCancelada = (e) => e?.code === "ERR_CANCELED" || e?.name === "CanceledError";
+    // Un reintento SOLO ante un fallo de red puntual. Antes reintentaba ante cualquier error:
+    // si la carga fallaba por cuota agotada, insistir 600 ms después la empeoraba, y saltar
+    // rápido entre acciones multiplicaba el efecto hasta tumbarlo todo.
     const fetchWithRetry = async () => {
       try {
-        return await api.dashboard(sym, tf);
+        return await api.dashboard(sym, tf, ac.signal);
       } catch (e) {
+        const st = e?.response?.status;
+        // Cancelada, sin cuota (429) o error del servidor: NO insistir.
+        if (esCancelada(e) || st === 429 || (st >= 500 && st < 600)) throw e;
         await new Promise((r) => setTimeout(r, 600));
-        return await api.dashboard(sym, tf);
+        return await api.dashboard(sym, tf, ac.signal);
       }
     };
     try {
@@ -212,11 +228,16 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       if (data.market_regime) setMarketRegime(data.market_regime);
       setDataHealth(data.data_health || null);
     } catch (e) {
+      // Cancelada al cambiar de acción: es lo esperado, no un fallo. Avisar aquí llenaba la
+      // pantalla de errores rojos justo cuando saltabas rápido por la watchlist.
+      if (esCancelada(e)) return;
       if (my === reqId.current) {
         const st = e?.response?.status;
         if (st === 404) {
           setQuote(null);
           toast.error(`"${sym}" no existe. Revisa el símbolo (p.ej. AAPL, no APPL).`);
+        } else if (st === 429) {
+          toast.error("Demasiadas consultas seguidas. Espera unos segundos antes de cambiar de acción.");
         } else {
           toast.error("Error al cargar datos. Inténtalo de nuevo.");
         }

@@ -27,8 +27,11 @@ client.interceptors.response.use(
 );
 
 export const api = {
-  dashboard: (symbol, timeframe = "1Y") =>
-    client.get(`/dashboard/${symbol}`, { params: { timeframe } }).then((r) => r.data),
+  // signal: permite CANCELAR la petición al cambiar de acción. Sin esto, ir saltando por la
+  // watchlist dejaba peticiones anteriores vivas, cada una gastando cuota de datos que ya no
+  // le servía a nadie — y agotarla es lo que hacía fallar la carga siguiente.
+  dashboard: (symbol, timeframe = "1Y", signal) =>
+    client.get(`/dashboard/${symbol}`, { params: { timeframe }, signal }).then((r) => r.data),
   quote: (symbol) => client.get(`/quote/${symbol}`).then((r) => r.data),
   chart: (symbol, timeframe = "1Y") =>
     client.get(`/chart/${symbol}`, { params: { timeframe } }).then((r) => r.data),
