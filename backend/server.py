@@ -3366,9 +3366,26 @@ _quote_manager = _QuoteManager()
 
 
 @api_router.websocket("/ws/quote/{symbol}")
-async def ws_quote(websocket: WebSocket, symbol: str):
+async def ws_quote(websocket: WebSocket, symbol: str, token: str = ""):
     """Stream live price updates for a symbol — tick-by-tick via the Finnhub trade
-    stream while the market is open, with a 15s REST baseline as fallback."""
+    stream while the market is open, with a 15s REST baseline as fallback.
+
+    Requiere credencial. Cada conexión arranca un bucle REST cada 15s (4 llamadas/min por
+    símbolo) contra NUESTRA cuota de Finnhub, así que sin autenticar cualquiera podía abrir
+    conexiones para decenas de símbolos y dejar la app sin cuota. Se escapó de las rondas
+    anteriores porque los WebSocket no salen al listar las rutas HTTP normales.
+
+    El token va como query param y no en cabecera porque la API de WebSocket del navegador
+    no permite cabeceras personalizadas. Se rechaza ANTES de aceptar la conexión, para no
+    llegar a arrancar el bucle de cuota.
+    """
+    try:
+        auth.get_current_user(token)
+    except HTTPException:
+        # 1008 = policy violation. El frontend lo distingue de una caída de red y NO
+        # reintenta: pasa al respaldo REST, que al dar 401 lleva a iniciar sesión.
+        await websocket.close(code=1008)
+        return
     sym = symbol.upper()
     await _quote_manager.connect(sym, websocket)
     try:

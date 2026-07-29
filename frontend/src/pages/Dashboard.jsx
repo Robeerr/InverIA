@@ -367,14 +367,21 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       try {
         const base = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
         const wsBase = base.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
-        ws = new WebSocket(`${wsBase}/api/ws/quote/${symbol}`);
+        // El token va en la URL porque la API de WebSocket del navegador no deja poner
+        // cabeceras. Sin él el backend cierra la conexión: cada una consume cuota de datos.
+        const tok = localStorage.getItem("inveria_token") || "";
+        ws = new WebSocket(`${wsBase}/api/ws/quote/${symbol}?token=${encodeURIComponent(tok)}`);
         ws.onopen = () => { retries = 0; };
         ws.onmessage = (e) => {
           try { scheduleUpdate(JSON.parse(e.data)); } catch {}
         };
         ws.onerror = () => {};
-        ws.onclose = () => {
+        ws.onclose = (ev) => {
           if (closed) return;
+          // 1008 = el backend ha rechazado la credencial. Reintentar no va a arreglarlo:
+          // serían 5 intentos y ~1 minuto para acabar igual. Se pasa directamente al
+          // respaldo REST, que al dar 401 hace que la app te mande a iniciar sesión.
+          if (ev?.code === 1008) { startFallback(); return; }
           if (retries < MAX_RETRIES) {
             const delay = Math.min(2000 * 2 ** retries, 32000);
             retries++;
