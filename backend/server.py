@@ -1289,10 +1289,20 @@ async def analyze(req: AnalyzeRequest, _user: str = Depends(auth.get_current_use
 
     # quote y df son operaciones bloqueantes e independientes: las sacamos del event
     # loop y las corremos en paralelo (antes bloqueaban ~3-5s con 1 solo worker).
-    quote, df = await asyncio.gather(
+    quote, df, df_spy = await asyncio.gather(
         loop.run_in_executor(None, market_data.get_quote, symbol),
         loop.run_in_executor(None, market_data.get_full_indicator_history, symbol),
+        # SPY para la Fuerza Relativa. Cacheado (lo comparte con el semáforo de mercado),
+        # y va en el gather para no añadir latencia cuando toque descargarlo.
+        loop.run_in_executor(None, market_data.get_full_indicator_history, "SPY"),
+        return_exceptions=True,
     )
+    if isinstance(quote, Exception):
+        quote = None
+    if isinstance(df, Exception):
+        df = None
+    if isinstance(df_spy, Exception):
+        df_spy = None
     if not quote:
         raise HTTPException(404, f"Símbolo no encontrado: {symbol}")
     if df is None or df.empty:
@@ -1383,6 +1393,10 @@ async def analyze(req: AnalyzeRequest, _user: str = Depends(auth.get_current_use
         days_to_earnings=days_to_earnings,
         company_profile=company_profile,
         final_levels=det_levels,
+        relative_strength=(
+            await loop.run_in_executor(None, ind.relative_strength, df, df_spy)
+            if df_spy is not None else None
+        ),
     )
     used_model = requested_model
     # Cadena de fallback en orden de preferencia, ENTRE PROVEEDORES distintos: si Gemini
@@ -1705,9 +1719,13 @@ async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
         _timed("trends", _cached_trends, sym),
         _timed("price_target", _cached_price_target, sym),
         _timed("vp", partial(polygon_data.get_volume_profile, sym, 365)),
+        # Histórico del índice para la Fuerza Relativa. No es una fuente nueva de verdad: es
+        # el mismo SPY que ya descarga y cachea el semáforo de mercado, así que casi siempre
+        # sale de caché. Va en el gather para que, cuando toque bajarlo, no alargue la carga.
+        _timed("spy", market_data.get_full_indicator_history, "SPY"),
         return_exceptions=True,
     )
-    quote, df_chart, df_ind, news_items, trends, price_target, vp = results
+    quote, df_chart, df_ind, news_items, trends, price_target, vp, df_spy = results
     _dt_total = _time.time() - _t_total
     if _dt_total > 8.0:
         logger.warning("dashboard[%s] TOTAL fetch LENTO: %.1fs", sym, _dt_total)
@@ -1758,6 +1776,18 @@ async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
     news_list = []
     if news_items and not isinstance(news_items, Exception):
         news_list = news_items
+
+    # Fuerza Relativa frente al S&P 500. Es el filtro que más usan las metodologías de
+    # momentum para separar líderes de rezagadas, y es el único indicador de peso que no
+    # teníamos. Sale de datos ya descargados, así que no cuesta ni una llamada extra.
+    fuerza_relativa = None
+    if (df_ind is not None and not isinstance(df_ind, Exception)
+            and df_spy is not None and not isinstance(df_spy, Exception)):
+        try:
+            fuerza_relativa = await loop.run_in_executor(
+                None, ind.relative_strength, df_ind, df_spy)
+        except Exception:
+            fuerza_relativa = None
 
     analyst_consensus = None
     if trends and not isinstance(trends, Exception):
@@ -1822,6 +1852,7 @@ async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
         "analyst": analyst,
         "buy_levels": buy_levels or [],
         "volume_profile": vp_dict or None,
+        "relative_strength": fuerza_relativa,
         # A un hilo: cuando su caché de 1h caduca, get_market_regime DESCARGA el histórico de
         # SPY. Llamándolo aquí tal cual, esa descarga corría en el event loop y congelaba el
         # servidor entero —todas las peticiones de todos— hasta que terminara.

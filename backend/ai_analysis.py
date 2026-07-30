@@ -105,6 +105,18 @@ VWAP ANCLADO (soporte dinámico institucional):
 - Si el precio está por encima del VWAP anclado: alcista; si está por debajo: bajista.
 - El VWAP anclado actúa como soporte/resistencia donde las instituciones suelen reentrar.
 
+FUERZA RELATIVA frente al S&P 500 (campo fuerza_relativa_vs_sp500):
+- Mide si la acción va POR DELANTE o POR DETRÁS del mercado a 1, 3 y 6 meses. La diferencia
+  está en puntos porcentuales: +15 significa que ha rendido 15 pp más que el índice.
+- Es un dato de CALIDAD de la candidata, no una señal de entrada. Una acción que bate al
+  mercado de forma sostenida suele seguir liderando; una rezagada crónica necesita una razón
+  concreta (catalizador, giro en fundamentales) para merecer la compra: si no la hay, dilo.
+- Menciónala en el technical_analysis cuando exista el dato, con su número.
+- CUIDADO con la contradicción: comprar en soportes tras una caída es, por definición, comprar
+  algo que va por detrás del mercado a corto plazo. Eso NO invalida la tesis de acumulación,
+  pero si además va rezagada a 6 meses, es una razón MÁS para recortar la confianza y el
+  tamaño. Si no hay dato, no te lo inventes ni lo menciones.
+
 MACD — señal de CALIDAD, no puerta que bloquea:
 - MACD POR ENCIMA de cero: la compra tiene el viento a favor; confianza normal.
 - MACD en territorio NEGATIVO: el precio sigue dominado por vendedores. NO prohíbe comprar en
@@ -312,7 +324,8 @@ def _build_payload(quote: dict, indicators: dict, news: list,
                    volume_profile: dict = None, insider: dict = None,
                    earnings_history: dict = None, buy_levels: list = None,
                    next_earnings_date: str = None, days_to_earnings: int = None,
-                   company_profile: dict = None, final_levels: dict = None) -> str:
+                   company_profile: dict = None, final_levels: dict = None,
+                   relative_strength: dict = None) -> str:
     ind = indicators or {}
     price = quote.get("price") or 0
     # Prefer yfinance 52w values; fallback to indicator-computed values
@@ -408,6 +421,10 @@ def _build_payload(quote: dict, indicators: dict, news: list,
             "HVN": (volume_profile or {}).get("hvn", []),
             "LVN": (volume_profile or {}).get("lvn", []),
         } if volume_profile else None,
+        # Fuerza Relativa frente al S&P 500: si la acción va por delante o por detrás del
+        # mercado a 1, 3 y 6 meses. Es el filtro que usan las metodologías de momentum para
+        # separar líderes de rezagadas, y aporta algo que ningún otro dato del payload dice.
+        "fuerza_relativa_vs_sp500": relative_strength,
     }
 
     # Zonas de compra ya calculadas por el motor de confluencia (deterministas).
@@ -1005,11 +1022,12 @@ async def analyze_stock(
     days_to_earnings: int = None,
     company_profile: dict = None,
     final_levels: dict = None,
+    relative_strength: dict = None,
 ) -> dict:
     user_msg = _build_payload(quote, indicators, news, analyst_consensus, price_target,
                               volume_profile, insider, earnings_history, buy_levels,
                               next_earnings_date, days_to_earnings, company_profile,
-                              final_levels)
+                              final_levels, relative_strength)
     # Groq (free tier, 8000 TPM entrada+salida) no admite el prompt completo: ni el catálogo
     # largo de campos ni el digest del cerebro caben junto a la respuesta. En esa vía se usa el
     # prompt compacto y se omite el digest — mejor un análisis breve y ENTERO que uno cortado.

@@ -22,7 +22,55 @@ function macdTone(v) {
   return v > 0 ? "text-[#4a7c59]" : "text-[#d85c41]";
 }
 
-export default function IndicatorsPanel({ indicators, analysis }) {
+// Fuerza Relativa frente al S&P 500. Va FUERA de las pestañas y siempre visible porque no es
+// un indicador más para consultar: es el filtro de "¿esta acción lidera o va a rastras del
+// mercado?", y esconderlo tras un clic lo convierte en algo que nadie mira.
+function FuerzaRelativa({ rs }) {
+  if (!rs?.ventanas) return null;
+  // Los colores van por CLASE, no por style en línea: el remapeo de modo oscuro de index.css
+  // funciona con selectores de clase (.dark .text-[#4a7c59]), así que un color en línea se lo
+  // salta y se queda en 3,6:1 sobre el fondo oscuro — por debajo del mínimo legible.
+  const tono = {
+    "LÍDER":       { c: "text-[#4a7c59]", bg: "bg-[#4a7c59]/10", i: "🏆" },
+    "POR DELANTE": { c: "text-[#4a7c59]", bg: "bg-[#4a7c59]/5",  i: "↗" },
+    "POR DETRÁS":  { c: "text-[#c9a14a]", bg: "bg-[#c9a14a]/10", i: "↘" },
+    "REZAGADA":    { c: "text-[#d85c41]", bg: "bg-[#d85c41]/10", i: "⚠️" },
+  }[rs.veredicto] || { c: "text-[#5c6b66]", bg: "", i: "" };
+  const orden = ["1m", "3m", "6m"];
+  return (
+    <div data-testid="fuerza-relativa" className={`mb-4 rounded-lg px-3 py-2.5 ${tono.bg}`}>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-sm leading-none">{tono.i}</span>
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#5c6b66]">
+            Fuerza relativa vs S&amp;P 500
+          </span>
+          <span className={`font-mono text-xs font-bold ${tono.c}`}>{rs.veredicto}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          {orden.filter((k) => rs.ventanas[k]).map((k) => {
+            const v = rs.ventanas[k];
+            const col = v.diferencia_pp >= 0 ? "text-[#4a7c59]" : "text-[#d85c41]";
+            return (
+              <div key={k} className="text-right">
+                <div className="font-mono text-[9px] uppercase text-[#5c6b66]">{k}</div>
+                <div className={`font-mono text-xs font-semibold ${col}`}>
+                  {v.diferencia_pp >= 0 ? "+" : ""}{v.diferencia_pp} pp
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <p className="text-[11px] text-[#5c6b66] mt-1.5 leading-snug">
+        Diferencia de rentabilidad frente al índice. Positivo = la acción va por delante del
+        mercado. Es una medida de calidad de la candidata, no una señal de entrada.
+      </p>
+    </div>
+  );
+}
+
+export default function IndicatorsPanel({ indicators, analysis, relativeStrength }) {
   if (!indicators) return null;
   const { rsi, macd, bollinger, sma, ema, fibonacci, support_resistance, patterns } = indicators;
 
@@ -36,6 +84,8 @@ export default function IndicatorsPanel({ indicators, analysis }) {
           Indicadores Técnicos
         </h3>
       </div>
+
+      <FuerzaRelativa rs={relativeStrength} />
 
       <Tabs defaultValue="momentum">
         <TabsList className="bg-[#f5f3ef] border border-[#e5e0d8] grid grid-cols-4 mb-4">

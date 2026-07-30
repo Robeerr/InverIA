@@ -158,6 +158,76 @@ def fibonacci_levels(high: float, low: float):
     }
 
 
+#: Ventanas de la Fuerza Relativa, en sesiones de bolsa (~21 sesiones por mes).
+_RS_VENTANAS = (("1m", 21), ("3m", 63), ("6m", 126))
+
+
+def relative_strength(df_accion: pd.DataFrame, df_indice: pd.DataFrame):
+    """Fuerza Relativa: cuánto mejor (o peor) se ha comportado la acción que su índice.
+
+    Devuelve, para 1, 3 y 6 meses, la rentabilidad de la acción, la del índice y la
+    diferencia en puntos porcentuales. Positivo = la acción va por delante del mercado.
+
+    Se alinea por FECHA, no por posición: si la acción cotiza menos días que el índice (IPO
+    reciente, suspensiones, mercados con festivos distintos), tomar iloc[-21] en cada serie
+    compararía ventanas de tiempo DISTINTAS y el resultado no querría decir nada.
+
+    Devuelve None si no hay histórico común suficiente, en vez de inventar un número.
+    """
+    if df_accion is None or df_indice is None:
+        return None
+    try:
+        if df_accion.empty or df_indice.empty:
+            return None
+        a = df_accion[["Date", "Close"]].dropna()
+        b = df_indice[["Date", "Close"]].dropna()
+        if a.empty or b.empty:
+            return None
+        # Normalizar a fecha (sin hora) para que el cruce no falle por marcas horarias.
+        a = a.assign(_d=pd.to_datetime(a["Date"]).dt.normalize())
+        b = b.assign(_d=pd.to_datetime(b["Date"]).dt.normalize())
+        j = a.merge(b, on="_d", suffixes=("_a", "_b")).sort_values("_d")
+        if len(j) < 25:            # ni un mes de histórico común
+            return None
+
+        out, ultima = {}, None
+        for etiqueta, sesiones in _RS_VENTANAS:
+            if len(j) <= sesiones:
+                continue           # sin histórico para esta ventana: se omite, no se rellena
+            ini_a = float(j["Close_a"].iloc[-1 - sesiones])
+            ini_b = float(j["Close_b"].iloc[-1 - sesiones])
+            fin_a = float(j["Close_a"].iloc[-1])
+            fin_b = float(j["Close_b"].iloc[-1])
+            if ini_a <= 0 or ini_b <= 0:
+                continue
+            r_a = (fin_a / ini_a - 1) * 100
+            r_b = (fin_b / ini_b - 1) * 100
+            out[etiqueta] = {
+                "accion_pct": round(r_a, 2),
+                "indice_pct": round(r_b, 2),
+                "diferencia_pp": round(r_a - r_b, 2),
+                "supera": r_a > r_b,
+            }
+            ultima = etiqueta
+        if not out:
+            return None
+        # Resumen legible: se usa la ventana más larga disponible como referencia principal.
+        ref = out.get("6m") or out.get("3m") or out.get(ultima)
+        d = ref["diferencia_pp"]
+        if d >= 10:
+            veredicto = "LÍDER"
+        elif d > 0:
+            veredicto = "POR DELANTE"
+        elif d > -10:
+            veredicto = "POR DETRÁS"
+        else:
+            veredicto = "REZAGADA"
+        return {"ventanas": out, "veredicto": veredicto, "referencia_pp": d,
+                "sesiones_comunes": int(len(j))}
+    except Exception:
+        return None
+
+
 def support_resistance(df: pd.DataFrame, window: int = 5, n_levels: int = 3):
     """Find local minima (support) and maxima (resistance) pivots.
 

@@ -134,6 +134,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const [analystData, setAnalystData] = useState(null);
   const [marketSignals, setMarketSignals] = useState(null);
   const [volumeProfile, setVolumeProfile] = useState(null);
+  const [relativeStrength, setRelativeStrength] = useState(null);
   const [buyLevels, setBuyLevels] = useState(null);
   const [chartLines, setChartLines] = useState(null);
   const [marketRegime, setMarketRegime] = useState(null);
@@ -185,6 +186,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
     setAnalysis(null);
     setMarketSignals(null);
     setVolumeProfile(null);
+    setRelativeStrength(null);
     setBuyLevels(null);
     setChartLines(null);
     setDataHealth(null);
@@ -225,6 +227,9 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       if (data.buy_levels) setBuyLevels(data.buy_levels);
       if (data.lines) setChartLines(data.lines);
       if (data.volume_profile) setVolumeProfile(data.volume_profile);
+      // Se asigna siempre, incluso a null: si la acción anterior tenía Fuerza Relativa y esta
+      // no (histórico corto), dejarla puesta mostraría el dato de la acción anterior.
+      setRelativeStrength(data.relative_strength || null);
       if (data.market_regime) setMarketRegime(data.market_regime);
       setDataHealth(data.data_health || null);
     } catch (e) {
@@ -507,7 +512,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
         {/* C: Consenso + Indicadores. En escritorio bajo el gráfico (col 1); en móvil al final. */}
         <div className="space-y-4 sm:space-y-6 order-3 xl:col-start-1 xl:row-start-2">
           <AnalystConsensusCard data={analystData} />
-          <IndicatorsPanel indicators={indicators} analysis={analysis} />
+          <IndicatorsPanel indicators={indicators} analysis={analysis} relativeStrength={relativeStrength} />
         </div>
       </div>
 
