@@ -82,11 +82,19 @@ REGLAS DE STOP-LOSS (basadas en ATR — el método profesional):
   principal) y decirlo. Estrechar el stop para "cumplir" el ratio solo consigue que te ejecute
   el ruido: el stop lo dicta la volatilidad, no el objetivo que te gustaría alcanzar.
 
-REGLAS DE TAKE-PROFIT:
-- TP1: primera resistencia fuerte o extensión Fibonacci 100% (vuelta al máximo swing)
-- TP2: extensión Fibonacci 127.2% sobre el swing bajo-alto del período (objetivo principal)
-- TP3: extensión Fibonacci 161.8% o precio objetivo de analistas — PERO NUNCA más del 15% por encima del máximo de 52 semanas
-- Relación R/R mínima: 2:1. Si el nivel no da 2:1, NO lo pongas como entrada principal.
+REGLAS DE TAKE-PROFIT (manda el nivel REAL, no la proyección teórica):
+- Los objetivos se ponen donde el mercado ya ha reaccionado: RESISTENCIAS históricas (sitios
+  donde el precio ya se dio la vuelta), el máximo de 52 semanas y el precio objetivo de los
+  analistas. Ese es el orden de preferencia.
+- TP1: primera resistencia por encima que dé un R/R de al menos 2:1.
+- TP2 y TP3: las siguientes resistencias por encima de TP1.
+- Las extensiones Fibonacci (127,2% / 161,8%) son el ÚLTIMO recurso, solo cuando no hay
+  resistencias arriba — el caso de una acción en máximos históricos. Motivo: la extensión se
+  mide sobre el rango de 52 semanas, así que cuanto más ha caído una acción más arriba
+  proyecta, y produce objetivos de fantasía justo cuando menos se los merece. Una resistencia
+  es observable; una extensión depende de dónde empiece a medir cada uno.
+- NINGÚN objetivo por debajo del R/R mínimo de 2:1: si no llega, no es un objetivo.
+- Techo: nunca más del 15% por encima del máximo de 52 semanas.
 
 RÉGIMEN DE MERCADO (condiciona la fiabilidad de los niveles):
 - TENDENCIA ALCISTA (ADX>25, precio>SMA200): en tendencia, los retrocesos a SMA50, VWAP anclado y Fibonacci 38.2%/50% son las mejores entradas. El MACD debe estar por encima de cero (MACD>0) para confirmar la tendencia.
@@ -164,8 +172,8 @@ ESTRUCTURA JSON EXACTA:
 
   "take_profits": [
     {"label": "TP1 — Resistencia con R/R ≥ 2", "price": número, "comment": "Primera resistencia que da R/R mínimo 2:1"},
-    {"label": "TP2 — Extensión Fibonacci 127,2%", "price": número, "comment": "Objetivo de medio plazo"},
-    {"label": "TP3 — Fibonacci 161,8% / Analistas", "price": número, "comment": "Objetivo ambicioso — no más de 15% sobre máximo 52s"}
+    {"label": "TP2 — Siguiente resistencia", "price": número, "comment": "Objetivo de medio plazo"},
+    {"label": "TP3 — Máximo de 52 semanas / Analistas", "price": número, "comment": "Objetivo ambicioso — no más de 15% sobre máximo 52s"}
   ],
 
   "entry_zone": {"min": número, "max": número},
@@ -241,9 +249,9 @@ NIVELES DE ENTRADA (deben ESCALONARSE en profundidad):
 - NIVEL 3 (ENTRADA AGRESIVA): Cerca del VAL o HVN más profunda. Escenario de corrección fuerte. DEBE estar bastante por debajo (-15% a -30%). NUNCA pegado al precio.
 
 STOPS: Usa siempre ATR. Por debajo de LVN o VAL, el precio cae rápido — pon el stop después de esa zona de baja liquidez.
-TP1: resistencia más cercana o 100% del swing
-TP2: extensión Fibonacci 127.2%
-TP3: extensión Fibonacci 161.8% o precio objetivo analistas (máximo: máximo 52 semanas + 15%)
+TP1: primera resistencia por encima que dé R/R ≥ 2:1
+TP2 y TP3: siguientes resistencias reales, o el máximo de 52 semanas, o el objetivo de analistas
+Fibonacci solo si no hay ninguna resistencia arriba (máximos históricos). Techo: máx. 52s + 15%
 
 SEÑALES ADICIONALES:
 - **Insider trading**: Si los directivos COMPRAN: señal alcista muy fiable. Si VENDEN masivamente: precaución.

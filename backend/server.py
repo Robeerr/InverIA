@@ -1180,23 +1180,55 @@ def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_targe
     min_tp1 = entry_ref + MIN_RR * risk if risk > 0 else price * 1.04
     # Cada candidato lleva SU etiqueta pegada desde el origen (antes se asignaban por índice
     # sobre una lista deduplicada, así que al colapsar valores las etiquetas mentían).
+    #
+    # ORDEN DE PREFERENCIA: primero niveles que el mercado ha dejado DE VERDAD (resistencias
+    # donde el precio ya se dio la vuelta, el máximo de 52 semanas, el objetivo de los
+    # analistas) y solo al final las extensiones Fibonacci.
+    #
+    # Antes TP2 ERA la extensión 127,2% y TP3 la 161,8% por definición, sin que nadie hubiera
+    # comprobado que el precio llegue ahí. Eso producía objetivos de fantasía (+283% en
+    # acciones machacadas, que hubo que tapar con un techo) porque la extensión se calcula
+    # sobre el rango de 52 semanas: cuanto más ha caído la acción, más arriba proyecta.
+    # Una resistencia, en cambio, es un sitio donde el precio ya se paró: es observable y no
+    # depende de dónde empiece a medir cada uno.
+    # Fibonacci NO se elimina: queda como relleno cuando no hay suficientes niveles reales
+    # (típico en una acción en máximos históricos, donde por encima no hay nada).
     cands = []
     t1 = next((r for r in res_up if r >= min_tp1), None)
-    cands.append((t1, f"TP1 — Resistencia con R/R ≥ {MIN_RR:g}") if t1 else (round(min_tp1, 2), f"TP1 — Objetivo por R/R ≥ {MIN_RR:g}"))
-    if fib127:
-        cands.append((fib127, "TP2 — Extensión Fibonacci 127,2%"))
-    t2r = next((r for r in res_up if r > (t1 or min_tp1) * 1.02), None)
-    if t2r:
-        cands.append((t2r, "TP — Siguiente resistencia"))
+    cands.append((t1, f"TP1 — Resistencia con R/R ≥ {MIN_RR:g}") if t1
+                 else (round(min_tp1, 2), f"TP1 — Objetivo por R/R ≥ {MIN_RR:g}"))
+    # Resistencias reales por encima de TP1, en orden. Se piden hasta 4: con TP1 ya hay de
+    # sobra para los tres objetivos sin tocar Fibonacci.
+    ancla = t1 or min_tp1
+    for r in res_up:
+        if r > ancla * 1.02:
+            cands.append((r, "TP — Siguiente resistencia"))
+            ancla = r
+            if len(cands) >= 4:
+                break
+    # Máximo de 52 semanas: la resistencia más objetiva que existe y la que más se vigila.
+    if high_52w and high_52w > price * 1.01:
+        cands.append((round(high_52w, 2), "TP — Máximo de 52 semanas"))
     if analyst:
         cands.append((analyst, "TP — Objetivo medio de analistas"))
+    # Fibonacci, al final: solo entra si lo anterior no ha dado para tres objetivos.
+    if fib127:
+        cands.append((fib127, "TP — Extensión Fibonacci 127,2% (sin resistencia arriba)"))
     if fib161:
-        cands.append((fib161, "TP — Extensión Fibonacci 161,8%"))
+        cands.append((fib161, "TP — Extensión Fibonacci 161,8% (sin resistencia arriba)"))
 
+    # Se recorre en ORDEN DE PREFERENCIA (no por precio) para que Fibonacci solo entre si
+    # falta hueco; luego se ordenan por precio para presentarlos.
     tps, vistos = [], set()
-    for val, lab in sorted(((v, l) for v, l in cands if v), key=lambda x: x[0]):
+    for val, lab in ((v, l) for v, l in cands if v):
         capped = round(_cap(val), 2)
         if capped <= price or capped in vistos:   # capar ANTES de filtrar por precio
+            continue
+        # Ningún objetivo por debajo del suelo de R/R. Si no llega al mínimo, tomarlo sería
+        # arriesgar más de lo que se gana, que es justo lo que el R/R está ahí para descartar.
+        # Sin este filtro, una extensión Fibonacci un poco por debajo del suelo se colaba como
+        # TP1 y el plan salía con un R/R de 1,95 pidiendo 2.
+        if capped < min_tp1 - 0.01:
             continue
         vistos.add(capped)
         # Si el cap ha mordido el valor, la etiqueta original ya no describe el número.
@@ -1206,6 +1238,10 @@ def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_targe
             break
     if not tps:
         tps = [{"label": "TP1 — Objetivo técnico", "price": round(price * 1.05, 2), "comment": ""}]
+    # Se eligieron por preferencia de método, no por precio: hay que ordenarlos ANTES de
+    # renumerar o saldría un TP2 más bajo que el TP1 (el objetivo de analistas o el máximo de
+    # 52 semanas pueden quedar por debajo de una resistencia elegida después).
+    tps.sort(key=lambda t: t["price"])
     # Renumera TP1/TP2/TP3 respetando la etiqueta de método ya asignada.
     for i, t in enumerate(tps):
         t["label"] = t["label"].replace("TP1 — ", "TP — ", 1)
