@@ -251,3 +251,52 @@ body {
 /* Ocultar scrollbar horizontal (watchlist strip estilo terminal) */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ── Watchlist: colores por VARIABLE ──────────────────────────────────────────
+   Este componente invierte los colores cuando una tarjeta está seleccionada, así que
+   necesita pintarlos en línea (una clase no puede depender de ese estado). Pero un estilo
+   en línea no lo alcanza el remapeo de arriba, y por eso las tarjetas se quedaban BLANCAS
+   sobre la página oscura.
+   Las variables CSS resuelven las dos cosas: un estilo en línea SÍ puede leer var(), y la
+   variable sí cambia con la clase .dark. Además evita el choque con
+   `.dark .bg-[#1a3a32] { background: #f59e0b !important }`, que es el remapeo de la marca
+   y volvería ámbar la tarjeta seleccionada. */
+:root {
+    --wl-bg: #ffffff;
+    --wl-border: #e5e0d8;
+    --wl-symbol: #0e1f1a;
+    --wl-muted: #5c6b66;
+    --wl-up: #4a7c59;
+    --wl-down: #d85c41;
+    --wl-badge-text: #8a6508;
+    --wl-badge-bg: rgba(201, 161, 74, 0.18);
+    /* Tarjeta seleccionada */
+    --wl-active-bg: #1a3a32;
+    --wl-active-border: #1a3a32;
+    --wl-active-symbol: #f5f3ef;
+    --wl-active-muted: #cdd8d2;
+    --wl-active-up: #8fd6a6;
+    --wl-active-down: #f0a598;
+    --wl-active-badge-text: #e6c98a;
+    --wl-active-badge-bg: rgba(255, 255, 255, 0.10);
+}
+.dark {
+    --wl-bg: #131a23;          /* mismo fondo que .card-flat en oscuro */
+    --wl-border: #283341;
+    --wl-symbol: #f1f5f9;
+    --wl-muted: #94a3b8;
+    --wl-up: #4ade80;
+    --wl-down: #f87171;
+    --wl-badge-text: #fbbf24;
+    --wl-badge-bg: rgba(251, 191, 36, 0.16);
+    /* Seleccionada en oscuro: verde MÁS claro que el fondo para que destaque (en claro
+       destacaba por ser oscura sobre blanco; en oscuro hay que invertir el recurso). */
+    --wl-active-bg: #1f4d42;
+    --wl-active-border: #4ade80;
+    --wl-active-symbol: #ecfdf5;
+    --wl-active-muted: #cdd8d2;
+    --wl-active-up: #8fd6a6;
+    --wl-active-down: #f0a598;
+    --wl-active-badge-text: #e6c98a;
+    --wl-active-badge-bg: rgba(255, 255, 255, 0.12);
+}
