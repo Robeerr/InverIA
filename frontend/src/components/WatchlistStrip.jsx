@@ -77,6 +77,21 @@ export default function WatchlistStrip({ symbol, setSymbol, vertical = false, cl
         const active = s === (symbol || "").toUpperCase();
         const chg = e.daily_change_percent;
         const chgColor = chg == null ? "#5c6b66" : chg >= 0 ? "#4a7c59" : "#d85c41";
+        // Pre-market / after-hours. El backend ya lo calcula y lo guarda en cada entrada
+        // (market_state + pre/post_market_price + extended_change_percent); aquí solo faltaba
+        // pintarlo. Fuera de esas franjas market_state viene REGULAR o vacío y no se muestra
+        // nada, que es lo correcto: durante la sesión el precio de arriba YA es el de mercado.
+        const estado = e.market_state;
+        const extPrecio = estado === "PRE" ? e.pre_market_price
+          : estado === "POST" ? e.post_market_price : null;
+        const extChg = e.extended_change_percent;
+        // Colores EN LÍNEA, no por clase, a propósito: el fondo de la tarjeta también se pinta
+        // en línea (`background: "white"`) y por tanto NO lo remapea el modo oscuro. Si el
+        // texto sí se remapeara, quedaría claro sobre blanco — medido: 1,67:1, invisible.
+        // Mientras la tarjeta tenga el fondo en línea, el texto debe ir igual.
+        const extCol = extChg == null ? "#5c6b66" : active
+          ? (extChg >= 0 ? "#8fd6a6" : "#f0a598")
+          : (extChg >= 0 ? "#4a7c59" : "#d85c41");
         return (
           <button
             key={s}
@@ -102,6 +117,23 @@ export default function WatchlistStrip({ symbol, setSymbol, vertical = false, cl
                 </span>
               )}
             </div>
+            {extPrecio != null && (
+              <div className="flex items-baseline gap-1 mt-0.5" title={estado === "PRE" ? "Pre-apertura" : "Después del cierre"}>
+                <span className="font-mono text-[8px] uppercase tracking-wider px-1 rounded"
+                      style={{ color: active ? "#e6c98a" : "#8a6508",
+                               background: active ? "rgba(255,255,255,0.10)" : "rgba(201,161,74,0.18)" }}>
+                  {estado === "PRE" ? "PRE" : "POST"}
+                </span>
+                <span className="font-mono text-[10px]" style={{ color: active ? "#cdd8d2" : "#5c6b66" }}>
+                  ${fmtPrice(extPrecio)}
+                </span>
+                {extChg != null && (
+                  <span className="font-mono text-[9px] font-semibold" style={{ color: extCol }}>
+                    {extChg >= 0 ? "+" : ""}{extChg}%
+                  </span>
+                )}
+              </div>
+            )}
           </button>
         );
       })}
