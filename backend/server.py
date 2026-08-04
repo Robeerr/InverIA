@@ -1907,6 +1907,24 @@ async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
     return result
 
 
+@api_router.get("/estudio/rsi-sobreventa")
+async def estudio_rsi_sobreventa(umbral: float = 30.0,
+                                 _user: str = Depends(auth.get_current_user)):
+    """Contrasta con datos FRESCOS la idea de que "cuando el RSI baja de 30, siempre sube".
+
+    Existe porque el estudio original se hizo con un dataset público que acaba en 2018: no
+    incluía el COVID, 2022 ni nada posterior. Desde aquí sí hay acceso a Yahoo, así que
+    devuelve el análisis con datos hasta HOY.
+
+    Devuelve, para 1/3/6/12 meses: cuántas veces subió tras la sobreventa, la media, el peor
+    caso — y lo mismo para un día CUALQUIERA, que es la referencia que hay que batir. Separa
+    además los episodios en tendencia sana (sobre la SMA200) y rota (por debajo).
+
+    Tarda unos segundos: descarga 25 años de velas diarias.
+    """
+    return await asyncio.to_thread(sp500_rsi_watch.estudio_completo, umbral)
+
+
 @api_router.get("/market-regime")
 async def market_regime_endpoint():
     """Semáforo de mercado (S&P vs SMA200 + tendencia) — condiciona la fiabilidad de las

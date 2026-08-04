@@ -119,6 +119,68 @@ def _historial_sobreventa(df: pd.DataFrame, umbral: float, sobre_sma200: bool = 
         return None
 
 
+def estudio_completo(umbral: float = None):
+    """Ejecuta el estudio entero sobre datos FRESCOS y devuelve la tabla.
+
+    Existe porque el análisis que se hizo al diseñar esto usó un dataset público que acaba
+    en 2018: no incluía el COVID, 2022 ni nada posterior. Desde el servidor sí hay acceso a
+    Yahoo, así que se puede repetir con datos hasta hoy cuando se quiera.
+
+    Incluye la comparación con un día CUALQUIERA, que es la referencia que hay que batir: si
+    el índice sube el 70% de las veces a 6 meses de todas formas, un 70% tras la sobreventa
+    no demuestra nada.
+    """
+    umbral = RSI_ENTRADA if umbral is None else float(umbral)
+    df = _historico_largo()
+    if df is None or df.empty:
+        return {"error": "No se pudo descargar el histórico."}
+    c = df["Close"].astype(float).reset_index(drop=True)
+    fechas = pd.to_datetime(df["Date"]).reset_index(drop=True)
+    rsi = ind.rsi(c)
+    sma200 = c.rolling(200).mean()
+    bajo = rsi < umbral
+    ent = [i for i in range(1, len(bajo))
+           if bool(bajo.iloc[i]) and not bool(bajo.iloc[i - 1]) and not pd.isna(sma200.iloc[i])]
+
+    def _stats(idxs):
+        out = {}
+        for et, k in _HORIZONTES + (("1 año", 252),):
+            r = [(float(c.iloc[i + k]) / float(c.iloc[i]) - 1) * 100 for i in idxs if i + k < len(c)]
+            if r:
+                out[et] = {"n": len(r), "subio_pct": round(sum(1 for x in r if x > 0) / len(r) * 100),
+                           "media": round(sum(r) / len(r), 1),
+                           "peor": round(min(r), 1), "mejor": round(max(r), 1)}
+        return out
+
+    def _base():
+        out = {}
+        for et, k in _HORIZONTES + (("1 año", 252),):
+            r = [(float(c.iloc[i + k]) / float(c.iloc[i]) - 1) * 100 for i in range(len(c) - k)]
+            if r:
+                out[et] = {"subio_pct": round(sum(1 for x in r if x > 0) / len(r) * 100),
+                           "media": round(sum(r) / len(r), 1)}
+        return out
+
+    # Solape: los episodios se agrupan, así que n NO son n observaciones independientes.
+    huecos = [ent[i] - ent[i - 1] for i in range(1, len(ent))]
+    return {
+        "simbolo": SIMBOLO, "umbral": umbral,
+        "desde": fechas.iloc[0].strftime("%d/%m/%Y"), "hasta": fechas.iloc[-1].strftime("%d/%m/%Y"),
+        "sesiones": int(len(c)),
+        "episodios": len(ent),
+        "dias_en_sobreventa_pct": round(float(bajo.sum()) / len(c) * 100, 1),
+        "tras_sobreventa": _stats(ent),
+        "dia_cualquiera": _base(),
+        "sobre_sma200": _stats([i for i in ent if c.iloc[i] > sma200.iloc[i]]),
+        "bajo_sma200": _stats([i for i in ent if c.iloc[i] <= sma200.iloc[i]]),
+        "aviso_independencia": (
+            f"{sum(1 for g in huecos if g < 63)} de {len(huecos)} episodios ocurrieron a menos "
+            "de 63 sesiones del anterior: las ventanas se SOLAPAN, así que el margen de error "
+            "real es mayor que el que sugiere el nº de episodios."
+        ) if huecos else None,
+    }
+
+
 def _historico_largo():
     """Histórico lo más largo posible para que el historial tenga sentido. La sobreventa del
     índice es RARA (unas pocas veces por década), así que con 2 años no habría muestra."""

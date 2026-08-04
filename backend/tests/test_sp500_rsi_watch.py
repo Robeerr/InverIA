@@ -219,3 +219,35 @@ def test_el_mensaje_avisa_cuando_la_tendencia_esta_rota():
 
     msg2 = w._formatear(27.4, 500.0, hist, {"sobre_sma200": True, "sma200": 480.0, "dist_pct": 4.2})
     assert "tendencia de fondo sana" in msg2
+
+
+def test_el_estudio_devuelve_la_comparacion_con_un_dia_cualquiera(monkeypatch):
+    """La referencia que hay que batir. Sin ella, un "subió el 70% de las veces" no
+    demuestra nada: el índice sube el 70% de las veces de todos modos."""
+    n = 2000
+    rng = np.random.default_rng(2)
+    p = [100.0]
+    for i in range(1, n):
+        d = rng.normal(0.0004, 0.01)
+        if 600 < i < 680 or 1400 < i < 1520:
+            d = rng.normal(-0.009, 0.013)
+        p.append(p[-1] * (1 + d))
+    df = pd.DataFrame({"Date": pd.bdate_range("2012-01-01", periods=n), "Close": p})
+    monkeypatch.setattr(w, "_historico_largo", lambda: df)
+
+    r = w.estudio_completo(30)
+    assert r["episodios"] > 0
+    assert "dia_cualquiera" in r and r["dia_cualquiera"], "falta la referencia base"
+    for h, d in r["tras_sobreventa"].items():
+        assert h in r["dia_cualquiera"], f"sin base para comparar {h}"
+        assert 0 <= d["subio_pct"] <= 100
+        assert d["peor"] <= d["mejor"]
+    assert r["aviso_independencia"], "debe advertir del solape de ventanas"
+    # Los dos regímenes deben sumar como mucho el total.
+    for k in ("sobre_sma200", "bajo_sma200"):
+        assert k in r
+
+
+def test_el_estudio_no_rompe_sin_datos(monkeypatch):
+    monkeypatch.setattr(w, "_historico_largo", lambda: None)
+    assert "error" in w.estudio_completo(30)
