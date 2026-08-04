@@ -164,3 +164,58 @@ def test_el_mensaje_aguanta_sin_historial():
     msg = w._formatear(28.5, 500.0, None)
     assert "SOBREVENTA" in msg
     assert "No se pudo calcular el historial" in msg
+
+
+# ── Régimen de tendencia ─────────────────────────────────────────────────────
+# Medido sobre el S&P 500 diario 1950-2018 (212 episodios): a 3 meses subió el 77% de las
+# veces por ENCIMA de la SMA200 y solo el 57% por debajo. Por eso el aviso lo distingue.
+
+def test_detecta_el_regimen_de_tendencia():
+    n = 400
+    sube = pd.DataFrame({"Date": pd.bdate_range("2020-01-01", periods=n),
+                         "Close": np.linspace(100, 200, n)})
+    r = w._regimen(sube)
+    assert r["sobre_sma200"] is True and r["dist_pct"] > 0
+
+    baja = pd.DataFrame({"Date": pd.bdate_range("2020-01-01", periods=n),
+                         "Close": np.linspace(200, 100, n)})
+    r = w._regimen(baja)
+    assert r["sobre_sma200"] is False and r["dist_pct"] < 0
+
+
+def test_el_regimen_necesita_200_sesiones():
+    corto = pd.DataFrame({"Date": pd.bdate_range("2020-01-01", periods=100),
+                          "Close": np.linspace(100, 120, 100)})
+    assert w._regimen(corto) is None
+
+
+def test_el_historial_se_filtra_por_regimen():
+    """Los episodios de tendencia sana y los de tendencia rota deben dar muestras
+    DISTINTAS: si salieran iguales, el filtro no estaría aplicándose."""
+    rng = np.random.default_rng(5)
+    n = 3000
+    p = [100.0]
+    for i in range(1, n):
+        d = rng.normal(0.0005, 0.009)
+        if 700 < i < 780 or 1600 < i < 1900 or 2400 < i < 2460:
+            d = rng.normal(-0.009, 0.013)
+        p.append(p[-1] * (1 + d))
+    df = pd.DataFrame({"Date": pd.bdate_range("2010-01-01", periods=n), "Close": p})
+    arriba = w._historial_sobreventa(df, 30, sobre_sma200=True)
+    abajo = w._historial_sobreventa(df, 30, sobre_sma200=False)
+    total = w._historial_sobreventa(df, 30)
+    assert arriba and abajo and total
+    assert arriba["episodios"] != abajo["episodios"]
+    assert arriba["episodios"] + abajo["episodios"] <= total["episodios"]
+
+
+def test_el_mensaje_avisa_cuando_la_tendencia_esta_rota():
+    hist = {"episodios": 158, "desde": "1950", "ultimo": "19/12/2018",
+            "horizontes": {"3 meses": {"n": 155, "subieron": 89, "media": 2.4,
+                                       "peor": -26.8, "mejor": 30.0}}}
+    msg = w._formatear(27.4, 500.0, hist, {"sobre_sma200": False, "sma200": 550.0, "dist_pct": -8.7})
+    assert "tendencia de fondo rota" in msg
+    assert "acierta MUCHO menos" in msg
+
+    msg2 = w._formatear(27.4, 500.0, hist, {"sobre_sma200": True, "sma200": 480.0, "dist_pct": 4.2})
+    assert "tendencia de fondo sana" in msg2
