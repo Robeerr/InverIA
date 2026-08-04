@@ -32,6 +32,7 @@ import opportunities
 import backtest
 import signal_table
 import daily_analyst
+import sp500_rsi_watch
 import newsletter_ingest
 import market_regime
 import chart_lines
@@ -276,6 +277,10 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(daily_analyst.worker_loop(db))
     # Resumen diario por email tras el cierre de mercado.
     asyncio.create_task(daily_analyst.digest_loop(db))
+
+    # Vigía del RSI del S&P 500: avisa por Telegram cuando el ÍNDICE entra en sobreventa.
+    # Coste ínfimo: una comprobación por hora sobre el histórico de SPY que ya está cacheado.
+    asyncio.create_task(sp500_rsi_watch.worker_loop(db))
 
     # Pre-warm daily opportunities so the first user request hits a warm cache —
     # PERO solo si el snapshot hidratado desde Mongo ya está caducado. En la mayoría
