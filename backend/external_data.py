@@ -1,10 +1,15 @@
 """Finnhub & Alpha Vantage helpers — analyst recommendations, price targets, sentiment news."""
+import logging
 import os
 import threading
 import time
 from typing import Optional
 
+import requests as _requests
+
 import market_data as _md
+
+_log = logging.getLogger("inveria.external_data")
 
 FINNHUB_BASE = "https://finnhub.io/api/v1"
 ALPHA_BASE = "https://www.alphavantage.co/query"
@@ -37,15 +42,34 @@ def _finnhub_key():
     return os.environ.get("FINNHUB_API_KEY")
 
 
+#: Espera máxima por un hueco del limitador. Sin tope, acquire() puede bloquear hasta 60s
+#: dentro de una petición del usuario.
+_ESPERA_LIMITADOR = float(os.environ.get("FINNHUB_WAIT", 2.5))
+
+
 def _finnhub_get(path: str, params: dict, timeout: int = 10):
-    """Wrapper that respects the shared Finnhub rate limiter (60/min free tier)."""
+    """Wrapper que respeta el limitador compartido de Finnhub.
+
+    Dos cosas aprendidas midiendo (ver market_data._try_finnhub_quote, mismo caso):
+
+    1. La espera por el limitador va ACOTADA. Sin tope bloquea hasta 60s dentro de una
+       petición que alguien está esperando en pantalla.
+    2. Ante un 429 NO se duerme ni se reintenta. Aquí había un `time.sleep(5)`, que es lo
+       que hacía que la cotización tardara 6,6 s en fallar. Dormir en el camino de una
+       petición bloquea un hilo y retrasa la pantalla, y el reintento gasta OTRA llamada de
+       la cuota que acaba de agotarse. Se devuelve la respuesta 429 tal cual y cada llamador
+       decide (todos degradan a "sin datos", que es lo correcto).
+    """
     http = _md.get_http_session()
-    _md.get_finnhub_limiter().acquire()
+    if not _md.get_finnhub_limiter().acquire(max_wait=_ESPERA_LIMITADOR):
+        # Sin hueco: devolvemos una respuesta sintética de "demasiadas peticiones" para que
+        # el llamador degrade igual que ante un 429 real, sin tener que distinguir el caso.
+        r = _requests.Response()
+        r.status_code = 429
+        return r
     r = http.get(f"{FINNHUB_BASE}{path}", params=params, timeout=timeout)
     if r.status_code == 429:
-        time.sleep(5)
-        _md.get_finnhub_limiter().acquire()
-        r = http.get(f"{FINNHUB_BASE}{path}", params=params, timeout=timeout)
+        _log.warning("Finnhub 429 en %s — se degrada sin esperar", path)
     return r
 
 

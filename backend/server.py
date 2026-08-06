@@ -2134,13 +2134,17 @@ async def search_symbols(q: str = "", _user: str = Depends(auth.get_current_user
         def _call():
             # El límite de Finnhub es por CLAVE y /search también cuenta: sin pasar por el
             # rate limiter, teclear en el buscador podía dejar sin precios a toda la app.
-            market_data.get_finnhub_limiter().acquire()
+            # La espera va ACOTADA: esto se dispara mientras el usuario TECLEA, así que
+            # bloquear hasta 60s por un hueco dejaría el autocompletado congelado. Sin
+            # hueco, no hay sugerencias y punto.
+            if not market_data.get_finnhub_limiter().acquire(max_wait=1.5):
+                return None
             return market_data.get_http_session().get(
                 "https://finnhub.io/api/v1/search",
                 params={"q": q, "token": key}, timeout=6,
             )
         r = await asyncio.to_thread(_call)
-        ok = r.status_code == 200
+        ok = bool(r) and r.status_code == 200
         data = r.json() if ok else {}
     except Exception:
         data = {}

@@ -774,13 +774,17 @@ def _try_finnhub_quote(ticker: str):
             timeout=8,
         )
         if r.status_code == 429:
-            # Esperamos 5 segundos y reintentamos una vez
-            time.sleep(5)
-            r = _http.get(
-                "https://finnhub.io/api/v1/quote",
-                params={"symbol": ticker.upper(), "token": key},
-                timeout=8,
-            )
+            # 429 = Finnhub dice "demasiadas peticiones". Antes aquí había un
+            # `time.sleep(5)` y un reintento, y era lo que hacía que la cotización tardara
+            # 6,6 SEGUNDOS en fallar (medido: 1s + 5 de espera + 0,6 del reintento).
+            #
+            # Dormir en el camino de una petición del usuario es lo peor que se puede hacer:
+            # bloquea un hilo, retrasa la pantalla, y el reintento gasta OTRA petición de la
+            # cuota que acaba de agotarse. Y todo para consultar a un proveedor que ya ha
+            # dicho que no. Como hay un respaldo (yfinance) que no comparte esa cuota, lo
+            # correcto es rendirse YA y dejar que responda el otro.
+            _log.warning("Finnhub 429 en %s — se cae a yfinance sin esperar", ticker)
+            return None
         if r.status_code != 200:
             return None
         d = r.json() or {}

@@ -73,3 +73,69 @@ def test_get_quote_fast_no_toca_los_fundamentales():
     m = re.search(r"def get_quote_fast\(ticker.*?(?=\ndef )", src, re.S)
     cuerpo = m.group(0)
     assert "fast_info" not in cuerpo and "_get_info_cached" not in cuerpo
+
+
+# ── El 429 de Finnhub ────────────────────────────────────────────────────────
+# Medido con MRVL: la cotización tardaba 6,6 s en FALLAR. Desglose: ~1 s de la primera
+# llamada + 5 s de `time.sleep(5)` + ~0,6 s del reintento. Dormir en el camino de una
+# petición del usuario bloquea un hilo y retrasa la pantalla, y el reintento gasta otra
+# llamada de la cuota que acaba de agotarse — teniendo un respaldo que funciona.
+
+def _sleeps_largos(ruta, umbral=3.0):
+    """Llamadas REALES a time.sleep(n) con n >= umbral, vía árbol sintáctico.
+
+    Buscar el texto no vale: los comentarios y docstrings de estos módulos MENCIONAN
+    time.sleep(5) para explicar por qué se quitó, y darían un falso positivo.
+    """
+    import ast
+    with open(ruta, encoding="utf-8") as fh:
+        arbol = ast.parse(fh.read())
+    fuera = []
+    for n in ast.walk(arbol):
+        if not isinstance(n, ast.Call):
+            continue
+        f = n.func
+        nombre = (f.attr if isinstance(f, ast.Attribute) else
+                  f.id if isinstance(f, ast.Name) else "")
+        if nombre != "sleep" or not n.args:
+            continue
+        a = n.args[0]
+        if isinstance(a, ast.Constant) and isinstance(a.value, (int, float)) and a.value >= umbral:
+            fuera.append((n.lineno, a.value))
+    return fuera
+
+
+def test_no_se_duerme_esperando_a_finnhub():
+    """Regresión: ni market_data ni external_data deben dormir ante un 429."""
+    for fichero in ("market_data.py", "external_data.py"):
+        ruta = os.path.join(os.path.dirname(__file__), "..", fichero)
+        encontrados = _sleeps_largos(ruta)
+        assert not encontrados, (
+            f"{fichero}: sleep largo en el camino de la petición, líneas {encontrados}")
+
+
+def test_todas_las_esperas_del_limitador_van_acotadas():
+    """acquire() sin max_wait bloquea hasta 60 s. En cualquier camino que sirva a un
+    usuario eso es una pantalla congelada."""
+    for fichero in ("external_data.py", "server.py"):
+        ruta = os.path.join(os.path.dirname(__file__), "..", fichero)
+        with open(ruta, encoding="utf-8") as fh:
+            codigo = fh.read()
+        sueltas = re.findall(r"limiter\(\)\.acquire\(\s*\)", codigo)
+        assert not sueltas, f"{fichero}: {len(sueltas)} acquire() sin max_wait"
+
+
+def test_sin_hueco_external_data_degrada_como_un_429(monkeypatch):
+    """Si no hay cuota se devuelve un 429 sintético: así el llamador degrada por el camino
+    que ya existe, sin tener que distinguir 'sin cuota' de 'el proveedor dijo que no'."""
+    import external_data as ed
+
+    class _LimSinHueco:
+        def acquire(self, max_wait=None):
+            return False
+
+    monkeypatch.setattr(ed._md, "get_finnhub_limiter", lambda: _LimSinHueco())
+    t0 = time.time()
+    r = ed._finnhub_get("/quote", {"symbol": "AAPL"})
+    assert r.status_code == 429
+    assert time.time() - t0 < 0.5, "no debería esperar nada si no hay hueco"
