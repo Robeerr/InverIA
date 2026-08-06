@@ -77,9 +77,14 @@ export default function DiagnosticoView() {
             </table>
             {carga.cuota_finnhub && (
               <p className={`text-xs mt-2 ${carga.cuota_finnhub.saturado ? "text-[#d85c41] font-semibold" : "text-[#5c6b66]"}`}>
-                Cuota de datos: {carga.cuota_finnhub.usadas_ultimo_minuto} usadas en el último
-                minuto de {carga.cuota_finnhub.tope_total}
-                {carga.cuota_finnhub.saturado ? " · SATURADA (esto ralentiza todo)" : ""}
+                Cuota de datos: {carga.cuota_finnhub.usadas_ultimo_minuto} de{" "}
+                {carga.cuota_finnhub.tope_total} en el último minuto ·{" "}
+                <b>{carga.cuota_finnhub.libres_para_ti} libres</b> para navegar
+                {carga.cuota_finnhub.saturado
+                  ? " · SATURADA: esto SÍ te ralentiza"
+                  : carga.cuota_finnhub.fondo_frenado
+                    ? " · las tareas de fondo van más lentas para dejarte sitio (normal)"
+                    : ""}
               </p>
             )}
           </div>

@@ -2043,9 +2043,14 @@ async def diagnostico_carga(symbol: str, _user: str = Depends(auth.get_current_u
         with lim.lock:
             ahora = _time.time()
             usadas = len([t for t in lim.calls if ahora - t < 60])
+        # OJO con el umbral: superar bg_cap NO es un problema, es el diseño — solo frena a
+        # las tareas de FONDO para dejarte hueco a ti. Comparar contra bg_cap daba una
+        # alarma falsa ("SATURADA" con 28 de 50, teniendo 22 libres para navegar).
         cuota = {"usadas_ultimo_minuto": usadas, "tope_total": lim.max_per_min,
                  "tope_tareas_de_fondo": lim.bg_cap,
-                 "saturado": usadas >= lim.bg_cap}
+                 "libres_para_ti": max(0, lim.max_per_min - usadas),
+                 "saturado": usadas >= lim.max_per_min,
+                 "fondo_frenado": usadas >= lim.bg_cap}
     except Exception:
         cuota = None
 
