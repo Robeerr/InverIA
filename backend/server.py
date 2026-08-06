@@ -2079,9 +2079,14 @@ async def diagnostico_carga(symbol: str, _user: str = Depends(auth.get_current_u
     except Exception:
         cuota = None
 
+    # Desglose interno de la cotización: es la que se lleva el tiempo, así que se abre
+    # fase por fase para ver EXACTAMENTE cuál se atasca y por qué rama va.
+    desglose = await asyncio.to_thread(market_data.diagnostico_quote, sym)
+
     return {
         "simbolo": sym,
         "total_ms": total_ms,
+        "desglose_cotizacion": desglose,
         "veredicto": ("rápido" if total_ms < 1500 else
                       "aceptable" if total_ms < 4000 else "LENTO"),
         "la_mas_lenta": lentas[0]["fuente"] if lentas else None,

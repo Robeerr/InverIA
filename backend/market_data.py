@@ -478,6 +478,49 @@ def data_health(df) -> Optional[dict]:
     return {"source": src, "as_of": as_of, "degraded": degraded, "note": " · ".join(notes) or None}
 
 
+def diagnostico_quote(ticker: str) -> dict:
+    """Desglosa DÓNDE se va el tiempo dentro de get_quote, fase por fase.
+
+    Existe porque la cotización seguía tardando 8 s tras acotar una de las dos ramas, y sin
+    esto habría que adivinar cuál se estaba usando. Replica el mismo camino que get_quote
+    midiendo cada tramo por separado.
+    """
+    fases = []
+
+    def _fase(nombre, fn):
+        t0 = time.time()
+        estado, valor = "ok", None
+        try:
+            valor = fn()
+            if valor is None:
+                estado = "None"
+            elif isinstance(valor, dict) and not valor:
+                estado = "vacío"
+        except Exception as e:
+            estado = f"error: {str(e)[:50]}"
+        fases.append({"fase": nombre, "ms": int((time.time() - t0) * 1000), "estado": estado})
+        return valor
+
+    t_total = time.time()
+    fh = _fase("1. Finnhub (precio)", lambda: _try_finnhub_quote(ticker))
+    rama = "Finnhub OK → enriquecer" if fh else "Finnhub FALLÓ → todo yfinance"
+    t = _fase("2. crear Ticker yfinance", lambda: _ticker(ticker))
+    if t is not None and not isinstance(t, str):
+        _fase("3. fast_info (el que se colgaba)",
+              lambda: dict(t.fast_info) if t.fast_info else {})
+        _fase("4. .info (fundamentales, caché 1h)", lambda: _get_info_cached(ticker, t))
+    return {
+        "simbolo": ticker.upper(),
+        "rama": rama,
+        "total_ms": int((time.time() - t_total) * 1000),
+        "fases": fases,
+        "topes": {"finnhub_usuario_s": 2.5, "enriquecimiento_s": _ENRICH_TIMEOUT,
+                  "info_s": _INFO_FETCH_TIMEOUT},
+        "nota": ("Las fases se miden SIN los topes, a propósito: así se ve el coste real de "
+                 "cada una. En get_quote van acotadas."),
+    }
+
+
 def get_quote_fast(ticker: str) -> Optional[dict]:
     """Precio SOLO de Finnhub, sin tocar yfinance `.info` (lo más lento).
 
@@ -544,15 +587,22 @@ def get_quote(ticker: str) -> Optional[dict]:
         volume = _g(fast, "last_volume") or info.get("volume")
         market_cap = _g(fast, "market_cap") or info.get("marketCap")
     else:
-        # Fallback completo a yfinance
-        try:
+        # Fallback completo a yfinance. MISMO tope que arriba: aquí `fast_info` es todavía
+        # más crítico porque de él sale el PRECIO, no solo los fundamentales, y era el
+        # agujero que quedaba tras acotar la otra rama (la cotización seguía en 8,2 s).
+        # Si tampoco responde no hay precio que dar, así que se devuelve None y el llamador
+        # lo trata como símbolo sin datos — mejor eso que dejar la página colgada.
+        def _fallback_yf():
             t = _ticker(ticker)
             try:
-                fast = t.fast_info  # type: ignore[assignment]
+                f = dict(t.fast_info) if t.fast_info else {}
             except Exception:
-                fast = {}
-            info = _get_info_cached(ticker, t)
-        except Exception:
+                f = {}
+            return f, _get_info_cached(ticker, t)
+
+        fast, info = _call_with_timeout(_fallback_yf, _ENRICH_TIMEOUT + 2.0, ({}, {}))
+        if not fast and not info:
+            _log.warning("get_quote(%s): sin Finnhub y yfinance no respondió a tiempo", ticker)
             return None
 
         last_price = _g(fast, "last_price") or info.get("currentPrice") or info.get("regularMarketPrice")

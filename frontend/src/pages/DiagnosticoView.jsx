@@ -159,6 +159,25 @@ export default function DiagnosticoView() {
                 ))}
               </tbody>
             </table>
+            {carga.desglose_cotizacion && (
+              <div className="mt-4">
+                <p className="text-xs font-semibold text-[#0e1f1a] mb-1">
+                  Dentro de la cotización (la lenta)
+                  <span className="font-normal text-[#5c6b66]"> · {carga.desglose_cotizacion.rama}</span>
+                </p>
+                <table className="w-full text-xs">
+                  <tbody>
+                    {carga.desglose_cotizacion.fases.map((f) => (
+                      <tr key={f.fase} className="border-b border-[#f0ebe1]">
+                        <td className="py-1">{f.fase}</td>
+                        <td className="text-right font-mono font-semibold w-16">{f.ms}</td>
+                        <td className="pl-3 text-[#5c6b66]">{f.estado}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
             {carga.paneles_al_cambiar_de_accion && (
               <div className="mt-4">
                 <p className="text-xs font-semibold text-[#0e1f1a] mb-1">
