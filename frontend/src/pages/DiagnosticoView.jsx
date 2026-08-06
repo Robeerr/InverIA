@@ -50,8 +50,10 @@ function VelocidadWeb() {
     <section className="card-flat p-5">
       <h2 className="font-heading font-semibold text-lg text-[#0e1f1a]">Velocidad de la web</h2>
       <p className="text-xs text-[#5c6b66] mt-1 mb-3">
-        Lo mide tu navegador, en tu conexión. Recarga la página con Ctrl+Shift+R justo antes
-        para medir una carga limpia, sin caché.
+        Lo mide tu navegador, en tu conexión. <b>Mide lo que se haya cargado en ESTA visita</b>,
+        así que para ver el peso del Dashboard: entra en el Dashboard, abre una acción, y
+        luego ven aquí <b>sin recargar</b> (por el menú) y pulsa Medir. Si recargas estando
+        en esta página solo medirás esta página, que es de las ligeras.
       </p>
       <button onClick={medir}
               className="bg-[#1a3a32] text-[#f5f3ef] rounded px-4 py-1.5 text-sm font-semibold">
