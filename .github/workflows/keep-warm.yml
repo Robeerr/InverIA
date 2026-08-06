@@ -13,15 +13,14 @@ name: Keep Render backend warm
 # Cada 10 minutos, no cada 14, porque las tareas programadas de GitHub Actions se retrasan con
 # frecuencia (a veces bastante) y con el margen justo el servicio se dormiría igual.
 
+# NO se usa `concurrency`. Se probó y fue un error: cuando hay un run PENDIENTE y llega otro,
+# GitHub cancela el pendiente (solo mantiene uno en cola por grupo), aunque cancel-in-progress
+# sea false. Con un cron frecuente eso genera cancelaciones constantes y un correo por cada
+# una. El ping es corto e idempotente: que dos se solapen no hace ningún daño.
 on:
   schedule:
-    - cron: "*/10 13-21 * * 1-5"
+    - cron: "*/30 13-21 * * 1-5"
   workflow_dispatch:        # para probarlo a mano sin esperar al cron
-
-# Si un ping se solapa con el anterior (Render tardando en despertar), no acumules ejecuciones.
-concurrency:
-  group: keep-warm
-  cancel-in-progress: false
 
 jobs:
   ping:
