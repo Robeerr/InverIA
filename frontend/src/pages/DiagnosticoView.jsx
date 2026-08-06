@@ -10,6 +10,86 @@ const authHeaders = () => {
 // Página de diagnóstico. Existe para no tener que pedirle a nadie que pegue código en la
 // consola del navegador: Chrome avisa (con razón) de que eso es un vector de estafa, y no
 // conviene acostumbrar a saltarse ese aviso.
+
+// Mide la carga de la PROPIA web usando la API de rendimiento del navegador. Es la medida
+// que importa: la hace tu navegador, en tu conexión, con tu caché. Compilar el proyecto en
+// otro sitio solo diría cuánto PESA, no cuánto TARDAS tú.
+function VelocidadWeb() {
+  const [d, setD] = React.useState(null);
+
+  const medir = () => {
+    const recursos = performance.getEntriesByType("resource");
+    const nav = performance.getEntriesByType("navigation")[0];
+    const porTipo = {};
+    let total = 0, sinComprimir = 0;
+    for (const r of recursos) {
+      // transferSize = lo que viajó por la red (0 si vino de caché).
+      const tipo = r.name.match(/\.js(\?|$)/) ? "JavaScript"
+        : r.name.match(/\.css(\?|$)/) ? "CSS"
+        : r.name.match(/fonts?\.|\.woff/) ? "Tipografías"
+        : r.initiatorType === "fetch" || r.initiatorType === "xmlhttprequest" ? "Datos (API)"
+        : "Otros";
+      porTipo[tipo] = porTipo[tipo] || { n: 0, kb: 0, ms: 0 };
+      porTipo[tipo].n++;
+      porTipo[tipo].kb += (r.transferSize || 0) / 1024;
+      porTipo[tipo].ms = Math.max(porTipo[tipo].ms, Math.round(r.duration));
+      total += (r.transferSize || 0);
+      sinComprimir += (r.decodedBodySize || 0);
+    }
+    setD({
+      recursos: recursos.length,
+      totalKb: Math.round(total / 1024),
+      sinComprimirKb: Math.round(sinComprimir / 1024),
+      porTipo: Object.entries(porTipo).sort((a, b) => b[1].kb - a[1].kb),
+      cargaMs: nav ? Math.round(nav.duration) : null,
+      hastaInteractivo: nav ? Math.round(nav.domInteractive) : null,
+    });
+  };
+
+  return (
+    <section className="card-flat p-5">
+      <h2 className="font-heading font-semibold text-lg text-[#0e1f1a]">Velocidad de la web</h2>
+      <p className="text-xs text-[#5c6b66] mt-1 mb-3">
+        Lo mide tu navegador, en tu conexión. Recarga la página con Ctrl+Shift+R justo antes
+        para medir una carga limpia, sin caché.
+      </p>
+      <button onClick={medir}
+              className="bg-[#1a3a32] text-[#f5f3ef] rounded px-4 py-1.5 text-sm font-semibold">
+        Medir esta página
+      </button>
+      {d && (
+        <div className="mt-3">
+          <p className="text-sm mb-2">
+            Descargado: <b className="font-mono">{d.totalKb} KB</b> en {d.recursos} ficheros
+            {d.cargaMs != null && <> · carga total <b className="font-mono">{d.cargaMs} ms</b></>}
+          </p>
+          <table className="w-full text-xs">
+            <thead><tr className="text-left text-[#5c6b66] border-b border-[#e5e0d8]">
+              <th className="py-1">Tipo</th><th className="text-right">Ficheros</th>
+              <th className="text-right">KB</th><th className="text-right">El más lento (ms)</th>
+            </tr></thead>
+            <tbody>
+              {d.porTipo.map(([t, v]) => (
+                <tr key={t} className="border-b border-[#f0ebe1]">
+                  <td className="py-1">{t}</td>
+                  <td className="text-right font-mono">{v.n}</td>
+                  <td className="text-right font-mono font-semibold">{Math.round(v.kb)}</td>
+                  <td className="text-right font-mono">{v.ms}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="text-[11px] text-[#5c6b66] mt-2 leading-snug">
+            Referencia: por debajo de 1.000 KB de JavaScript es sano; por encima de 2.000 KB
+            la culpa de la lentitud es del tamaño. Si sale 0 KB, vino todo de caché: recarga
+            con Ctrl+Shift+R y vuelve a medir.
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function DiagnosticoView() {
   const [ticker, setTicker] = React.useState("AAPL");
   const [carga, setCarga] = React.useState(null);
@@ -38,6 +118,8 @@ export default function DiagnosticoView() {
           Mide de dónde viene la lentitud y contrasta la idea del RSI con datos reales.
         </p>
       </div>
+
+      <VelocidadWeb />
 
       {/* ── Velocidad de carga ── */}
       <section className="card-flat p-5">
