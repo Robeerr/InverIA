@@ -113,11 +113,16 @@ App disponible en `http://localhost:3000`.
 
 ## 🌐 Despliegue gratuito 24/7
 
-| Componente | Servicio | Plan gratis |
+| Componente | Servicio | Plan |
 |---|---|---|
-| Frontend | **Vercel** | ♾️ ilimitado |
-| Backend | **Render** | 750h/mes |
-| Base de datos | **MongoDB Atlas** | 512MB |
+| Frontend | **Vercel** | gratis, ilimitado |
+| Backend | **Render Starter** | de pago — NO se duerme |
+| Base de datos | **MongoDB Atlas** | gratis, 512MB |
+
+> El backend está en **Starter**, no en el plan gratuito. Importa: los servicios gratuitos de
+> Render se apagan tras 15 min sin tráfico y tardan 30-60 s en despertar; los de pago no. Por
+> eso este proyecto **no necesita** ningún ping de "keep-warm", y si alguna vez va lento la
+> causa hay que buscarla en otro sitio (cuota de datos agotada, caché fría tras un despliegue).
 
 ### 1️⃣ MongoDB Atlas
 1. Crea cuenta en https://www.mongodb.com/cloud/atlas/register
