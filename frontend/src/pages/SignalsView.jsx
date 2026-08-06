@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { Bell, BellSlash, Trash, Plus, X, UploadSimple, ArrowClockwise, Lightning, Camera } from "@phosphor-icons/react";
+import { Bell, BellSlash, Trash, Plus, X, UploadSimple, ArrowClockwise, Lightning, Camera, CurrencyEur } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 const API = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
@@ -438,6 +438,9 @@ const ADD_FIELDS = {
     { key: "venta3",   label: "Venta 3",     placeholder: "250" },
     { key: "compra",   label: "Precio compra", placeholder: "155.20" },
     { key: "acciones", label: "Nº acciones",   placeholder: "10" },
+    // Sin esto no se puede saber el tipo de cambio del día que compraste, y la ganancia
+    // en euros al vender sale aproximada en vez de exacta.
+    { key: "fecha_compra", label: "Fecha compra", placeholder: "2025-01-15" },
     { key: "riesgo",   label: "Riesgo",      placeholder: "MEDIO" },
     { key: "sector",   label: "Sector",      placeholder: "TECH" },
     { key: "posibles_ganancias", label: "Posibles Ganancias %", placeholder: "25.5" },
@@ -749,7 +752,7 @@ export default function SignalsView({ setSymbol }) {
       )}
 
       {/* ════════════════ CARTERA ════════════════ */}
-      {!loading && visible.length > 0 && <IdeasView entries={visible} saving={saving} updateField={updateField} deleteEntry={deleteEntry} setSymbol={setSymbol} />}
+      {!loading && visible.length > 0 && <IdeasView entries={visible} saving={saving} updateField={updateField} deleteEntry={deleteEntry} setSymbol={setSymbol} onVendido={fetchEntries} />}
 
       <p className="text-xs text-neutral-400 text-center pb-2">
         🔔 Alertas solo en horario de mercado (9:30-16:00 ET) · 1 vez al día por nivel · Telegram + Email · Haz clic en cualquier valor para editarlo
@@ -759,7 +762,118 @@ export default function SignalsView({ setSymbol }) {
 }
 
 // ── IDEAS JAVI view (cartera editable de niveles 1-5) ───────────────────────────
-function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol }) {
+
+// ── Registrar una VENTA ejecutada ────────────────────────────────────────────
+// Distinto de venta1/2/3, que son precios OBJETIVO. Esto es una venta ya hecha, y calcula
+// lo que se ha ganado DE VERDAD en euros usando el tipo de cambio del día de la compra y el
+// del día de la venta — no el de hoy, que daría un número que no ocurrió.
+function DialogoVenta({ entry, onClose, onHecho }) {
+  const [acciones, setAcciones] = React.useState("");
+  const [precio, setPrecio] = React.useState("");
+  const [fecha, setFecha] = React.useState(() => new Date().toISOString().slice(0, 10));
+  const [enviando, setEnviando] = React.useState(false);
+  const [res, setRes] = React.useState(null);
+  const tiene = Number(entry?.acciones) || 0;
+  const divisa = (entry?.divisa || "USD").toUpperCase();
+
+  const enviar = async () => {
+    const n = parseFloat(acciones), p = parseFloat(precio);
+    if (!n || n <= 0) return toast.error("¿Cuántas acciones has vendido?");
+    if (n > tiene) return toast.error(`Solo tienes ${tiene} acciones de ${entry.symbol}.`);
+    if (!p || p <= 0) return toast.error("¿A qué precio las has vendido?");
+    setEnviando(true);
+    try {
+      const r = await fetch(`${API}/api/signals/${entry.id}/vender`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ acciones: n, precio_venta: p, fecha }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "No se pudo registrar la venta");
+      setRes(d);
+      onHecho?.();
+    } catch (err) { toast.error(err.message); }
+    finally { setEnviando(false); }
+  };
+
+  const eur = (x) => x == null ? "—" : `${x >= 0 ? "+" : ""}${Number(x).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-neutral-900 rounded-xl p-5 w-full max-w-md" onClick={(ev) => ev.stopPropagation()}>
+        {!res ? (
+          <>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="font-bold text-lg text-[#0e1f1a] dark:text-neutral-100">Vender {entry.symbol}</h3>
+              <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600"><X size={18} /></button>
+            </div>
+            <p className="text-xs text-neutral-500 mb-4">
+              Tienes <b>{tiene}</b> acciones a un precio medio de <b>{fmtP(entry.compra)}</b> ({divisa}).
+            </p>
+            <div className="space-y-3">
+              <label className="block">
+                <span className="text-[11px] uppercase tracking-wider text-neutral-500">Acciones vendidas</span>
+                <input type="number" step="any" value={acciones} onChange={(ev) => setAcciones(ev.target.value)}
+                       placeholder={String(tiene)} className="w-full mt-1 border rounded px-2 py-1.5 font-mono dark:bg-neutral-800 dark:border-neutral-700" />
+              </label>
+              <label className="block">
+                <span className="text-[11px] uppercase tracking-wider text-neutral-500">Precio de venta ({divisa})</span>
+                <input type="number" step="any" value={precio} onChange={(ev) => setPrecio(ev.target.value)}
+                       placeholder={entry.last_price ? String(entry.last_price) : "0.00"} className="w-full mt-1 border rounded px-2 py-1.5 font-mono dark:bg-neutral-800 dark:border-neutral-700" />
+              </label>
+              <label className="block">
+                <span className="text-[11px] uppercase tracking-wider text-neutral-500">Fecha de la venta</span>
+                <input type="date" value={fecha} onChange={(ev) => setFecha(ev.target.value)}
+                       className="w-full mt-1 border rounded px-2 py-1.5 font-mono dark:bg-neutral-800 dark:border-neutral-700" />
+              </label>
+              {!entry.fecha_compra && divisa !== "EUR" && (
+                <p className="text-[11px] text-[#8a6508] bg-[#c9a14a]/10 rounded px-2 py-1.5 leading-snug">
+                  Esta posición no tiene <b>fecha de compra</b>, así que la ganancia en euros
+                  saldrá aproximada. Rellénala en la Cartera para que sea exacta.
+                </p>
+              )}
+            </div>
+            <button onClick={enviar} disabled={enviando}
+                    className="w-full mt-4 bg-[#1a3a32] text-[#f5f3ef] rounded-lg py-2 font-semibold disabled:opacity-60">
+              {enviando ? "Calculando…" : "Registrar venta"}
+            </button>
+          </>
+        ) : (
+          <>
+            <h3 className="font-bold text-lg mb-3 text-[#0e1f1a] dark:text-neutral-100">
+              Venta registrada · {res.acciones} {entry.symbol}
+            </h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-neutral-500">Ganancia en {res.divisa}</span>
+                <span className={`font-mono font-bold ${res.ganancia_divisa >= 0 ? "text-green-600" : "text-red-600"}`}>
+                  {res.ganancia_divisa >= 0 ? "+" : ""}{res.ganancia_divisa} ({res.ganancia_pct}%)</span></div>
+              <div className="flex justify-between items-baseline border-t pt-2 dark:border-neutral-700">
+                <span className="text-neutral-500 font-semibold">Ganancia en EUROS</span>
+                <span className={`font-mono font-bold text-lg ${(res.ganancia_eur ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}>
+                  {eur(res.ganancia_eur)}</span></div>
+              {res.efecto_divisa_eur != null && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-neutral-500">De eso, por el tipo de cambio</span>
+                  <span className="font-mono">{eur(res.efecto_divisa_eur)}</span></div>
+              )}
+              {!res.exacto && (
+                <p className="text-[11px] text-[#8a6508] bg-[#c9a14a]/10 rounded px-2 py-1.5 leading-snug">
+                  Aproximado: falta el tipo de cambio del día de la compra.
+                </p>
+              )}
+              <p className="text-xs text-neutral-500 pt-1">Te quedan <b>{res.acciones_restantes}</b> acciones.</p>
+            </div>
+            <button onClick={onClose} className="w-full mt-4 border rounded-lg py-2 dark:border-neutral-700">Cerrar</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVendido }) {
+  // Posición sobre la que se está registrando una venta (null = diálogo cerrado).
+  const [vendiendo, setVendiendo] = React.useState(null);
   return (
     <>
       {/* MOBILE CARDS */}
@@ -782,6 +896,14 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol }) {
                   <p className="font-mono font-bold text-[#0e1f1a] dark:text-neutral-100">{fmtP(e.last_price)}</p>
                   <ExtendedBadge entry={e} />
                 </div>
+                {/* Solo tiene sentido vender lo que se tiene. Sin acciones, el botón
+                    llevaría a un error del servidor en vez de a algo útil. */}
+                {Number(e.acciones) > 0 && (
+                  <button onClick={() => setVendiendo(e)} title="Registrar una venta"
+                          className="flex items-center gap-1 text-[11px] font-semibold border border-[#4a7c59] text-[#4a7c59] hover:bg-[#4a7c59] hover:text-white rounded px-2 py-1 transition-colors">
+                    <CurrencyEur size={13} weight="bold" /> Vender
+                  </button>
+                )}
                 <button onClick={() => deleteEntry(e.id)} className="text-neutral-300 hover:text-red-500 text-xl p-1"><Trash size={16} /></button>
               </div>
             </div>
@@ -975,6 +1097,9 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol }) {
           </tbody>
         </table>
       </div>
+      {vendiendo && (
+        <DialogoVenta entry={vendiendo} onClose={() => setVendiendo(null)} onHecho={onVendido} />
+      )}
     </>
   );
 }

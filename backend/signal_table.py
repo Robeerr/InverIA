@@ -41,6 +41,7 @@ ALLOWED_CREATE = (
     "riesgo", "sector", "posibles_ganancias", "notes", "active",
     "divisa", "bz", "objetivo_5a",
     "compra", "acciones",  # posición real (precio medio de compra y nº de acciones) para el P&L
+    "fecha_compra",        # fecha de la compra: fija el tipo de cambio para la ganancia en EUR
 )
 
 ALLOWED_UPDATE = (
@@ -52,6 +53,7 @@ ALLOWED_UPDATE = (
     "riesgo", "sector", "posibles_ganancias", "notes", "active",
     "divisa", "bz", "objetivo_5a",
     "compra", "acciones",
+    "fecha_compra",   # para el tipo de cambio del dia de la compra (ganancia real en EUR)
 )
 
 
@@ -88,6 +90,7 @@ def _make_entry(
     objetivo_5a: Optional[float] = None,
     compra: Optional[float] = None,
     acciones: Optional[float] = None,
+    fecha_compra: str = "",
 ) -> dict:
     return {
         "id": str(uuid.uuid4()),
@@ -123,6 +126,7 @@ def _make_entry(
         "objetivo_5a": objetivo_5a,
         "compra": compra,
         "acciones": acciones,
+        "fecha_compra": (fecha_compra or "").strip()[:10] or None,
         "created_at": _now(),
         "updated_at": _now(),
         "last_price": None,

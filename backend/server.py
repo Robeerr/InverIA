@@ -33,6 +33,8 @@ import backtest
 import signal_table
 import daily_analyst
 import sp500_rsi_watch
+import ventas as ventas_mod
+import fx
 import newsletter_ingest
 import market_regime
 import chart_lines
@@ -480,6 +482,7 @@ class SignalEntryCreate(BaseModel):
     bz: Optional[float] = None
     objetivo_5a: Optional[float] = None
     compra: Optional[float] = None
+    fecha_compra: Optional[str] = None
     acciones: Optional[float] = None
 
 
@@ -515,6 +518,9 @@ class SignalEntryUpdate(BaseModel):
     objetivo_5a: Optional[float] = None
     compra: Optional[float] = None
     acciones: Optional[float] = None
+    # Necesaria para el tipo de cambio del día de la compra: sin ella la ganancia en
+    # euros al vender sale aproximada. Editable para poder rellenarla en posiciones viejas.
+    fecha_compra: Optional[str] = None
 
 
 class SignalBulkImport(BaseModel):
@@ -1923,6 +1929,65 @@ async def estudio_rsi_sobreventa(umbral: float = 30.0,
     Tarda unos segundos: descarga 25 años de velas diarias.
     """
     return await asyncio.to_thread(sp500_rsi_watch.estudio_completo, umbral)
+
+
+# ---------- Ventas ejecutadas (ganancia REALIZADA, en euros) ----------
+class VentaCreate(BaseModel):
+    acciones: float
+    precio_venta: float
+    fecha: Optional[str] = None          # YYYY-MM-DD; por defecto, hoy
+    tasa_compra: Optional[float] = None  # si lo dejas vacío se busca por la fecha de compra
+    tasa_venta: Optional[float] = None   # idem por la fecha de venta
+
+
+@api_router.post("/signals/{entry_id}/vender")
+async def registrar_venta(entry_id: str, item: VentaCreate,
+                          _user: str = Depends(auth.get_current_user)):
+    """Registra una venta y devuelve lo ganado, en la divisa original y en EUROS.
+
+    La ganancia en euros usa el tipo de cambio de la fecha de COMPRA y el de la de VENTA:
+    convertir el beneficio en dólares al cambio de hoy no da lo que entró en la cuenta.
+    """
+    entry = await db.signal_entries.find_one({"id": entry_id}, {"_id": 0})
+    if not entry:
+        raise HTTPException(404, "Esa posición no existe en tu Cartera.")
+    try:
+        venta = await ventas_mod.registrar(
+            db, entry, item.acciones, item.precio_venta,
+            fecha=item.fecha, tasa_compra=item.tasa_compra, tasa_venta=item.tasa_venta)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    for k in ("signals_list", "signals_hot"):
+        _cache._store.pop(k, None)
+    return venta
+
+
+@api_router.get("/ventas")
+async def listar_ventas(_user: str = Depends(auth.get_current_user)):
+    lista = await ventas_mod.listar(db)
+    return {"items": lista, "resumen": ventas_mod.resumen(lista)}
+
+
+@api_router.delete("/ventas/{venta_id}")
+async def borrar_venta(venta_id: str, _user: str = Depends(auth.get_current_user)):
+    """Borra una venta y DEVUELVE las acciones a la posición."""
+    if not await ventas_mod.borrar(db, venta_id):
+        raise HTTPException(404, "Venta no encontrada")
+    for k in ("signals_list", "signals_hot"):
+        _cache._store.pop(k, None)
+    return {"ok": True}
+
+
+@api_router.get("/fx/{divisa}")
+async def tipo_cambio(divisa: str, fecha: Optional[str] = None,
+                      _user: str = Depends(auth.get_current_user)):
+    """Tipo de cambio (unidades de la divisa por 1 EUR). Sin fecha, el de ahora."""
+    tasa = await asyncio.to_thread(
+        fx.tasa_en_fecha, divisa, fecha) if fecha else await asyncio.to_thread(
+        fx.tasa_actual, divisa)
+    if not tasa:
+        raise HTTPException(503, f"No se pudo obtener el tipo de cambio de {divisa.upper()}.")
+    return {"divisa": divisa.upper(), "fecha": fecha or "ahora", "tasa": round(tasa, 4)}
 
 
 @api_router.get("/market-regime")
