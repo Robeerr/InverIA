@@ -159,6 +159,25 @@ export default function DiagnosticoView() {
                 ))}
               </tbody>
             </table>
+            {carga.paneles_al_cambiar_de_accion && (
+              <div className="mt-4">
+                <p className="text-xs font-semibold text-[#0e1f1a] mb-1">
+                  Paneles que se cargan solos al cambiar de acción
+                  <span className="font-normal text-[#5c6b66]"> · suman {carga.total_paneles_ms} ms</span>
+                </p>
+                <table className="w-full text-xs">
+                  <tbody>
+                    {carga.paneles_al_cambiar_de_accion.map((f) => (
+                      <tr key={f.fuente} className="border-b border-[#f0ebe1]">
+                        <td className="py-1">{f.fuente}</td>
+                        <td className="text-right font-mono font-semibold w-16">{f.ms}</td>
+                        <td className="pl-3 text-[#5c6b66]">{f.estado}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
             {carga.cuota_finnhub && (
               <p className={`text-xs mt-2 ${carga.cuota_finnhub.saturado ? "text-[#d85c41] font-semibold" : "text-[#5c6b66]"}`}>
                 Cuota de datos: {carga.cuota_finnhub.usadas_ultimo_minuto} de{" "}

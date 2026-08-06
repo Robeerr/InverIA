@@ -2037,6 +2037,31 @@ async def diagnostico_carga(symbol: str, _user: str = Depends(auth.get_current_u
     total_ms = int((_time.time() - t_total) * 1000)
     lentas = sorted(medidas, key=lambda m: m["ms"], reverse=True)
 
+    # Los PANELES que se cargan solos al cambiar de acción. No estaban medidos y son los
+    # sospechosos: /backtest corre un backtest completo por símbolo y /alternativa invoca el
+    # escáner de crecimiento. Sus timeouts en el frontend (2 y 5 minutos) ya delatan que se
+    # esperaban lentos. Van DESPUÉS y en serie para no falsear el total de arriba.
+    async def _medir_http(nombre, corutina):
+        t0 = _time.time()
+        estado = "ok"
+        try:
+            await asyncio.wait_for(corutina, timeout=30.0)
+        except asyncio.TimeoutError:
+            estado = "TIMEOUT (>30s)"
+        except Exception as e:
+            estado = f"error: {str(e)[:60]}"
+        return {"fuente": nombre, "ms": int((_time.time() - t0) * 1000), "estado": estado}
+
+    paneles = []
+    for nombre, cor in (
+        ("panel Chartista (cacheado)", chartist_verdict(sym, cached_only=True, _user="diag")),
+        ("panel Tus fuentes", fuentes_de_accion(sym, _user="diag")),
+        ("panel Alternativa sectorial", alternativa_sectorial(sym, _user="diag")),
+        ("panel Backtest", backtest_levels(sym, _user="diag")),
+    ):
+        paneles.append(await _medir_http(nombre, cor))
+    paneles.sort(key=lambda m: m["ms"], reverse=True)
+
     # Estado del limitador de Finnhub: si está saturado, TODO lo que pase por él se arrastra.
     try:
         lim = market_data.get_finnhub_limiter()
@@ -2061,6 +2086,9 @@ async def diagnostico_carga(symbol: str, _user: str = Depends(auth.get_current_u
                       "aceptable" if total_ms < 4000 else "LENTO"),
         "la_mas_lenta": lentas[0]["fuente"] if lentas else None,
         "por_fuente": lentas,
+        "paneles_al_cambiar_de_accion": paneles,
+        "panel_mas_lento": paneles[0]["fuente"] if paneles else None,
+        "total_paneles_ms": sum(p["ms"] for p in paneles),
         "cuota_finnhub": cuota,
         "nota": ("Medido SIN caché: es el peor caso, el de abrir un ticker por primera vez. "
                  "Al repetirlo debería ser casi instantáneo."),
@@ -2218,7 +2246,8 @@ async def _mentions_by_ticker(days: int = 30) -> dict:
 
 
 @api_router.get("/fuentes/{symbol}")
-async def fuentes_de_accion(symbol: str, days: int = 30):
+async def fuentes_de_accion(symbol: str, days: int = 30,
+                            _user: str = Depends(auth.get_current_user)):
     """Qué han dicho TUS fuentes (Telegram + newsletters) de esta acción: cada mención
     con su fuente, sentimiento, tesis y fecha. Para mostrarlo junto al análisis."""
     from datetime import timedelta
@@ -3138,7 +3167,10 @@ async def inbound_newsletter_debug(token: str = ""):
 
 
 @api_router.get("/backtest/{symbol}")
-async def backtest_levels(symbol: str, window: int = 60):
+# Con auth: corre un backtest walk-forward COMPLETO por simbolo. Sin credencial era
+# un amplificador de CPU gratis, igual que /debug/patterns.
+async def backtest_levels(symbol: str, window: int = 60,
+                          _user: str = Depends(auth.get_current_user)):
     """Walk-forward backtest of the confluence buy-levels engine for one symbol.
     Returns empirical hold rates by strength bucket (how often price actually
     bounced at each level type, with no lookahead). Cached 6h per symbol."""
