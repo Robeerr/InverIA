@@ -1990,6 +1990,78 @@ async def tipo_cambio(divisa: str, fecha: Optional[str] = None,
     return {"divisa": divisa.upper(), "fecha": fecha or "ahora", "tasa": round(tasa, 4)}
 
 
+@api_router.get("/diagnostico/carga/{symbol}")
+async def diagnostico_carga(symbol: str, _user: str = Depends(auth.get_current_user)):
+    """Cronometra CADA fuente de datos por separado y dice cuál está tardando.
+
+    Existe porque la lentitud se estuvo diagnosticando a ojo y se acertó a medias: el
+    servidor ya tenía instrumentación, pero solo escribía en los logs de Render y nadie los
+    miraba. Esto devuelve lo mismo en pantalla y SIN caché, para ver el coste real.
+
+    Cada fuente lleva su propio cronómetro, así que se ve exactamente cuál es la lenta en
+    vez de saber solo que "el dashboard tarda".
+    """
+    sym = symbol.upper()
+    loop = asyncio.get_running_loop()
+
+    async def _medir(nombre, fn, *args):
+        t0 = _time.time()
+        estado = "ok"
+        detalle = None
+        try:
+            r = await asyncio.wait_for(loop.run_in_executor(None, fn, *args), timeout=20.0)
+            if r is None:
+                estado = "sin datos"
+            elif hasattr(r, "empty") and r.empty:
+                estado = "vacío"
+            elif hasattr(r, "__len__"):
+                detalle = f"{len(r)} filas"
+        except asyncio.TimeoutError:
+            estado = "TIMEOUT (>20s)"
+        except Exception as e:
+            estado = f"error: {str(e)[:60]}"
+        return {"fuente": nombre, "ms": int((_time.time() - t0) * 1000),
+                "estado": estado, "detalle": detalle}
+
+    t_total = _time.time()
+    # En PARALELO, igual que hace el dashboard: así el total refleja la experiencia real.
+    medidas = await asyncio.gather(
+        _medir("cotización", market_data.get_quote, sym),
+        _medir("histórico (gráfico + indicadores)", market_data.get_full_indicator_history, sym),
+        _medir("noticias", market_data.get_news, sym),
+        _medir("recomendaciones analistas", external_data.finnhub_recommendation_trends, sym),
+        _medir("precio objetivo analistas", external_data.finnhub_price_target, sym),
+        _medir("volume profile", partial(polygon_data.get_volume_profile, sym, 365)),
+        _medir("histórico SPY (fuerza relativa)", market_data.get_full_indicator_history, "SPY"),
+    )
+    total_ms = int((_time.time() - t_total) * 1000)
+    lentas = sorted(medidas, key=lambda m: m["ms"], reverse=True)
+
+    # Estado del limitador de Finnhub: si está saturado, TODO lo que pase por él se arrastra.
+    try:
+        lim = market_data.get_finnhub_limiter()
+        with lim.lock:
+            ahora = _time.time()
+            usadas = len([t for t in lim.calls if ahora - t < 60])
+        cuota = {"usadas_ultimo_minuto": usadas, "tope_total": lim.max_per_min,
+                 "tope_tareas_de_fondo": lim.bg_cap,
+                 "saturado": usadas >= lim.bg_cap}
+    except Exception:
+        cuota = None
+
+    return {
+        "simbolo": sym,
+        "total_ms": total_ms,
+        "veredicto": ("rápido" if total_ms < 1500 else
+                      "aceptable" if total_ms < 4000 else "LENTO"),
+        "la_mas_lenta": lentas[0]["fuente"] if lentas else None,
+        "por_fuente": lentas,
+        "cuota_finnhub": cuota,
+        "nota": ("Medido SIN caché: es el peor caso, el de abrir un ticker por primera vez. "
+                 "Al repetirlo debería ser casi instantáneo."),
+    }
+
+
 @api_router.get("/market-regime")
 async def market_regime_endpoint():
     """Semáforo de mercado (S&P vs SMA200 + tendencia) — condiciona la fiabilidad de las
