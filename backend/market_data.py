@@ -204,6 +204,9 @@ _INFO_TTL_SECONDS = 3600
 # tope duro: si Yahoo no responde a tiempo, seguimos con lo que tengamos (precio Finnhub).
 _yf_pool = concurrent.futures.ThreadPoolExecutor(max_workers=8, thread_name_prefix="yf")
 _INFO_FETCH_TIMEOUT = 3.0      # seg máx esperando a .info
+# Tope para TODO el enriquecimiento de la cotización (fast_info + .info). Corto a
+# propósito: el precio ya está, esto solo añade fundamentales.
+_ENRICH_TIMEOUT = float(os.environ.get("QUOTE_ENRICH_TIMEOUT", 2.0))
 _NEWS_FETCH_TIMEOUT = 3.0      # seg máx esperando a .news
 _HISTORY_FETCH_TIMEOUT = 2.0   # seg máx esperando a .history antes de caer al fallback
 
@@ -512,18 +515,26 @@ def get_quote(ticker: str) -> Optional[dict]:
     info: dict = {}
     fast: dict = {}
     if finnhub_data:
-        # Best-effort fundamentals from yfinance (puede fallar en cloud, no es bloqueante).
-        # .info va cacheado 1h (es lo más caro de yfinance).
-        try:
+        # El PRECIO ya lo tenemos de Finnhub. Lo que sigue solo añade fundamentales (PER,
+        # beta, capitalización, volumen) y NO debe retrasar la respuesta: son datos de
+        # adorno frente a un precio que el usuario está esperando ver.
+        #
+        # Medido en producción: esta parte llegó a tardar 8,7 s para un solo símbolo. La
+        # causa era `t.fast_info`, que iba SIN tope mientras el resto sí lo tenía (Finnhub
+        # 2,5 s, .info 3 s); yfinance abre red ahí y se cuelga cuando Yahoo estrangula.
+        #
+        # Ahora todo el enriquecimiento comparte UN presupuesto corto. Si no llega a tiempo
+        # se devuelve el precio sin fundamentales: la siguiente llamada los tendrá de la
+        # caché de 1h. Mejor un precio en 300 ms sin PER que un PER en 9 segundos.
+        def _enriquecer():
             t = _ticker(ticker)
             try:
-                fast = t.fast_info  # type: ignore[assignment]
+                f = dict(t.fast_info) if t.fast_info else {}
             except Exception:
-                fast = {}
-            info = _get_info_cached(ticker, t)
-        except Exception:
-            info = {}
-            fast = {}
+                f = {}
+            return f, _get_info_cached(ticker, t)
+
+        fast, info = _call_with_timeout(_enriquecer, _ENRICH_TIMEOUT, ({}, {}))
 
         last_price = finnhub_data.get("current")
         prev_close = finnhub_data.get("previous_close")
