@@ -3265,15 +3265,33 @@ async def market_futures():
     return data
 
 
+#: Caché del panel de "más movidas". El plan GRATUITO de FMP son 250 peticiones al día y
+#: este panel hace 3 llamadas por refresco. Con la caché de 10 min que había: 3 × 96
+#: refrescos en 16 h = 288 peticiones/día — se pasaba del límite ÉL SOLO, y al agotarse FMP
+#: devuelve listas vacías sin error, así que el panel se quedaba en blanco sin explicación.
+#: A 30 min son 96/día, con margen de sobra. Los gainers del día no cambian tanto como para
+#: notar la diferencia.
+_MOVERS_TTL = int(os.environ.get("MOVERS_TTL", 1800))
+
+
 @api_router.get("/market/movers")
-async def market_movers():
-    """Biggest gainers / losers / most-active US stocks (Financial Modeling Prep)."""
+async def market_movers(_user: str = Depends(auth.get_current_user)):
+    """Biggest gainers / losers / most-active US stocks (Financial Modeling Prep).
+
+    Con credencial porque cada llamada gasta 3 de las 250 peticiones diarias de FMP: sin
+    auth, cualquiera podía dejarte sin cuota para el resto del día.
+    """
     cached = _cache.get("market_movers")
     if cached is not None:
         return cached
     loop = asyncio.get_running_loop()
     data = await loop.run_in_executor(None, fmp_data.get_market_movers)
-    _cache.set("market_movers", data, ttl=600)  # 10 min
+    # Si las tres listas vienen vacías lo normal es que se haya agotado la cuota diaria:
+    # FMP no devuelve error, devuelve nada. Sin este aviso el fallo es invisible.
+    if isinstance(data, dict) and not any(data.get(k) for k in ("gainers", "losers", "actives")):
+        logger.warning("FMP devolvió las 3 listas vacías — probable cuota diaria agotada "
+                       "(plan gratuito: 250 peticiones/día)")
+    _cache.set("market_movers", data, ttl=_MOVERS_TTL)
     return data
 
 
