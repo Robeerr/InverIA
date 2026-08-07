@@ -172,6 +172,9 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const reqId = useRef(0);
   // Petición en curso, para poder abortarla al cambiar de acción.
   const abortRef = useRef(null);
+  // Último símbolo cuyos datos están en pantalla: distingue "cambio de acción" (hay que
+  // limpiar) de "refresco de la misma" (conservar y evitar el parpadeo).
+  const symbolCargadoRef = useRef(null);
 
   const loadSymbolData = useCallback(async (sym, tf) => {
     const my = ++reqId.current;
@@ -190,6 +193,20 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
     setBuyLevels(null);
     setChartLines(null);
     setDataHealth(null);
+    // Al cambiar DE ACCIÓN hay que soltar también quote/velas/indicadores/noticias. No
+    // hacerlo dejaba en pantalla los datos de la acción ANTERIOR bajo el ticker NUEVO: el
+    // precio de AAPL rotulado como MSFT hasta que llegara la respuesta. En una app de bolsa
+    // eso no es un parpadeo feo, es un precio incorrecto sobre el que alguien puede actuar.
+    // Mejor un "cargando" honesto.
+    // Solo al CAMBIAR de símbolo: en un refresco del mismo, conservarlos evita el parpadeo.
+    if (symbolCargadoRef.current !== sym) {
+      symbolCargadoRef.current = sym;
+      setQuote(null);
+      setCandles([]);
+      setIndicators(null);
+      setNews([]);
+      setAnalystData(null);
+    }
 
     const esCancelada = (e) => e?.code === "ERR_CANCELED" || e?.name === "CanceledError";
     // Un reintento SOLO ante un fallo de red puntual. Antes reintentaba ante cualquier error:

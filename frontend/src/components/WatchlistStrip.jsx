@@ -10,6 +10,9 @@ import { api } from "../lib/api";
 //   - una sola vez por símbolo y sesión: el backend ya lo sirve de caché a partir de ahí.
 //   - nada en pantallas táctiles (no hay hover: se dispararía en el propio toque, sin ganar
 //     nada y gastando datos del móvil).
+// Debe coincidir con el timeframe inicial del Dashboard (pages/Dashboard.jsx). Si difieren,
+// la precarga calienta una clave de caché que nadie pide después.
+const TIMEFRAME_DASHBOARD = "1D";
 const yaPrecargados = new Set();
 const hayHover = typeof window !== "undefined"
   && window.matchMedia?.("(hover: hover)").matches;
@@ -24,7 +27,11 @@ function usePrecarga() {
     cancelar();
     timer.current = setTimeout(() => {
       yaPrecargados.add(sym);
-      api.dashboard(sym).catch(() => yaPrecargados.delete(sym));  // reintentable si falla
+      // MISMO timeframe que usa el Dashboard. La clave de caché del backend es
+      // dashboard:{símbolo}:{timeframe}, así que precargar con otro (el "1Y" por defecto de
+      // api.dashboard) llenaba una entrada distinta de la que luego se pide, y el clic
+      // seguía pagando el ensamblado completo.
+      api.dashboard(sym, TIMEFRAME_DASHBOARD).catch(() => yaPrecargados.delete(sym));
     }, 180);
   }, [cancelar]);
   React.useEffect(() => cancelar, [cancelar]);
