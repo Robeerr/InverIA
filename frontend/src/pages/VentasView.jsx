@@ -170,6 +170,95 @@ function FilaVenta({ v, metodo, onBorrar }) {
   );
 }
 
+// ── Los lotes vivos de una acción ────────────────────────────────────────────
+// Contesta a "¿cuántas me quedan y de qué compra son?" ANTES de vender. Sin esto los lotes
+// solo se veían dentro de una venta ya hecha, así que no había forma de comprobar lo que
+// habías metido hasta que ya era tarde.
+function LotesAbiertos({ symbol, metodo }) {
+  const qc = useQueryClient();
+  const { data, isPending } = useQuery({
+    queryKey: ["cartera", "posicion", symbol],
+    queryFn: () => api.cartera.posicion(symbol),
+    staleTime: 30_000,
+  });
+
+  const borrar = useMutation({
+    mutationFn: (id) => api.cartera.borrarCompra(id),
+    onSuccess: () => {
+      toast.success("Compra borrada");
+      qc.invalidateQueries({ queryKey: ["cartera"] });
+    },
+    onError: () => toast.error("No se pudo borrar"),
+  });
+
+  if (isPending) return <p className="px-4 py-3 text-xs text-[#5c6b66]">Cargando…</p>;
+
+  const est = data?.[metodo];
+  const abiertos = est?.abiertos || [];
+  const divisa = data?.divisa || "USD";
+  const compradas = (data?.compras || []).reduce((s, c) => s + (c.acciones || 0), 0);
+  const vendidas = compradas - (est?.acciones_abiertas || 0);
+
+  return (
+    <div className="bg-[#faf8f4] dark:bg-[#0e1f1a] px-4 py-3 border-t border-[#e5e0d8] dark:border-[#1a3a32]">
+      <p className="text-[10px] uppercase tracking-[0.15em] text-[#5c6b66] font-mono mb-2">
+        Lo que te queda, por compra · {metodo.toUpperCase()}
+        {vendidas > 0.0001 && (
+          <span className="normal-case tracking-normal ml-2">
+            (compraste {compradas}, vendiste {Math.round(vendidas * 1e6) / 1e6})
+          </span>
+        )}
+      </p>
+
+      {!abiertos.length ? (
+        <p className="text-xs text-[#5c6b66]">
+          No queda nada abierto de {symbol}: se ha vendido la posición entera.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {abiertos.map((l) => (
+            <div key={l.id} className="flex items-center gap-3 flex-wrap text-xs">
+              <span className="font-mono text-[#5c6b66] w-20 shrink-0">{fecha(l.fecha)}</span>
+              <span className="font-mono font-semibold">
+                {l.acciones_abiertas} × {usd(l.precio, divisa)}
+              </span>
+              {l.acciones_abiertas !== l.acciones && (
+                <span className="text-[10px] text-[#5c6b66]">(de {l.acciones})</span>
+              )}
+              {l.nivel
+                ? <Chip tono="nivel">{NIVEL_ETIQUETA[l.nivel] || l.nivel}</Chip>
+                : <Chip title="Esta compra no cae cerca de ninguno de los niveles que tienes en la Cartera.">fuera de niveles</Chip>}
+              {!l.tasa && (
+                <Chip tono="aviso" title="Sin el cambio de esa fecha no se puede saber lo que ganas en euros cuando vendas estas acciones.">
+                  sin tipo de cambio
+                </Chip>
+              )}
+              <span className="ml-auto font-mono text-[#5c6b66]">
+                {l.coste_eur != null ? eur(l.coste_eur) : usd(l.coste_divisa, divisa)}
+              </span>
+              <button
+                onClick={() => window.confirm(`¿Borrar la compra de ${l.acciones} ${symbol} del ${fecha(l.fecha)}?`) && borrar.mutate(l.id)}
+                className="text-[11px] text-[#d85c41] hover:underline shrink-0">
+                borrar
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* El orden de consumo es la respuesta a "de qué nivel será la próxima venta". */}
+      {abiertos.length > 1 && (
+        <p className="text-[11px] text-[#5c6b66] mt-2 pt-2 border-t border-[#e5e0d8] dark:border-[#1a3a32]">
+          Si vendes ahora, {metodo === "fifo" ? "FIFO" : "LIFO"} consumirá primero la compra
+          del <b>{fecha(abiertos[0].fecha)}</b>
+          {abiertos[0].nivel && <> ({NIVEL_ETIQUETA[abiertos[0].nivel] || abiertos[0].nivel})</>}
+          {" "}a {usd(abiertos[0].precio, divisa)}.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── Alta de operaciones ──────────────────────────────────────────────────────
 function Campo({ label, ayuda, children }) {
   return (
@@ -183,6 +272,84 @@ function Campo({ label, ayuda, children }) {
 }
 
 const inputCls = "mt-1 w-full border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-2 py-1.5 font-mono text-sm bg-transparent";
+
+// Qué lotes se van a consumir ANTES de guardar la venta. El método decide de qué compra
+// —y por tanto de qué nivel— sale lo que vendes, y eso no es evidente: con FIFO, vender
+// consume la compra más antigua aunque fuera la más cara. Verlo antes evita registrar una
+// venta pensando que salía de otro sitio.
+function VistaPreviaVenta({ symbol, acciones }) {
+  const sym = (symbol || "").trim().toUpperCase();
+  const n = Number(acciones);
+  const { data } = useQuery({
+    queryKey: ["cartera", "posicion", sym],
+    queryFn: () => api.cartera.posicion(sym),
+    enabled: sym.length >= 1,
+    staleTime: 30_000,
+    retry: false,
+  });
+  if (!sym || !data) return null;
+
+  const divisa = data.divisa || "USD";
+  const disponibles = data.fifo?.acciones_abiertas ?? 0;
+  if (!disponibles) {
+    return (
+      <p className="text-[11px] text-[#8a6508]">
+        No consta ninguna compra abierta de {sym}. Puedes registrar la venta igualmente, pero
+        saldrá marcada como descuadrada hasta que metas la compra que falta.
+      </p>
+    );
+  }
+
+  // Se calcula igual que el backend: se van tomando lotes en el orden del método hasta
+  // cubrir las acciones. Es una previsión, no un cálculo aparte — el número bueno lo da el
+  // servidor al guardar.
+  const simular = (metodo) => {
+    const abiertos = data[metodo]?.abiertos || [];
+    let queda = n, out = [];
+    for (const l of abiertos) {
+      if (queda <= 1e-9) break;
+      const toma = Math.min(l.acciones_abiertas, queda);
+      queda -= toma;
+      out.push({ ...l, toma });
+    }
+    return out;
+  };
+
+  return (
+    <div className="rounded border border-[#e5e0d8] dark:border-[#1a3a32] px-3 py-2 space-y-1.5">
+      <p className="text-[10px] uppercase tracking-[0.15em] text-[#5c6b66] font-mono">
+        Tienes {disponibles} acciones de {sym}
+      </p>
+      {n > 0 && (
+        <>
+          {n > disponibles + 1e-9 && (
+            <p className="text-[11px] text-[#8a6508]">
+              Estás vendiendo más de las que constan compradas ({disponibles}). Se registrará
+              igual y quedará marcada, por si lo que falta es meter una compra antigua.
+            </p>
+          )}
+          {[["fifo", "FIFO", "es el que vale para Hacienda"], ["lifo", "LIFO", "solo referencia"]].map(([k, label, nota]) => {
+            const sim = simular(k);
+            if (!sim.length) return null;
+            return (
+              <p key={k} className="text-[11px] text-[#5c6b66] leading-snug">
+                <b>{label}</b> <span className="opacity-70">({nota})</span> venderá{" "}
+                {sim.map((l, i) => (
+                  <span key={i}>
+                    {i > 0 && " + "}
+                    {Math.round(l.toma * 1e6) / 1e6} de la compra del {fecha(l.fecha)} a{" "}
+                    {usd(l.precio, divisa)}
+                    {l.nivel && ` (${NIVEL_ETIQUETA[l.nivel] || l.nivel})`}
+                  </span>
+                ))}
+              </p>
+            );
+          })}
+        </>
+      )}
+    </div>
+  );
+}
 
 function FormularioOperacion({ tipo, onHecho, onCerrar }) {
   const hoy = new Date().toISOString().slice(0, 10);
@@ -254,6 +421,8 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
         </p>
       )}
 
+      {tipo === "venta" && <VistaPreviaVenta symbol={f.symbol} acciones={f.acciones} />}
+
       <button type="submit" disabled={mut.isPending}
               className="w-full bg-[#1a3a32] text-[#f5f3ef] rounded px-4 py-2 text-sm font-semibold disabled:opacity-60">
         {mut.isPending ? "Guardando…" : tipo === "compra" ? "Guardar compra" : "Guardar venta"}
@@ -268,6 +437,7 @@ export default function VentasView() {
   // declaración. LIFO está a un clic, pero etiquetado, para que nadie confunda las cifras.
   const [metodo, setMetodo] = React.useState("fifo");
   const [form, setForm] = React.useState(null);   // "compra" | "venta" | null
+  const [abierta, setAbierta] = React.useState(null);   // símbolo desplegado en la tabla
   const qc = useQueryClient();
 
   const { data: hist, isPending: cargandoHist } = useQuery({
@@ -461,8 +631,11 @@ export default function VentasView() {
               </thead>
               <tbody>
                 {resumen.posiciones.map((p) => (
-                  <tr key={p.symbol} className="border-b border-[#e5e0d8] dark:border-[#1a3a32] last:border-0">
+                  <React.Fragment key={p.symbol}>
+                  <tr className="border-b border-[#e5e0d8] dark:border-[#1a3a32] cursor-pointer hover:bg-[#faf8f4] dark:hover:bg-[#0e1f1a]"
+                      onClick={() => setAbierta(abierta === p.symbol ? null : p.symbol)}>
                     <td className="px-4 py-2">
+                      <span className="text-[#5c6b66] mr-1 text-[10px]">{abierta === p.symbol ? "▲" : "▼"}</span>
                       <span className="font-mono font-bold">{p.symbol}</span>
                       {!!p.niveles_comprados?.length && (
                         <span className="ml-2 inline-flex gap-1">
@@ -481,6 +654,14 @@ export default function VentasView() {
                       <span className={`font-mono text-[10px] ml-1 ${tono(p.pct_eur)}`}>{pct(p.pct_eur)}</span>
                     </td>
                   </tr>
+                  {abierta === p.symbol && (
+                    <tr>
+                      <td colSpan={6} className="p-0">
+                        <LotesAbiertos symbol={p.symbol} metodo={metodo} />
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>

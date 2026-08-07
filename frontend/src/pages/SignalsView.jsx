@@ -395,7 +395,7 @@ function parseExcelText(text) {
   const lines = text.trim().split("\n").filter(Boolean);
   if (lines.length < 2) return [];
   const sep = lines[0].includes("\t") ? "\t" : ",";
-  const headers = lines[0].split(sep).map((h) => h.trim().toLowerCase().replace(/[\s\-\/áéíóú]+/g, "_"));
+  const headers = lines[0].split(sep).map((h) => h.trim().toLowerCase().replace(/[\s\-/áéíóú]+/g, "_"));
 
   const map = {
     // OJO: "accion" va SOLO en name, no en symbol. En el Excel la columna "Acción"
@@ -493,9 +493,6 @@ const NUM_KEYS = new Set(["deseado", "nivel1", "nivel2", "nivel3", "nivel4", "ni
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function SignalsView({ setSymbol }) {
-  // P&L en euros del libro de operaciones. Las acciones que aún no tengan compras
-  // registradas no aparecen aquí y su fila cae al cálculo en dólares de siempre.
-  const pnlEur = usePnlEnEuros();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState({});
@@ -918,6 +915,10 @@ function DialogoVenta({ entry, onClose, onHecho }) {
 }
 
 function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVendido }) {
+  // El hook va AQUÍ, en el componente que pinta las filas. Estaba en SignalsView, que es
+  // quien monta la página pero no dibuja la tabla: `pnlEur` no existía en este ámbito y la
+  // vista reventaba con "pnlEur is not defined".
+  const pnlEur = usePnlEnEuros();
   // Posición sobre la que se está registrando una venta (null = diálogo cerrado).
   const [vendiendo, setVendiendo] = React.useState(null);
   return (

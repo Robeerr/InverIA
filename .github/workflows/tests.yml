@@ -33,3 +33,30 @@ jobs:
         # backend_test.py son de integración: se auto-saltan si no hay INVERIA_TEST_URL,
         # así que no hace falta excluirlos a mano.
         run: pytest tests/ -v
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Instalar dependencias
+        working-directory: frontend
+        # Sin --frozen-lockfile a proposito: no hay yarn.lock (solo package-lock.json, que
+        # esta desincronizado) y vercel.json tambien despliega con `yarn install`. Poner el
+        # flag haria fallar CI por un fichero que no existe.
+        run: yarn install --network-timeout 600000
+
+      - name: Lint
+        working-directory: frontend
+        # El build NO caza variables inexistentes: se comprobo metiendo una a proposito y
+        # `craco build` responde "Compiled successfully". Un hook llamado en el componente
+        # equivocado llego asi a produccion con el build en verde. Esto es lo que lo caza.
+        run: npx eslint src/
+
+      - name: Build
+        working-directory: frontend
+        run: CI=true npx craco build
