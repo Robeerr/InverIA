@@ -136,3 +136,55 @@ def test_el_websocket_se_desregistra_siempre():
         assert n.finalbody, (
             "la baja del WebSocket debe ir en un finally, no solo en un except")
     assert encontrado, "no se encontró el try que da de baja el WebSocket"
+
+
+# ── La segunda tanda del dashboard ───────────────────────────────────────────
+# Medido en produccion con la cuota sana: las fuentes del bloque paralelo costaban 230 ms,
+# pero la carga completa 1.115 ms. La diferencia estaba en lo que viene DESPUES del gather,
+# que se hacia todo en serie aunque las tres cosas que abren red son independientes:
+# enriquecer fundamentales (Finnhub), precio extendido (yfinance) y regimen de mercado.
+
+def _cuerpo_construir_dashboard():
+    src = _fuente("server.py")
+    ini = src.index("async def _construir_dashboard")
+    fin = src.index("\n@api_router", ini)
+    return src[ini:fin]
+
+
+def test_la_segunda_tanda_no_va_en_serie():
+    cuerpo = _cuerpo_construir_dashboard()
+    for tarea in ("_t_enrich", "_t_ext", "_t_regimen"):
+        assert f"{tarea} = asyncio.ensure_future(" in cuerpo, (
+            f"{tarea} deberia lanzarse por adelantado, no esperarse en su turno")
+
+
+def test_el_regimen_de_mercado_no_se_espera_en_su_turno():
+    """No depende del simbolo y su cache dura 1 h, pero al caducar descarga el historico de
+    SPY. En serie, esa descarga la pagaba entera quien cargara justo en ese momento."""
+    cuerpo = _cuerpo_construir_dashboard()
+    assert "await asyncio.to_thread(market_regime.get_market_regime)" not in cuerpo
+    assert "await _t_regimen" in cuerpo
+
+
+def test_las_tareas_adelantadas_no_quedan_sin_recoger():
+    """Lanzar trabajo por adelantado trae un riesgo propio: si otra rama corta antes, esa
+    tarea queda sin dueno y asyncio lo escupe en los logs como si fuera un fallo."""
+    cuerpo = _cuerpo_construir_dashboard()
+    assert "_sin_estallar(" in cuerpo, "las tareas adelantadas deben ir protegidas"
+    # El precio extendido se recoge fuera del `if quote:`: enrich puede devolver None al
+    # agotar su tope y entonces esa rama no se ejecuta.
+    i_await = cuerpo.index("ext = await _t_ext")
+    i_if = cuerpo.index("if quote:", cuerpo.index("quote = await _t_enrich"))
+    assert i_await < i_if, "el precio extendido debe recogerse antes del `if quote:`"
+
+
+def test_el_backtest_no_se_recalcula_varias_veces_al_dia():
+    """Es un walk-forward sobre 2 anos de velas DIARIAS: entre sesion y sesion cambia en una
+    vela de 500. A 6 h se rehacia hasta 4 veces al dia para dar lo mismo, y cuesta ~1.100 ms."""
+    src = _fuente("server.py")
+    i = src.index('ck = f"bt:')
+    trozo = src[i:i + 3000]
+    import re
+    m = re.search(r"_cache\.set\(ck, result, ttl=(\d+)\)", trozo)
+    assert m, "no se encontro el ttl del backtest"
+    assert int(m.group(1)) >= 86400, "menos de 24 h es recalcular para nada"

@@ -1852,6 +1852,29 @@ async def _refrescar_cotizacion(payload: dict, sym: str) -> dict:
     return nuevo
 
 
+async def _sin_estallar(coro):
+    """Ejecuta una corrutina y devuelve None si falla, en vez de propagar.
+
+    Se usa para las tareas que se lanzan por adelantado: si una falla y su resultado acaba
+    no recogiéndose —porque otra rama corta antes—, asyncio suelta un "Task exception was
+    never retrieved" en los logs por algo que ya estaba contemplado.
+    """
+    try:
+        return await coro
+    except Exception:
+        return None
+
+
+async def _extended_quote_cacheada(sym: str):
+    """Precio de pre-apertura / after-hours, cacheado 60 s. Extraído para poder lanzarlo en
+    paralelo con el resto de la segunda tanda: abre red (yfinance) y no depende de nada."""
+    ext = _cache.get(f"ext:{sym}")
+    if ext is None:
+        ext = await asyncio.to_thread(market_data.get_extended_quote, sym)
+        _cache.set(f"ext:{sym}", ext or {}, ttl=60)
+    return ext
+
+
 async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
     """El cálculo real. Separado del endpoint para que el refresco de fondo pueda
     invocarlo sin pasar por la caché ni por la comprobación de credencial, y sin exponer
@@ -1937,17 +1960,30 @@ async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
     if not quote or isinstance(quote, Exception):
         raise HTTPException(404, f"No se encontraron datos para '{sym}'")
 
-    # Fill missing fundamentals from Finnhub if yfinance returned an incomplete quote
-    quote = await _timed("enrich", _enrich_quote_fundamentals, quote, sym)
+    # SEGUNDA TANDA, también en paralelo. Medido en producción: las fuentes de arriba
+    # costaban 230 ms pero la carga completa 1.115 ms. La diferencia estaba aquí: lo que
+    # sigue al gather se hacía TODO en serie —enriquecer, precio extendido, indicadores,
+    # fuerza relativa, niveles, régimen— aunque las tres cosas que abren red no dependen
+    # unas de otras.
+    #
+    # Se lanzan ya y se recogen más abajo, después del trabajo de CPU: así la red de estas
+    # tres y el cálculo de indicadores/niveles ocurren a la vez en vez de encadenarse.
+    _t_enrich = asyncio.ensure_future(_timed("enrich", _enrich_quote_fundamentals, quote, sym))
+    _t_ext = asyncio.ensure_future(_sin_estallar(_extended_quote_cacheada(sym)))
+    # El régimen de mercado no depende del símbolo y su caché dura 1 h, pero cuando caduca
+    # descarga el histórico de SPY. En serie, esa descarga la pagaba entera quien tuviera la
+    # mala suerte de cargar justo en ese momento.
+    _t_regimen = asyncio.ensure_future(_sin_estallar(asyncio.to_thread(market_regime.get_market_regime)))
+
+    quote = await _t_enrich
+    # Se recoge SIEMPRE, aunque no haya quote: `enrich` puede devolver None al agotar su
+    # tope, y entonces la tarea del precio extendido se quedaría colgando sin dueño.
+    ext = await _t_ext
 
     # Extended hours (pre-market / after-hours): añade estado + precio + % al quote para que
     # el header del dashboard lo muestre igual que la watchlist. Cacheado 60s (dato volátil).
     if quote:
         try:
-            ext = _cache.get(f"ext:{sym}")
-            if ext is None:
-                ext = await asyncio.to_thread(market_data.get_extended_quote, sym)
-                _cache.set(f"ext:{sym}", ext or {}, ttl=60)
             state = (ext or {}).get("market_state")
             ext_price = (ext or {}).get("extended_price")
             reg_close = (ext or {}).get("regular_close") or quote.get("price")
@@ -2060,7 +2096,9 @@ async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
         # A un hilo: cuando su caché de 1h caduca, get_market_regime DESCARGA el histórico de
         # SPY. Llamándolo aquí tal cual, esa descarga corría en el event loop y congelaba el
         # servidor entero —todas las peticiones de todos— hasta que terminara.
-        "market_regime": await asyncio.to_thread(market_regime.get_market_regime),
+        # Lanzado arriba, junto al resto de la segunda tanda: para cuando se llega aquí ya
+        # ha corrido en paralelo con el cálculo de indicadores y niveles.
+        "market_regime": await _t_regimen,
         "data_health": health,
         # Cuándo se calculó DE VERDAD todo lo pesado. Al servirse caducado, la cotización se
         # refresca aparte pero esta marca no cambia: así queda claro de cuándo es el resto.
@@ -3409,7 +3447,11 @@ async def backtest_levels(symbol: str, window: int = 60,
         None, lambda: backtest.backtest_symbol(df, forward_window=window)
     )
     result["symbol"] = sym
-    _cache.set(ck, result, ttl=21600)  # 6h
+    # 24 h, antes 6 h. Es un backtest walk-forward sobre 2 años de velas DIARIAS: entre una
+    # sesión y la siguiente el resultado cambia en una vela de 500, o sea nada apreciable.
+    # A 6 h se recalculaba hasta cuatro veces al día para dar prácticamente lo mismo, y
+    # medido en producción es ~1.100 ms — el panel más lento al cambiar de acción.
+    _cache.set(ck, result, ttl=86400)
     mem.trim()  # el histórico (2 años) es un DataFrame grande: devuélvelo al SO
     return result
 
