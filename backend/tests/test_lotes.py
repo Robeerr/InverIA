@@ -317,3 +317,97 @@ def test_cuando_hay_un_solo_lote_los_dos_metodos_coinciden():
     comp = lotes.comparar_metodos(compras, [_venta("2026-06-01", 5, 120.0, tasa=1.1)])
     assert comp["coinciden"]
     assert comp["diferencia_divisa"] == 0.0
+
+
+# ── Reconstruir los lotes desde las campanitas ───────────────────────────────
+# Convenio de la Cartera: la campanita de un nivel de compra se APAGA cuando ese nivel ya
+# se ha comprado. Eso convierte un ajuste de interfaz en el unico registro que existe de en
+# que niveles se entro, y permite reconstruir los lotes en vez de guardar un precio medio.
+
+def _pos(acciones, compra, **niveles):
+    """Posicion de Cartera. `n1=(220, False)` = Nivel 1 a 220 con la campanita APAGADA."""
+    e = {"symbol": "FN", "acciones": acciones, "compra": compra}
+    for k, (precio, alerta) in niveles.items():
+        i = k[1:]
+        e[f"nivel{i}"] = precio
+        e[f"alert_nivel{i}"] = alerta
+    return e
+
+
+def test_la_campanita_apagada_marca_el_nivel_como_comprado():
+    e = _pos(10, 100, n1=(220.0, False), n2=(200.0, True), n3=(180.0, False))
+    comprados = [n["nivel"] for n in lotes.niveles_comprados(e)]
+    assert comprados == ["nivel1", "nivel3"], "solo los apagados, de mas caro a mas barato"
+
+
+def test_una_campanita_que_nunca_se_toco_no_cuenta_como_comprada():
+    """None significa "sin tocar", que no es lo mismo que apagada a proposito."""
+    e = {"symbol": "FN", "nivel1": 220.0, "alert_nivel1": None, "nivel2": 200.0}
+    assert lotes.niveles_comprados(e) == []
+
+
+def test_con_dos_niveles_comprados_el_reparto_es_EXACTO():
+    """Dos incognitas (las acciones de cada nivel) y dos datos (total y precio medio):
+    solucion unica. No es una estimacion."""
+    # 3 acciones a 200 + 7 a 100 = 1300 sobre 10 -> precio medio 130.
+    e = _pos(10, 130.0, n1=(200.0, False), n2=(100.0, False))
+    plan = lotes.plan_importacion(e)
+    assert plan["exacto"] is True
+    assert len(plan["lotes"]) == 2
+    a, b = plan["lotes"]
+    assert a["nivel"] == "nivel1" and a["acciones"] == 3.0 and a["precio"] == 200.0
+    assert b["nivel"] == "nivel2" and b["acciones"] == 7.0 and b["precio"] == 100.0
+    # Y el reparto reproduce el precio medio del que se partio.
+    coste = sum(l["acciones"] * l["precio"] for l in plan["lotes"])
+    assert coste / 10 == pytest.approx(130.0)
+
+
+def test_con_un_solo_nivel_va_todo_ahi_al_precio_medio():
+    """Se usa el precio MEDIO y no el del nivel: la ejecucion real casi nunca cae justo
+    en el nivel, y el medio es el coste que de verdad se pago."""
+    e = _pos(10, 178.5, n3=(180.0, False))
+    plan = lotes.plan_importacion(e)
+    assert plan["exacto"] is True
+    assert plan["lotes"] == [{"nivel": "nivel3", "nivel_etiqueta": "Nivel 3",
+                              "acciones": 10.0, "precio": 178.5}]
+
+
+def test_con_tres_o_mas_niveles_se_estima_y_se_dice():
+    """Hay infinitos repartos que dan el mismo precio medio. Presentar uno como si fuera
+    el bueno falsearia la ganancia de cada venta futura."""
+    e = _pos(9, 200.0, n1=(220.0, False), n2=(200.0, False), n3=(180.0, False))
+    plan = lotes.plan_importacion(e)
+    assert plan["exacto"] is False
+    assert len(plan["lotes"]) == 3
+    assert all(l["acciones"] == 3.0 for l in plan["lotes"]), "a partes iguales"
+    assert "corregirlo" in plan["motivo"]
+
+
+def test_si_el_precio_medio_no_encaja_entre_los_niveles_se_dice(monkeypatch):
+    """Puede pasar con una comision grande o un nivel editado despues de comprar. Un
+    reparto con acciones negativas seria peor que admitir que no se puede."""
+    e = _pos(10, 300.0, n1=(200.0, False), n2=(100.0, False))   # medio fuera del rango
+    plan = lotes.plan_importacion(e)
+    assert plan["exacto"] is False
+    assert len(plan["lotes"]) == 1
+    assert "no queda entre" in plan["motivo"]
+
+
+def test_sin_campanitas_apagadas_se_cae_al_precio_medio():
+    e = _pos(10, 130.0, n1=(200.0, True), n2=(100.0, True))
+    plan = lotes.plan_importacion(e)
+    assert plan["exacto"] is True and len(plan["lotes"]) == 1
+    assert plan["lotes"][0]["nivel"] is None
+
+
+def test_una_posicion_sin_datos_no_propone_nada():
+    assert lotes.plan_importacion({"symbol": "FN"})["lotes"] == []
+    assert lotes.plan_importacion({"symbol": "FN", "acciones": 10})["lotes"] == []
+
+
+def test_el_nivel_deseado_no_cuenta_como_compra():
+    """En esta Cartera la columna se llama "Deseado / Venta": es objetivo de VENTA."""
+    e = {"symbol": "FN", "acciones": 10, "compra": 130.0,
+         "deseado": 250.0, "alert_deseado": False,
+         "nivel1": 200.0, "alert_nivel1": False, "nivel2": 100.0, "alert_nivel2": False}
+    assert [n["nivel"] for n in lotes.niveles_comprados(e)] == ["nivel1", "nivel2"]

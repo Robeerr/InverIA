@@ -463,9 +463,19 @@ export default function VentasView() {
   const importar = useMutation({
     mutationFn: api.cartera.importar,
     onSuccess: (r) => {
-      toast.success(r.creados
-        ? `${r.creados} posición(es) importadas como compra inicial`
-        : "No había posiciones nuevas que importar");
+      if (!r.creados) {
+        toast.info("No había posiciones nuevas que importar");
+      } else if (r.estimados?.length) {
+        // Se avisa por separado de lo estimado: con tres o más niveles comprados hay
+        // infinitos repartos que dan el mismo precio medio, y el reparto elegido cambia la
+        // ganancia de cada venta futura. Callarlo lo convertiría en un dato inventado.
+        toast.warning(
+          `${r.creados} posición(es) importadas. Revisa el reparto de ${r.estimados.join(", ")}: ` +
+          "tienen tres o más niveles comprados y el reparto entre ellos es una estimación.",
+          { duration: 12000 });
+      } else {
+        toast.success(`${r.creados} posición(es) importadas, con sus lotes por nivel`);
+      }
       qc.invalidateQueries({ queryKey: ["cartera"] });
     },
   });
@@ -571,8 +581,11 @@ export default function VentasView() {
           <div className="px-4 py-8 text-center space-y-3">
             <p className="text-sm text-[#5c6b66]">Aún no has registrado ninguna venta.</p>
             <p className="text-[11px] text-[#5c6b66] max-w-md mx-auto">
-              Si ya tenías posiciones en la Cartera, impórtalas como compra inicial para no
-              empezar de cero. Después podrás registrar ventas sobre ellas.
+              Si ya tenías posiciones en la Cartera, impórtalas para no empezar de cero. Se
+              reconstruye <b>un lote por cada nivel que tengas con la campanita apagada</b>,
+              que es como marcas los niveles ya comprados. Con uno o dos niveles el reparto
+              de acciones sale exacto a partir de tu precio medio; con tres o más es una
+              estimación y te lo aviso para que la corrijas.
             </p>
             <button onClick={() => importar.mutate()} disabled={importar.isPending}
                     className="border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-3 py-1.5 text-xs font-semibold disabled:opacity-60">

@@ -58,6 +58,12 @@ class _Coleccion:
     async def insert_one(self, doc):
         self.docs.append(dict(doc))
 
+    async def update_one(self, filtro, cambios):
+        for d in self.docs:
+            if all(self._cumple(d, k, v) for k, v in filtro.items()):
+                d.update(cambios.get("$set") or {})
+                break
+
     async def delete_one(self, filtro):
         antes = len(self.docs)
         self.docs = [d for d in self.docs
@@ -306,3 +312,84 @@ def test_el_metodo_oficial_de_la_cartera_es_el_fiscal():
     src = inspect.getsource(cartera_api.resumen_cartera)
     assert "lotes.FIFO" in src
     assert lotes.comparar_metodos([], [])["oficial"] == lotes.FIFO
+
+
+# ── La Cartera se actualiza sola ─────────────────────────────────────────────
+# El numero de acciones vivia en DOS sitios: las columnas de la Cartera y el libro. Tener
+# que actualizar los dos a mano garantiza que algun dia no cuadren, y obliga a recordar un
+# orden de pasos que nadie tiene por que recordar. El libro manda; la Cartera se deriva.
+
+def test_registrar_una_venta_baja_las_acciones_de_la_cartera():
+    db = _DB([{"symbol": "FN", "acciones": 5, "compra": 100.0, "divisa": "USD"}])
+    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10"))
+    _correr(cartera_api.registrar_venta(db, "FN", 2, 130.0, fecha="2026-06-01"))
+    fila = db.signal_entries.docs[0]
+    assert fila["acciones"] == 3, "no deberia hacer falta tocarlo a mano"
+
+
+def test_vender_la_posicion_entera_deja_la_cartera_a_cero():
+    db = _DB([{"symbol": "SPCX", "acciones": 10, "compra": 50.0}])
+    _correr(cartera_api.registrar_compra(db, "SPCX", 10, 50.0, fecha="2026-01-10"))
+    _correr(cartera_api.registrar_venta(db, "SPCX", 10, 70.0, fecha="2026-06-01"))
+    assert db.signal_entries.docs[0]["acciones"] == 0
+
+
+def test_el_precio_medio_de_la_cartera_sigue_al_de_lo_que_queda():
+    """Tras vender parte por FIFO, lo que queda son los lotes caros: el medio sube."""
+    db = _DB([{"symbol": "FN", "acciones": 5, "compra": 96.0}])
+    _correr(cartera_api.registrar_compra(db, "FN", 3, 80.0, fecha="2026-01-10"))
+    _correr(cartera_api.registrar_compra(db, "FN", 2, 120.0, fecha="2026-03-05"))
+    _correr(cartera_api.registrar_venta(db, "FN", 3, 130.0, fecha="2026-06-01"))
+    fila = db.signal_entries.docs[0]
+    assert fila["acciones"] == 2
+    assert fila["compra"] == 120.0, "quedan las 2 de 120, no el medio original"
+
+
+def test_borrar_una_venta_devuelve_las_acciones_a_la_cartera():
+    db = _DB([{"symbol": "FN", "acciones": 5, "compra": 100.0}])
+    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10"))
+    _correr(cartera_api.registrar_venta(db, "FN", 2, 130.0, fecha="2026-06-01"))
+    _correr(cartera_api.borrar_venta(db, db.ventas.docs[0]["id"]))
+    assert db.signal_entries.docs[0]["acciones"] == 5
+
+
+def test_una_accion_sin_libro_no_se_toca():
+    """Las posiciones que aun no se han importado deben quedarse como estan."""
+    db = _DB([{"symbol": "META", "acciones": 7, "compra": 500.0}])
+    _correr(cartera_api._sincronizar_posicion(db, "META"))
+    assert db.signal_entries.docs[0]["acciones"] == 7
+
+
+# ── Importacion usando las campanitas ────────────────────────────────────────
+
+def test_la_importacion_reconstruye_un_lote_por_nivel_comprado():
+    """Antes creaba UN lote al precio medio y perdia el desglose por niveles, que es
+    justo lo que se quiere saber."""
+    db = _DB([{"symbol": "FN", "acciones": 10, "compra": 130.0, "divisa": "USD",
+               "nivel1": 200.0, "alert_nivel1": False,
+               "nivel2": 100.0, "alert_nivel2": False}])
+    r = _correr(cartera_api.importar_posiciones_existentes(db))
+    assert r["creados"] == 1
+    assert r["estimados"] == [], "con dos niveles el reparto es exacto"
+    assert len(db.compras.docs) == 2
+    por_nivel = {c["nivel"]: c["acciones"] for c in db.compras.docs}
+    assert por_nivel == {"nivel1": 3.0, "nivel2": 7.0}
+
+
+def test_la_importacion_avisa_cuando_el_reparto_es_una_estimacion():
+    db = _DB([{"symbol": "FN", "acciones": 9, "compra": 200.0,
+               "nivel1": 220.0, "alert_nivel1": False,
+               "nivel2": 200.0, "alert_nivel2": False,
+               "nivel3": 180.0, "alert_nivel3": False}])
+    r = _correr(cartera_api.importar_posiciones_existentes(db))
+    assert r["estimados"] == ["FN"]
+    assert all("REPARTO ESTIMADO" in c["notas"] for c in db.compras.docs)
+
+
+def test_la_importacion_deja_la_cartera_cuadrada():
+    db = _DB([{"symbol": "FN", "acciones": 10, "compra": 130.0,
+               "nivel1": 200.0, "alert_nivel1": False,
+               "nivel2": 100.0, "alert_nivel2": False}])
+    _correr(cartera_api.importar_posiciones_existentes(db))
+    assert db.signal_entries.docs[0]["acciones"] == 10
+    assert db.signal_entries.docs[0]["compra"] == pytest.approx(130.0)

@@ -112,6 +112,117 @@ def detectar_nivel(precio: float, entry: dict) -> dict:
             "desvio_pct": round(mejor[2] * 100, 2)}
 
 
+def niveles_comprados(entry: dict) -> list:
+    """Niveles que ya están comprados, según la campanita apagada.
+
+    Convenio de la Cartera: la alerta de un nivel de compra se apaga cuando ese nivel YA se
+    ha comprado — deja de tener sentido avisar de algo que ya hiciste. Eso convierte un
+    ajuste de la interfaz en el único registro que existe de en qué niveles entraste, así
+    que se usa para reconstruir los lotes en vez de pedírtelo otra vez.
+
+    `deseado` queda fuera a propósito: en esta Cartera es el nivel de VENTA (la columna se
+    llama "Deseado / Venta"), no una compra.
+    """
+    out = []
+    for i in range(1, 6):
+        precio = entry.get(f"nivel{i}")
+        if precio in (None, "", 0):
+            continue
+        try:
+            precio = float(precio)
+        except (TypeError, ValueError):
+            continue
+        if precio <= 0:
+            continue
+        # Solo False cuenta. None significa "nunca se tocó", que no es lo mismo que apagada.
+        if entry.get(f"alert_nivel{i}") is False:
+            out.append({"nivel": f"nivel{i}", "etiqueta": f"Nivel {i}", "precio": precio})
+    # De más caro a más barato: es el orden en que se van tocando al caer, o sea el orden
+    # cronológico probable de las compras.
+    out.sort(key=lambda n: n["precio"], reverse=True)
+    return out
+
+
+def plan_importacion(entry: dict) -> dict:
+    """Propone los lotes de una posición a partir de lo que ya hay en la Cartera.
+
+    El problema: la Cartera guarda un precio MEDIO y un total de acciones, no las compras.
+    Pero con las campanitas se sabe además EN QUÉ NIVELES se compró, y con eso el reparto
+    deja de ser una invención en dos de los tres casos:
+
+      · Un nivel  -> todo el paquete a ese nivel. Exacto.
+      · Dos       -> hay dos incógnitas (las acciones de cada uno) y dos datos (el total y
+                     el precio medio): sale una única solución. EXACTO, no estimado.
+      · Tres o más-> queda indeterminado. Se propone un reparto proporcional y se marca
+                     como estimación para que se corrija a mano.
+
+    Devuelve siempre `exacto` para que la interfaz no presente una estimación como si fuera
+    un dato: el reparto cambia la ganancia de cada venta futura.
+    """
+    total = entry.get("acciones")
+    medio = entry.get("compra")
+    try:
+        total = float(total or 0)
+        medio = float(medio or 0)
+    except (TypeError, ValueError):
+        total = medio = 0
+    if total <= 0 or medio <= 0:
+        return {"lotes": [], "exacto": False,
+                "motivo": "La posición no tiene número de acciones o precio de compra."}
+
+    niveles = niveles_comprados(entry)
+
+    def _lote(nivel, acciones, precio):
+        return {"nivel": (nivel or {}).get("nivel"),
+                "nivel_etiqueta": (nivel or {}).get("etiqueta"),
+                "acciones": round(acciones, 6), "precio": round(precio, 4)}
+
+    if not niveles:
+        return {"lotes": [_lote(None, total, medio)], "exacto": True,
+                "motivo": ("Ningún nivel figura como comprado (todas las campanitas están "
+                           "encendidas), así que se registra una sola compra al precio "
+                           "medio que tienes.")}
+
+    if len(niveles) == 1:
+        # El precio medio ES el precio de esa compra; se usa él y no el del nivel, porque
+        # la ejecución real casi nunca cae exactamente en el nivel.
+        return {"lotes": [_lote(niveles[0], total, medio)], "exacto": True,
+                "motivo": f"Solo {niveles[0]['etiqueta']} figura comprado: todo el paquete va ahí."}
+
+    if len(niveles) == 2:
+        p1, p2 = niveles[0]["precio"], niveles[1]["precio"]
+        if abs(p1 - p2) < 1e-9:
+            s1 = total / 2
+        else:
+            # s1*p1 + s2*p2 = total*medio  y  s1 + s2 = total
+            s1 = total * (medio - p2) / (p1 - p2)
+        s2 = total - s1
+        if s1 < -1e-6 or s2 < -1e-6:
+            # El precio medio cae FUERA del rango de los dos niveles: los datos no encajan
+            # (una comisión grande, un nivel editado después de comprar…). Inventar un
+            # reparto negativo sería peor que decirlo.
+            return {"lotes": [_lote(None, total, medio)], "exacto": False,
+                    "motivo": (f"Tu precio medio ({medio}) no queda entre {niveles[1]['etiqueta']} "
+                               f"({p2}) y {niveles[0]['etiqueta']} ({p1}), así que no se puede "
+                               "repartir. Se propone una sola compra al precio medio; "
+                               "corrígela a mano si lo sabes.")}
+        return {"lotes": [_lote(niveles[0], s1, p1), _lote(niveles[1], s2, p2)],
+                "exacto": True,
+                "motivo": (f"Con {niveles[0]['etiqueta']} y {niveles[1]['etiqueta']} comprados, "
+                           "tu total de acciones y tu precio medio solo admiten un reparto "
+                           "posible: este.")}
+
+    # Tres o más: infinitas combinaciones dan el mismo precio medio. Se reparte a partes
+    # iguales, que es la suposición más neutra, y se avisa de que hay que revisarlo.
+    n = len(niveles)
+    por_nivel = total / n
+    lotes = [_lote(x, por_nivel, x["precio"]) for x in niveles]
+    return {"lotes": lotes, "exacto": False,
+            "motivo": (f"Figuran {n} niveles comprados. Con tres o más hay infinitos repartos "
+                       "que dan tu mismo precio medio, así que este es a partes iguales y "
+                       "hay que corregirlo: el reparto cambia la ganancia de cada venta.")}
+
+
 def nueva_compra(symbol: str, acciones: float, precio: float, fecha: str = None,
                  comision: float = 0.0, divisa: str = "USD", tasa: float = None,
                  nivel: str = None, notas: str = "") -> dict:
