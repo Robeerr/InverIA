@@ -45,7 +45,9 @@ def test_el_ciclo_cabe_en_la_ventana_de_servible():
     # trabajo que se está adelantando. Se presupuesta el peor caso realista — el tope de 8 s
     # por fuente que aplica _construir_dashboard — o el margen se evapora en producción sin
     # que el test se entere.
-    _PEOR_CASO_POR_SIMBOLO = 8.0
+    # 8 s del tope por fuente de _construir_dashboard + ~2 s del backtest, que ahora
+    # también se precalienta.
+    _PEOR_CASO_POR_SIMBOLO = 10.0
     vuelta_completa = (server.DASHBOARD_PREWARM_CADENCIA
                        + server.DASHBOARD_PREWARM_MAX
                        * (server.DASHBOARD_PREWARM_PAUSA + _PEOR_CASO_POR_SIMBOLO))
@@ -128,3 +130,42 @@ def test_el_precalentado_del_chartista_usa_los_mismos_simbolos():
     src = inspect.getsource(server)
     assert src.count("_simbolos_que_te_importan()") >= 2, (
         "los dos precalentados deben partir del mismo conjunto de símbolos")
+
+
+# ── Los paneles que se cargan solos ──────────────────────────────────────────
+# Medido en produccion tras arreglar el dashboard: la carga bajo a 254 ms, pero los paneles
+# que se disparan solos al cambiar de accion sumaban 1.894 ms — o sea el 88% de lo que se
+# esperaba. Arreglar solo el dashboard no arregla la sensacion de lentitud.
+
+def test_el_precalentado_cubre_los_paneles_que_se_cargan_solos():
+    """No basta con calentar el dashboard: 'Tus fuentes' (~985 ms) y 'Backtest' (~900 ms)
+    se piden solos al elegir una accion y eran el grueso de la espera."""
+    import inspect
+    src = inspect.getsource(server)
+    ini = src.index("async def _prewarm_dashboards")
+    cuerpo = src[ini:ini + 3000]
+    assert "backtest_levels(" in cuerpo, "el Backtest se paga entero en la primera visita"
+    assert "_newsletters_recientes(" in cuerpo, "'Tus fuentes' se paga entero en la primera visita"
+
+
+def test_las_newsletters_se_leen_una_vez_y_no_por_simbolo():
+    """La lectura del ultimo mes es la MISMA para cualquier accion. Repetirla por simbolo
+    era ~985 ms en cada cambio de accion, y ademas tres veces (panel, radar y menciones)."""
+    import inspect
+    src = inspect.getsource(server)
+    # Nadie debe consultar la coleccion directamente: todo pasa por el lector cacheado.
+    crudas = [ln.strip() for ln in src.splitlines()
+              if "db.newsletter_summaries.find(" in ln and not ln.strip().startswith("#")]
+    assert len(crudas) == 1, (
+        f"{len(crudas)} lecturas directas de newsletter_summaries; deben ir por "
+        f"_newsletters_recientes(): {crudas}")
+    assert server._TTL_NEWSLETTERS >= 300, "una cache tan corta no ahorra las lecturas"
+
+
+def test_los_tickers_se_normalizan_al_guardar():
+    """Se guardaban tal cual los devolvia la IA, asi que cada lectura tenia que limpiarlos
+    y era imposible filtrar por ticker en Mongo sin perder menciones."""
+    import inspect
+    import newsletter_ingest
+    src = inspect.getsource(newsletter_ingest)
+    assert 'a["ticker"] = t' in src, "el ticker debe quedar normalizado en el documento"

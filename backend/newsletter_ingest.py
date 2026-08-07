@@ -297,8 +297,17 @@ async def process_newsletter(db, subject: str, body_html: str, body_text: str = 
                     len(acciones) - len(filtradas))
         acciones = filtradas
         data["acciones"] = acciones
+    # Normaliza el ticker AL GUARDAR. Antes se guardaba tal cual lo devolvía la IA (con
+    # espacios, o en minúsculas) y cada lectura tenía que hacer .strip().upper() para
+    # compararlo. Eso impide filtrar por ticker en Mongo —una igualdad contra el símbolo en
+    # mayúsculas perdería las menciones guardadas en minúsculas— y obliga a traerse todos
+    # los documentos del mes para filtrarlos en Python.
+    for a in acciones:
+        t = (a.get("ticker") or "").strip().upper()
+        if t:
+            a["ticker"] = t
     for a in acciones[:6]:
-        ticker = (a.get("ticker") or "").strip().upper()
+        ticker = a.get("ticker") or ""
         if ticker:
             a["inveria"] = await _score_ticker(ticker)
 

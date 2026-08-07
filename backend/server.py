@@ -396,7 +396,23 @@ async def lifespan(app: FastAPI):
                             calentados += 1
                         except Exception as e:
                             logger.warning("Precalentado de %s falló: %s", sym, str(e)[:120])
+                        # El Backtest se carga SOLO al elegir una acción y se cachea 6 h,
+                        # así que la primera visita a cada símbolo pagaba ~900 ms medidos en
+                        # producción. Calentarlo aquí lo quita del camino. No usa Finnhub
+                        # (trabaja sobre el histórico, que acaba de quedar en caché), así
+                        # que no cuesta cuota: solo CPU, y aquí sobra.
+                        try:
+                            await backtest_levels(sym, _user="prewarm")
+                        except Exception:
+                            pass  # sin histórico suficiente: no es un problema
                         await asyncio.sleep(DASHBOARD_PREWARM_PAUSA)
+                    # "Tus fuentes" lee las newsletters del último mes, y esa lectura ya va
+                    # cacheada y es la MISMA para todos los símbolos: basta con calentarla
+                    # una vez por vuelta, no una por acción.
+                    try:
+                        await _newsletters_recientes(30, 300)
+                    except Exception:
+                        pass
                     if calentados:
                         logger.info("Dashboards precalentados: %d", calentados)
                     mem.trim()  # el ensamblado crea DataFrames: devuélvelos al SO
@@ -2379,15 +2395,37 @@ def _clean_source(sender: str, subject: str) -> str:
 _PROYECCION_NEWSLETTER = {"_id": 0, "received_at": 1, "sender": 1, "subject": 1,
                           "extracted": 1}
 
+# Las newsletters llegan a lo sumo unas cuantas veces al día, pero la lectura de los últimos
+# 30 días se hacía en CADA cambio de acción (el panel "Tus fuentes"), y otra vez en /radar y
+# en el mapa de menciones. Medido en producción: ~985 ms del camino de cambiar de acción,
+# aun con la proyección puesta.
+#
+# No se puede filtrar por ticker en Mongo: newsletter_ingest guarda el ticker tal cual lo
+# devuelve la IA (el .strip().upper() está solo en la LECTURA), así que una igualdad contra
+# el símbolo en mayúsculas perdería menciones guardadas en minúsculas. Se cachea la lectura
+# entera y se filtra en memoria, que además sirve a los tres sitios a la vez.
+_TTL_NEWSLETTERS = 600  # 10 min
+
+
+async def _newsletters_recientes(days: int, limite: int = 300):
+    """Documentos de los últimos `days` días, cacheados. Devuelve SIEMPRE una lista."""
+    from datetime import timedelta
+    ck = f"newsletters:{days}:{limite}"
+    v = _cache.get(ck)
+    if v is not None:
+        return v
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    docs = await db.newsletter_summaries.find(
+        {"received_at": {"$gte": cutoff}}, _PROYECCION_NEWSLETTER
+    ).sort("received_at", -1).to_list(limite)
+    _cache.set(ck, docs, ttl=_TTL_NEWSLETTERS)
+    return docs
+
 
 async def _mentions_by_ticker(days: int = 30) -> dict:
     """Mapa ticker → {menciones, positivos, negativos, fuentes} desde lo que dicen tus
     fuentes (Telegram + newsletters) en los últimos `days` días."""
-    from datetime import timedelta
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    docs = await db.newsletter_summaries.find(
-        {"received_at": {"$gte": cutoff}}, _PROYECCION_NEWSLETTER
-    ).sort("received_at", -1).to_list(300)
+    docs = await _newsletters_recientes(days, 300)
     out: dict = {}
     for d in docs:
         ex = d.get("extracted") or {}
@@ -2414,12 +2452,8 @@ async def fuentes_de_accion(symbol: str, days: int = 30,
                             _user: str = Depends(auth.get_current_user)):
     """Qué han dicho TUS fuentes (Telegram + newsletters) de esta acción: cada mención
     con su fuente, sentimiento, tesis y fecha. Para mostrarlo junto al análisis."""
-    from datetime import timedelta
     sym = symbol.strip().upper()
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    docs = await db.newsletter_summaries.find(
-        {"received_at": {"$gte": cutoff}}, _PROYECCION_NEWSLETTER
-    ).sort("received_at", -1).to_list(300)
+    docs = await _newsletters_recientes(days, 300)
     menciones, pos, neg = [], 0, 0
     for d in docs:
         ex = d.get("extracted") or {}
@@ -2447,11 +2481,7 @@ async def radar(days: int = 14):
     """Recopila TODA la información de las newsletters recibidas en los últimos `days` días
     y la divide en dos: (1) ACCIONES agregadas (cada ticker, cuántas fuentes lo mencionan,
     con qué ángulo y el veredicto del motor), y (2) INFORMACIÓN (feed de resúmenes)."""
-    from datetime import timedelta
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    docs = await db.newsletter_summaries.find(
-        {"received_at": {"$gte": cutoff}}, _PROYECCION_NEWSLETTER
-    ).sort("received_at", -1).to_list(200)
+    docs = await _newsletters_recientes(days, 200)
 
     # 1) Feed de información
     info_feed = []
