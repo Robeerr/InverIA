@@ -12,6 +12,7 @@ const OpportunitiesView = React.lazy(() => import("./pages/OpportunitiesView"));
 const CalendarView     = React.lazy(() => import("./pages/CalendarView"));
 const SignalsView      = React.lazy(() => import("./pages/SignalsView"));
 const TrackRecordView  = React.lazy(() => import("./pages/TrackRecordView"));
+const VentasView       = React.lazy(() => import("./pages/VentasView"));
 const TelegramConnectView = React.lazy(() => import("./pages/TelegramConnectView"));
 const BrainView        = React.lazy(() => import("./pages/BrainView"));
 const DiagnosticoView  = React.lazy(() => import("./pages/DiagnosticoView"));
@@ -82,6 +83,7 @@ function AppInner() {
           <Route path="/calendario" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><CalendarView setSymbol={setSymbol} /></div>} />
           <Route path="/signals" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><SignalsView setSymbol={setSymbol} /></div>} />
           <Route path="/radar" element={<Navigate to="/oportunidades" replace />} />
+          <Route path="/ventas" element={<VentasView />} />
           <Route path="/track-record" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><TrackRecordView /></div>} />
           <Route path="/telegram" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><TelegramConnectView /></div>} />
           <Route path="/cerebro" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><BrainView /></div>} />

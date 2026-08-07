@@ -1,5 +1,5 @@
 import React from "react";
-import { ChartLineUp, MagnifyingGlass, House, CalendarBlank, Lightning, Moon, Sun, TelegramLogo, List, X, Bell, SignOut, User, Brain } from "@phosphor-icons/react";
+import { ChartLineUp, MagnifyingGlass, House, CalendarBlank, Lightning, Moon, Sun, TelegramLogo, List, X, Bell, SignOut, User, Brain, Coins } from "@phosphor-icons/react";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { Link, useLocation } from "react-router-dom";
@@ -12,6 +12,7 @@ const NAV = [
   { to: "/oportunidades", label: "Oportunidades", icon: Lightning, testId: "nav-opportunities" },
   { to: "/calendario", label: "Calendario", icon: CalendarBlank, testId: "nav-calendar" },
   { to: "/signals", label: "Cartera", icon: Bell, testId: "nav-signals" },
+  { to: "/ventas", label: "Ventas", icon: Coins, testId: "nav-ventas" },
   { to: "/track-record", label: "Track record", icon: ChartLineUp, testId: "nav-track-record" },
   { to: "/cerebro", label: "Cerebro", icon: Brain, testId: "nav-brain" },
   // Telegram: setup puntual (conectar / cambiar temas). Fuera del menú para no

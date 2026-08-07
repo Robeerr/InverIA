@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Bell, BellSlash, Trash, Plus, X, UploadSimple, ArrowClockwise, Lightning, Camera, CurrencyEur } from "@phosphor-icons/react";
 import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../lib/api";
 
 const API = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
 const authHeaders = () => {
@@ -114,14 +116,55 @@ const nextVentaKey = (e) => {
   return best;
 };
 
-function PnlText({ abs, pct, size = "sm" }) {
-  if (abs == null) return <span className="text-neutral-300">—</span>;
-  const up = abs >= 0;
+// Muestra el P&L en EUROS cuando el libro de operaciones lo sabe, y en la divisa original
+// si no. Los euros son la cifra que de verdad importa: es lo que entra o sale de la cuenta.
+// No basta con convertir el resultado en dólares al cambio de hoy — eso da un número que no
+// corresponde a ninguna operación real. El libro convierte cada compra al cambio de SU día
+// y el valor de hoy al de hoy, así que el euro entra en la cuenta como lo que es.
+function PnlText({ abs, pct, size = "sm", eur = null }) {
+  const hayEur = eur && eur.pnl_eur != null;
+  if (abs == null && !hayEur) return <span className="text-neutral-300">—</span>;
+  const principal = hayEur ? eur.pnl_eur : abs;
+  const principalPct = hayEur ? eur.pct_eur : pct;
+  const up = principal >= 0;
+  const color = up ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400";
   return (
-    <span className={`font-mono font-bold ${size === "sm" ? "text-sm" : "text-base"} ${up ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
-      {up ? "+" : ""}${eur0(abs)}{pct != null && <span className="text-[11px] font-semibold"> · {up ? "+" : ""}{pct.toFixed(1)}%</span>}
+    <span className="inline-flex flex-col items-end leading-tight">
+      <span className={`font-mono font-bold ${size === "sm" ? "text-sm" : "text-base"} ${color}`}>
+        {up ? "+" : "−"}{Math.abs(principal).toLocaleString("es-ES", { maximumFractionDigits: 0 })}
+        {hayEur ? " €" : " $"}
+        {principalPct != null && (
+          <span className="text-[11px] font-semibold"> · {principalPct >= 0 ? "+" : "−"}{Math.abs(principalPct).toFixed(1)}%</span>
+        )}
+      </span>
+      {/* La divisa original, en pequeño: sirve para cuadrar con la pantalla del bróker,
+          que la muestra en dólares. */}
+      {hayEur && abs != null && (
+        <span className="font-mono text-[10px] text-neutral-500">
+          {abs >= 0 ? "+" : "−"}${eur0(Math.abs(abs))}
+        </span>
+      )}
     </span>
   );
+}
+
+// Mapa symbol -> {pnl_eur, pct_eur} desde el libro de operaciones. Si una acción todavía no
+// tiene compras registradas, no aparece y su fila cae al cálculo en dólares de siempre: así
+// estrenar el libro no deja la Cartera llena de huecos.
+function usePnlEnEuros() {
+  const { data } = useQuery({
+    queryKey: ["cartera", "resumen"],
+    queryFn: api.cartera.resumen,
+    staleTime: 60_000,
+    retry: false,
+  });
+  return React.useMemo(() => {
+    const m = {};
+    for (const p of data?.posiciones || []) {
+      if (p.symbol) m[p.symbol.toUpperCase()] = p;
+    }
+    return m;
+  }, [data]);
 }
 
 // ── Resumen de cartera: P&L total (#20) + diversificación por sector (#21) ───────
@@ -450,6 +493,9 @@ const NUM_KEYS = new Set(["deseado", "nivel1", "nivel2", "nivel3", "nivel4", "ni
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function SignalsView({ setSymbol }) {
+  // P&L en euros del libro de operaciones. Las acciones que aún no tengan compras
+  // registradas no aparecen aquí y su fila cae al cálculo en dólares de siempre.
+  const pnlEur = usePnlEnEuros();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState({});
@@ -921,7 +967,7 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
               </div>
               <div className="text-right">
                 <p className="text-[9px] text-neutral-400 uppercase font-mono">P&amp;L</p>
-                <PnlText abs={pnlAbs(e)} pct={pnlPct(e)} />
+                <PnlText abs={pnlAbs(e)} pct={pnlPct(e)} eur={pnlEur[(e.symbol || "").toUpperCase()]} />
               </div>
             </div>
             <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg px-3 py-2">
@@ -1037,7 +1083,7 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                   <EditableCell value={e.acciones} onChange={(v) => updateField(e.id, "acciones", v)} isNumber format={(v) => v != null && v !== "" ? Number(v).toLocaleString("es-ES", { maximumFractionDigits: 2 }) : "—"} className="font-mono text-sm text-neutral-700 dark:text-neutral-300" />
                 </td>
                 <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                  <PnlText abs={pnlAbs(e)} pct={pnlPct(e)} />
+                  <PnlText abs={pnlAbs(e)} pct={pnlPct(e)} eur={pnlEur[(e.symbol || "").toUpperCase()]} />
                 </td>
                 <td className="px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 border-l border-blue-100 dark:border-blue-900">
                   <div className="flex items-center justify-end gap-1">

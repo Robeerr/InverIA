@@ -94,6 +94,18 @@ export const api = {
     earnings: (days = 14, symbols = null, refresh = false) =>
       client.get(`/calendar/earnings`, { params: { days, symbols: symbols || undefined, refresh: refresh || undefined } }).then((r) => r.data),
   },
+  // Libro de operaciones: compras por lotes y ventas. La posición y la ganancia se
+  // DERIVAN de estos apuntes; no hay ningún saldo que actualizar por separado.
+  cartera: {
+    resumen: () => client.get(`/cartera/resumen`).then((r) => r.data),
+    historial: () => client.get(`/cartera/historial`).then((r) => r.data),
+    posicion: (symbol) => client.get(`/cartera/posicion/${symbol}`).then((r) => r.data),
+    comprar: (payload) => client.post(`/cartera/compras`, payload).then((r) => r.data),
+    vender: (payload) => client.post(`/cartera/ventas`, payload).then((r) => r.data),
+    borrarCompra: (id) => client.delete(`/cartera/compras/${id}`).then((r) => r.data),
+    borrarVenta: (id) => client.delete(`/cartera/ventas/${id}`).then((r) => r.data),
+    importar: () => client.post(`/cartera/importar-posiciones`).then((r) => r.data),
+  },
   alerts: {
     create: (payload) => client.post(`/alerts`, payload).then((r) => r.data),
     list: () => client.get(`/alerts`).then((r) => r.data),

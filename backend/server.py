@@ -34,6 +34,7 @@ import signal_table
 import daily_analyst
 import sp500_rsi_watch
 import ventas as ventas_mod
+import cartera_api
 import fx
 import newsletter_ingest
 import market_regime
@@ -262,6 +263,10 @@ async def lifespan(app: FastAPI):
     await db.watchlist.create_index("symbol")
     await db.chartist_state.create_index("symbol", unique=True)
     await db.alerts.create_index("symbol")
+    # Libro de operaciones: todo se consulta por símbolo y se ordena por fecha.
+    for coleccion in (db.compras, db.ventas):
+        await coleccion.create_index([("symbol", 1), ("fecha", 1)])
+        await coleccion.create_index("id", unique=True)
     # Las tres consultas de newsletters filtran por received_at >= cutoff y ordenan por
     # received_at descendente. Sin índice, Mongo recorría la colección entera y ordenaba en
     # memoria en cada cambio de ticker (/fuentes está en ese camino).
@@ -2185,6 +2190,127 @@ async def borrar_venta(venta_id: str, _user: str = Depends(auth.get_current_user
     for k in ("signals_list", "signals_hot"):
         _cache._store.pop(k, None)
     return {"ok": True}
+
+
+# ---------- Libro de operaciones: compras por lotes y ventas ----------
+# Sustituye al modelo anterior (un precio medio en la posición y restar al vender), que no
+# puede contestar a "estas 3 que me quedan, ¿de qué compra son?" ni recalcular sin mentir en
+# cuanto vuelves a comprar. Ver lotes.py para el porqué de FIFO y LIFO.
+
+class CompraCreate(BaseModel):
+    symbol: str
+    acciones: float
+    precio: float
+    fecha: Optional[str] = None          # YYYY-MM-DD; por defecto, hoy
+    comision: Optional[float] = 0.0      # en la divisa de la operación
+    divisa: Optional[str] = None         # por defecto, la de la posición
+    tasa: Optional[float] = None         # divisa por 1 EUR; vacío = se busca por la fecha
+    nivel: Optional[str] = None          # vacío = se deduce del precio
+    notas: Optional[str] = ""
+
+
+class VentaLoteCreate(BaseModel):
+    symbol: str
+    acciones: float
+    precio: float
+    fecha: Optional[str] = None
+    comision: Optional[float] = 0.0
+    divisa: Optional[str] = None
+    tasa: Optional[float] = None
+    notas: Optional[str] = ""
+
+
+@api_router.post("/cartera/compras")
+async def crear_compra(item: CompraCreate, _user: str = Depends(auth.get_current_user)):
+    """Registra una compra. Detecta sola en qué nivel de la Cartera se hizo."""
+    try:
+        compra = await cartera_api.registrar_compra(
+            db, item.symbol, item.acciones, item.precio, fecha=item.fecha,
+            comision=item.comision or 0.0, divisa=item.divisa, tasa=item.tasa,
+            nivel=item.nivel, notas=item.notas or "")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    for k in ("signals_list", "signals_hot"):
+        _cache._store.pop(k, None)
+    return compra
+
+
+@api_router.delete("/cartera/compras/{compra_id}")
+async def eliminar_compra(compra_id: str, _user: str = Depends(auth.get_current_user)):
+    if not await cartera_api.borrar_compra(db, compra_id):
+        raise HTTPException(404, "Esa compra no existe.")
+    for k in ("signals_list", "signals_hot"):
+        _cache._store.pop(k, None)
+    return {"ok": True}
+
+
+@api_router.post("/cartera/ventas")
+async def crear_venta(item: VentaLoteCreate, _user: str = Depends(auth.get_current_user)):
+    """Registra una venta y devuelve el resultado por los DOS métodos (FIFO y LIFO)."""
+    try:
+        estado = await cartera_api.registrar_venta(
+            db, item.symbol, item.acciones, item.precio, fecha=item.fecha,
+            comision=item.comision or 0.0, divisa=item.divisa, tasa=item.tasa,
+            notas=item.notas or "")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    for k in ("signals_list", "signals_hot"):
+        _cache._store.pop(k, None)
+    return estado
+
+
+@api_router.delete("/cartera/ventas/{venta_id}")
+async def eliminar_venta(venta_id: str, _user: str = Depends(auth.get_current_user)):
+    """Borra una venta. No hay que 'devolver' acciones a ninguna parte: la posición se
+    deriva del libro, así que quitar el apunte la deja correcta sola."""
+    if not await cartera_api.borrar_venta(db, venta_id):
+        raise HTTPException(404, "Esa venta no existe.")
+    for k in ("signals_list", "signals_hot"):
+        _cache._store.pop(k, None)
+    return {"ok": True}
+
+
+@api_router.get("/cartera/posicion/{symbol}")
+async def posicion_simbolo(symbol: str, _user: str = Depends(auth.get_current_user)):
+    """Lotes abiertos, ventas por los dos métodos y ganancia latente de un valor."""
+    sym = symbol.strip().upper()
+    precio = None
+    try:
+        q = _cache.get(f"quote:{sym}")
+        precio = (q or {}).get("price") if q else None
+        if precio is None:
+            q = await asyncio.to_thread(market_data.get_quote_fast, sym)
+            precio = (q or {}).get("price")
+    except Exception:
+        pass
+    return await cartera_api.estado_simbolo(db, sym, precio_actual=precio)
+
+
+@api_router.get("/cartera/historial")
+async def historial_ventas(_user: str = Depends(auth.get_current_user)):
+    """Todas las ventas hechas, con lo ganado por FIFO y por LIFO, y los totales."""
+    return await cartera_api.historial(db)
+
+
+@api_router.get("/cartera/resumen")
+async def resumen_cartera(_user: str = Depends(auth.get_current_user)):
+    """P&L de la cartera entera en EUROS: latente por posición + realizado."""
+    # Los precios salen de la lista de señales, que ya los tiene y va cacheada: pedirlos
+    # otra vez aquí sería gastar cuota de Finnhub para repetir un dato que está a mano.
+    precios = {}
+    try:
+        for e in (_cache.get("signals_list") or []):
+            if e.get("symbol") and e.get("last_price") is not None:
+                precios[e["symbol"].upper()] = e["last_price"]
+    except Exception:
+        pass
+    return await cartera_api.resumen_cartera(db, precios)
+
+
+@api_router.post("/cartera/importar-posiciones")
+async def importar_posiciones(_user: str = Depends(auth.get_current_user)):
+    """Crea un lote inicial por cada posición que ya tenías, para no empezar de cero."""
+    return await cartera_api.importar_posiciones_existentes(db)
 
 
 @api_router.get("/fx/{divisa}")
