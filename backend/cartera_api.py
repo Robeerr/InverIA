@@ -57,6 +57,18 @@ async def _sincronizar_posicion(db, symbol: str):
     cambios = {"acciones": estado["acciones_abiertas"], "updated_at": _ahora()}
     if estado["precio_medio"] is not None:
         cambios["compra"] = estado["precio_medio"]
+
+    # Las campanitas, en los dos sentidos: apagada mientras queden acciones de ese nivel,
+    # encendida en cuanto se vende la última. Un nivel libre vuelve a ser un aviso útil —es
+    # un sitio donde volverías a entrar— y dejarlo apagado silencia justo esa señal.
+    #
+    # Se hace en los dos sentidos y no solo al vender: si al comprar hubiera que apagarla a
+    # mano, la regla quedaría a medias y una campanita encendida podría significar dos cosas
+    # distintas, que es peor que no automatizar nada.
+    entry = await db.signal_entries.find_one({"symbol": symbol}, {"_id": 0})
+    if entry:
+        cambios.update(lotes.estado_niveles(entry, compras, estado["abiertos"]))
+
     await db.signal_entries.update_one({"symbol": symbol}, {"$set": cambios})
     return estado
 

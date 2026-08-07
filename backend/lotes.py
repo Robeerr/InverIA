@@ -143,6 +143,31 @@ def niveles_comprados(entry: dict) -> list:
     return out
 
 
+def estado_niveles(entry: dict, compras: list, abiertos: list) -> dict:
+    """Campanitas que hay que cambiar, mirando el libro COMPLETO y no solo lo abierto.
+
+    La diferencia importa: un nivel del que ya no queda nada puede ser "vendido entero"
+    (hay compras suyas en el libro → se enciende) o "nunca comprado" (no hay ninguna → no
+    se toca, porque la campanita la habrás puesto tú).
+    """
+    con_compras = {c.get("nivel") for c in compras if c.get("nivel")}
+    vivas = {}
+    for lote in abiertos:
+        nivel = lote.get("nivel")
+        if nivel:
+            vivas[nivel] = vivas.get(nivel, 0) + (lote.get("acciones_abiertas") or 0)
+
+    cambios = {}
+    for i in range(1, 6):
+        clave = f"nivel{i}"
+        if clave not in con_compras:
+            continue                      # nunca comprado por el libro: no es asunto suyo
+        deseado = not (vivas.get(clave, 0) > 1e-9)   # sin acciones vivas -> encendida
+        if entry.get(f"alert_{clave}") is not deseado:
+            cambios[f"alert_{clave}"] = deseado
+    return cambios
+
+
 def plan_importacion(entry: dict) -> dict:
     """Propone los lotes de una posición a partir de lo que ya hay en la Cartera.
 

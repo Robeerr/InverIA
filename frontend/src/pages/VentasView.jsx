@@ -682,6 +682,10 @@ export default function VentasView() {
           <p className="px-4 py-2 text-[11px] text-[#5c6b66] border-t border-[#e5e0d8] dark:border-[#1a3a32]">
             El precio medio es el de las acciones que te QUEDAN, por FIFO. Tras vender parte,
             FIFO y LIFO dejan lotes distintos abiertos y el medio no coincide.
+            <br />
+            Las campanitas de la Cartera se mueven solas: se apagan al comprar en un nivel y
+            vuelven a encenderse en cuanto vendes la última acción de ese nivel. Los niveles
+            que no tengan compras registradas no se tocan.
           </p>
         </div>
       )}

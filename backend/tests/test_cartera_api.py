@@ -393,3 +393,34 @@ def test_la_importacion_deja_la_cartera_cuadrada():
     _correr(cartera_api.importar_posiciones_existentes(db))
     assert db.signal_entries.docs[0]["acciones"] == 10
     assert db.signal_entries.docs[0]["compra"] == pytest.approx(130.0)
+
+
+# ── Las campanitas, de punta a punta ─────────────────────────────────────────
+
+def test_vender_un_nivel_entero_enciende_su_campanita_de_verdad():
+    db = _DB([{"symbol": "FN", "nivel1": 200.0, "alert_nivel1": False,
+               "nivel2": 100.0, "alert_nivel2": False, "acciones": 10, "compra": 130.0}])
+    _correr(cartera_api.registrar_compra(db, "FN", 3, 200.0, fecha="2026-01-10"))
+    _correr(cartera_api.registrar_compra(db, "FN", 7, 100.0, fecha="2026-02-10"))
+    # FIFO consume primero la del 10/01, que es la del Nivel 1.
+    _correr(cartera_api.registrar_venta(db, "FN", 3, 250.0, fecha="2026-06-01"))
+    fila = db.signal_entries.docs[0]
+    assert fila["alert_nivel1"] is True, "Nivel 1 vendido entero: vuelve a avisar"
+    assert fila["alert_nivel2"] is False, "Nivel 2 sigue comprado"
+    assert fila["acciones"] == 7
+
+
+def test_comprar_en_un_nivel_apaga_su_campanita_de_verdad():
+    db = _DB([{"symbol": "FN", "nivel3": 180.0, "alert_nivel3": True}])
+    _correr(cartera_api.registrar_compra(db, "FN", 5, 180.0, fecha="2026-01-10"))
+    assert db.signal_entries.docs[0]["alert_nivel3"] is False
+
+
+def test_deshacer_la_venta_vuelve_a_apagar_la_campanita():
+    """Corregir un error no puede dejar las campanitas contando otra historia."""
+    db = _DB([{"symbol": "FN", "nivel1": 200.0, "alert_nivel1": False}])
+    _correr(cartera_api.registrar_compra(db, "FN", 3, 200.0, fecha="2026-01-10"))
+    _correr(cartera_api.registrar_venta(db, "FN", 3, 250.0, fecha="2026-06-01"))
+    assert db.signal_entries.docs[0]["alert_nivel1"] is True
+    _correr(cartera_api.borrar_venta(db, db.ventas.docs[0]["id"]))
+    assert db.signal_entries.docs[0]["alert_nivel1"] is False

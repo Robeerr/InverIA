@@ -411,3 +411,64 @@ def test_el_nivel_deseado_no_cuenta_como_compra():
          "deseado": 250.0, "alert_deseado": False,
          "nivel1": 200.0, "alert_nivel1": False, "nivel2": 100.0, "alert_nivel2": False}
     assert [n["nivel"] for n in lotes.niveles_comprados(e)] == ["nivel1", "nivel2"]
+
+
+# ── Las campanitas se mueven solas ───────────────────────────────────────────
+# Convenio en los DOS sentidos: apagada mientras queden acciones de ese nivel, encendida en
+# cuanto se vende la ultima. Un nivel libre vuelve a ser un aviso util — es un sitio donde
+# volverias a entrar — y dejarlo apagado silencia justo esa senal.
+
+def _abierto(nivel, acciones):
+    return {"nivel": nivel, "acciones_abiertas": acciones}
+
+
+def test_al_vender_un_nivel_entero_se_enciende_su_campanita():
+    entry = {"alert_nivel1": False, "alert_nivel2": False}
+    compras = [{"nivel": "nivel1"}, {"nivel": "nivel2"}]
+    abiertos = [_abierto("nivel2", 5)]          # del nivel1 no queda nada
+    assert lotes.estado_niveles(entry, compras, abiertos) == {"alert_nivel1": True}
+
+
+def test_vender_solo_una_parte_del_nivel_no_lo_enciende():
+    """Sigue comprado: encenderlo avisaria de entrar donde ya estas."""
+    entry = {"alert_nivel1": False}
+    compras = [{"nivel": "nivel1"}]
+    assert lotes.estado_niveles(entry, compras, [_abierto("nivel1", 2)]) == {}
+
+
+def test_al_comprar_en_un_nivel_se_apaga_su_campanita():
+    """El mismo convenio al reves. Si al comprar hubiera que apagarla a mano, una campanita
+    encendida podria significar dos cosas y eso es peor que no automatizar nada."""
+    entry = {"alert_nivel3": True}
+    compras = [{"nivel": "nivel3"}]
+    assert lotes.estado_niveles(entry, compras, [_abierto("nivel3", 4)]) == {"alert_nivel3": False}
+
+
+def test_un_nivel_que_nunca_se_compro_no_se_toca():
+    """Su campanita la has puesto tu a mano: pisarla seria deshacer algo deliberado."""
+    entry = {"alert_nivel1": False, "alert_nivel4": False}
+    compras = [{"nivel": "nivel1"}]                    # nivel4 no aparece en el libro
+    cambios = lotes.estado_niveles(entry, compras, [_abierto("nivel1", 3)])
+    assert "alert_nivel4" not in cambios
+
+
+def test_solo_se_devuelve_lo_que_cambia():
+    """Reescribir lo que ya esta bien genera escrituras y ruido para nada."""
+    entry = {"alert_nivel1": False}
+    compras = [{"nivel": "nivel1"}]
+    assert lotes.estado_niveles(entry, compras, [_abierto("nivel1", 3)]) == {}
+
+
+def test_dos_compras_en_el_mismo_nivel_cuentan_juntas():
+    """Se puede entrar dos veces al mismo nivel en fechas distintas. Mientras quede algo de
+    cualquiera de las dos, el nivel sigue comprado."""
+    entry = {"alert_nivel2": False}
+    compras = [{"nivel": "nivel2"}, {"nivel": "nivel2"}]
+    abiertos = [_abierto("nivel2", 0), _abierto("nivel2", 1)]
+    assert lotes.estado_niveles(entry, compras, abiertos) == {}
+
+
+def test_las_compras_fuera_de_niveles_no_encienden_nada():
+    entry = {"alert_nivel1": True}
+    compras = [{"nivel": None}]
+    assert lotes.estado_niveles(entry, compras, []) == {}
