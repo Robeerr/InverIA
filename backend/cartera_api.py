@@ -20,6 +20,11 @@ import lotes
 logger = logging.getLogger(__name__)
 
 
+def _gestion() -> str:
+    """Clave del metodo de gestion en minusculas, como la usan las respuestas JSON."""
+    return lotes.METODO_GESTION.lower()
+
+
 def _ahora() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -46,14 +51,19 @@ async def _sincronizar_posicion(db, symbol: str):
     acciones de la tabla bajan solas. La Cartera pasa a ser un reflejo, no una segunda
     contabilidad.
 
-    `compra` se pone al precio medio de lo que QUEDA abierto (por FIFO): es lo que hace
-    falta para juzgar la posición viva, y es lo que la tabla muestra.
+    `compra` se pone al precio medio de lo que QUEDA abierto: es lo que hace falta para
+    juzgar la posición viva, y es lo que la tabla muestra.
     """
     symbol = (symbol or "").strip().upper()
     compras, ventas = await _libro(db, symbol)
     if not compras and not ventas:
         return None   # sin libro para este valor: no se toca lo que haya puesto a mano
-    estado = lotes.reproducir(compras, ventas, lotes.FIFO)
+    # METODO_GESTION (LIFO), no el fiscal: qué lotes quedan vivos —y por tanto qué
+    # campanitas y qué precio medio— depende del método, y aquí la pregunta es cómo llevas
+    # tú la posición. Vendiendo por niveles según cae el precio, lo que se vende es lo más
+    # reciente; con FIFO las campanitas se encenderían por el extremo contrario.
+    # El número total de acciones sale igual con los dos.
+    estado = lotes.reproducir(compras, ventas, lotes.METODO_GESTION)
     cambios = {"acciones": estado["acciones_abiertas"], "updated_at": _ahora()}
     if estado["precio_medio"] is not None:
         cambios["compra"] = estado["precio_medio"]
@@ -194,7 +204,10 @@ async def estado_simbolo(db, symbol: str, precio_actual=None) -> dict:
         "niveles": niveles,
         "compras": sorted(compras, key=lambda c: str(c.get("fecha") or "")),
         **comp,
-        "latente": lotes.valorar_abierto(comp["fifo"], precio_actual, tasa_hoy),
+        # Con el metodo de gestion: es la cifra de "cuanto llevo ganado", no la fiscal.
+        "metodo_gestion": lotes.METODO_GESTION.lower(),
+        "latente": lotes.valorar_abierto(comp[lotes.METODO_GESTION.lower()],
+                                         precio_actual, tasa_hoy),
         "tasa_hoy": round(tasa_hoy, 4) if tasa_hoy else None,
     }
 
@@ -234,8 +247,8 @@ async def historial(db, limite: int = 1000) -> dict:
         resumen_symbol.append({
             "symbol": sym,
             "n_ventas": len(libro["ventas"]),
-            "ganancia_eur": comp["fifo"]["ganancia_realizada_eur"],
-            "ganancia_divisa": comp["fifo"]["ganancia_realizada_divisa"],
+            "ganancia_eur": comp[_gestion()]["ganancia_realizada_eur"],
+            "ganancia_divisa": comp[_gestion()]["ganancia_realizada_divisa"],
             "divisa": libro["ventas"][0].get("divisa", "USD"),
         })
 
@@ -313,7 +326,7 @@ async def resumen_cartera(db, precios: dict) -> dict:
 
     posiciones = []
     for sym, libro in por_symbol.items():
-        estado = lotes.reproducir(libro["compras"], libro["ventas"], lotes.FIFO)
+        estado = lotes.reproducir(libro["compras"], libro["ventas"], lotes.METODO_GESTION)
         if estado["acciones_abiertas"] <= 1e-9:
             continue
         divisa = (libro["compras"] or libro["ventas"])[0].get("divisa", "USD")
@@ -338,7 +351,8 @@ async def resumen_cartera(db, precios: dict) -> dict:
                                    if p.get("coste_eur") is not None), 2) or None,
         "valor_eur": round(sum(p["valor_eur"] for p in posiciones
                                if p.get("valor_eur") is not None), 2) or None,
-        "realizado_eur": hist["resumen"]["fifo"]["ganancia_eur"],
+        "realizado_eur": hist["resumen"][_gestion()]["ganancia_eur"],
+        "metodo_gestion": _gestion(),
         "posiciones_sin_valorar": sum(1 for p in posiciones if p.get("pnl_eur") is None),
         "tasas": {d: (round(t, 4) if t else None) for d, t in tasas.items()},
     }

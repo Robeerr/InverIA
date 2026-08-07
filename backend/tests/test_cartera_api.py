@@ -305,13 +305,22 @@ def test_lo_importado_queda_marcado_como_tal():
 
 # ── Coherencia con el motor ──────────────────────────────────────────────────
 
-def test_el_metodo_oficial_de_la_cartera_es_el_fiscal():
-    """La Cartera valora la posición viva por FIFO. No es un detalle: tras vender parte,
-    FIFO y LIFO dejan lotes distintos abiertos y por tanto un precio medio distinto."""
+def test_la_cartera_se_valora_con_el_metodo_de_GESTION_no_con_el_fiscal():
+    """Decision revisada. La Cartera contesta a "cuanto llevo ganado", no a "que declaro".
+
+    Se entra por niveles segun CAE el precio, asi que la compra mas reciente es la mas
+    barata y al cerrar un nivel se vende esa: LIFO. Con FIFO el precio medio y las
+    campanitas hablarian del extremo contrario — los niveles caros, comprados primero.
+
+    Lo fiscal no se pierde: comparar_metodos calcula siempre los dos y `oficial` sigue
+    siendo FIFO, que es lo que hay que llevar a la declaracion.
+    """
     import inspect
     src = inspect.getsource(cartera_api.resumen_cartera)
-    assert "lotes.FIFO" in src
+    assert "lotes.METODO_GESTION" in src
+    assert lotes.METODO_GESTION == lotes.LIFO
     assert lotes.comparar_metodos([], [])["oficial"] == lotes.FIFO
+    assert lotes.METODO_FISCAL == lotes.FIFO
 
 
 # ── La Cartera se actualiza sola ─────────────────────────────────────────────
@@ -335,14 +344,14 @@ def test_vender_la_posicion_entera_deja_la_cartera_a_cero():
 
 
 def test_el_precio_medio_de_la_cartera_sigue_al_de_lo_que_queda():
-    """Tras vender parte por FIFO, lo que queda son los lotes caros: el medio sube."""
+    """Con LIFO se vende lo mas reciente, asi que lo que queda son las compras antiguas."""
     db = _DB([{"symbol": "FN", "acciones": 5, "compra": 96.0}])
     _correr(cartera_api.registrar_compra(db, "FN", 3, 80.0, fecha="2026-01-10"))
     _correr(cartera_api.registrar_compra(db, "FN", 2, 120.0, fecha="2026-03-05"))
-    _correr(cartera_api.registrar_venta(db, "FN", 3, 130.0, fecha="2026-06-01"))
+    _correr(cartera_api.registrar_venta(db, "FN", 2, 130.0, fecha="2026-06-01"))
     fila = db.signal_entries.docs[0]
-    assert fila["acciones"] == 2
-    assert fila["compra"] == 120.0, "quedan las 2 de 120, no el medio original"
+    assert fila["acciones"] == 3
+    assert fila["compra"] == 80.0, "se vendieron las 2 de 120; quedan las 3 de 80"
 
 
 def test_borrar_una_venta_devuelve_las_acciones_a_la_cartera():
@@ -398,16 +407,18 @@ def test_la_importacion_deja_la_cartera_cuadrada():
 # ── Las campanitas, de punta a punta ─────────────────────────────────────────
 
 def test_vender_un_nivel_entero_enciende_su_campanita_de_verdad():
+    """Con LIFO se consume la compra MAS RECIENTE, que es la del nivel mas barato: es lo
+    que pasa de verdad al cerrar un nivel comprando segun cae el precio. Con FIFO se
+    encenderia la campanita del Nivel 1 y estaria contando lo contrario."""
     db = _DB([{"symbol": "FN", "nivel1": 200.0, "alert_nivel1": False,
                "nivel2": 100.0, "alert_nivel2": False, "acciones": 10, "compra": 130.0}])
     _correr(cartera_api.registrar_compra(db, "FN", 3, 200.0, fecha="2026-01-10"))
     _correr(cartera_api.registrar_compra(db, "FN", 7, 100.0, fecha="2026-02-10"))
-    # FIFO consume primero la del 10/01, que es la del Nivel 1.
-    _correr(cartera_api.registrar_venta(db, "FN", 3, 250.0, fecha="2026-06-01"))
+    _correr(cartera_api.registrar_venta(db, "FN", 7, 250.0, fecha="2026-06-01"))
     fila = db.signal_entries.docs[0]
-    assert fila["alert_nivel1"] is True, "Nivel 1 vendido entero: vuelve a avisar"
-    assert fila["alert_nivel2"] is False, "Nivel 2 sigue comprado"
-    assert fila["acciones"] == 7
+    assert fila["alert_nivel2"] is True, "Nivel 2 (el mas reciente) vendido entero"
+    assert fila["alert_nivel1"] is False, "Nivel 1 sigue comprado"
+    assert fila["acciones"] == 3
 
 
 def test_comprar_en_un_nivel_apaga_su_campanita_de_verdad():
@@ -424,3 +435,28 @@ def test_deshacer_la_venta_vuelve_a_apagar_la_campanita():
     assert db.signal_entries.docs[0]["alert_nivel1"] is True
     _correr(cartera_api.borrar_venta(db, db.ventas.docs[0]["id"]))
     assert db.signal_entries.docs[0]["alert_nivel1"] is False
+
+
+def test_lo_fiscal_sigue_estando_aunque_la_gestion_sea_LIFO():
+    """Cambiar el metodo por defecto no puede hacer desaparecer la cifra de la declaracion:
+    son dos preguntas distintas y las dos tienen que poder contestarse."""
+    db = _DB()
+    _correr(cartera_api.registrar_compra(db, "FN", 3, 80.0, fecha="2026-01-10"))
+    _correr(cartera_api.registrar_compra(db, "FN", 2, 120.0, fecha="2026-03-05"))
+    _correr(cartera_api.registrar_venta(db, "FN", 1, 130.0, fecha="2026-06-01"))
+    fila = _correr(cartera_api.historial(db))["items"][0]
+    assert fila["lifo"]["ganancia_divisa"] == 10.0    # lo que vendiste de verdad
+    assert fila["fifo"]["ganancia_divisa"] == 50.0    # lo que declara Hacienda
+    res = _correr(cartera_api.historial(db))["resumen"]
+    assert res["fifo"]["ganancia_divisa"] == 50.0
+    assert res["lifo"]["ganancia_divisa"] == 10.0
+
+
+def test_el_resumen_dice_con_que_metodo_esta_calculado():
+    """Una cifra de ganancia sin decir de que metodo es invita a meterla donde no debe."""
+    db = _DB()
+    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10"))
+    res = _correr(cartera_api.resumen_cartera(db, {"FN": 120.0}))
+    assert res["metodo_gestion"] == "lifo"
+    est = _correr(cartera_api.estado_simbolo(db, "FN"))
+    assert est["metodo_gestion"] == "lifo"

@@ -562,9 +562,13 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
 
 // ── Pantalla ─────────────────────────────────────────────────────────────────
 export default function VentasView() {
-  // FIFO por defecto: es el método obligatorio en España y el único que vale para la
-  // declaración. LIFO está a un clic, pero etiquetado, para que nadie confunda las cifras.
-  const [metodo, setMetodo] = React.useState("fifo");
+  // LIFO por defecto. Esta pantalla contesta a "¿cuánto he ganado?", y en esta cartera se
+  // entra por niveles según CAE el precio: la compra más reciente es siempre la más barata,
+  // y al vender un nivel se vende esa. LIFO es lo que de verdad pasó.
+  //
+  // FIFO sigue a un clic y etiquetado, porque es el único que vale para la declaración
+  // (art. 37.2 LIRPF). Son preguntas distintas y por eso se enseñan las dos.
+  const [metodo, setMetodo] = React.useState("lifo");
   const [form, setForm] = React.useState(null);   // "compra" | "venta" | null
   const [abierta, setAbierta] = React.useState(null);   // símbolo desplegado en la tabla
   const qc = useQueryClient();
@@ -651,7 +655,7 @@ export default function VentasView() {
       <div className="flex gap-3 flex-wrap">
         <Kpi etiqueta="Realizado" valor={realizado} acento
              sub={`${tot?.n_ventas ?? 0} venta(s) · ${metodo.toUpperCase()}`}
-             ayuda="Ganancia de las ventas ya hechas, con el tipo de cambio del día de cada compra y de cada venta. Es dinero que ya está en tu cuenta." />
+             ayuda="Ganancia de las ventas ya hechas, con el tipo de cambio del día de cada compra y de cada venta. Es dinero que ya está en tu cuenta. Cambia según el método: mira la etiqueta de debajo." />
         <Kpi etiqueta="Latente" valor={latente}
              sub={resumen?.posiciones?.length ? `${resumen.posiciones.length} posición(es) abiertas` : "sin posiciones"}
              ayuda="Lo que llevas ganado en lo que AÚN NO has vendido, al precio y al cambio de hoy. Puede cambiar mañana." />
@@ -678,17 +682,20 @@ export default function VentasView() {
               </button>
             ))}
           </div>
-          {metodo === "fifo" ? (
-            <span className="text-[11px] text-[#4a7c59] font-semibold">✓ Es el que va a tu declaración</span>
+          {metodo === "lifo" ? (
+            <span className="text-[11px] text-[#4a7c59] font-semibold">✓ Cómo vendes tú: los niveles más recientes</span>
           ) : (
-            <span className="text-[11px] text-[#8a6508] font-semibold">⚠ Solo como referencia — no vale para Hacienda</span>
+            <span className="text-[11px] text-[#8a6508] font-semibold">⚠ El de Hacienda — no es el orden en que vendes tú</span>
           )}
         </div>
         <p className="text-[11px] text-[#5c6b66] mt-2 leading-relaxed">
-          <b>FIFO</b> vende primero lo que compraste primero. Es obligatorio en España para
-          acciones cotizadas (art. 37.2 de la Ley del IRPF) y es la cifra que Hacienda
-          considera tu ganancia. <b>LIFO</b> vende lo último que compraste — suele ser como
-          uno lo piensa al promediar a la baja, pero no es válido fiscalmente.
+          <b>LIFO</b> vende lo último que compraste. Como entras por niveles según cae el
+          precio, lo último es siempre lo más barato: es lo que de verdad vendes al cerrar
+          un nivel, y por eso es lo que se muestra por defecto y lo que gobierna las
+          campanitas y tu precio medio. <b>FIFO</b> vende primero lo que compraste primero;
+          no coincide con cómo operas, pero es obligatorio en España para acciones cotizadas
+          (art. 37.2 de la Ley del IRPF), así que es la cifra que hay que llevar a la
+          declaración.
           {tot && hist?.resumen?.fifo && hist?.resumen?.lifo
             && hist.resumen.fifo.ganancia_divisa !== hist.resumen.lifo.ganancia_divisa && (
             <> En tu caso la diferencia entre ambos es de{" "}

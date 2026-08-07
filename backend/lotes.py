@@ -50,6 +50,21 @@ FIFO = "FIFO"
 LIFO = "LIFO"
 METODOS = (FIFO, LIFO)
 
+#: Método con el que se lleva la GESTIÓN: lo que se ve por defecto, el precio medio de la
+#: posición viva y qué campanitas quedan encendidas.
+#:
+#: Es LIFO y no FIFO porque describe cómo se opera esta cartera de verdad: se entra por
+#: niveles según CAE el precio, así que la compra más reciente es siempre la más barata, y
+#: al vender un nivel se está vendiendo esa. Con FIFO las campanitas se encenderían por el
+#: extremo contrario —los niveles caros, comprados primero— y estarían diciendo justo lo
+#: contrario de lo que pasó.
+#:
+#: OJO: esto NO cambia lo fiscal. FIFO se sigue calculando siempre y es el que hay que
+#: llevar a la declaración (art. 37.2 LIRPF); lo que cambia es qué método se enseña primero
+#: cuando la pregunta es "¿cuánto he ganado?" y no "¿qué declaro?".
+METODO_GESTION = LIFO
+METODO_FISCAL = FIFO
+
 #: Tolerancia para dar por bueno que una compra se hizo "en" un nivel de la Cartera.
 #: 1,5% cubre el hueco normal entre la orden y la ejecución sin llegar a atribuir a un nivel
 #: una compra que se hizo claramente en otro sitio.
