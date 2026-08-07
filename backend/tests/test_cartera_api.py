@@ -96,7 +96,7 @@ def _correr(coro):
 
 def test_una_compra_guarda_el_cambio_de_su_fecha():
     db = _DB()
-    c = _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10"))
+    c = _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10", comision=0))
     assert c["tasa"] == 1.10, "sin el cambio de la compra, el euro sale aproximado"
     assert len(db.compras.docs) == 1
 
@@ -111,20 +111,20 @@ def test_el_cambio_que_das_tu_manda_sobre_el_de_mercado():
 
 def test_la_compra_detecta_sola_en_que_nivel_se_hizo():
     db = _DB([{"symbol": "FN", "nivel1": 220.0, "nivel2": 200.0, "nivel3": 180.0}])
-    c = _correr(cartera_api.registrar_compra(db, "FN", 5, 180.0))
+    c = _correr(cartera_api.registrar_compra(db, "FN", 5, 180.0, comision=0))
     assert c["nivel"] == "nivel3"
     assert c["nivel_etiqueta"] == "Nivel 3"
 
 
 def test_una_compra_fuera_de_niveles_no_se_atribuye_a_ninguno():
     db = _DB([{"symbol": "FN", "nivel1": 220.0, "nivel2": 200.0}])
-    c = _correr(cartera_api.registrar_compra(db, "FN", 5, 155.0))
+    c = _correr(cartera_api.registrar_compra(db, "FN", 5, 155.0, comision=0))
     assert c["nivel"] is None
 
 
 def test_la_divisa_sale_de_la_posicion_si_no_se_indica():
     db = _DB([{"symbol": "FN", "divisa": "USD"}])
-    c = _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0))
+    c = _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, comision=0))
     assert c["divisa"] == "USD"
 
 
@@ -134,8 +134,8 @@ def test_la_posicion_se_calcula_y_no_se_almacena():
     """Guardar además un saldo garantiza que algún día no cuadre con sus propios apuntes,
     y entonces no hay forma de saber cuál de los dos miente."""
     db = _DB()
-    _correr(cartera_api.registrar_compra(db, "FN", 3, 80.0, fecha="2026-01-10"))
-    _correr(cartera_api.registrar_compra(db, "FN", 2, 120.0, fecha="2026-03-05"))
+    _correr(cartera_api.registrar_compra(db, "FN", 3, 80.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_compra(db, "FN", 2, 120.0, fecha="2026-03-05", comision=0))
     est = _correr(cartera_api.estado_simbolo(db, "FN"))
     assert est["fifo"]["acciones_abiertas"] == 5
     for doc in db.compras.docs:
@@ -146,8 +146,8 @@ def test_borrar_una_venta_deja_la_posicion_correcta_sola():
     """Con el modelo viejo había que 'devolver' las acciones a mano y era la fuente segura
     de descuadres. Aquí solo desaparece el apunte."""
     db = _DB()
-    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10"))
-    _correr(cartera_api.registrar_venta(db, "FN", 2, 130.0, fecha="2026-06-01"))
+    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_venta(db, "FN", 2, 130.0, fecha="2026-06-01", comision=0))
     assert _correr(cartera_api.estado_simbolo(db, "FN"))["fifo"]["acciones_abiertas"] == 3
 
     vid = db.ventas.docs[0]["id"]
@@ -157,8 +157,8 @@ def test_borrar_una_venta_deja_la_posicion_correcta_sola():
 
 def test_borrar_una_compra_recalcula_todo():
     db = _DB()
-    _correr(cartera_api.registrar_compra(db, "FN", 3, 80.0, fecha="2026-01-10"))
-    _correr(cartera_api.registrar_compra(db, "FN", 2, 120.0, fecha="2026-03-05"))
+    _correr(cartera_api.registrar_compra(db, "FN", 3, 80.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_compra(db, "FN", 2, 120.0, fecha="2026-03-05", comision=0))
     cid = [c for c in db.compras.docs if c["precio"] == 80.0][0]["id"]
     assert _correr(cartera_api.borrar_compra(db, cid))
     est = _correr(cartera_api.estado_simbolo(db, "FN"))
@@ -178,9 +178,9 @@ def test_cada_simbolo_se_empareja_por_separado():
     """El emparejamiento es POR VALOR: si se mezclaran, una venta de FN consumiría un lote
     de AAPL y las dos posiciones quedarían mal."""
     db = _DB()
-    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10"))
-    _correr(cartera_api.registrar_compra(db, "AAPL", 5, 200.0, fecha="2026-01-10"))
-    _correr(cartera_api.registrar_venta(db, "FN", 5, 130.0, fecha="2026-06-01"))
+    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_compra(db, "AAPL", 5, 200.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_venta(db, "FN", 5, 130.0, fecha="2026-06-01", comision=0))
 
     assert _correr(cartera_api.estado_simbolo(db, "FN"))["fifo"]["acciones_abiertas"] == 0
     assert _correr(cartera_api.estado_simbolo(db, "AAPL"))["fifo"]["acciones_abiertas"] == 5
@@ -193,9 +193,9 @@ def test_cada_simbolo_se_empareja_por_separado():
 
 def test_el_historial_da_los_dos_metodos_por_venta():
     db = _DB()
-    _correr(cartera_api.registrar_compra(db, "FN", 3, 80.0, fecha="2026-01-10"))
-    _correr(cartera_api.registrar_compra(db, "FN", 2, 120.0, fecha="2026-03-05"))
-    _correr(cartera_api.registrar_venta(db, "FN", 1, 130.0, fecha="2026-06-01"))
+    _correr(cartera_api.registrar_compra(db, "FN", 3, 80.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_compra(db, "FN", 2, 120.0, fecha="2026-03-05", comision=0))
+    _correr(cartera_api.registrar_venta(db, "FN", 1, 130.0, fecha="2026-06-01", comision=0))
 
     hist = _correr(cartera_api.historial(db))
     fila = hist["items"][0]
@@ -207,8 +207,8 @@ def test_el_historial_da_los_dos_metodos_por_venta():
 def test_el_historial_dice_de_que_lote_salio_cada_venta():
     """Es lo que se quiere ver para saber si comprar en los niveles funciona."""
     db = _DB([{"symbol": "FN", "nivel1": 120.0, "nivel3": 80.0}])
-    _correr(cartera_api.registrar_compra(db, "FN", 3, 80.0, fecha="2026-01-10"))
-    _correr(cartera_api.registrar_venta(db, "FN", 1, 130.0, fecha="2026-06-01"))
+    _correr(cartera_api.registrar_compra(db, "FN", 3, 80.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_venta(db, "FN", 1, 130.0, fecha="2026-06-01", comision=0))
     fila = _correr(cartera_api.historial(db))["items"][0]
     assert fila["fifo"]["lotes"][0]["nivel"] == "nivel3"
     assert fila["fifo"]["lotes"][0]["fecha_compra"] == "2026-01-10"
@@ -219,8 +219,8 @@ def test_los_totales_separan_lo_exacto_de_lo_que_no_se_pudo_calcular(monkeypatch
     acabaría en una declaración."""
     monkeypatch.setattr(cartera_api.fx, "tasa_en_fecha", lambda d, f: None)
     db = _DB()
-    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10"))
-    _correr(cartera_api.registrar_venta(db, "FN", 5, 130.0, fecha="2026-06-01"))
+    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_venta(db, "FN", 5, 130.0, fecha="2026-06-01", comision=0))
     res = _correr(cartera_api.historial(db))["resumen"]
     assert res["fifo"]["ganancia_eur"] is None
     assert res["fifo"]["ganancia_divisa"] == 150.0
@@ -232,7 +232,7 @@ def test_los_totales_separan_lo_exacto_de_lo_que_no_se_pudo_calcular(monkeypatch
 
 def test_el_resumen_da_el_latente_en_euros():
     db = _DB()
-    _correr(cartera_api.registrar_compra(db, "FN", 10, 100.0, fecha="2026-01-10"))
+    _correr(cartera_api.registrar_compra(db, "FN", 10, 100.0, fecha="2026-01-10", comision=0))
     res = _correr(cartera_api.resumen_cartera(db, {"FN": 120.0}))
     pos = res["posiciones"][0]
     assert pos["acciones"] == 10
@@ -243,8 +243,8 @@ def test_el_resumen_da_el_latente_en_euros():
 
 def test_una_posicion_vendida_entera_no_sale_en_la_cartera():
     db = _DB()
-    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10"))
-    _correr(cartera_api.registrar_venta(db, "FN", 5, 130.0, fecha="2026-06-01"))
+    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_venta(db, "FN", 5, 130.0, fecha="2026-06-01", comision=0))
     res = _correr(cartera_api.resumen_cartera(db, {"FN": 130.0}))
     assert res["posiciones"] == []
     assert res["realizado_eur"] is not None
@@ -253,8 +253,8 @@ def test_una_posicion_vendida_entera_no_sale_en_la_cartera():
 def test_una_posicion_sin_precio_no_rompe_el_total():
     """Que falte una cotización no puede dejar la cartera entera sin cifra."""
     db = _DB()
-    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10"))
-    _correr(cartera_api.registrar_compra(db, "XX", 5, 50.0, fecha="2026-01-10"))
+    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_compra(db, "XX", 5, 50.0, fecha="2026-01-10", comision=0))
     res = _correr(cartera_api.resumen_cartera(db, {"FN": 120.0}))   # XX sin precio
     assert res["latente_eur"] is not None
     assert res["posiciones_sin_valorar"] == 1
@@ -262,8 +262,8 @@ def test_una_posicion_sin_precio_no_rompe_el_total():
 
 def test_el_resumen_dice_en_que_niveles_se_compro():
     db = _DB([{"symbol": "FN", "nivel1": 120.0, "nivel3": 80.0}])
-    _correr(cartera_api.registrar_compra(db, "FN", 3, 80.0, fecha="2026-01-10"))
-    _correr(cartera_api.registrar_compra(db, "FN", 2, 120.0, fecha="2026-02-10"))
+    _correr(cartera_api.registrar_compra(db, "FN", 3, 80.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_compra(db, "FN", 2, 120.0, fecha="2026-02-10", comision=0))
     res = _correr(cartera_api.resumen_cartera(db, {"FN": 130.0}))
     assert res["posiciones"][0]["niveles_comprados"] == ["nivel1", "nivel3"]
 
@@ -330,25 +330,25 @@ def test_la_cartera_se_valora_con_el_metodo_de_GESTION_no_con_el_fiscal():
 
 def test_registrar_una_venta_baja_las_acciones_de_la_cartera():
     db = _DB([{"symbol": "FN", "acciones": 5, "compra": 100.0, "divisa": "USD"}])
-    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10"))
-    _correr(cartera_api.registrar_venta(db, "FN", 2, 130.0, fecha="2026-06-01"))
+    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_venta(db, "FN", 2, 130.0, fecha="2026-06-01", comision=0))
     fila = db.signal_entries.docs[0]
     assert fila["acciones"] == 3, "no deberia hacer falta tocarlo a mano"
 
 
 def test_vender_la_posicion_entera_deja_la_cartera_a_cero():
     db = _DB([{"symbol": "SPCX", "acciones": 10, "compra": 50.0}])
-    _correr(cartera_api.registrar_compra(db, "SPCX", 10, 50.0, fecha="2026-01-10"))
-    _correr(cartera_api.registrar_venta(db, "SPCX", 10, 70.0, fecha="2026-06-01"))
+    _correr(cartera_api.registrar_compra(db, "SPCX", 10, 50.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_venta(db, "SPCX", 10, 70.0, fecha="2026-06-01", comision=0))
     assert db.signal_entries.docs[0]["acciones"] == 0
 
 
 def test_el_precio_medio_de_la_cartera_sigue_al_de_lo_que_queda():
     """Con LIFO se vende lo mas reciente, asi que lo que queda son las compras antiguas."""
     db = _DB([{"symbol": "FN", "acciones": 5, "compra": 96.0}])
-    _correr(cartera_api.registrar_compra(db, "FN", 3, 80.0, fecha="2026-01-10"))
-    _correr(cartera_api.registrar_compra(db, "FN", 2, 120.0, fecha="2026-03-05"))
-    _correr(cartera_api.registrar_venta(db, "FN", 2, 130.0, fecha="2026-06-01"))
+    _correr(cartera_api.registrar_compra(db, "FN", 3, 80.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_compra(db, "FN", 2, 120.0, fecha="2026-03-05", comision=0))
+    _correr(cartera_api.registrar_venta(db, "FN", 2, 130.0, fecha="2026-06-01", comision=0))
     fila = db.signal_entries.docs[0]
     assert fila["acciones"] == 3
     assert fila["compra"] == 80.0, "se vendieron las 2 de 120; quedan las 3 de 80"
@@ -356,8 +356,8 @@ def test_el_precio_medio_de_la_cartera_sigue_al_de_lo_que_queda():
 
 def test_borrar_una_venta_devuelve_las_acciones_a_la_cartera():
     db = _DB([{"symbol": "FN", "acciones": 5, "compra": 100.0}])
-    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10"))
-    _correr(cartera_api.registrar_venta(db, "FN", 2, 130.0, fecha="2026-06-01"))
+    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_venta(db, "FN", 2, 130.0, fecha="2026-06-01", comision=0))
     _correr(cartera_api.borrar_venta(db, db.ventas.docs[0]["id"]))
     assert db.signal_entries.docs[0]["acciones"] == 5
 
@@ -412,9 +412,9 @@ def test_vender_un_nivel_entero_enciende_su_campanita_de_verdad():
     encenderia la campanita del Nivel 1 y estaria contando lo contrario."""
     db = _DB([{"symbol": "FN", "nivel1": 200.0, "alert_nivel1": False,
                "nivel2": 100.0, "alert_nivel2": False, "acciones": 10, "compra": 130.0}])
-    _correr(cartera_api.registrar_compra(db, "FN", 3, 200.0, fecha="2026-01-10"))
-    _correr(cartera_api.registrar_compra(db, "FN", 7, 100.0, fecha="2026-02-10"))
-    _correr(cartera_api.registrar_venta(db, "FN", 7, 250.0, fecha="2026-06-01"))
+    _correr(cartera_api.registrar_compra(db, "FN", 3, 200.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_compra(db, "FN", 7, 100.0, fecha="2026-02-10", comision=0))
+    _correr(cartera_api.registrar_venta(db, "FN", 7, 250.0, fecha="2026-06-01", comision=0))
     fila = db.signal_entries.docs[0]
     assert fila["alert_nivel2"] is True, "Nivel 2 (el mas reciente) vendido entero"
     assert fila["alert_nivel1"] is False, "Nivel 1 sigue comprado"
@@ -423,15 +423,15 @@ def test_vender_un_nivel_entero_enciende_su_campanita_de_verdad():
 
 def test_comprar_en_un_nivel_apaga_su_campanita_de_verdad():
     db = _DB([{"symbol": "FN", "nivel3": 180.0, "alert_nivel3": True}])
-    _correr(cartera_api.registrar_compra(db, "FN", 5, 180.0, fecha="2026-01-10"))
+    _correr(cartera_api.registrar_compra(db, "FN", 5, 180.0, fecha="2026-01-10", comision=0))
     assert db.signal_entries.docs[0]["alert_nivel3"] is False
 
 
 def test_deshacer_la_venta_vuelve_a_apagar_la_campanita():
     """Corregir un error no puede dejar las campanitas contando otra historia."""
     db = _DB([{"symbol": "FN", "nivel1": 200.0, "alert_nivel1": False}])
-    _correr(cartera_api.registrar_compra(db, "FN", 3, 200.0, fecha="2026-01-10"))
-    _correr(cartera_api.registrar_venta(db, "FN", 3, 250.0, fecha="2026-06-01"))
+    _correr(cartera_api.registrar_compra(db, "FN", 3, 200.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_venta(db, "FN", 3, 250.0, fecha="2026-06-01", comision=0))
     assert db.signal_entries.docs[0]["alert_nivel1"] is True
     _correr(cartera_api.borrar_venta(db, db.ventas.docs[0]["id"]))
     assert db.signal_entries.docs[0]["alert_nivel1"] is False
@@ -441,9 +441,9 @@ def test_lo_fiscal_sigue_estando_aunque_la_gestion_sea_LIFO():
     """Cambiar el metodo por defecto no puede hacer desaparecer la cifra de la declaracion:
     son dos preguntas distintas y las dos tienen que poder contestarse."""
     db = _DB()
-    _correr(cartera_api.registrar_compra(db, "FN", 3, 80.0, fecha="2026-01-10"))
-    _correr(cartera_api.registrar_compra(db, "FN", 2, 120.0, fecha="2026-03-05"))
-    _correr(cartera_api.registrar_venta(db, "FN", 1, 130.0, fecha="2026-06-01"))
+    _correr(cartera_api.registrar_compra(db, "FN", 3, 80.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_compra(db, "FN", 2, 120.0, fecha="2026-03-05", comision=0))
+    _correr(cartera_api.registrar_venta(db, "FN", 1, 130.0, fecha="2026-06-01", comision=0))
     fila = _correr(cartera_api.historial(db))["items"][0]
     assert fila["lifo"]["ganancia_divisa"] == 10.0    # lo que vendiste de verdad
     assert fila["fifo"]["ganancia_divisa"] == 50.0    # lo que declara Hacienda
@@ -455,8 +455,66 @@ def test_lo_fiscal_sigue_estando_aunque_la_gestion_sea_LIFO():
 def test_el_resumen_dice_con_que_metodo_esta_calculado():
     """Una cifra de ganancia sin decir de que metodo es invita a meterla donde no debe."""
     db = _DB()
-    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10"))
+    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10", comision=0))
     res = _correr(cartera_api.resumen_cartera(db, {"FN": 120.0}))
     assert res["metodo_gestion"] == "lifo"
     est = _correr(cartera_api.estado_simbolo(db, "FN"))
     assert est["metodo_gestion"] == "lifo"
+
+
+# ── Comisiones: vacio no es cero ─────────────────────────────────────────────
+
+def test_dejar_la_comision_vacia_la_estima_en_vez_de_ponerla_a_cero():
+    """Un cero parece un dato y es una afirmacion: "esta operacion no me costo nada". Si no
+    lo sabes, una estimacion con la tarifa publica se acerca mucho mas a la verdad."""
+    db = _DB()
+    c = _correr(cartera_api.registrar_compra(db, "FN", 10, 100.0, fecha="2026-01-10"))
+    assert c["comision"] > 0
+    assert c["comision_estimada"] is True
+    assert "DEGIRO" in c["comision_detalle"]
+    # 2 EUR a 1,10 = 2,20 $ + 0,25% de 1000 $ = 2,50 $
+    assert c["comision"] == pytest.approx(4.70, abs=0.01)
+
+
+def test_un_cero_explicito_se_respeta():
+    db = _DB()
+    c = _correr(cartera_api.registrar_compra(db, "FN", 10, 100.0, fecha="2026-01-10",
+                                             comision=0))
+    assert c["comision"] == 0
+    assert c["comision_estimada"] is False
+
+
+def test_la_comision_que_das_tu_manda_sobre_la_estimada():
+    db = _DB()
+    c = _correr(cartera_api.registrar_compra(db, "FN", 10, 100.0, fecha="2026-01-10",
+                                             comision=3.17))
+    assert c["comision"] == 3.17 and c["comision_estimada"] is False
+
+
+def test_la_venta_tambien_estima_su_comision():
+    db = _DB()
+    _correr(cartera_api.registrar_compra(db, "FN", 10, 100.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_venta(db, "FN", 10, 130.0, fecha="2026-06-01"))
+    v = db.ventas.docs[0]
+    assert v["comision_estimada"] is True
+    # 2,20 $ + 0,25% de 1300 $ = 3,25 $
+    assert v["comision"] == pytest.approx(5.45, abs=0.01)
+
+
+def test_la_comision_estimada_entra_en_la_ganancia():
+    """Si se calculara aparte y no se restara, la estimacion seria decorativa."""
+    db = _DB()
+    _correr(cartera_api.registrar_compra(db, "FN", 10, 100.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_venta(db, "FN", 10, 130.0, fecha="2026-06-01"))
+    fila = _correr(cartera_api.historial(db))["items"][0]
+    assert fila["lifo"]["ganancia_divisa"] == pytest.approx(300 - 5.45, abs=0.01)
+
+
+def test_la_importacion_no_cobra_comision_dos_veces():
+    """El precio medio del que sale la importacion YA incluye lo que se pago en su dia.
+    Estimar una comision encima inflaria el coste de toda la posicion."""
+    db = _DB([{"symbol": "ORCL", "acciones": 35, "compra": 142.43, "divisa": "USD"}])
+    _correr(cartera_api.importar_posiciones_existentes(db))
+    assert db.compras.docs[0]["comision"] == 0
+    est = _correr(cartera_api.estado_simbolo(db, "ORCL"))
+    assert est["lifo"]["precio_medio"] == pytest.approx(142.43)

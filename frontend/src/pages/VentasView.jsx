@@ -228,6 +228,11 @@ function LotesAbiertos({ symbol, metodo }) {
               {l.nivel
                 ? <Chip tono="nivel">{NIVEL_ETIQUETA[l.nivel] || l.nivel}</Chip>
                 : <Chip title="Esta compra no cae cerca de ninguno de los niveles que tienes en la Cartera.">fuera de niveles</Chip>}
+              {l.comision_estimada && (
+                <Chip title="La comisión de esta compra es una estimación con la tarifa pública de DEGIRO, no una cifra de tu extracto.">
+                  comisión estimada
+                </Chip>
+              )}
               {!l.tasa && (
                 <Chip tono="aviso" title="Sin el cambio de esa fecha no se puede saber lo que ganas en euros cuando vendas estas acciones.">
                   sin tipo de cambio
@@ -402,7 +407,7 @@ function FormularioPorNiveles({ onCerrar }) {
       for (const f of filas) {
         await api.cartera.comprar({
           symbol: sym, acciones: f.acciones, precio: f.precio,
-          fecha, nivel: f.nivel, comision: 0,
+          fecha, nivel: f.nivel,   // comisión vacía: se estima con la tarifa
           notas: `Alta por niveles (${f.etiqueta})`,
         });
       }
@@ -480,6 +485,45 @@ function FormularioPorNiveles({ onCerrar }) {
   );
 }
 
+// Enseña la comisión que se va a aplicar ANTES de guardar. Sin esto, "se estima sola" es
+// una promesa a ciegas: no se sabe cuánto se ha metido hasta abrir la operación después.
+// La cuenta es la misma que hace el servidor, pero el número bueno lo pone él al guardar.
+const COMISION_FIJA_EUR = 2.0;
+const FX_AUTO_PCT = 0.0025;
+
+function AvisoComision({ comision, acciones, precio }) {
+  const { data: tasas } = useQuery({
+    queryKey: ["cartera", "resumen"],
+    queryFn: api.cartera.resumen,
+    staleTime: 60_000,
+    retry: false,
+  });
+  if (comision !== "" && comision != null) {
+    return Number(comision) === 0
+      ? <p className="text-[11px] text-[#5c6b66]">Sin comisión: se registrará tal cual.</p>
+      : null;
+  }
+  const bruto = (Number(acciones) || 0) * (Number(precio) || 0);
+  const tasa = tasas?.tasas?.USD;
+  if (!bruto || !tasa) {
+    return (
+      <p className="text-[11px] text-[#5c6b66]">
+        La comisión se estimará con la tarifa de DEGIRO: 2 € por operación + 0,25% de
+        conversión de divisa. Pon un 0 si esta operación no te costó nada.
+      </p>
+    );
+  }
+  const est = COMISION_FIJA_EUR * tasa + bruto * FX_AUTO_PCT;
+  return (
+    <p className="text-[11px] text-[#5c6b66]">
+      Se aplicará una comisión estimada de <b>{usd(est)}</b> ={" "}
+      {usd(COMISION_FIJA_EUR * tasa)} (2 € de comisión y tramitación) +{" "}
+      {usd(bruto * FX_AUTO_PCT)} (0,25% de conversión de divisa).
+      {" "}Si tienes la real en tu extracto, escríbela y manda la tuya.
+    </p>
+  );
+}
+
 function FormularioOperacion({ tipo, onHecho, onCerrar }) {
   const hoy = new Date().toISOString().slice(0, 10);
   const [f, setF] = React.useState({ symbol: "", acciones: "", precio: "", comision: "", fecha: hoy, notas: "" });
@@ -531,8 +575,9 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
           <input value={f.precio} onChange={set("precio")} inputMode="decimal" placeholder="130.50" className={inputCls} />
         </Campo>
         <Campo label="Comisión"
-               ayuda="Lo que te cobró el bróker por ESTA operación. En DeGiro no es fija: depende del mercado y del producto. Súmala tal cual aparece en tu extracto; si la dejas vacía se calcula sin ella y la ganancia saldrá algo optimista.">
-          <input value={f.comision} onChange={set("comision")} inputMode="decimal" placeholder="1.00" className={inputCls} />
+               ayuda="Déjala VACÍA y se estima con la tarifa pública de DEGIRO: 2 € por operación más el 0,25% de conversión de divisa. Si la tienes en tu extracto, ponla y manda la tuya. Un 0 se respeta como 'no me costó nada'.">
+          <input value={f.comision} onChange={set("comision")} inputMode="decimal"
+                 placeholder="se estima sola" className={inputCls} />
         </Campo>
         <Campo label="Fecha"
                ayuda="Determina el tipo de cambio que se usa. Ponla bien o los euros saldrán de otro día.">
@@ -551,6 +596,8 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
       )}
 
       {tipo === "venta" && <VistaPreviaVenta symbol={f.symbol} acciones={f.acciones} />}
+
+      <AvisoComision comision={f.comision} acciones={f.acciones} precio={f.precio} />
 
       <button type="submit" disabled={mut.isPending}
               className="w-full bg-[#1a3a32] text-[#f5f3ef] rounded px-4 py-2 text-sm font-semibold disabled:opacity-60">

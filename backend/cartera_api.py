@@ -14,6 +14,7 @@ día no cuadre con sus propios apuntes, y entonces no hay forma de saber cuál m
 import logging
 from datetime import datetime, timezone
 
+import comisiones
 import fx
 import lotes
 
@@ -83,10 +84,25 @@ async def _sincronizar_posicion(db, symbol: str):
     return estado
 
 
+async def _comision_o_estimada(comision, importe, divisa, tasa, fx_manual=False):
+    """La comisión que se pasa MANDA; si viene vacía se estima con la tarifa publicada.
+
+    Se distingue "vacía" (None) de "cero" a propósito: cero es una afirmación —esta
+    operación no me costó nada— y hay que respetarla. Vacío significa "no lo sé", y ahí una
+    estimación se acerca mucho más a la verdad que un cero, que infla la ganancia sin decirlo.
+    """
+    if comision is not None:
+        return float(comision), False, None
+    est = comisiones.estimar(importe, divisa, tasa, fx_manual=fx_manual)
+    if est["total"] is None:
+        return 0.0, False, None
+    return est["total"], True, est["detalle"]
+
+
 # ── Compras ──────────────────────────────────────────────────────────────────
 
 async def registrar_compra(db, symbol: str, acciones: float, precio: float,
-                           fecha: str = None, comision: float = 0.0,
+                           fecha: str = None, comision: float = None,
                            divisa: str = None, tasa: float = None,
                            nivel: str = None, notas: str = "") -> dict:
     """Guarda una compra. Detecta sola en qué nivel de la Cartera se hizo."""
@@ -94,12 +110,17 @@ async def registrar_compra(db, symbol: str, acciones: float, precio: float,
     entry = await db.signal_entries.find_one({"symbol": symbol}, {"_id": 0})
     divisa = (divisa or (entry or {}).get("divisa") or "USD").strip().upper() or "USD"
 
-    compra = lotes.nueva_compra(symbol, acciones, precio, fecha=fecha, comision=comision,
+    compra = lotes.nueva_compra(symbol, acciones, precio, fecha=fecha, comision=0.0,
                                 divisa=divisa, tasa=tasa, nivel=nivel, notas=notas)
     # El cambio del día de la compra. El que venga dado MANDA: el del banco incluye su
     # margen y no coincide con el de mercado, y es el que de verdad te cobraron.
     if compra["tasa"] is None:
         compra["tasa"] = await _tasa(divisa, compra["fecha"])
+    # La comisión se resuelve DESPUÉS del tipo de cambio: los 2 € fijos hay que pasarlos a
+    # la divisa de la operación y sin tasa no se puede.
+    compra["comision"], compra["comision_estimada"], compra["comision_detalle"] = (
+        await _comision_o_estimada(comision, float(acciones) * float(precio), divisa,
+                                   compra["tasa"]))
 
     # Nivel: si no se indica a mano, se deduce del precio contra los niveles de la Cartera.
     if not compra["nivel"] and entry:
@@ -125,7 +146,7 @@ async def borrar_compra(db, compra_id: str) -> bool:
 # ── Ventas ───────────────────────────────────────────────────────────────────
 
 async def registrar_venta(db, symbol: str, acciones: float, precio: float,
-                          fecha: str = None, comision: float = 0.0,
+                          fecha: str = None, comision: float = None,
                           divisa: str = None, tasa: float = None,
                           notas: str = "") -> dict:
     """Guarda una venta y devuelve el resultado por los DOS métodos.
@@ -138,10 +159,13 @@ async def registrar_venta(db, symbol: str, acciones: float, precio: float,
     entry = await db.signal_entries.find_one({"symbol": symbol}, {"_id": 0})
     divisa = (divisa or (entry or {}).get("divisa") or "USD").strip().upper() or "USD"
 
-    venta = lotes.nueva_venta(symbol, acciones, precio, fecha=fecha, comision=comision,
+    venta = lotes.nueva_venta(symbol, acciones, precio, fecha=fecha, comision=0.0,
                               divisa=divisa, tasa=tasa, notas=notas)
     if venta["tasa"] is None:
         venta["tasa"] = await _tasa(divisa, venta["fecha"])
+    venta["comision"], venta["comision_estimada"], venta["comision_detalle"] = (
+        await _comision_o_estimada(comision, float(acciones) * float(precio), divisa,
+                                   venta["tasa"]))
 
     await db.ventas.insert_one(dict(venta))
     # La Cartera se actualiza sola: no hay que tocar el número de acciones a mano.
@@ -392,6 +416,10 @@ async def importar_posiciones_existentes(db) -> dict:
                 await registrar_compra(
                     db, sym, lote["acciones"], lote["precio"], fecha=fecha,
                     divisa=e.get("divisa"), nivel=lote.get("nivel"),
+                    # comision=0 y NO estimada: el precio medio del que sale esta
+                    # importación ya incluye lo que pagaste en su día. Estimarla encima la
+                    # cobraría dos veces e inflaría el coste de toda la posición.
+                    comision=0,
                     notas=f"{nota_base}. {plan['motivo']}")
             creados += 1
             detalle.append({"symbol": sym, "lotes": len(plan["lotes"]),

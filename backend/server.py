@@ -2202,7 +2202,8 @@ class CompraCreate(BaseModel):
     acciones: float
     precio: float
     fecha: Optional[str] = None          # YYYY-MM-DD; por defecto, hoy
-    comision: Optional[float] = 0.0      # en la divisa de la operación
+    # None = "no lo sé, estímalo con la tarifa". 0 = "no me costó nada".
+    comision: Optional[float] = None     # en la divisa de la operación
     divisa: Optional[str] = None         # por defecto, la de la posición
     tasa: Optional[float] = None         # divisa por 1 EUR; vacío = se busca por la fecha
     nivel: Optional[str] = None          # vacío = se deduce del precio
@@ -2214,7 +2215,7 @@ class VentaLoteCreate(BaseModel):
     acciones: float
     precio: float
     fecha: Optional[str] = None
-    comision: Optional[float] = 0.0
+    comision: Optional[float] = None
     divisa: Optional[str] = None
     tasa: Optional[float] = None
     notas: Optional[str] = ""
@@ -2226,7 +2227,7 @@ async def crear_compra(item: CompraCreate, _user: str = Depends(auth.get_current
     try:
         compra = await cartera_api.registrar_compra(
             db, item.symbol, item.acciones, item.precio, fecha=item.fecha,
-            comision=item.comision or 0.0, divisa=item.divisa, tasa=item.tasa,
+            comision=item.comision, divisa=item.divisa, tasa=item.tasa,
             nivel=item.nivel, notas=item.notas or "")
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -2250,7 +2251,7 @@ async def crear_venta(item: VentaLoteCreate, _user: str = Depends(auth.get_curre
     try:
         estado = await cartera_api.registrar_venta(
             db, item.symbol, item.acciones, item.precio, fecha=item.fecha,
-            comision=item.comision or 0.0, divisa=item.divisa, tasa=item.tasa,
+            comision=item.comision, divisa=item.divisa, tasa=item.tasa,
             notas=item.notas or "")
     except ValueError as e:
         raise HTTPException(400, str(e))
