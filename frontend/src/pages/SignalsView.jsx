@@ -121,25 +121,45 @@ const nextVentaKey = (e) => {
 // No basta con convertir el resultado en dólares al cambio de hoy — eso da un número que no
 // corresponde a ninguna operación real. El libro convierte cada compra al cambio de SU día
 // y el valor de hoy al de hoy, así que el euro entra en la cuenta como lo que es.
-function PnlText({ abs, pct, size = "sm", eur = null }) {
+function PnlText({ abs, pct, size = "sm", eur = null, tasa = null }) {
+  // Tres situaciones, y se distinguen a la vista porque no valen lo mismo:
+  //
+  //  1. EXACTO — hay compras registradas: cada una convertida al cambio de SU día. Es lo
+  //     que de verdad ganaste en euros.
+  //  2. APROXIMADO — sin libro todavía: se convierte la ganancia en dólares al cambio de
+  //     HOY. No es lo que ganaste en euros (tu coste fue a otro cambio), es lo que esa
+  //     ganancia vale hoy en euros. Se marca con ≈ para no confundirlas.
+  //  3. Ni una cosa ni otra: se enseñan los dólares y ya.
+  //
+  // Antes solo existían 1 y 3, así que hasta importar la Cartera seguía en dólares — que
+  // es justo lo que se pedía cambiar.
   const hayEur = eur && eur.pnl_eur != null;
+  const aprox = !hayEur && abs != null && tasa > 0;
   if (abs == null && !hayEur) return <span className="text-neutral-300">—</span>;
-  const principal = hayEur ? eur.pnl_eur : abs;
-  const principalPct = hayEur ? eur.pct_eur : pct;
+
+  const principal = hayEur ? eur.pnl_eur : aprox ? abs / tasa : abs;
+  const principalPct = hayEur ? eur.pct_eur : pct;   // el % no cambia al convertir
   const up = principal >= 0;
   const color = up ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400";
+  const enEuros = hayEur || aprox;
   return (
-    <span className="inline-flex flex-col items-end leading-tight">
+    <span className="inline-flex flex-col items-end leading-tight"
+          title={aprox
+            ? "Aproximado: es el valor en euros de HOY de tu ganancia en dólares. Para saber lo que has ganado de verdad en euros hace falta el tipo de cambio del día de tu compra — regístrala en Ventas."
+            : hayEur
+              ? "Exacto: cada compra convertida al tipo de cambio de su fecha y el valor de hoy al de hoy."
+              : undefined}>
       <span className={`font-mono font-bold ${size === "sm" ? "text-sm" : "text-base"} ${color}`}>
+        {aprox && <span className="opacity-60">≈ </span>}
         {up ? "+" : "−"}{Math.abs(principal).toLocaleString("es-ES", { maximumFractionDigits: 0 })}
-        {hayEur ? " €" : " $"}
+        {enEuros ? " €" : " $"}
         {principalPct != null && (
           <span className="text-[11px] font-semibold"> · {principalPct >= 0 ? "+" : "−"}{Math.abs(principalPct).toFixed(1)}%</span>
         )}
       </span>
       {/* La divisa original, en pequeño: sirve para cuadrar con la pantalla del bróker,
           que la muestra en dólares. */}
-      {hayEur && abs != null && (
+      {enEuros && abs != null && (
         <span className="font-mono text-[10px] text-neutral-500">
           {abs >= 0 ? "+" : "−"}${eur0(Math.abs(abs))}
         </span>
@@ -159,17 +179,22 @@ function usePnlEnEuros() {
     retry: false,
   });
   return React.useMemo(() => {
-    const m = {};
+    const porSymbol = {};
     for (const p of data?.posiciones || []) {
-      if (p.symbol) m[p.symbol.toUpperCase()] = p;
+      if (p.symbol) porSymbol[p.symbol.toUpperCase()] = p;
     }
-    return m;
+    // El cambio de hoy sirve para las acciones que AÚN no tienen compras registradas: sin
+    // él su P&L se quedaría en dólares, que es justo lo que se quería cambiar.
+    return { porSymbol, tasaUSD: data?.tasas?.USD || null };
   }, [data]);
 }
 
 // ── Resumen de cartera: P&L total (#20) + diversificación por sector (#21) ───────
 const SECTOR_COLORS = ["#1a3a32", "#4a7c59", "#c9a14a", "#d85c41", "#2563eb", "#7c3aed", "#0891b2", "#9333ea"];
 function PortfolioSummary({ entries }) {
+  // El total en euros, igual que las filas: si una cosa va en euros y la otra en dólares
+  // en la misma pantalla, el número grande deja de poder compararse con la suma de abajo.
+  const { tasaUSD: tasaResumen } = usePnlEnEuros();
   // Solo posiciones COMPLETAS (acciones + precio de compra + precio actual). Antes bastaba
   // con tener acciones: una recién añadida sin last_price sumaba al coste pero 0 al valor,
   // y el total anunciaba un -100% falso.
@@ -209,7 +234,7 @@ function PortfolioSummary({ entries }) {
         ) : (
           <>
             <div className="flex items-baseline gap-2">
-              <PnlText abs={totalPnl} pct={totalPnlPct} size="base" />
+              <PnlText abs={totalPnl} pct={totalPnlPct} size="base" tasa={tasaResumen} />
             </div>
             <div className="grid grid-cols-2 gap-2 mt-2 text-[11px] font-mono">
               <div><span className="text-neutral-400">Invertido</span><br /><b>{eur0(totalCost)}</b></div>
@@ -968,7 +993,7 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
               </div>
               <div className="text-right">
                 <p className="text-[9px] text-neutral-400 uppercase font-mono">P&amp;L</p>
-                <PnlText abs={pnlAbs(e)} pct={pnlPct(e)} eur={pnlEur[(e.symbol || "").toUpperCase()]} />
+                <PnlText abs={pnlAbs(e)} pct={pnlPct(e)} eur={pnlEur.porSymbol[(e.symbol || "").toUpperCase()]} tasa={pnlEur.tasaUSD} />
               </div>
             </div>
             <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg px-3 py-2">
@@ -1084,7 +1109,7 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                   <EditableCell value={e.acciones} onChange={(v) => updateField(e.id, "acciones", v)} isNumber format={(v) => v != null && v !== "" ? Number(v).toLocaleString("es-ES", { maximumFractionDigits: 2 }) : "—"} className="font-mono text-sm text-neutral-700 dark:text-neutral-300" />
                 </td>
                 <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                  <PnlText abs={pnlAbs(e)} pct={pnlPct(e)} eur={pnlEur[(e.symbol || "").toUpperCase()]} />
+                  <PnlText abs={pnlAbs(e)} pct={pnlPct(e)} eur={pnlEur.porSymbol[(e.symbol || "").toUpperCase()]} tasa={pnlEur.tasaUSD} />
                 </td>
                 <td className="px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 border-l border-blue-100 dark:border-blue-900">
                   <div className="flex items-center justify-end gap-1">

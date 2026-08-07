@@ -19,7 +19,8 @@ que ajustar las constantes de abajo o meter la comisión a mano.
 La tarifa de DEGIRO (consultada 08/2026)
 -----------------------------------------
   · Acciones de EE.UU. y España: 1 € de comisión + 1 € de tramitación = 2 € por operación.
-  · Conversión de divisa (AutoFX): 0,25% del importe cuando operas fuera del euro.
+  · Conversión de divisa: AutoFX (la opción por defecto) 0,25% del importe. El cambio
+    MANUAL no es gratis: 10 € + 0,25%, así que solo compensa moviendo mucho de golpe.
   · Conectividad: hasta 2,50 €/año por mercado. NO se incluye aquí: es un coste anual de la
     cuenta, no de la operación, y repartirlo entre operaciones daría una cifra inventada
     distinta según cuántas hagas.
@@ -33,9 +34,14 @@ logger = logging.getLogger(__name__)
 #: Comisión fija por operación, EN EUROS (1 € comisión + 1 € tramitación).
 COMISION_FIJA_EUR = 2.0
 
-#: Conversión automática de divisa. Es el coste que más pasa desapercibido: no aparece como
-#: "comisión" en ningún sitio, va incorporado al tipo de cambio que te aplican.
+#: Conversión de divisa. DEGIRO lo llama AutoFX y es la opción por defecto. Es el coste que
+#: más pasa desapercibido: no aparece como "comisión" en ningún sitio, va incorporado al
+#: tipo de cambio que te aplican.
 FX_AUTO_PCT = 0.0025
+
+#: El cambio MANUAL no es gratis: es 10 € + el mismo 0,25%. Solo compensa moviendo mucho
+#: dinero de golpe, porque los 10 € son fijos por cambio y no por operación.
+FX_MANUAL_FIJO_EUR = 10.0
 
 #: Divisas que no llevan conversión (la cuenta es en euros).
 SIN_CONVERSION = {"EUR"}
@@ -47,7 +53,7 @@ def estimar(importe_divisa: float, divisa: str = "USD", tasa: float = None,
 
     `importe_divisa` es el bruto (acciones × precio).
     `tasa` son unidades de divisa por 1 EUR, para pasar los 2 € fijos a la divisa.
-    `fx_manual` a True si cambias la divisa tú a mano: entonces no hay 0,25%.
+    `fx_manual` a True si cambias la divisa a mano: son 10 € MÁS el mismo 0,25%.
 
     Devuelve el desglose además del total, porque un número suelto no se puede comprobar
     contra el extracto y acabaría aceptándose sin mirar.
@@ -68,8 +74,12 @@ def estimar(importe_divisa: float, divisa: str = "USD", tasa: float = None,
         fija = None
 
     conversion = 0.0
-    if divisa not in SIN_CONVERSION and not fx_manual:
+    if divisa not in SIN_CONVERSION:
         conversion = importe_divisa * FX_AUTO_PCT
+        # El manual lleva ADEMÁS 10 € fijos. Tenerlo como "sin coste" hacía que la opción
+        # cara pareciera la barata.
+        if fx_manual and fija is not None:
+            conversion += FX_MANUAL_FIJO_EUR * (1.0 if divisa in SIN_CONVERSION else (tasa or 1.0))
 
     total = None if fija is None else round(fija + conversion, 4)
     return {
@@ -87,8 +97,10 @@ def _detalle(fija, conversion, divisa, fx_manual) -> str:
     if fija is not None:
         partes.append(f"{COMISION_FIJA_EUR:.2f} € de comisión y tramitación")
     if divisa not in SIN_CONVERSION:
-        partes.append("sin conversión de divisa (cambio manual)" if fx_manual
-                      else f"{FX_AUTO_PCT * 100:.2f}% de conversión de divisa")
+        partes.append(
+            f"{FX_MANUAL_FIJO_EUR:.0f} € + {FX_AUTO_PCT * 100:.2f}% de cambio manual"
+            if fx_manual else
+            f"{FX_AUTO_PCT * 100:.2f}% de conversión de divisa (AutoFX)")
     if not partes:
         return "Sin comisión estimada."
     return "Estimado con la tarifa pública de DEGIRO: " + " + ".join(partes) + "."

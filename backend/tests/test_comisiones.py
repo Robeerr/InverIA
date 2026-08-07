@@ -41,10 +41,20 @@ def test_la_conversion_pesa_mas_que_la_fija_en_operaciones_grandes():
     assert r["conversion_divisa"] > r["fija"] * 5
 
 
-def test_con_cambio_manual_no_hay_conversion():
-    r = comisiones.estimar(1000.0, "USD", tasa=1.10, fx_manual=True)
-    assert r["conversion_divisa"] == 0.0
-    assert r["total"] == pytest.approx(2.20)
+def test_el_cambio_manual_no_es_gratis():
+    """Lo tenia como coste cero, y eso hacia que la opcion CARA pareciera la barata: el
+    manual es 10 EUR + el mismo 0,25%, no en lugar de el."""
+    auto = comisiones.estimar(1000.0, "USD", tasa=1.10)
+    manual = comisiones.estimar(1000.0, "USD", tasa=1.10, fx_manual=True)
+    assert manual["total"] > auto["total"]
+    # 10 EUR a 1,10 = 11 $ mas los 2,50 $ del 0,25%
+    assert manual["conversion_divisa"] == pytest.approx(13.50, abs=0.01)
+
+
+def test_el_manual_solo_compensa_moviendo_mucho():
+    """Los 10 EUR son fijos por cambio: en una operacion pequena son casi todo el coste."""
+    pequena = comisiones.estimar(500.0, "USD", tasa=1.10, fx_manual=True)
+    assert pequena["conversion_divisa"] > pequena["fija"] * 4
 
 
 def test_sin_tipo_de_cambio_no_se_inventa_una_paridad():
