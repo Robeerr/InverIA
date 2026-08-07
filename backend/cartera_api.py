@@ -21,9 +21,56 @@ import lotes
 logger = logging.getLogger(__name__)
 
 
-def _gestion() -> str:
-    """Clave del metodo de gestion en minusculas, como la usan las respuestas JSON."""
-    return lotes.METODO_GESTION.lower()
+# El método de gestión es AJUSTABLE y se guarda en la base de datos, no en el código.
+#
+# El motivo: cual reproduce lo que ves en tu broker es una pregunta empírica, no de diseño.
+# Si al vender tu precio medio BAJA, tu broker esta quitando las compras mas antiguas
+# (FIFO); si SUBE, las mas recientes (LIFO). Hasta comprobarlo con una operacion real no se
+# puede saber, y dejarlo fijo en el codigo obligaba a un despliegue para cambiar de idea.
+#
+# Cambiarlo NO altera ningun apunte: compras y ventas son las que son. Solo cambia como se
+# emparejan al reproducir el libro, y por tanto que lotes quedan vivos, tu precio medio y
+# que campanitas se encienden.
+_CLAVE_METODO = "metodo_gestion"
+_metodo_cache = {"valor": None, "ts": 0.0}
+_TTL_AJUSTE = 30    # segundos; se lee en cada peticion y no merece ir a Mongo cada vez
+
+
+async def metodo_gestion(db) -> str:
+    """Método guardado, en MAYÚSCULAS. LIFO si nunca se ha elegido."""
+    import time as _t
+    if _metodo_cache["valor"] and (_t.time() - _metodo_cache["ts"]) < _TTL_AJUSTE:
+        return _metodo_cache["valor"]
+    valor = lotes.LIFO
+    try:
+        doc = await db.ajustes.find_one({"clave": _CLAVE_METODO}, {"_id": 0})
+        if doc and doc.get("valor") in lotes.METODOS:
+            valor = doc["valor"]
+    except Exception as e:
+        logger.warning("No se pudo leer el método de gestión: %s", e)
+    _metodo_cache.update({"valor": valor, "ts": _t.time()})
+    return valor
+
+
+async def guardar_metodo_gestion(db, metodo: str) -> dict:
+    """Guarda el método y RECALCULA todas las posiciones.
+
+    Lo segundo no es opcional: el precio medio y las campanitas de la Cartera se derivan del
+    método, así que cambiarlo sin recalcular dejaría la pantalla contando lo de antes.
+    """
+    metodo = (metodo or "").strip().upper()
+    if metodo not in lotes.METODOS:
+        raise ValueError(f"Método desconocido: {metodo}. Debe ser FIFO o LIFO.")
+    await db.ajustes.update_one({"clave": _CLAVE_METODO},
+                                {"$set": {"clave": _CLAVE_METODO, "valor": metodo,
+                                          "updated_at": _ahora()}},
+                                upsert=True)
+    _metodo_cache.update({"valor": metodo, "ts": 0.0})   # ts=0 fuerza relectura
+    compras, _ = await _libro(db)
+    simbolos = sorted({c.get("symbol") for c in compras if c.get("symbol")})
+    for sym in simbolos:
+        await _sincronizar_posicion(db, sym, metodo=metodo)
+    return {"metodo_gestion": metodo.lower(), "posiciones_recalculadas": len(simbolos)}
 
 
 def _ahora() -> str:
@@ -40,7 +87,7 @@ async def _tasa(divisa: str, fecha: str):
         return None
 
 
-async def _sincronizar_posicion(db, symbol: str):
+async def _sincronizar_posicion(db, symbol: str, metodo: str = None):
     """Deja las columnas `acciones` y `compra` de la Cartera acordes con el libro.
 
     Existen dos sitios donde vive el número de acciones: las columnas de la Cartera (que
@@ -64,7 +111,7 @@ async def _sincronizar_posicion(db, symbol: str):
     # tú la posición. Vendiendo por niveles según cae el precio, lo que se vende es lo más
     # reciente; con FIFO las campanitas se encenderían por el extremo contrario.
     # El número total de acciones sale igual con los dos.
-    estado = lotes.reproducir(compras, ventas, lotes.METODO_GESTION)
+    estado = lotes.reproducir(compras, ventas, metodo or await metodo_gestion(db))
     cambios = {"acciones": estado["acciones_abiertas"], "updated_at": _ahora()}
     if estado["precio_medio"] is not None:
         cambios["compra"] = estado["precio_medio"]
@@ -195,6 +242,7 @@ async def estado_simbolo(db, symbol: str, precio_actual=None) -> dict:
     symbol = (symbol or "").strip().upper()
     compras, ventas = await _libro(db, symbol)
     comp = lotes.comparar_metodos(compras, ventas)
+    gestion = (await metodo_gestion(db)).lower()
     divisa = (compras or ventas or [{}])[0].get("divisa", "USD") if (compras or ventas) else "USD"
 
     tasa_hoy = None
@@ -229,9 +277,8 @@ async def estado_simbolo(db, symbol: str, precio_actual=None) -> dict:
         "compras": sorted(compras, key=lambda c: str(c.get("fecha") or "")),
         **comp,
         # Con el metodo de gestion: es la cifra de "cuanto llevo ganado", no la fiscal.
-        "metodo_gestion": lotes.METODO_GESTION.lower(),
-        "latente": lotes.valorar_abierto(comp[lotes.METODO_GESTION.lower()],
-                                         precio_actual, tasa_hoy),
+        "metodo_gestion": gestion,
+        "latente": lotes.valorar_abierto(comp[gestion], precio_actual, tasa_hoy),
         "tasa_hoy": round(tasa_hoy, 4) if tasa_hoy else None,
     }
 
@@ -243,6 +290,7 @@ async def historial(db, limite: int = 1000) -> dict:
     símbolos haría que una venta de Apple consumiera un lote de Meta.
     """
     compras, ventas = await _libro(db)
+    gestion = (await metodo_gestion(db)).lower()
     por_symbol = {}
     for op in compras + ventas:
         por_symbol.setdefault(op.get("symbol"), {"compras": [], "ventas": []})
@@ -271,8 +319,8 @@ async def historial(db, limite: int = 1000) -> dict:
         resumen_symbol.append({
             "symbol": sym,
             "n_ventas": len(libro["ventas"]),
-            "ganancia_eur": comp[_gestion()]["ganancia_realizada_eur"],
-            "ganancia_divisa": comp[_gestion()]["ganancia_realizada_divisa"],
+            "ganancia_eur": comp[gestion]["ganancia_realizada_eur"],
+            "ganancia_divisa": comp[gestion]["ganancia_realizada_divisa"],
             "divisa": libro["ventas"][0].get("divisa", "USD"),
         })
 
@@ -282,6 +330,7 @@ async def historial(db, limite: int = 1000) -> dict:
         "items": filas[:limite],
         "por_symbol": resumen_symbol,
         "resumen": _totales(filas),
+        "metodo_gestion": gestion,
         "nota_fiscal": lotes.comparar_metodos([], [])["nota_fiscal"],
     }
 
@@ -330,6 +379,7 @@ async def resumen_cartera(db, precios: dict) -> dict:
     """
     import asyncio
     compras, ventas = await _libro(db)
+    gestion = await metodo_gestion(db)
     por_symbol = {}
     for op in compras + ventas:
         por_symbol.setdefault(op.get("symbol"), {"compras": [], "ventas": []})
@@ -350,7 +400,7 @@ async def resumen_cartera(db, precios: dict) -> dict:
 
     posiciones = []
     for sym, libro in por_symbol.items():
-        estado = lotes.reproducir(libro["compras"], libro["ventas"], lotes.METODO_GESTION)
+        estado = lotes.reproducir(libro["compras"], libro["ventas"], gestion)
         if estado["acciones_abiertas"] <= 1e-9:
             continue
         divisa = (libro["compras"] or libro["ventas"])[0].get("divisa", "USD")
@@ -379,8 +429,8 @@ async def resumen_cartera(db, precios: dict) -> dict:
                                    if p.get("coste_eur") is not None), 2) or None,
         "valor_eur": round(sum(p["valor_eur"] for p in posiciones
                                if p.get("valor_eur") is not None), 2) or None,
-        "realizado_eur": hist["resumen"][_gestion()]["ganancia_eur"],
-        "metodo_gestion": _gestion(),
+        "realizado_eur": hist["resumen"][gestion.lower()]["ganancia_eur"],
+        "metodo_gestion": gestion.lower(),
         "posiciones_sin_valorar": sum(1 for p in posiciones if p.get("pnl_eur") is None),
         "tasas": {d: (round(t, 4) if t else None) for d, t in tasas.items()},
     }

@@ -609,16 +609,32 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
 
 // ── Pantalla ─────────────────────────────────────────────────────────────────
 export default function VentasView() {
-  // LIFO por defecto. Esta pantalla contesta a "¿cuánto he ganado?", y en esta cartera se
-  // entra por niveles según CAE el precio: la compra más reciente es siempre la más barata,
-  // y al vender un nivel se vende esa. LIFO es lo que de verdad pasó.
+  const qc = useQueryClient();
+  // El método NO es solo una vista: gobierna qué lotes quedan vivos, tu precio medio y qué
+  // campanitas se encienden. Por eso se guarda en el servidor y cambiarlo recalcula todo,
+  // en vez de ser un estado local que solo afecta a lo que se pinta.
   //
-  // FIFO sigue a un clic y etiquetado, porque es el único que vale para la declaración
-  // (art. 37.2 LIRPF). Son preguntas distintas y por eso se enseñan las dos.
-  const [metodo, setMetodo] = React.useState("lifo");
+  // Cuál reproduce lo que ves en tu bróker es una pregunta empírica: si al vender tu precio
+  // medio BAJA, tu bróker quita las compras más antiguas (FIFO); si SUBE, las más recientes
+  // (LIFO). De ahí que se pueda cambiar sin tocar código.
+  const { data: ajustes } = useQuery({
+    queryKey: ["cartera", "ajustes"],
+    queryFn: api.cartera.ajustes,
+    staleTime: 60_000,
+  });
+  const metodo = ajustes?.metodo_gestion || "lifo";
+  const cambiarMetodo = useMutation({
+    mutationFn: (m) => api.cartera.guardarMetodo(m.toUpperCase()),
+    onSuccess: (r) => {
+      toast.success(`Método cambiado a ${r.metodo_gestion.toUpperCase()}. `
+        + `${r.posiciones_recalculadas} posición(es) recalculadas.`);
+      qc.invalidateQueries({ queryKey: ["cartera"] });
+    },
+    onError: () => toast.error("No se pudo cambiar el método"),
+  });
+  const setMetodo = (m) => cambiarMetodo.mutate(m);
   const [form, setForm] = React.useState(null);   // "compra" | "venta" | null
   const [abierta, setAbierta] = React.useState(null);   // símbolo desplegado en la tabla
-  const qc = useQueryClient();
 
   const { data: hist, isPending: cargandoHist } = useQuery({
     queryKey: ["cartera", "historial"],
@@ -729,20 +745,27 @@ export default function VentasView() {
               </button>
             ))}
           </div>
+          {cambiarMetodo.isPending && (
+            <span className="text-[11px] text-[#5c6b66]">Recalculando…</span>
+          )}
           {metodo === "lifo" ? (
-            <span className="text-[11px] text-[#4a7c59] font-semibold">✓ Cómo vendes tú: los niveles más recientes</span>
+            <span className="text-[11px] text-[#4a7c59] font-semibold">Vende lo más reciente · tu precio medio SUBE al vender</span>
           ) : (
-            <span className="text-[11px] text-[#8a6508] font-semibold">⚠ El de Hacienda — no es el orden en que vendes tú</span>
+            <span className="text-[11px] text-[#4a7c59] font-semibold">Vende lo más antiguo · tu precio medio BAJA al vender · es el de Hacienda</span>
           )}
         </div>
         <p className="text-[11px] text-[#5c6b66] mt-2 leading-relaxed">
-          <b>LIFO</b> vende lo último que compraste. Como entras por niveles según cae el
-          precio, lo último es siempre lo más barato: es lo que de verdad vendes al cerrar
-          un nivel, y por eso es lo que se muestra por defecto y lo que gobierna las
-          campanitas y tu precio medio. <b>FIFO</b> vende primero lo que compraste primero;
-          no coincide con cómo operas, pero es obligatorio en España para acciones cotizadas
-          (art. 37.2 de la Ley del IRPF), así que es la cifra que hay que llevar a la
-          declaración.
+          Esto no cambia solo lo que ves: gobierna qué lotes te quedan vivos, tu precio medio
+          y qué campanitas se encienden. Cambiarlo recalcula todo, pero <b>no altera ninguna
+          operación</b> — tus compras y ventas son las que son.
+          <br />
+          <b>Para saber cuál usar, mira tu bróker tras una venta parcial:</b> si tu precio
+          medio <b>baja</b>, está quitando las compras más antiguas (FIFO); si <b>sube</b>,
+          las más recientes (LIFO). Como entras por niveles según cae el precio, lo más
+          antiguo es lo más caro — por eso quitar lo antiguo hace bajar la media.
+          <br />
+          FIFO es además el obligatorio en España para acciones cotizadas (art. 37.2 de la
+          Ley del IRPF): es la cifra de tu declaración, la mires con el método que la mires.
           {tot && hist?.resumen?.fifo && hist?.resumen?.lifo
             && hist.resumen.fifo.ganancia_divisa !== hist.resumen.lifo.ganancia_divisa && (
             <> En tu caso la diferencia entre ambos es de{" "}

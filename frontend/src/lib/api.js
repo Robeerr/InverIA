@@ -98,6 +98,11 @@ export const api = {
   // DERIVAN de estos apuntes; no hay ningún saldo que actualizar por separado.
   cartera: {
     resumen: () => client.get(`/cartera/resumen`).then((r) => r.data),
+    ajustes: () => client.get(`/cartera/ajustes`).then((r) => r.data),
+    // Cambia el metodo con el que se emparejan las ventas y RECALCULA todas las posiciones.
+    // No altera ningun apunte: cambia como se emparejan, no lo que ocurrio.
+    guardarMetodo: (metodo_gestion) =>
+      client.put(`/cartera/ajustes`, { metodo_gestion }).then((r) => r.data),
     historial: () => client.get(`/cartera/historial`).then((r) => r.data),
     posicion: (symbol) => client.get(`/cartera/posicion/${symbol}`).then((r) => r.data),
     comprar: (payload) => client.post(`/cartera/compras`, payload).then((r) => r.data),

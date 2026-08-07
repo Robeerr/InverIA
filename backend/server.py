@@ -2311,6 +2311,31 @@ async def resumen_cartera(_user: str = Depends(auth.get_current_user)):
     return await cartera_api.resumen_cartera(db, precios)
 
 
+class AjusteMetodo(BaseModel):
+    metodo_gestion: str          # "FIFO" o "LIFO"
+
+
+@api_router.get("/cartera/ajustes")
+async def leer_ajustes(_user: str = Depends(auth.get_current_user)):
+    return {"metodo_gestion": (await cartera_api.metodo_gestion(db)).lower()}
+
+
+@api_router.put("/cartera/ajustes")
+async def guardar_ajustes(item: AjusteMetodo, _user: str = Depends(auth.get_current_user)):
+    """Cambia el método con el que se emparejan las ventas y RECALCULA todo.
+
+    No altera ningún apunte: compras y ventas son las que son. Cambia cómo se emparejan, y
+    con ello qué lotes quedan vivos, tu precio medio y qué campanitas están encendidas.
+    """
+    try:
+        r = await cartera_api.guardar_metodo_gestion(db, item.metodo_gestion)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    for k in ("signals_list", "signals_hot"):
+        _cache._store.pop(k, None)
+    return r
+
+
 @api_router.post("/cartera/importar-posiciones")
 async def importar_posiciones(reemplazar: bool = False,
                               _user: str = Depends(auth.get_current_user)):

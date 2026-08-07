@@ -58,11 +58,15 @@ class _Coleccion:
     async def insert_one(self, doc):
         self.docs.append(dict(doc))
 
-    async def update_one(self, filtro, cambios):
+    async def update_one(self, filtro, cambios, upsert=False):
         for d in self.docs:
             if all(self._cumple(d, k, v) for k, v in filtro.items()):
                 d.update(cambios.get("$set") or {})
-                break
+                return
+        if upsert:
+            nuevo = dict(filtro)
+            nuevo.update(cambios.get("$set") or {})
+            self.docs.append(nuevo)
 
     async def delete_one(self, filtro):
         antes = len(self.docs)
@@ -77,7 +81,17 @@ class _DB:
     def __init__(self, entries=None):
         self.compras = _Coleccion()
         self.ventas = _Coleccion()
+        self.ajustes = _Coleccion()
         self.signal_entries = _Coleccion(entries or [])
+
+
+@pytest.fixture(autouse=True)
+def ajuste_limpio():
+    """El metodo de gestion se cachea en memoria 30 s. Sin limpiarlo, el que elige un test
+    se cuela en el siguiente y los fallos aparecen en el test equivocado."""
+    cartera_api._metodo_cache.update({"valor": None, "ts": 0.0})
+    yield
+    cartera_api._metodo_cache.update({"valor": None, "ts": 0.0})
 
 
 @pytest.fixture(autouse=True)
@@ -317,8 +331,8 @@ def test_la_cartera_se_valora_con_el_metodo_de_GESTION_no_con_el_fiscal():
     """
     import inspect
     src = inspect.getsource(cartera_api.resumen_cartera)
-    assert "lotes.METODO_GESTION" in src
-    assert lotes.METODO_GESTION == lotes.LIFO
+    assert "gestion" in src
+    assert _correr(cartera_api.metodo_gestion(_DB())) == lotes.LIFO
     assert lotes.comparar_metodos([], [])["oficial"] == lotes.FIFO
     assert lotes.METODO_FISCAL == lotes.FIFO
 
@@ -541,3 +555,59 @@ def test_reimportar_NO_toca_un_simbolo_que_ya_tiene_ventas():
     r = _correr(cartera_api.importar_posiciones_existentes(db, reemplazar=True))
     assert r["creados"] == 0 and r["saltados"] == 1
     assert [c["id"] for c in db.compras.docs] == antes
+
+
+# ── El metodo es ajustable ───────────────────────────────────────────────────
+# Cual reproduce lo que ves en tu broker es una pregunta EMPIRICA, no de diseno: si al
+# vender tu precio medio baja, el broker quita las compras mas antiguas (FIFO); si sube,
+# las mas recientes (LIFO). Dejarlo fijo en el codigo obligaba a un despliegue para
+# cambiar de idea.
+
+def test_por_defecto_es_lifo():
+    db = _DB()
+    assert _correr(cartera_api.metodo_gestion(db)) == lotes.LIFO
+
+
+def test_se_puede_cambiar_a_fifo_y_se_recuerda():
+    db = _DB()
+    _correr(cartera_api.guardar_metodo_gestion(db, "FIFO"))
+    assert _correr(cartera_api.metodo_gestion(db)) == lotes.FIFO
+
+
+def test_un_metodo_inventado_se_rechaza():
+    db = _DB()
+    with pytest.raises(ValueError):
+        _correr(cartera_api.guardar_metodo_gestion(db, "PROMEDIO"))
+
+
+def test_cambiar_el_metodo_recalcula_el_precio_medio_y_las_campanitas():
+    """Sin recalcular, la Cartera seguiria contando lo de antes: el precio medio y las
+    campanitas se DERIVAN del metodo, no se guardan aparte."""
+    db = _DB([{"symbol": "FN", "nivel1": 200.0, "alert_nivel1": False,
+               "nivel2": 100.0, "alert_nivel2": False}])
+    _correr(cartera_api.registrar_compra(db, "FN", 3, 200.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_compra(db, "FN", 7, 100.0, fecha="2026-02-10", comision=0))
+    _correr(cartera_api.registrar_venta(db, "FN", 3, 250.0, fecha="2026-06-01", comision=0))
+
+    # LIFO (por defecto): se venden 3 de las 7 baratas -> quedan 3@200 + 4@100
+    fila = db.signal_entries.docs[0]
+    assert fila["compra"] == pytest.approx((3 * 200 + 4 * 100) / 7, abs=0.01)
+    assert fila["alert_nivel1"] is False, "el Nivel 1 sigue entero"
+
+    _correr(cartera_api.guardar_metodo_gestion(db, "FIFO"))
+
+    # FIFO: se venden las 3 caras -> quedan 7@100. El medio BAJA, que es justo el sintoma
+    # que se observo en el broker.
+    fila = db.signal_entries.docs[0]
+    assert fila["compra"] == pytest.approx(100.0, abs=0.01)
+    assert fila["alert_nivel1"] is True, "el Nivel 1 se ha vendido entero"
+
+
+def test_cambiar_el_metodo_no_toca_ningun_apunte():
+    """Compras y ventas son las que son: cambia como se emparejan, no lo que ocurrio."""
+    db = _DB()
+    _correr(cartera_api.registrar_compra(db, "FN", 3, 200.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_venta(db, "FN", 1, 250.0, fecha="2026-06-01", comision=0))
+    antes = ([dict(c) for c in db.compras.docs], [dict(v) for v in db.ventas.docs])
+    _correr(cartera_api.guardar_metodo_gestion(db, "FIFO"))
+    assert (db.compras.docs, db.ventas.docs) == antes
