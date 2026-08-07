@@ -141,8 +141,29 @@ export default function DiagnosticoView() {
         </div>
         {carga && (
           <div>
+            {/* La cifra que contesta a "¿va rápido?". Va la primera y destacada porque el
+                "Total" de abajo mide otra cosa —el coste de las fuentes SIN caché— y
+                leerlo como si fuera el tiempo de carga lleva a la conclusión contraria:
+                todo lo que consiste en dejar de repetir trabajo es invisible ahí. */}
+            {carga.experiencia_real && (
+              <div className="mb-3 p-3 rounded-md border border-[#e5e0d8] bg-[#faf8f4]">
+                <p className="text-[10px] uppercase tracking-[0.15em] text-[#5c6b66] font-mono mb-1">
+                  Lo que tardas tú al elegir esta acción
+                </p>
+                <p className="text-sm">
+                  <b className="font-mono text-2xl">{carga.experiencia_real.ms} ms</b>{" "}
+                  <span className={`font-semibold ${tono(
+                    carga.experiencia_real.ms < 300 ? "rápido"
+                      : carga.experiencia_real.ms < 1500 ? "aceptable" : "LENTO")}`}>
+                    · {carga.experiencia_real.ms < 300 ? "instantáneo"
+                        : carga.experiencia_real.ms < 1500 ? "rápido" : "lento"}
+                  </span>
+                </p>
+                <p className="text-[11px] text-[#5c6b66] mt-1">{carga.experiencia_real.nota}</p>
+              </div>
+            )}
             <p className="text-sm mb-2">
-              Total: <b className="font-mono">{carga.total_ms} ms</b>{" "}
+              Coste de las fuentes sin caché: <b className="font-mono">{carga.total_ms} ms</b>{" "}
               <span className={`font-semibold ${tono(carga.veredicto)}`}>· {carga.veredicto}</span>
             </p>
             <table className="w-full text-xs">

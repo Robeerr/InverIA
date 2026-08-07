@@ -2140,6 +2140,31 @@ async def diagnostico_carga(symbol: str, _user: str = Depends(auth.get_current_u
         return {"fuente": nombre, "ms": int((_time.time() - t0) * 1000),
                 "estado": estado, "detalle": detalle}
 
+    # ── LO QUE DE VERDAD TARDA AL ELEGIR ESTA ACCIÓN ──────────────────────────
+    # Lo de abajo mide las fuentes SIN caché a propósito, para ver cuánto cuestan de verdad.
+    # Eso sirve para saber cuál va lenta, pero NO es lo que vive el usuario: la web pasa por
+    # las cachés y el precalentado. Medido solo así, cualquier mejora que consista en dejar
+    # de repetir trabajo —que es la mayoría— resulta invisible, y se saca la conclusión
+    # equivocada de que no sirvió de nada.
+    #
+    # Esta primera medida recorre EXACTAMENTE el mismo camino que el navegador. Va antes que
+    # las demás para no aprovecharse de las cachés que ellas puedan calentar.
+    clave_real = f"dashboard:{sym}:{_TIMEFRAME_PREWARM}"
+    _, estaba_fresco = _cache.get_stale(clave_real, max_age=_DASHBOARD_STALE_MAX)
+    _t_real = _time.time()
+    try:
+        await dashboard_data(sym, _TIMEFRAME_PREWARM, _user="diag")
+        _estado_real = "ok"
+    except Exception as e:
+        _estado_real = f"error: {str(e)[:60]}"
+    experiencia_real = {
+        "ms": int((_time.time() - _t_real) * 1000),
+        "estado": _estado_real,
+        "desde_cache": bool(estaba_fresco),
+        "nota": ("servido de caché (precalentado o visita reciente)" if estaba_fresco
+                 else "ensamblado completo: primera visita a esta acción"),
+    }
+
     t_total = _time.time()
     # En PARALELO, igual que hace el dashboard: así el total refleja la experiencia real.
     medidas = await asyncio.gather(
@@ -2202,6 +2227,10 @@ async def diagnostico_carga(symbol: str, _user: str = Depends(auth.get_current_u
 
     return {
         "simbolo": sym,
+        # Lo primero de la respuesta porque es la cifra que contesta a la pregunta que se
+        # hace de verdad ("¿va rápido?"). total_ms responde a otra distinta y más técnica
+        # ("¿cuánto cuestan las fuentes?"), y confundirlas lleva a conclusiones al revés.
+        "experiencia_real": experiencia_real,
         "total_ms": total_ms,
         "desglose_cotizacion": desglose,
         "veredicto": ("rápido" if total_ms < 1500 else
