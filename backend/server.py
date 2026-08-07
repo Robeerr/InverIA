@@ -229,6 +229,10 @@ async def lifespan(app: FastAPI):
     await db.watchlist.create_index("symbol")
     await db.chartist_state.create_index("symbol", unique=True)
     await db.alerts.create_index("symbol")
+    # Las tres consultas de newsletters filtran por received_at >= cutoff y ordenan por
+    # received_at descendente. Sin índice, Mongo recorría la colección entera y ordenaba en
+    # memoria en cada cambio de ticker (/fuentes está en ese camino).
+    await db.newsletter_summaries.create_index([("received_at", -1)])
     await db.analyst_ideas.create_index([("symbol", 1), ("detected_at", -1)])
 
     # Wire the persistent snapshot cache and hydrate in-memory caches from the last
@@ -566,6 +570,26 @@ async def available_models():
     }
 
 
+def _cached_vp(sym: str, dias: int = 365):
+    """Volume profile con caché de 12 h.
+
+    Son 365 días de agregados de Polygon (~900 ms) para dibujar un histograma que apenas
+    se mueve de un día para otro. Iba SIN caché en NINGUNO de sus dos usos, así que se
+    pagaba entero en cada cambio de ticker y otra vez a los 5 minutos.
+
+    El endpoint de diagnóstico llama a polygon_data directamente a propósito: mide el coste
+    real de la fuente, y leerlo de caché daría siempre 0 ms y no mediría nada.
+    """
+    ck = f"vp:{sym}:{dias}"
+    v = _cache.get(ck)
+    if v is not None:
+        return v
+    v = polygon_data.get_volume_profile(sym, dias)
+    if v:
+        _cache.set(ck, v, ttl=43200)
+    return v
+
+
 # ---------- Quote ----------
 @api_router.get("/quote/{symbol}")
 async def get_quote(symbol: str):
@@ -573,7 +597,10 @@ async def get_quote(symbol: str):
     cached = _cache.get(f"quote:{sym}")
     if cached:
         return cached
-    q = market_data.get_quote(sym)
+    # to_thread: get_quote abre red (Finnhub + yfinance). Llamarlo directo desde un
+    # `async def` bloquea el event loop y CONGELA el servidor entero mientras dura —
+    # y este endpoint lo sondea cada tab abierta cada 30 s como respaldo del WebSocket.
+    q = await asyncio.to_thread(market_data.get_quote, sym)
     if not q:
         raise HTTPException(404, f"No se encontraron datos para '{sym}'")
     _cache.set(f"quote:{sym}", q, ttl=30)  # 30s — precio casi en tiempo real
@@ -602,7 +629,7 @@ async def get_chart(symbol: str, timeframe: str = "1Y"):
     cached = _cache.get(f"chart:{sym}:{timeframe}")
     if cached:
         return cached
-    df = market_data.get_stock_data(sym, timeframe=timeframe)
+    df = await asyncio.to_thread(market_data.get_stock_data, sym, timeframe=timeframe)
     if df is None or df.empty:
         raise HTTPException(404, f"No hay datos históricos para '{sym}'")
     candles = market_data.df_to_candles(df)
@@ -814,7 +841,7 @@ async def get_news(symbol: str):
     cached = _cache.get(f"news:{sym}")
     if cached:
         return cached
-    result = {"symbol": sym, "items": market_data.get_news(sym)}
+    result = {"symbol": sym, "items": await asyncio.to_thread(market_data.get_news, sym)}
     _cache.set(f"news:{sym}", result, ttl=1800)  # 30 min — noticias no cambian tan rápido
     return result
 
@@ -1361,7 +1388,7 @@ async def analyze(req: AnalyzeRequest, _user: str = Depends(auth.get_current_use
     trends, price_target, vp, insider, earnings_hist, basic_fin, news, earnings_cal = await asyncio.gather(
         loop.run_in_executor(None, external_data.finnhub_recommendation_trends, symbol),
         loop.run_in_executor(None, external_data.finnhub_price_target, symbol),
-        loop.run_in_executor(None, polygon_data.get_volume_profile, symbol, 365),
+        loop.run_in_executor(None, _cached_vp, symbol, 365),
         loop.run_in_executor(None, external_data.finnhub_insider_transactions, symbol),
         loop.run_in_executor(None, external_data.finnhub_earnings_surprises, symbol),
         loop.run_in_executor(None, external_data.finnhub_basic_financials, symbol),
@@ -1758,14 +1785,22 @@ async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
             _cache.set(ck, v, ttl=14400)
         return v
 
+    # Las noticias YA se cachean 30 min (las escribe este mismo endpoint más abajo y
+    # /api/news/{sym}), pero aquí no se leía: se volvían a descargar en cada carga.
+    def _cached_news(s):
+        v = _cache.get(f"news:{s}")
+        if v is not None:
+            return v.get("items") if isinstance(v, dict) else v
+        return market_data.get_news(s)
+
     results = await asyncio.gather(
         _timed("quote", market_data.get_quote, sym),
         _timed("chart", partial(market_data.get_stock_data, sym, timeframe=timeframe)),
         _timed("indicators", market_data.get_full_indicator_history, sym),
-        _timed("news", market_data.get_news, sym),
+        _timed("news", _cached_news, sym),
         _timed("trends", _cached_trends, sym),
         _timed("price_target", _cached_price_target, sym),
-        _timed("vp", partial(polygon_data.get_volume_profile, sym, 365)),
+        _timed("vp", _cached_vp, sym),
         # Histórico del índice para la Fuerza Relativa. No es una fuente nueva de verdad: es
         # el mismo SPY que ya descarga y cachea el semáforo de mercado, así que casi siempre
         # sale de caché. Va en el gather para que, cuando toque bajarlo, no alargue la carga.
@@ -2225,13 +2260,22 @@ def _clean_source(sender: str, subject: str) -> str:
     return (subject or "Newsletter")[:40]
 
 
+# Campos que realmente se leen de newsletter_summaries. `{"_id": 0}` NO es una proyección
+# restrictiva: quita el _id y trae TODO lo demás, incluido el cuerpo crudo del email, que es
+# lo gordo. Medido: ~3,6 MB por consulta, tres veces (aquí, en /fuentes y en /radar), y
+# /fuentes está en el camino de cada cambio de ticker. Pidiendo solo estos cuatro campos
+# viajan unos pocos KB.
+_PROYECCION_NEWSLETTER = {"_id": 0, "received_at": 1, "sender": 1, "subject": 1,
+                          "extracted": 1}
+
+
 async def _mentions_by_ticker(days: int = 30) -> dict:
     """Mapa ticker → {menciones, positivos, negativos, fuentes} desde lo que dicen tus
     fuentes (Telegram + newsletters) en los últimos `days` días."""
     from datetime import timedelta
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     docs = await db.newsletter_summaries.find(
-        {"received_at": {"$gte": cutoff}}, {"_id": 0}
+        {"received_at": {"$gte": cutoff}}, _PROYECCION_NEWSLETTER
     ).sort("received_at", -1).to_list(300)
     out: dict = {}
     for d in docs:
@@ -2263,7 +2307,7 @@ async def fuentes_de_accion(symbol: str, days: int = 30,
     sym = symbol.strip().upper()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     docs = await db.newsletter_summaries.find(
-        {"received_at": {"$gte": cutoff}}, {"_id": 0}
+        {"received_at": {"$gte": cutoff}}, _PROYECCION_NEWSLETTER
     ).sort("received_at", -1).to_list(300)
     menciones, pos, neg = [], 0, 0
     for d in docs:
@@ -2295,7 +2339,7 @@ async def radar(days: int = 14):
     from datetime import timedelta
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     docs = await db.newsletter_summaries.find(
-        {"received_at": {"$gte": cutoff}}, {"_id": 0}
+        {"received_at": {"$gte": cutoff}}, _PROYECCION_NEWSLETTER
     ).sort("received_at", -1).to_list(200)
 
     # 1) Feed de información
@@ -3678,11 +3722,17 @@ async def ws_quote(websocket: WebSocket, symbol: str, token: str = ""):
         await websocket.close(code=1008)
         return
     sym = symbol.upper()
+    # try/finally, no try/except: si connect() registra el socket y falla DESPUÉS (al
+    # arrancar el bucle de sondeo, por ejemplo), o si la tarea se cancela —apagado del
+    # servidor, timeout—, el except no se ejecuta y el símbolo se queda con un suscriptor
+    # fantasma sondeando cuota de Finnhub para nadie, hasta reiniciar el proceso.
     await _quote_manager.connect(sym, websocket)
     try:
         while True:
             await websocket.receive_text()
     except (WebSocketDisconnect, Exception):
+        pass
+    finally:
         _quote_manager.disconnect(sym, websocket)
 
 

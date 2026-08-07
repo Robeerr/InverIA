@@ -670,7 +670,11 @@ def get_index_quote(symbol: str):
     """Lightweight quote for indices/futures (e.g. ES=F) via yfinance fast_info —
     bypasses the Finnhub path, which doesn't cover futures. Futures trade ~24h, so
     this works before the equity pre-market opens."""
-    try:
+    # Mismo tope que get_quote. `fast_info` y `.info` abren red y yfinance NO respeta
+    # timeouts: cuando Yahoo estrangula se cuelgan indefinidamente. Este get_index_quote se
+    # quedó sin acotar cuando se arreglaron los 8,7 s de la cotización — y alimenta la barra
+    # de futuros de la portada, o sea el primer bloqueo que vería alguien al entrar.
+    def _leer():
         t = _ticker(symbol)
         try:
             fast = t.fast_info
@@ -685,6 +689,10 @@ def get_index_quote(symbol: str):
                 info = {}
             last = info.get("regularMarketPrice")
             prev = prev or info.get("previousClose")
+        return last, prev
+
+    try:
+        last, prev = _call_with_timeout(_leer, _ENRICH_TIMEOUT, (None, None))
         if last is None:
             return None
         change_pct = None

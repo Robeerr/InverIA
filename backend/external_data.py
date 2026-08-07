@@ -38,6 +38,22 @@ def _ext_cache_set(key: str, val):
             _ext_cache.pop(next(iter(_ext_cache)), None)
 
 
+# Caché de FALLOS. Sin esto, un símbolo que Finnhub no cubre (o que devuelve 429) paga la
+# latencia completa —limitador + red— en CADA carga, para siempre, y encima gasta cuota que
+# le hace falta a los símbolos que sí funcionan. 5 minutos: corto para que un fallo pasajero
+# se reintente pronto, largo para que no duela en un rato de navegación.
+_TTL_FALLO = 300
+
+
+def _marcar_fallo(key: str):
+    _ext_cache_set(f"neg:{key}", True)
+
+
+def _fallo_reciente(key: str) -> bool:
+    _, hit = _ext_cache_get(f"neg:{key}", _TTL_FALLO)
+    return hit
+
+
 def _finnhub_key():
     return os.environ.get("FINNHUB_API_KEY")
 
@@ -83,12 +99,15 @@ def finnhub_recommendation_trends(symbol: str):
     cached, hit = _ext_cache_get(f"trends:{sym}", 14400)
     if hit:
         return cached
+    if _fallo_reciente(f"trends:{sym}"):
+        return None
     key = _finnhub_key()
     if not key:
         return None
     try:
         r = _finnhub_get("/stock/recommendation", {"symbol": sym, "token": key})
         if r.status_code != 200:
+            _marcar_fallo(f"trends:{sym}")
             return None
         data = (r.json() or [])[:4]
         _ext_cache_set(f"trends:{sym}", data)
@@ -349,15 +368,19 @@ def finnhub_price_target(symbol: str):
     cached, hit = _ext_cache_get(f"price_target:{sym}", 14400)
     if hit:
         return cached
+    if _fallo_reciente(f"price_target:{sym}"):
+        return None
     key = _finnhub_key()
     if not key:
         return None
     try:
         r = _finnhub_get("/stock/price-target", {"symbol": symbol.upper(), "token": key})
         if r.status_code != 200:
+            _marcar_fallo(f"price_target:{sym}")
             return None
         d = r.json() or {}
         if not d.get("targetMean"):
+            _marcar_fallo(f"price_target:{sym}")
             return None
         result = {
             "target_mean": d.get("targetMean"),
