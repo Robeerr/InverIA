@@ -636,6 +636,11 @@ def get_quote(ticker: str) -> Optional[dict]:
     return {
         "symbol": ticker.upper(),
         "name": info.get("longName") or info.get("shortName") or ticker.upper(),
+        # De DÓNDE sale el precio. Importa: Finnhub da cotización en tiempo real de EE.UU.,
+        # pero cuando devuelve 429 se cae a Yahoo, que para muchos mercados va con retraso.
+        # Sin esta marca los dos precios se pintan igual y no habría forma de distinguirlos.
+        "fuente_precio": "finnhub" if finnhub_data else "yfinance",
+        "precio_en_directo": bool(finnhub_data),
         "price": round(float(last_price), 2),
         "previous_close": _r(prev_close),
         "open": _r(open_price),

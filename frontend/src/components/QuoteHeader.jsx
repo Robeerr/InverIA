@@ -120,6 +120,16 @@ export default function QuoteHeader({ quote }) {
               {up ? "+" : ""}{fmtPrice(quote.change)} ({fmtPct(quote.change_percent)})
             </span>
           </div>
+          {/* Solo se avisa cuando el precio NO viene de la fuente en directo. En condiciones
+              normales no aparece nada: un sello de "en directo" permanente se vuelve ruido y
+              se deja de mirar, justo hasta el día en que importa. */}
+          {quote.precio_en_directo === false && (
+            <span data-testid="quote-fuente"
+                  title="Finnhub no respondió (cuota) y el precio viene de la fuente de respaldo, que puede ir con retraso. Se corrige solo en unos segundos."
+                  className="font-mono text-[10px] uppercase tracking-wider text-[#8a6508] bg-[#c9a14a]/15 rounded px-1.5 py-0.5">
+              ⚠ precio de respaldo
+            </span>
+          )}
           {(() => {
             // Pre-market / after-hours: precio y % fuera de sesión (como en la watchlist).
             const st = quote.market_state;
