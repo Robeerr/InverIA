@@ -70,6 +70,19 @@ class _FinnhubLimiter:
         self.calls = []
         self.lock = threading.Lock()
 
+    def uso_ultimo_minuto(self) -> int:
+        """Llamadas gastadas en los últimos 60 s. Para que una tarea de fondo pueda MIRAR
+        cómo está la cuota antes de gastarla, en vez de descubrirlo bloqueándose.
+
+        El tope bg_cap ya impide que el fondo se pase, pero no impide algo más sutil: que
+        el fondo llene la ventana justo cuando el usuario está navegando. Entonces sus
+        llamadas —que sí pueden llegar a max_per_min— se quedan esperando al limitador, y
+        una carga de 500 ms se convierte en 5 s. Medido en producción con 49/50 gastadas.
+        """
+        with self.lock:
+            ahora = time.time()
+            return len([t for t in self.calls if ahora - t < 60])
+
     def acquire(self, max_wait: float = None) -> bool:
         """Reserva un hueco. Devuelve True si lo consigue.
 

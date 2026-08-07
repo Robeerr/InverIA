@@ -18,6 +18,20 @@ import server  # noqa: E402
 import market_data as md  # noqa: E402
 
 
+
+def _cuerpo_del_precalentado() -> str:
+    """Codigo de _prewarm_dashboards, delimitado por sus marcas de inicio y fin.
+
+    Antes se cortaba a 3.000 caracteres: al documentar un cambio, el comentario empujaba
+    el codigo fuera del trozo y el test fallaba sin que nada estuviera roto.
+    """
+    import inspect
+    src = inspect.getsource(server)
+    ini = src.index("async def _prewarm_dashboards")
+    fin = src.index("asyncio.create_task(_prewarm_dashboards", ini)
+    return src[ini:fin]
+
+
 # ── Que la caché que se calienta sea la que se pide ──────────────────────────
 
 def test_se_calienta_el_mismo_timeframe_que_pide_la_web():
@@ -140,10 +154,7 @@ def test_el_precalentado_del_chartista_usa_los_mismos_simbolos():
 def test_el_precalentado_cubre_los_paneles_que_se_cargan_solos():
     """No basta con calentar el dashboard: 'Tus fuentes' (~985 ms) y 'Backtest' (~900 ms)
     se piden solos al elegir una accion y eran el grueso de la espera."""
-    import inspect
-    src = inspect.getsource(server)
-    ini = src.index("async def _prewarm_dashboards")
-    cuerpo = src[ini:ini + 3000]
+    cuerpo = _cuerpo_del_precalentado()
     assert "backtest_levels(" in cuerpo, "el Backtest se paga entero en la primera visita"
     assert "_newsletters_recientes(" in cuerpo, "'Tus fuentes' se paga entero en la primera visita"
 
@@ -169,3 +180,44 @@ def test_los_tickers_se_normalizan_al_guardar():
     import newsletter_ingest
     src = inspect.getsource(newsletter_ingest)
     assert 'a["ticker"] = t' in src, "el ticker debe quedar normalizado en el documento"
+
+
+# ── Ceder el paso al usuario ─────────────────────────────────────────────────
+# Medido en produccion: con la cuota en 49/50, una carga que normalmente son ~500 ms se fue
+# a 5.043 ms. Las fuentes costaban 309 ms; el resto era esperar al limitador de Finnhub.
+# bg_cap impide que el fondo se PASE, pero no impide que llene la ventana justo mientras
+# alguien navega — y entonces las llamadas del usuario, que si pueden llegar a max_per_min,
+# se quedan haciendo cola detras.
+
+def test_hay_umbral_para_apartarse():
+    lim = md.get_finnhub_limiter()
+    assert server.PREWARM_UMBRAL_CUOTA < lim.max_per_min, (
+        "un umbral igual o mayor que el tope no se alcanza nunca: no aparta nada")
+    # Tiene que dejar sitio suficiente para que una carga completa no espere al limitador.
+    libres = lim.max_per_min - server.PREWARM_UMBRAL_CUOTA
+    assert libres >= 20, (
+        f"solo deja {libres} llamadas libres: una carga hace varias y acabaria esperando")
+
+
+def test_el_precalentado_mira_la_cuota_antes_de_gastarla():
+    cuerpo = _cuerpo_del_precalentado()
+    assert "uso_ultimo_minuto()" in cuerpo, (
+        "el precalentado debe consultar la cuota ANTES de gastarla, no descubrir que no "
+        "hay bloqueandose")
+    assert "PREWARM_UMBRAL_CUOTA" in cuerpo
+
+
+def test_el_limitador_sabe_decir_cuanto_lleva_gastado():
+    lim = md._FinnhubLimiter(max_per_min=50)
+    assert lim.uso_ultimo_minuto() == 0
+    ahora = md.time.time()
+    lim.calls = [ahora - 5, ahora - 10, ahora - 90]   # el de 90 s ya no cuenta
+    assert lim.uso_ultimo_minuto() == 2
+
+
+def test_mirar_la_cuota_no_la_gasta():
+    """Consultarla no debe reservar hueco: seria contraproducente."""
+    lim = md._FinnhubLimiter(max_per_min=50)
+    for _ in range(5):
+        lim.uso_ultimo_minuto()
+    assert lim.uso_ultimo_minuto() == 0

@@ -115,6 +115,10 @@ DASHBOARD_PREWARM_CADENCIA = int(os.environ.get("DASHBOARD_PREWARM_CADENCIA", 12
 # fondo; a 4 s son 15/min, que deja margen para el worker de señales y no compite con quien
 # esté navegando en ese momento.
 DASHBOARD_PREWARM_PAUSA = float(os.environ.get("DASHBOARD_PREWARM_PAUSA", 4.0))
+# Por encima de esta ocupación de la ventana de Finnhub, el precalentado se aparta: da por
+# hecho que hay alguien navegando y que ese alguien necesita la cuota más que él. La mitad
+# del tope total deja margen de sobra para que una carga no espere al limitador.
+PREWARM_UMBRAL_CUOTA = int(os.environ.get("PREWARM_UMBRAL_CUOTA", 25))
 # El mismo timeframe que pide el Dashboard al abrirse (frontend: TIMEFRAME_BASE). Si no
 # coinciden, se calienta una clave que nadie pide después.
 _TIMEFRAME_PREWARM = "1D"
@@ -386,6 +390,26 @@ async def lifespan(app: FastAPI):
                     syms = await _simbolos_que_te_importan()
                     calentados = 0
                     for sym in list(syms)[:DASHBOARD_PREWARM_MAX]:
+                        # CEDER EL PASO. Medido en producción: con la cuota en 49/50, una
+                        # carga que normalmente son ~500 ms se fue a 5.043 ms, porque cada
+                        # llamada de Finnhub esperaba al limitador y un dashboard hace
+                        # varias. El tope bg_cap impide que el fondo se PASE, pero no impide
+                        # que llene la ventana justo mientras alguien navega.
+                        #
+                        # Adelantar trabajo por si acaso nunca justifica frenar el que se
+                        # está pidiendo ahora. Si hay actividad, este ciclo se deja para la
+                        # próxima vuelta — y si estás navegando tanto, tus propias visitas
+                        # ya están calentando la caché de todos modos.
+                        try:
+                            uso = market_data.get_finnhub_limiter().uso_ultimo_minuto()
+                        except Exception:
+                            uso = 0
+                        if uso > PREWARM_UMBRAL_CUOTA:
+                            logger.info(
+                                "Precalentado en pausa: %d/%d llamadas en el último minuto "
+                                "(hay alguien navegando); se reanuda en la próxima vuelta",
+                                uso, market_data.get_finnhub_limiter().max_per_min)
+                            break
                         clave = f"dashboard:{sym}:{_TIMEFRAME_PREWARM}"
                         # Si sigue FRESCA no se toca: quien la pida no va a ir al servidor.
                         _, fresco = _cache.get_stale(clave, max_age=_DASHBOARD_STALE_MAX)
