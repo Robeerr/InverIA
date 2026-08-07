@@ -191,12 +191,37 @@ def test_los_tickers_se_normalizan_al_guardar():
 
 def test_hay_umbral_para_apartarse():
     lim = md.get_finnhub_limiter()
-    assert server.PREWARM_UMBRAL_CUOTA < lim.max_per_min, (
+    umbral = server._umbral_prewarm()
+    assert umbral < lim.max_per_min, (
         "un umbral igual o mayor que el tope no se alcanza nunca: no aparta nada")
-    # Tiene que dejar sitio suficiente para que una carga completa no espere al limitador.
-    libres = lim.max_per_min - server.PREWARM_UMBRAL_CUOTA
-    assert libres >= 20, (
+    # Tiene que dejar sitio para que una carga completa no espere al limitador.
+    libres = lim.max_per_min - umbral
+    assert libres >= 10, (
         f"solo deja {libres} llamadas libres: una carga hace varias y acabaria esperando")
+
+
+def test_el_precalentado_no_se_para_a_si_mismo():
+    """El fallo que tuvo la primera version: el umbral estaba en 25, exactamente el techo
+    de las tareas de fondo (bg_cap). El precalentado gasta 15 llamadas/min el solo; sumando
+    el resto del fondo se llegaba al techo, y entonces se detenia creyendo que habia alguien
+    navegando — cuando ese alguien era el. Calentaba dos o tres simbolos y abandonaba.
+
+    Estando el umbral POR ENCIMA de bg_cap, superarlo implica por fuerza llamadas de primer
+    plano, porque el fondo no puede pasar de ahi. Que es justo lo que se quiere detectar."""
+    lim = md.get_finnhub_limiter()
+    assert server._umbral_prewarm() > lim.bg_cap, (
+        f"umbral {server._umbral_prewarm()} contra un techo de fondo de {lim.bg_cap}: "
+        "las propias tareas de fondo lo disparan y el precalentado se apaga solo")
+
+
+def test_el_umbral_se_deriva_del_limitador():
+    """Si fuera un numero suelto, cambiar bg_cap volveria a romper la relacion en silencio."""
+    original = md._finnhub_limiter
+    try:
+        md._finnhub_limiter = md._FinnhubLimiter(max_per_min=200, bg_reserve=100)
+        assert server._umbral_prewarm() > md._finnhub_limiter.bg_cap
+    finally:
+        md._finnhub_limiter = original
 
 
 def test_el_precalentado_mira_la_cuota_antes_de_gastarla():
@@ -204,7 +229,7 @@ def test_el_precalentado_mira_la_cuota_antes_de_gastarla():
     assert "uso_ultimo_minuto()" in cuerpo, (
         "el precalentado debe consultar la cuota ANTES de gastarla, no descubrir que no "
         "hay bloqueandose")
-    assert "PREWARM_UMBRAL_CUOTA" in cuerpo
+    assert "_umbral_prewarm()" in cuerpo
 
 
 def test_el_limitador_sabe_decir_cuanto_lleva_gastado():

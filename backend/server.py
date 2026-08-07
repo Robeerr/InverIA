@@ -115,10 +115,22 @@ DASHBOARD_PREWARM_CADENCIA = int(os.environ.get("DASHBOARD_PREWARM_CADENCIA", 12
 # fondo; a 4 s son 15/min, que deja margen para el worker de señales y no compite con quien
 # esté navegando en ese momento.
 DASHBOARD_PREWARM_PAUSA = float(os.environ.get("DASHBOARD_PREWARM_PAUSA", 4.0))
-# Por encima de esta ocupación de la ventana de Finnhub, el precalentado se aparta: da por
-# hecho que hay alguien navegando y que ese alguien necesita la cuota más que él. La mitad
-# del tope total deja margen de sobra para que una carga no espere al limitador.
-PREWARM_UMBRAL_CUOTA = int(os.environ.get("PREWARM_UMBRAL_CUOTA", 25))
+# Cuánta ocupación de la ventana de Finnhub hace que el precalentado se aparte.
+#
+# NO es un número suelto: se deriva de bg_cap, el techo de las tareas de FONDO. Tiene que
+# quedar POR ENCIMA, o el precalentado se para a sí mismo — gasta 15 llamadas/min, el resto
+# del fondo llega al techo, y con el umbral en ese mismo techo se detendría creyendo que hay
+# alguien navegando cuando ese alguien es él. Puesto a 25 (= bg_cap) calentaba dos o tres
+# símbolos por vuelta y abandonaba.
+#
+# Estando por encima, superarlo implica por fuerza llamadas de PRIMER plano —el fondo no
+# puede pasar de bg_cap—, que es justo la señal que se quiere detectar.
+PREWARM_MARGEN_CUOTA = int(os.environ.get("PREWARM_MARGEN_CUOTA", 10))
+
+
+def _umbral_prewarm() -> int:
+    """Se calcula en cada vuelta para que siga siendo correcto si cambia el limitador."""
+    return market_data.get_finnhub_limiter().bg_cap + PREWARM_MARGEN_CUOTA
 # El mismo timeframe que pide el Dashboard al abrirse (frontend: TIMEFRAME_BASE). Si no
 # coinciden, se calienta una clave que nadie pide después.
 _TIMEFRAME_PREWARM = "1D"
@@ -404,11 +416,13 @@ async def lifespan(app: FastAPI):
                             uso = market_data.get_finnhub_limiter().uso_ultimo_minuto()
                         except Exception:
                             uso = 0
-                        if uso > PREWARM_UMBRAL_CUOTA:
+                        if uso > _umbral_prewarm():
                             logger.info(
                                 "Precalentado en pausa: %d/%d llamadas en el último minuto "
-                                "(hay alguien navegando); se reanuda en la próxima vuelta",
-                                uso, market_data.get_finnhub_limiter().max_per_min)
+                                "(umbral %d — hay alguien navegando); se reanuda en la "
+                                "próxima vuelta",
+                                uso, market_data.get_finnhub_limiter().max_per_min,
+                                _umbral_prewarm())
                             break
                         clave = f"dashboard:{sym}:{_TIMEFRAME_PREWARM}"
                         # Si sigue FRESCA no se toca: quien la pida no va a ir al servidor.
