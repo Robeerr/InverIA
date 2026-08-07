@@ -3529,6 +3529,13 @@ class _QuoteManager:
         self._fh_task: asyncio.Task | None = None
         self._fh_ws = None
         self._lock = asyncio.Lock()
+        self._ultimo_tick: dict[str, float] = {}   # símbolo -> instante del último trade
+        self._ultimo_envio: dict[str, float] = {}  # símbolo -> instante del último broadcast
+        self._pendiente: dict[str, dict] = {}      # payloads en espera de agruparse
+        self._suscritos: set = set()               # símbolos pedidos al stream de Finnhub
+
+    # Tope de símbolos con stream. El plan gratuito de Finnhub admite ~50 por conexión.
+    _MAX_SIMBOLOS_STREAM = 45  # margen por debajo del límite real
 
     async def connect(self, symbol: str, ws: WebSocket):
         await ws.accept()
@@ -3543,8 +3550,17 @@ class _QuoteManager:
         if symbol not in self._rest_tasks or self._rest_tasks[symbol].done():
             self._rest_tasks[symbol] = asyncio.create_task(self._baseline_loop(symbol))
         # Ensure the shared Finnhub trade stream is running and subscribe.
+        # Finnhub limita el nº de símbolos por conexión (50 en el plan gratuito). Pasado el
+        # tope, las suscripciones fallan EN SILENCIO: el símbolo 51 parecería conectado y se
+        # quedaría con un precio que no avanza, sin ningún aviso. Mejor no pedirla y dejar
+        # que ese símbolo se sirva por REST, que sí funciona, solo que con menos frecuencia.
+        if len(self._conns) > self._MAX_SIMBOLOS_STREAM and symbol not in self._suscritos:
+            logger.warning("WS: %d símbolos activos, %s se sirve solo por REST",
+                           len(self._conns), symbol)
+            return
         await self._ensure_fh_stream()
         await self._fh_send({"type": "subscribe", "symbol": symbol})
+        self._suscritos.add(symbol)
 
     def disconnect(self, symbol: str, ws: WebSocket):
         conns = self._conns.get(symbol, [])
@@ -3559,13 +3575,22 @@ class _QuoteManager:
             # entrada por cada símbolo distinto visto en toda la vida del proceso (leak lento).
             self._baseline.pop(symbol, None)
             self._last.pop(symbol, None)
+            self._ultimo_tick.pop(symbol, None)
+            self._ultimo_envio.pop(symbol, None)
+            self._pendiente.pop(symbol, None)
             # Defer the Finnhub unsubscribe / stream teardown to a lock-guarded coroutine
             # so it can't race with a concurrent connect (which would spawn a 2nd stream).
-            asyncio.create_task(self._cleanup_symbol(symbol))
+            # La referencia en _bg_tasks no es decorativa: asyncio solo guarda referencias
+            # DÉBILES a las tareas, así que sin esto el recolector puede llevarse la baja a
+            # medias y dejar la suscripción a Finnhub viva para siempre.
+            tarea = asyncio.create_task(self._cleanup_symbol(symbol))
+            _bg_tasks.add(tarea)
+            tarea.add_done_callback(_bg_tasks.discard)
 
     async def _cleanup_symbol(self, symbol: str):
         async with self._lock:
             await self._fh_send({"type": "unsubscribe", "symbol": symbol})
+            self._suscritos.discard(symbol)
             # No clients left at all -> tear down the shared Finnhub stream and wait for
             # it to actually close before allowing a new one to be created.
             if not self._conns and self._fh_task and not self._fh_task.done():
@@ -3604,7 +3629,11 @@ class _QuoteManager:
                     self._fh_ws = ws
                     backoff = 1  # connected -> reset backoff
                     # Re-subscribe every active symbol.
-                    for sym in list(self._conns.keys()):
+                    # Se re-suscribe respetando el tope, no _conns entero: si hay mas
+                    # simbolos que huecos, mandarlos todos hace que Finnhub descarte los
+                    # sobrantes sin decir nada y no habria forma de saber cuales.
+                    self._suscritos = set(list(self._conns.keys())[:self._MAX_SIMBOLOS_STREAM])
+                    for sym in self._suscritos:
                         await ws.send(json.dumps({"type": "subscribe", "symbol": sym}))
                     async for raw in ws:
                         try:
@@ -3626,9 +3655,17 @@ class _QuoteManager:
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30)
 
+    # Agrupado de ticks. Un valor líquido cruza cientos de operaciones por segundo y cada
+    # una era un send_json a CADA cliente conectado. Ni la pantalla puede mostrar eso ni el
+    # ojo distinguirlo: el frontend ya junta los mensajes por fotograma al recibirlos, así
+    # que todo ese tráfico se descartaba nada más llegar. Se manda como mucho 4 veces por
+    # segundo, que se sigue viendo como un precio vivo.
+    _INTERVALO_ENVIO = 0.25
+
     async def _on_trade(self, symbol: str, price):
         if not symbol or price is None or symbol not in self._conns:
             return
+        self._ultimo_tick[symbol] = _time.time()
         base = self._baseline.get(symbol) or {}
         prev = base.get("previous_close")
         change = round(price - prev, 4) if prev else None
@@ -3648,7 +3685,39 @@ class _QuoteManager:
             "day_low": day_low,
             "previous_close": prev,
         }
+        # El último precio siempre queda guardado (para el snapshot de quien se conecte),
+        # pero solo se emite si toca. Si no toca, queda pendiente y lo manda el siguiente
+        # tick que sí entre en ventana — nunca se pierde el precio, solo los intermedios.
+        self._last[symbol] = payload
+        ahora = _time.time()
+        restante = self._INTERVALO_ENVIO - (ahora - self._ultimo_envio.get(symbol, 0.0))
+        if restante > 0:
+            # Queda pendiente Y se programa su envío. Sin lo segundo, si este resultara ser
+            # el último trade antes de una pausa, ese precio no llegaría nunca: la pantalla
+            # se quedaría clavada en el anterior sin que nada lo delatara.
+            hay_espera = symbol in self._pendiente
+            self._pendiente[symbol] = payload
+            if not hay_espera:
+                tarea = asyncio.create_task(self._enviar_pendiente(symbol, restante))
+                _bg_tasks.add(tarea)
+                tarea.add_done_callback(_bg_tasks.discard)
+            return
+        self._pendiente.pop(symbol, None)
+        self._ultimo_envio[symbol] = ahora
         await self._broadcast(symbol, payload)
+
+    async def _enviar_pendiente(self, symbol: str, espera: float):
+        try:
+            await asyncio.sleep(espera)
+            payload = self._pendiente.pop(symbol, None)
+            if payload is None or symbol not in self._conns:
+                return
+            self._ultimo_envio[symbol] = _time.time()
+            await self._broadcast(symbol, payload)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
 
     # ----- REST baseline / fallback loop -----
     async def _baseline_loop(self, symbol: str):
@@ -3683,7 +3752,33 @@ class _QuoteManager:
                     await self._broadcast(symbol, payload)
             except Exception:
                 pass
-            await asyncio.sleep(15)  # light: 4 REST calls/min per symbol
+            await asyncio.sleep(self._espera_baseline(symbol))
+
+    # Cadencia del bucle REST. Antes era 15 s fijos: 4 llamadas/min por símbolo, las 24
+    # horas, sábados incluidos. Con una pestaña abierta toda la tarde son ~5.700 llamadas
+    # al día por símbolo, gastadas en su mayoría reconsultando un precio que no se mueve
+    # porque el mercado está cerrado, o que ya está llegando por el stream de trades.
+    #
+    # Este bucle NO es la fuente del precio en directo; es la red de seguridad. Su cadencia
+    # debe depender de si hace falta:
+    _ESPERA_CERRADO = 300.0   # mercado cerrado: nada se mueve, solo refrescar el cierre
+    _ESPERA_STREAM = 60.0     # abierto y con ticks llegando: el stream ya da el precio
+    _ESPERA_SOLO_REST = 15.0  # abierto y sin stream: aquí sí es la única fuente
+    # Un símbolo se considera "con stream vivo" si ha dado un trade hace poco. Margen amplio
+    # a propósito: un valor poco líquido puede pasar un minuto sin cruzar una sola operación
+    # y seguir perfectamente conectado.
+    _MARGEN_TICK = 120.0
+
+    def _espera_baseline(self, symbol: str) -> float:
+        try:
+            if not alerts_worker.is_market_open():
+                return self._ESPERA_CERRADO
+        except Exception:
+            return self._ESPERA_SOLO_REST  # ante la duda, la cadencia segura
+        ultimo = self._ultimo_tick.get(symbol)
+        if ultimo and (_time.time() - ultimo) < self._MARGEN_TICK:
+            return self._ESPERA_STREAM
+        return self._ESPERA_SOLO_REST
 
     async def _broadcast(self, symbol: str, payload: dict):
         self._last[symbol] = payload
