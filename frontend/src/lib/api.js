@@ -104,7 +104,11 @@ export const api = {
     vender: (payload) => client.post(`/cartera/ventas`, payload).then((r) => r.data),
     borrarCompra: (id) => client.delete(`/cartera/compras/${id}`).then((r) => r.data),
     borrarVenta: (id) => client.delete(`/cartera/ventas/${id}`).then((r) => r.data),
-    importar: () => client.post(`/cartera/importar-posiciones`).then((r) => r.data),
+    // `reemplazar` rehace las posiciones ya importadas: sirve cuando la primera vez salió
+    // mal y borrar los lotes a mano serían decenas de clics. Nunca toca las que ya tienen
+    // ventas registradas.
+    importar: (reemplazar = false) =>
+      client.post(`/cartera/importar-posiciones`, null, { params: { reemplazar } }).then((r) => r.data),
   },
   alerts: {
     create: (payload) => client.post(`/alerts`, payload).then((r) => r.data),

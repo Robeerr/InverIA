@@ -2296,22 +2296,31 @@ async def historial_ventas(_user: str = Depends(auth.get_current_user)):
 @api_router.get("/cartera/resumen")
 async def resumen_cartera(_user: str = Depends(auth.get_current_user)):
     """P&L de la cartera entera en EUROS: latente por posición + realizado."""
-    # Los precios salen de la lista de señales, que ya los tiene y va cacheada: pedirlos
-    # otra vez aquí sería gastar cuota de Finnhub para repetir un dato que está a mano.
+    # Los precios salen de la Cartera, donde el worker escribe last_price cada 60 s. Antes
+    # se leían de la caché en memoria de /signals, y si estaba vacía —proceso recién
+    # arrancado, o nadie había abierto la Cartera todavía— NINGUNA posición se podía
+    # valorar y la pantalla salía entera a "—". Leerlo de la base de datos no gasta cuota
+    # de Finnhub y no depende de que otra pantalla se haya visitado antes.
     precios = {}
     try:
-        for e in (_cache.get("signals_list") or []):
+        for e in await signal_table.list_entries(db):
             if e.get("symbol") and e.get("last_price") is not None:
                 precios[e["symbol"].upper()] = e["last_price"]
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("No se pudieron leer los precios para el resumen: %s", exc)
     return await cartera_api.resumen_cartera(db, precios)
 
 
 @api_router.post("/cartera/importar-posiciones")
-async def importar_posiciones(_user: str = Depends(auth.get_current_user)):
-    """Crea un lote inicial por cada posición que ya tenías, para no empezar de cero."""
-    return await cartera_api.importar_posiciones_existentes(db)
+async def importar_posiciones(reemplazar: bool = False,
+                              _user: str = Depends(auth.get_current_user)):
+    """Reconstruye los lotes de cada posición que ya tenías, para no empezar de cero.
+
+    Con `reemplazar=true` rehace las que ya se importaron — útil si la primera vez salió mal.
+    Nunca toca un símbolo que ya tenga ventas: borrar sus compras dejaría esas ventas sin
+    coste y su ganancia sería falsa.
+    """
+    return await cartera_api.importar_posiciones_existentes(db, reemplazar=reemplazar)
 
 
 @api_router.get("/fx/{divisa}")

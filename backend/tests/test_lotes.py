@@ -373,14 +373,16 @@ def test_con_un_solo_nivel_va_todo_ahi_al_precio_medio():
 
 
 def test_con_tres_o_mas_niveles_se_estima_y_se_dice():
-    """Hay infinitos repartos que dan el mismo precio medio. Presentar uno como si fuera
-    el bueno falsearia la ganancia de cada venta futura."""
+    """Hay varios repartos que dan el mismo precio medio. Presentar uno como si fuera EL
+    bueno falsearia la ganancia de cada venta futura, asi que se marca como no exacto."""
     e = _pos(9, 200.0, n1=(220.0, False), n2=(200.0, False), n3=(180.0, False))
     plan = lotes.plan_importacion(e)
     assert plan["exacto"] is False
     assert len(plan["lotes"]) == 3
-    assert all(l["acciones"] == 3.0 for l in plan["lotes"]), "a partes iguales"
-    assert "corregirlo" in plan["motivo"]
+    # Aqui el medio real (200) coincide con la media de los niveles, asi que el reparto mas
+    # equilibrado que la reproduce ES el equitativo.
+    assert all(l["acciones"] == pytest.approx(3.0) for l in plan["lotes"])
+    assert "Revisalo" in plan["motivo"].replace("í", "i")
 
 
 def test_si_el_precio_medio_no_encaja_entre_los_niveles_se_dice(monkeypatch):
@@ -472,3 +474,40 @@ def test_las_compras_fuera_de_niveles_no_encienden_nada():
     entry = {"alert_nivel1": True}
     compras = [{"nivel": None}]
     assert lotes.estado_niveles(entry, compras, []) == {}
+
+
+def test_con_tres_o_mas_niveles_el_reparto_reproduce_tu_precio_medio():
+    """El fallo que se vio en produccion: repartir a partes iguales daba el coste de la
+    media de los NIVELES (166,20 $) en vez del que se pago de verdad (142,43 $). El total de
+    acciones y el precio medio son datos ciertos; un reparto que no los reproduce esta mal."""
+    e = _pos(30, 142.43, n1=(200.0, False), n2=(170.0, False), n3=(150.0, False),
+             n4=(140.0, False), n5=(120.0, False))
+    plan = lotes.plan_importacion(e)
+    assert len(plan["lotes"]) == 5
+    acciones = sum(l["acciones"] for l in plan["lotes"])
+    coste = sum(l["acciones"] * l["precio"] for l in plan["lotes"])
+    assert acciones == pytest.approx(30.0), "el total de acciones no puede cambiar"
+    assert coste / acciones == pytest.approx(142.43, abs=0.01), "debe cuadrar tu medio"
+
+
+def test_el_reparto_carga_mas_donde_compraste_mas_barato():
+    """Si tu medio esta por debajo de la media de los niveles, es que compraste mas abajo."""
+    e = _pos(30, 130.0, n1=(200.0, False), n2=(150.0, False), n3=(100.0, False))
+    plan = lotes.plan_importacion(e)
+    por_precio = {l["precio"]: l["acciones"] for l in plan["lotes"]}
+    assert por_precio[100.0] > por_precio[200.0]
+
+
+def test_si_la_media_es_inalcanzable_se_dice_en_vez_de_colar_negativos():
+    """Un reparto con acciones negativas es imposible; mejor admitirlo."""
+    e = _pos(10, 500.0, n1=(200.0, False), n2=(150.0, False), n3=(100.0, False))
+    plan = lotes.plan_importacion(e)
+    assert all(l["acciones"] > 0 for l in plan["lotes"])
+    assert "no se puede llegar a" in plan["motivo"]
+
+
+def test_el_reparto_de_tres_o_mas_sigue_marcado_como_no_exacto():
+    """Reproduce tu media, pero no es el unico reparto que lo hace: sigue habiendo que
+    revisarlo, y decir 'exacto' invitaria a no hacerlo."""
+    e = _pos(30, 142.43, n1=(200.0, False), n2=(150.0, False), n3=(100.0, False))
+    assert lotes.plan_importacion(e)["exacto"] is False

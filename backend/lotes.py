@@ -252,15 +252,42 @@ def plan_importacion(entry: dict) -> dict:
                            "tu total de acciones y tu precio medio solo admiten un reparto "
                            "posible: este.")}
 
-    # Tres o más: infinitas combinaciones dan el mismo precio medio. Se reparte a partes
-    # iguales, que es la suposición más neutra, y se avisa de que hay que revisarlo.
+    # Tres o más: hay infinitas combinaciones, pero NO todas valen. El total de acciones y
+    # tu precio medio son datos ciertos, y un reparto que no los reproduzca está mal aunque
+    # "parezca razonable": a partes iguales el coste sale el de la media de los NIVELES, que
+    # no es lo que pagaste. (Medido con una posición real: 166,20 $ en vez de 142,43 $.)
+    #
+    # Se parte del reparto a partes iguales y se desplaza lo MÍNIMO necesario para que el
+    # precio medio cuadre. Entre los infinitos repartos válidos se elige el más cercano al
+    # equitativo, que es la suposición más neutra que se puede hacer sin más información.
+    #
+    #   s_i = S/n + λ(p_i − p̄)   con   λ = S(media_real − p̄) / Σ(p_i − p̄)²
     n = len(niveles)
-    por_nivel = total / n
-    lotes = [_lote(x, por_nivel, x["precio"]) for x in niveles]
-    return {"lotes": lotes, "exacto": False,
-            "motivo": (f"Figuran {n} niveles comprados. Con tres o más hay infinitos repartos "
-                       "que dan tu mismo precio medio, así que este es a partes iguales y "
-                       "hay que corregirlo: el reparto cambia la ganancia de cada venta.")}
+    precios = [x["precio"] for x in niveles]
+    p_medio_niveles = sum(precios) / n
+    varianza = sum((p - p_medio_niveles) ** 2 for p in precios)
+
+    if varianza < 1e-9:
+        reparto = [total / n] * n           # todos los niveles al mismo precio
+    else:
+        lam = total * (medio - p_medio_niveles) / varianza
+        reparto = [total / n + lam * (p - p_medio_niveles) for p in precios]
+
+    if any(x < -1e-6 for x in reparto):
+        # Para cuadrar tu media harían falta acciones negativas en algún nivel: los datos no
+        # encajan. Se vuelve al reparto equitativo y se dice que la media no cuadra, en vez
+        # de colar un número imposible.
+        reparto = [total / n] * n
+        aviso = (f"Figuran {n} niveles comprados, pero con sus precios no se puede llegar a "
+                 f"tu precio medio ({medio}). Se reparte a partes iguales: revísalo, porque "
+                 "el reparto cambia la ganancia de cada venta.")
+    else:
+        aviso = (f"Figuran {n} niveles comprados. Con tres o más hay varios repartos posibles; "
+                 "se ha elegido el más equilibrado de los que reproducen tu precio medio "
+                 f"({medio}). Revísalo si sabes cuántas compraste en cada uno.")
+
+    lotes = [_lote(x, r, x["precio"]) for x, r in zip(niveles, reparto)]
+    return {"lotes": lotes, "exacto": False, "motivo": aviso}
 
 
 def nueva_compra(symbol: str, acciones: float, precio: float, fecha: str = None,
@@ -516,14 +543,18 @@ def valorar_abierto(estado: dict, precio_actual, tasa_hoy) -> dict:
     exactamente la diferencia entre lo que ingresarías vendiendo ahora y lo que pusiste.
     """
     n = estado.get("acciones_abiertas") or 0
+    # `acciones` va SIEMPRE con el número real, tambien cuando no se puede valorar. Devolver
+    # 0 aquí hacía que la Cartera enseñara "0 acciones" en posiciones que sí existen: quien
+    # llama mezcla este resultado con el resto de la posición y el 0 pisaba el bueno.
+    _sin_valorar = {"acciones": n, "valor_divisa": None, "coste_divisa": None,
+                    "pnl_divisa": None, "valor_eur": None, "coste_eur": None,
+                    "pnl_eur": None, "pct": None, "pct_eur": None}
     if n <= 1e-9 or precio_actual in (None, ""):
-        return {"acciones": 0, "valor_divisa": None, "pnl_divisa": None,
-                "valor_eur": None, "pnl_eur": None, "pct": None, "pct_eur": None}
+        return _sin_valorar
     try:
         precio_actual = float(precio_actual)
     except (TypeError, ValueError):
-        return {"acciones": n, "valor_divisa": None, "pnl_divisa": None,
-                "valor_eur": None, "pnl_eur": None, "pct": None, "pct_eur": None}
+        return _sin_valorar
 
     valor_divisa = n * precio_actual
     coste_divisa = estado.get("coste_abierto_divisa") or 0

@@ -518,3 +518,26 @@ def test_la_importacion_no_cobra_comision_dos_veces():
     assert db.compras.docs[0]["comision"] == 0
     est = _correr(cartera_api.estado_simbolo(db, "ORCL"))
     assert est["lifo"]["precio_medio"] == pytest.approx(142.43)
+
+
+def test_reimportar_rehace_los_lotes_cuando_la_primera_vez_salio_mal():
+    """Borrar decenas de lotes a mano para repetir una importacion no es razonable."""
+    db = _DB([{"symbol": "FN", "acciones": 10, "compra": 130.0,
+               "nivel1": 200.0, "alert_nivel1": False,
+               "nivel2": 100.0, "alert_nivel2": False}])
+    _correr(cartera_api.importar_posiciones_existentes(db))
+    assert len(db.compras.docs) == 2
+    r = _correr(cartera_api.importar_posiciones_existentes(db, reemplazar=True))
+    assert r["creados"] == 1
+    assert len(db.compras.docs) == 2, "rehace, no acumula"
+
+
+def test_reimportar_NO_toca_un_simbolo_que_ya_tiene_ventas():
+    """Borrar sus compras dejaria esas ventas sin coste y su ganancia seria falsa."""
+    db = _DB([{"symbol": "FN", "acciones": 10, "compra": 130.0}])
+    _correr(cartera_api.importar_posiciones_existentes(db))
+    _correr(cartera_api.registrar_venta(db, "FN", 2, 150.0, fecha="2026-06-01", comision=0))
+    antes = [c["id"] for c in db.compras.docs]
+    r = _correr(cartera_api.importar_posiciones_existentes(db, reemplazar=True))
+    assert r["creados"] == 0 and r["saltados"] == 1
+    assert [c["id"] for c in db.compras.docs] == antes

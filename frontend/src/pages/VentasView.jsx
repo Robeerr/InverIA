@@ -641,7 +641,7 @@ export default function VentasView() {
   });
 
   const importar = useMutation({
-    mutationFn: api.cartera.importar,
+    mutationFn: (reemplazar) => api.cartera.importar(!!reemplazar),
     onSuccess: (r) => {
       if (!r.creados) {
         toast.info("No había posiciones nuevas que importar");
@@ -776,7 +776,7 @@ export default function VentasView() {
               de acciones sale exacto a partir de tu precio medio; con tres o más es una
               estimación y te lo aviso para que la corrijas.
             </p>
-            <button onClick={() => importar.mutate()} disabled={importar.isPending}
+            <button onClick={() => importar.mutate(false)} disabled={importar.isPending}
                     className="border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-3 py-1.5 text-xs font-semibold disabled:opacity-60">
               {importar.isPending ? "Importando…" : "Importar mis posiciones actuales"}
             </button>
@@ -811,7 +811,21 @@ export default function VentasView() {
       {!!resumen?.posiciones?.length && (
         <div className="card-flat overflow-hidden">
           <div className="px-4 py-3 border-b border-[#e5e0d8] dark:border-[#1a3a32] flex items-center justify-between flex-wrap gap-2">
-            <h2 className="font-heading font-bold text-sm">Lo que tienes abierto</h2>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h2 className="font-heading font-bold text-sm">Lo que tienes abierto</h2>
+              {/* Rehacer la importación: si la primera salió con los lotes mal repartidos,
+                  borrarlos uno a uno serían decenas de clics. No toca las acciones que ya
+                  tengan ventas registradas — ahí borrar compras falsearía la ganancia. */}
+              <button onClick={() => window.confirm(
+                        "Se rehacen los lotes de las posiciones importadas, a partir de tus "
+                        + "niveles y tu precio medio actuales.\n\nLas acciones que ya tengan "
+                        + "ventas registradas NO se tocan.\n\n¿Continuar?")
+                        && importar.mutate(true)}
+                      disabled={importar.isPending}
+                      className="text-[11px] text-[#5c6b66] underline disabled:opacity-60">
+                {importar.isPending ? "Rehaciendo…" : "Rehacer la importación"}
+              </button>
+            </div>
             {resumen.tasas && (
               <span className="text-[11px] text-[#5c6b66] font-mono">
                 {Object.entries(resumen.tasas).filter(([d]) => d !== "EUR")

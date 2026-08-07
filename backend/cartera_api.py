@@ -357,10 +357,14 @@ async def resumen_cartera(db, precios: dict) -> dict:
         val = lotes.valorar_abierto(estado, precios.get(sym), tasas.get(divisa))
         posiciones.append({
             "symbol": sym, "divisa": divisa,
+            **val,
             "acciones": estado["acciones_abiertas"],
             "precio_medio": estado["precio_medio"],
             "precio_actual": precios.get(sym),
-            **val,
+            # El coste se sabe siempre; el valor de hoy solo con precio. Se ponen DESPUÉS
+            # de val para que no los pise cuando la posición no se puede valorar.
+            "coste_divisa": estado["coste_abierto_divisa"],
+            "coste_eur": estado["coste_abierto_eur"],
             "niveles_comprados": sorted({c.get("nivel") for c in libro["compras"]
                                          if c.get("nivel")}),
         })
@@ -384,7 +388,7 @@ async def resumen_cartera(db, precios: dict) -> dict:
 
 # ── Migración desde el modelo viejo ──────────────────────────────────────────
 
-async def importar_posiciones_existentes(db) -> dict:
+async def importar_posiciones_existentes(db, reemplazar: bool = False) -> dict:
     """Crea un lote inicial por cada posición de la Cartera que aún no tenga compras.
 
     Sin esto, estrenar el libro dejaría todas las posiciones a cero y parecería que se han
@@ -399,8 +403,15 @@ async def importar_posiciones_existentes(db) -> dict:
             saltados += 1
             continue
         if await db.compras.find_one({"symbol": sym}, {"_id": 0}):
-            saltados += 1
-            continue
+            # Rehacer la importación tiene sentido cuando la primera salió mal (un reparto
+            # que no cuadraba, o niveles mal marcados) y borrar los lotes a mano son decenas
+            # de clics. Pero NO se toca nada si el símbolo ya tiene ventas registradas:
+            # borrar sus compras dejaría esas ventas sin coste y su ganancia sería falsa.
+            if not reemplazar or await db.ventas.find_one({"symbol": sym}, {"_id": 0}):
+                saltados += 1
+                continue
+            for c in await db.compras.find({"symbol": sym}, {"_id": 0}).to_list(1000):
+                await db.compras.delete_one({"id": c["id"]})
         # Las campanitas apagadas dicen EN QUÉ NIVELES se compró, así que en vez de un
         # único lote al precio medio se reconstruyen los lotes de verdad. Ver
         # lotes.plan_importacion: con uno o dos niveles el reparto es exacto.
