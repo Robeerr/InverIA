@@ -14,39 +14,90 @@ function sma(data, period) {
   return out;
 }
 
+// Opciones de aspecto según el modo. Fuera del componente para poder aplicarlas tanto al
+// crear el gráfico como al cambiar de modo, sin duplicar la paleta en dos sitios.
+function opcionesTema(dark) {
+  return {
+    layout: {
+      background: { type: ColorType.Solid, color: dark ? "#0e1f1a" : "#ffffff" },
+      textColor: dark ? "#8fa39b" : "#5c6b66",
+      fontFamily: "ui-monospace, monospace",
+    },
+    grid: {
+      vertLines: { color: dark ? "#1a3a32" : "#f0ece3" },
+      horzLines: { color: dark ? "#1a3a32" : "#f0ece3" },
+    },
+    rightPriceScale: { borderColor: dark ? "#1a3a32" : "#e5e0d8" },
+    timeScale: { borderColor: dark ? "#1a3a32" : "#e5e0d8", timeVisible: true, secondsVisible: false },
+  };
+}
+
+function esOscuro() {
+  return typeof document !== "undefined" && document.documentElement.classList.contains("dark");
+}
+
 // Gráfico PRO con TradingView Lightweight Charts (gratis): velas limpias + SMA + zonas de
-// compra y niveles dibujados con líneas de precio. Fase 1 del rediseño.
+// compra y niveles dibujados con líneas de precio.
+//
+// Se carga en diferido desde el Dashboard (React.lazy), así que la librería viaja en su
+// propio fragmento y no retrasa el primer pintado de la página.
 export default function LightweightChart({ candles, indicators, buyLevels, lines, timeframe, setTimeframe }) {
   const boxRef = useRef(null);
   const chartRef = useRef(null);
+  const seriesRef = useRef([]);   // series de datos, para poder quitarlas sin tirar el gráfico
 
+  // ── El gráfico se crea UNA vez ─────────────────────────────────────────────
+  // Antes se creaba y destruía en cada cambio de velas, niveles, líneas… e `indicators`,
+  // que ni siquiera se usaba aquí dentro: cada análisis de IA reconstruía el gráfico entero
+  // para nada. Recrearlo cuesta un reflow y pierde el zoom y el desplazamiento que el
+  // usuario tuviera puestos.
   useEffect(() => {
     const el = boxRef.current;
-    if (!el || !candles || !candles.length) return;
-    const dark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
-
+    if (!el) return;
     let chart;
     try {
-      chart = createChart(el, {
-        height: 460,
-        layout: {
-          background: { type: ColorType.Solid, color: dark ? "#0e1f1a" : "#ffffff" },
-          textColor: dark ? "#8fa39b" : "#5c6b66",
-          fontFamily: "ui-monospace, monospace",
-        },
-        grid: {
-          vertLines: { color: dark ? "#1a3a32" : "#f0ece3" },
-          horzLines: { color: dark ? "#1a3a32" : "#f0ece3" },
-        },
-        rightPriceScale: { borderColor: dark ? "#1a3a32" : "#e5e0d8" },
-        timeScale: { borderColor: dark ? "#1a3a32" : "#e5e0d8", timeVisible: true, secondsVisible: false },
-        crosshair: { mode: 1 },
-        autoSize: true,
-      });
+      chart = createChart(el, { height: 460, crosshair: { mode: 1 }, autoSize: true,
+                                ...opcionesTema(esOscuro()) });
     } catch (e) {
       return;
     }
     chartRef.current = chart;
+    return () => {
+      try { chart.remove(); } catch (e) {}
+      chartRef.current = null;
+      seriesRef.current = [];
+    };
+  }, []);
+
+  // El modo oscuro se reaplica sobre el gráfico existente. Antes el aspecto solo se leía al
+  // crearlo, así que al cambiar de modo el gráfico se quedaba con la paleta anterior hasta
+  // que llegaran datos nuevos; ahora que ya no se recrea, haría falta esperar indefinidamente.
+  useEffect(() => {
+    const aplicar = () => { try { chartRef.current?.applyOptions(opcionesTema(esOscuro())); } catch (e) {} };
+    const obs = new MutationObserver(aplicar);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+
+  // ── Los datos se vuelven a pintar sobre el gráfico que ya existe ───────────
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    // Quita las series de la pasada anterior. `indicators` NO está en las dependencias: no
+    // se usa en este efecto, y tenerlo ahí repintaba el gráfico cada vez que el análisis de
+    // IA devolvía indicadores nuevos.
+    //
+    // La limpieza va ANTES de comprobar si hay velas, y no después: al cambiar de acción
+    // llegan velas vacías durante un instante, y saliendo antes de limpiar se quedaba en
+    // pantalla el gráfico de la acción ANTERIOR bajo el ticker nuevo. Mientras el gráfico se
+    // recreaba entero esto no se notaba; ahora que sobrevive, sí.
+    for (const s of seriesRef.current) {
+      try { chart.removeSeries(s); } catch (e) {}
+    }
+    seriesRef.current = [];
+    if (!candles || !candles.length) return;
+    const registrar = (s) => { seriesRef.current.push(s); return s; };
 
     // Velas
     const data = candles
@@ -60,20 +111,20 @@ export default function LightweightChart({ candles, indicators, buyLevels, lines
       }))
       .filter((c) => Number.isFinite(c.time));
 
-    const candleSeries = chart.addCandlestickSeries({
+    const candleSeries = registrar(chart.addCandlestickSeries({
       upColor: "#22c55e", downColor: "#ef4444",
       borderUpColor: "#22c55e", borderDownColor: "#ef4444",
       wickUpColor: "#22c55e", wickDownColor: "#ef4444",
-    });
+    }));
     candleSeries.setData(data);
 
     // Medias móviles
     if (data.length >= 60) {
-      const s50 = chart.addLineSeries({ color: "#2563eb", lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+      const s50 = registrar(chart.addLineSeries({ color: "#2563eb", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }));
       s50.setData(sma(data, 50));
     }
     if (data.length >= 200) {
-      const s200 = chart.addLineSeries({ color: "#b8860b", lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+      const s200 = registrar(chart.addLineSeries({ color: "#b8860b", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }));
       s200.setData(sma(data, 200));
     }
 
@@ -119,7 +170,7 @@ export default function LightweightChart({ candles, indicators, buyLevels, lines
         const tB = idxTime(lastIdx);
         if (tA == null || tB == null || tB <= tA) return;
         const col = tl.kind === "resistencia" ? "#d85c41" : "#4a7c59";
-        const seg = chart.addLineSeries({ color: col, lineWidth: 2, lineStyle: LineStyle.Solid, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+        const seg = registrar(chart.addLineSeries({ color: col, lineWidth: 2, lineStyle: LineStyle.Solid, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }));
         seg.setData([
           { time: tA, value: +a.price.toFixed(2) },
           { time: tB, value: +(a.price + slope * (lastIdx - a.index)).toFixed(2) },
@@ -155,11 +206,11 @@ export default function LightweightChart({ candles, indicators, buyLevels, lines
         raw.sort((a, b) => a.time - b.time);
         const data = raw.filter((p, i) => i === 0 || p.time !== raw[i - 1].time);
         if (data.length < 2) return;
-        const s = chart.addLineSeries({
+        const s = registrar(chart.addLineSeries({
           color: colorFor(ln.tipo), lineWidth: 2,
           lineStyle: dashed(ln.tipo) ? LineStyle.Dashed : LineStyle.Solid,
           priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-        });
+        }));
         s.setData(data);
       });
       // Marcadores de pivotes (P1, HI, C, V1…) sobre las velas.
@@ -177,9 +228,7 @@ export default function LightweightChart({ candles, indicators, buyLevels, lines
     }
 
     chart.timeScale().fitContent();
-
-    return () => { try { chart.remove(); } catch (e) {} chartRef.current = null; };
-  }, [candles, buyLevels, lines, indicators]);
+  }, [candles, buyLevels, lines]);
 
   return (
     <div className="card-flat p-3">

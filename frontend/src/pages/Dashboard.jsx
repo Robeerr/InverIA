@@ -1,8 +1,7 @@
-import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useRef, useMemo, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import QuoteHeader from "../components/QuoteHeader";
-import LightweightChart from "../components/LightweightChart";
 import ChartistPanel from "../components/ChartistPanel";
 import RecommendationPanel from "../components/RecommendationPanel";
 import SourcesPanel from "../components/SourcesPanel";
@@ -130,6 +129,22 @@ function SectorHeatmap({ data, onPick }) {
 // del gráfico sería tirar el resto a la basura: los demás timeframes van por /chart.
 // Debe coincidir con la precarga de WatchlistStrip.jsx o se calientan claves distintas.
 const TIMEFRAME_BASE = "1D";
+
+// lightweight-charts es la dependencia más pesada del paquete y no hace falta para pintar
+// la cabecera con el precio, que es lo primero que se mira al entrar. Cargándola en
+// diferido viaja en su propio fragmento: la página aparece antes y el gráfico se completa
+// un instante después, en su hueco, sin mover nada de sitio.
+const LightweightChart = React.lazy(() => import("../components/LightweightChart"));
+
+// Reserva del alto exacto del gráfico (460 px del lienzo + controles) mientras carga. Sin
+// esto, al aparecer empujaría hacia abajo todo lo que hubiera debajo.
+function HuecoGrafico() {
+  return (
+    <div className="card-flat p-3" style={{ height: 516 }} aria-busy="true">
+      <div className="h-full w-full rounded bg-[#f0ece3] dark:bg-[#132a24] animate-pulse" />
+    </div>
+  );
+}
 
 export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const [timeframe, setTimeframe] = useState(TIMEFRAME_BASE);
@@ -512,14 +527,16 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       <div className="flex flex-col xl:grid xl:grid-cols-[1fr_360px] xl:grid-rows-[auto_auto] gap-6">
         {/* A: gráfico + Chartista */}
         <div className="min-w-0 order-1 xl:col-start-1 xl:row-start-1">
-          <LightweightChart
-            candles={candles}
-            indicators={indicators}
-            buyLevels={buyLevels}
-            lines={chartLines}
-            timeframe={timeframe}
-            setTimeframe={refreshTimeframe}
-          />
+          <Suspense fallback={<HuecoGrafico />}>
+            <LightweightChart
+              candles={candles}
+              indicators={indicators}
+              buyLevels={buyLevels}
+              lines={chartLines}
+              timeframe={timeframe}
+              setTimeframe={refreshTimeframe}
+            />
+          </Suspense>
           <div className="mt-4">
             <ChartistPanel symbol={symbol} runSignal={runAllTrigger} />
           </div>
