@@ -171,9 +171,27 @@ async def estado_simbolo(db, symbol: str, precio_actual=None) -> dict:
         except Exception:
             tasa_hoy = None
 
+    # Los niveles de la Cartera, para poder dar de alta las compras desde ellos sin tener
+    # que copiar los precios a mano de una pantalla a otra.
+    entry = await db.signal_entries.find_one({"symbol": symbol}, {"_id": 0}) or {}
+    niveles = []
+    for i in range(1, 6):
+        p = entry.get(f"nivel{i}")
+        if p in (None, "", 0):
+            continue
+        try:
+            p = float(p)
+        except (TypeError, ValueError):
+            continue
+        if p > 0:
+            niveles.append({"nivel": f"nivel{i}", "etiqueta": f"Nivel {i}", "precio": p,
+                            "comprado": entry.get(f"alert_nivel{i}") is False})
+    niveles.sort(key=lambda n: n["precio"], reverse=True)
+
     return {
         "symbol": symbol,
         "divisa": divisa,
+        "niveles": niveles,
         "compras": sorted(compras, key=lambda c: str(c.get("fecha") or "")),
         **comp,
         "latente": lotes.valorar_abierto(comp["fifo"], precio_actual, tasa_hoy),

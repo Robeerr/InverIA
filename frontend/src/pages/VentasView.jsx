@@ -351,6 +351,135 @@ function VistaPreviaVenta({ symbol, acciones }) {
   );
 }
 
+// Alta de varias compras de golpe, una por nivel.
+//
+// Es el caso normal de esta Cartera: se entra por niveles, con un número parecido de
+// acciones en cada uno. Meterlas de una en una son cinco formularios, cinco veces el mismo
+// ticker y una oportunidad de equivocarse en cada uno.
+//
+// Además resuelve algo que a mano es fácil colar mal: los lotes se crean del nivel MÁS CARO
+// al más barato, que es el orden en que se van tocando al caer y por tanto el orden real de
+// las compras. FIFO desempata por ese orden cuando no hay fechas distintas, así que crearlos
+// al revés haría que la primera venta consumiera el nivel equivocado.
+function FormularioPorNiveles({ onCerrar }) {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const [symbol, setSymbol] = React.useState("");
+  const [porNivel, setPorNivel] = React.useState({});
+  const [fecha, setFecha] = React.useState(hoy);
+  const [iguales, setIguales] = React.useState("");
+  const [guardando, setGuardando] = React.useState(false);
+  const qc = useQueryClient();
+
+  const sym = symbol.trim().toUpperCase();
+  const { data } = useQuery({
+    queryKey: ["cartera", "posicion", sym],
+    queryFn: () => api.cartera.posicion(sym),
+    enabled: sym.length >= 1,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const niveles = data?.niveles || [];
+
+  const aplicarIguales = (v) => {
+    setIguales(v);
+    const n = Number(v);
+    if (n > 0) setPorNivel(Object.fromEntries(niveles.map((x) => [x.nivel, v])));
+  };
+
+  const filas = niveles
+    .map((n) => ({ ...n, acciones: Number(porNivel[n.nivel]) || 0 }))
+    .filter((n) => n.acciones > 0);
+  const totalAcciones = filas.reduce((s, f) => s + f.acciones, 0);
+  const totalCoste = filas.reduce((s, f) => s + f.acciones * f.precio, 0);
+
+  const guardar = async () => {
+    if (!sym) return toast.error("Falta el ticker");
+    if (!filas.length) return toast.error("Pon cuántas acciones compraste en algún nivel");
+    setGuardando(true);
+    try {
+      // En serie y de más caro a más barato: el orden de creación es el que desempata
+      // FIFO cuando las fechas coinciden.
+      for (const f of filas) {
+        await api.cartera.comprar({
+          symbol: sym, acciones: f.acciones, precio: f.precio,
+          fecha, nivel: f.nivel, comision: 0,
+          notas: `Alta por niveles (${f.etiqueta})`,
+        });
+      }
+      toast.success(`${filas.length} compras registradas para ${sym}`);
+      qc.invalidateQueries({ queryKey: ["cartera"] });
+      onCerrar();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "No se pudieron guardar todas");
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div className="card-flat p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="font-heading font-bold text-sm">Dar de alta las compras por niveles</h3>
+        <button type="button" onClick={onCerrar} className="text-[#5c6b66] text-sm">✕</button>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <Campo label="Ticker">
+          <input value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                 placeholder="MRVL" className={inputCls} autoFocus />
+        </Campo>
+        <Campo label="Fecha"
+               ayuda="La misma para todas. Si las compraste en fechas distintas y las recuerdas, dalas de alta una a una para que los euros salgan con el cambio correcto de cada día.">
+          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className={inputCls} />
+        </Campo>
+        <Campo label="Mismas en cada nivel"
+               ayuda="Atajo para el caso normal: si en cada nivel compraste lo mismo, escríbelo una vez.">
+          <input value={iguales} onChange={(e) => aplicarIguales(e.target.value)}
+                 inputMode="decimal" placeholder="5" className={inputCls} />
+        </Campo>
+      </div>
+
+      {!sym ? (
+        <p className="text-[11px] text-[#5c6b66]">Escribe un ticker para ver sus niveles.</p>
+      ) : !niveles.length ? (
+        <p className="text-[11px] text-[#8a6508]">
+          {sym} no tiene niveles puestos en la Cartera. Ponlos allí primero, o registra las
+          compras una a una con su precio.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {niveles.map((n) => (
+            <div key={n.nivel} className="flex items-center gap-3 text-xs">
+              <Chip tono="nivel">{n.etiqueta}</Chip>
+              <span className="font-mono text-[#5c6b66] w-24">{usd(n.precio, data?.divisa)}</span>
+              {n.comprado && <span className="text-[10px] text-[#5c6b66]">campanita apagada</span>}
+              <input
+                value={porNivel[n.nivel] ?? ""}
+                onChange={(e) => setPorNivel((p) => ({ ...p, [n.nivel]: e.target.value }))}
+                inputMode="decimal" placeholder="acciones"
+                className="ml-auto border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-2 py-1 font-mono text-xs w-24 bg-transparent" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!!filas.length && (
+        <p className="text-[11px] text-[#5c6b66] border-t border-[#e5e0d8] dark:border-[#1a3a32] pt-2">
+          Se crearán <b>{filas.length}</b> compras · <b>{totalAcciones}</b> acciones ·
+          coste <b>{usd(totalCoste, data?.divisa)}</b> · precio medio{" "}
+          <b>{usd(totalCoste / totalAcciones, data?.divisa)}</b>.
+          {" "}Compruébalo contra lo que tenías en la Cartera antes de vender.
+        </p>
+      )}
+
+      <button onClick={guardar} disabled={guardando || !filas.length}
+              className="w-full bg-[#1a3a32] text-[#f5f3ef] rounded px-4 py-2 text-sm font-semibold disabled:opacity-60">
+        {guardando ? "Guardando…" : `Guardar ${filas.length || ""} compra(s)`}
+      </button>
+    </div>
+  );
+}
+
 function FormularioOperacion({ tipo, onHecho, onCerrar }) {
   const hoy = new Date().toISOString().slice(0, 10);
   const [f, setF] = React.useState({ symbol: "", acciones: "", precio: "", comision: "", fecha: hoy, notas: "" });
@@ -497,9 +626,13 @@ export default function VentasView() {
           </p>
         </div>
         <div className="flex gap-2">
+          <button onClick={() => setForm("niveles")}
+                  className="border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-3 py-1.5 text-sm font-semibold">
+            + Compras por niveles
+          </button>
           <button onClick={() => setForm("compra")}
                   className="border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-3 py-1.5 text-sm font-semibold">
-            + Compra
+            + Compra suelta
           </button>
           <button onClick={() => setForm("venta")}
                   className="bg-[#1a3a32] text-[#f5f3ef] rounded px-3 py-1.5 text-sm font-semibold">
@@ -508,7 +641,9 @@ export default function VentasView() {
         </div>
       </div>
 
-      {form && <FormularioOperacion tipo={form} onCerrar={() => setForm(null)} />}
+      {form === "niveles"
+        ? <FormularioPorNiveles onCerrar={() => setForm(null)} />
+        : form && <FormularioOperacion tipo={form} onCerrar={() => setForm(null)} />}
 
       {/* Cifras de cabecera. Realizado y latente van SEPARADOS: uno está en tu cuenta y el
           otro puede evaporarse mañana. Sumarlos sin distinguirlos da una sensación de
