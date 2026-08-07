@@ -102,6 +102,23 @@ _cache = _TTLCache()
 CHARTIST_TTL = int(os.environ.get("CHARTIST_TTL", 4 * 3600))   # 4h (antes 2h)
 CHARTIST_PREWARM_MAX = int(os.environ.get("CHARTIST_PREWARM_MAX", 20))  # antes 30
 
+# Precalentado del dashboard (ver _prewarm_dashboards). Al contrario que el del Chartista,
+# este NO llama a ninguna IA: solo ensambla datos de mercado que en su mayoría ya están
+# cacheados, así que es barato. Lo único que gasta es ~1 cotización de Finnhub por símbolo
+# y vuelta.
+DASHBOARD_PREWARM = os.environ.get("DASHBOARD_PREWARM", "1") != "0"
+DASHBOARD_PREWARM_MAX = int(os.environ.get("DASHBOARD_PREWARM_MAX", 20))
+# Por debajo de DASHBOARD_STALE_MAX (30 min) para que una entrada de la watchlist nunca se
+# caiga de la ventana de "caducado pero servible".
+DASHBOARD_PREWARM_CADENCIA = int(os.environ.get("DASHBOARD_PREWARM_CADENCIA", 1200))  # 20 min
+# Espaciado entre símbolos. El limitador de Finnhub reserva 25 llamadas/min para tareas de
+# fondo; a 4 s son 15/min, que deja margen para el worker de señales y no compite con quien
+# esté navegando en ese momento.
+DASHBOARD_PREWARM_PAUSA = float(os.environ.get("DASHBOARD_PREWARM_PAUSA", 4.0))
+# El mismo timeframe que pide el Dashboard al abrirse (frontend: TIMEFRAME_BASE). Si no
+# coinciden, se calienta una clave que nadie pide después.
+_TIMEFRAME_PREWARM = "1D"
+
 mongo_url = os.environ.get("MONGO_URL")
 if not mongo_url:
     raise RuntimeError("MONGO_URL no está configurada. Añádela en las variables de entorno de Render.")
@@ -339,6 +356,58 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_auto_refresh_opportunities())
 
+    # PRECALENTADO del dashboard para la watchlist + la cartera.
+    #
+    # Por qué: el servir-caducado-y-refrescar ya hace que la SEGUNDA visita a un ticker sea
+    # instantánea, pero la PRIMERA del día sigue pagando el ensamblado completo. Y como esas
+    # acciones son justo las que vas a mirar, la primera visita es la norma, no la excepción.
+    # Con la caché caliente, elegir una acción de la watchlist se sirve de memoria.
+    #
+    # El ciclo va por DEBAJO de DASHBOARD_STALE_MAX (30 min) a propósito: así una entrada de
+    # la watchlist nunca se cae de la ventana de "caducado pero servible", y el peor caso
+    # deja de ser la carga completa.
+    #
+    # Coste: la parte cara (analistas 4h, fundamentales 1h, volume profile 12h) ya está
+    # cacheada, así que cada vuelta es ~1 llamada de cotización por símbolo. Se espacian
+    # DASHBOARD_PREWARM_PAUSA segundos para no vaciar de golpe la reserva de fondo del
+    # limitador de Finnhub y dejar sin cuota a quien esté navegando en ese momento.
+    async def _prewarm_dashboards():
+        if not DASHBOARD_PREWARM:
+            logger.info("Precalentado de dashboards desactivado (DASHBOARD_PREWARM=0)")
+            return
+        await asyncio.sleep(45)  # tras el arranque, pero antes que los escaneos pesados
+        while True:
+            try:
+                now = datetime.now(timezone.utc)
+                # Se incluye la pre-apertura (12:00 UTC): la primera mirada del día suele
+                # ser antes de que abra, y es justo la que hoy paga la carga entera.
+                in_window = now.weekday() < 5 and 12 <= now.hour < 22
+                if in_window:
+                    syms = await _simbolos_que_te_importan()
+                    calentados = 0
+                    for sym in list(syms)[:DASHBOARD_PREWARM_MAX]:
+                        clave = f"dashboard:{sym}:{_TIMEFRAME_PREWARM}"
+                        # Si sigue FRESCA no se toca: quien la pida no va a ir al servidor.
+                        _, fresco = _cache.get_stale(clave, max_age=_DASHBOARD_STALE_MAX)
+                        if fresco:
+                            continue
+                        try:
+                            await _construir_dashboard(sym, _TIMEFRAME_PREWARM, clave)
+                            calentados += 1
+                        except Exception as e:
+                            logger.warning("Precalentado de %s falló: %s", sym, str(e)[:120])
+                        await asyncio.sleep(DASHBOARD_PREWARM_PAUSA)
+                    if calentados:
+                        logger.info("Dashboards precalentados: %d", calentados)
+                    mem.trim()  # el ensamblado crea DataFrames: devuélvelos al SO
+            except Exception as e:
+                logger.warning("Bucle de precalentado de dashboards: %s", e)
+            await asyncio.sleep(DASHBOARD_PREWARM_CADENCIA)
+
+    _tarea_prewarm = asyncio.create_task(_prewarm_dashboards())
+    _bg_tasks.add(_tarea_prewarm)
+    _tarea_prewarm.add_done_callback(_bg_tasks.discard)
+
     # PRE-CÁLCULO del Chartista para la watchlist + la cartera. REGLAS DE COSTE (tras quemar
     # 3.65 EUR en un día): SOLO usa la key Gemini GRATIS (free_only=True — jamás la de pago
     # ni Groq); si la cuota gratis se agota (429), CORTA el ciclo entero hasta la siguiente
@@ -356,14 +425,7 @@ async def lifespan(app: FastAPI):
                 now = datetime.now(timezone.utc)
                 in_window = now.weekday() < 5 and 13 <= now.hour < 22
                 if in_window:
-                    # Símbolos que te importan: watchlist (corazón) + cartera (signals).
-                    syms = set()
-                    for it in await db.watchlist.find({}, {"_id": 0, "symbol": 1}).to_list(200):
-                        if it.get("symbol"):
-                            syms.add(it["symbol"].upper())
-                    for it in await db.signal_entries.find({"active": True}, {"_id": 0, "symbol": 1}).to_list(200):
-                        if it.get("symbol"):
-                            syms.add(it["symbol"].upper())
+                    syms = await _simbolos_que_te_importan()
                     for sym in list(syms)[:CHARTIST_PREWARM_MAX]:
                         if _cache.get(f"chartist:{sym}") is not None:
                             continue  # ya está fresco en caché
@@ -416,6 +478,26 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 
 # Referencias fuertes a tareas en segundo plano (si no, el GC puede cancelarlas).
 _bg_tasks: set = set()
+
+
+async def _simbolos_que_te_importan() -> set:
+    """Watchlist (el corazón) + cartera (señales activas), en mayúsculas y sin repetidos.
+
+    Es el conjunto que alimenta TODO lo que se precalienta. Estaba escrito a mano dentro
+    del pre-cálculo del Chartista; al necesitarlo también el del dashboard, tenerlo en dos
+    sitios garantizaba que un día se calentaran conjuntos distintos.
+    """
+    syms = set()
+    try:
+        for it in await db.watchlist.find({}, {"_id": 0, "symbol": 1}).to_list(200):
+            if it.get("symbol"):
+                syms.add(it["symbol"].upper())
+        for it in await db.signal_entries.find({"active": True}, {"_id": 0, "symbol": 1}).to_list(200):
+            if it.get("symbol"):
+                syms.add(it["symbol"].upper())
+    except Exception as e:
+        logger.warning("No se pudieron leer los símbolos a precalentar: %s", e)
+    return syms
 
 
 # ---------- Models ----------
