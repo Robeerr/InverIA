@@ -33,8 +33,10 @@ export const api = {
   dashboard: (symbol, timeframe = "1Y", signal) =>
     client.get(`/dashboard/${symbol}`, { params: { timeframe }, signal }).then((r) => r.data),
   quote: (symbol) => client.get(`/quote/${symbol}`).then((r) => r.data),
-  chart: (symbol, timeframe = "1Y") =>
-    client.get(`/chart/${symbol}`, { params: { timeframe } }).then((r) => r.data),
+  // `signal` para que react-query pueda cancelar la petición al cambiar de acción o de
+  // escala: sin él, la respuesta que ya no le sirve a nadie se descarga igualmente.
+  chart: (symbol, timeframe = "1Y", signal) =>
+    client.get(`/chart/${symbol}`, { params: { timeframe }, signal }).then((r) => r.data),
   chartist: (symbol, refresh = false) =>
     client.get(`/chartist/${symbol}`, { params: { refresh }, timeout: 90000 }).then((r) => r.data),
   // Solo devuelve el veredicto si ya está pre-calculado (no gasta IA ni espera).

@@ -1,4 +1,5 @@
 import React from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSignals } from "../hooks/useSignals";
 import { fmtPrice } from "../lib/format";
 import { api } from "../lib/api";
@@ -18,6 +19,7 @@ const hayHover = typeof window !== "undefined"
   && window.matchMedia?.("(hover: hover)").matches;
 
 function usePrecarga() {
+  const queryClient = useQueryClient();
   const timer = React.useRef(null);
   const cancelar = React.useCallback(() => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
@@ -27,13 +29,20 @@ function usePrecarga() {
     cancelar();
     timer.current = setTimeout(() => {
       yaPrecargados.add(sym);
-      // MISMO timeframe que usa el Dashboard. La clave de caché del backend es
-      // dashboard:{símbolo}:{timeframe}, así que precargar con otro (el "1Y" por defecto de
-      // api.dashboard) llenaba una entrada distinta de la que luego se pide, y el clic
-      // seguía pagando el ensamblado completo.
-      api.dashboard(sym, TIMEFRAME_DASHBOARD).catch(() => yaPrecargados.delete(sym));
+      // prefetchQuery y no api.dashboard() a secas: la respuesta se guarda en la MISMA
+      // caché de react-query, con la MISMA clave, que luego lee el Dashboard. Llamando a
+      // la api directamente solo se calentaba la caché del servidor —bien, pero el cliente
+      // volvía a pedirlo igual y se pagaba la ida y vuelta por la red.
+      //
+      // El timeframe debe coincidir con TIMEFRAME_BASE del Dashboard: si difieren, la
+      // clave que se calienta no es la que se pide después.
+      queryClient.prefetchQuery({
+        queryKey: ["dashboard", sym, TIMEFRAME_DASHBOARD],
+        queryFn: ({ signal }) => api.dashboard(sym, TIMEFRAME_DASHBOARD, signal),
+        staleTime: 60_000,
+      }).catch(() => yaPrecargados.delete(sym));
     }, 180);
-  }, [cancelar]);
+  }, [cancelar, queryClient]);
   React.useEffect(() => cancelar, [cancelar]);
   return { precargar, cancelar };
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import QuoteHeader from "../components/QuoteHeader";
@@ -125,26 +125,29 @@ function SectorHeatmap({ data, onPick }) {
   );
 }
 
+// Timeframe con el que se pide el dashboard. El endpoint devuelve TODO (cotización,
+// indicadores, noticias, analistas…), así que pedirlo de nuevo solo por cambiar la escala
+// del gráfico sería tirar el resto a la basura: los demás timeframes van por /chart.
+// Debe coincidir con la precarga de WatchlistStrip.jsx o se calientan claves distintas.
+const TIMEFRAME_BASE = "1D";
+
 export default function Dashboard({ symbol, setSymbol, model, setModel }) {
-  const [timeframe, setTimeframe] = useState("1D");
-  const [quote, setQuote] = useState(null);
-  const [candles, setCandles] = useState([]);
-  const [indicators, setIndicators] = useState(null);
-  const [analysis, setAnalysis] = useState(null);
-  const [analystData, setAnalystData] = useState(null);
-  const [marketSignals, setMarketSignals] = useState(null);
-  const [volumeProfile, setVolumeProfile] = useState(null);
-  const [relativeStrength, setRelativeStrength] = useState(null);
-  const [buyLevels, setBuyLevels] = useState(null);
-  const [chartLines, setChartLines] = useState(null);
-  const [marketRegime, setMarketRegime] = useState(null);
-  const [dataHealth, setDataHealth] = useState(null);
+  const [timeframe, setTimeframe] = useState(TIMEFRAME_BASE);
   const [ctxOpen, setCtxOpen] = useState(false);  // contexto de mercado plegado en móvil
   const [runAllTrigger, setRunAllTrigger] = useState(0);  // #3 dispara los 3 análisis a la vez
-  const [news, setNews] = useState([]);
-  const [loadingQuote, setLoadingQuote] = useState(false);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [signalEntry, setSignalEntry] = useState(null);
+
+  // Datos que NO vienen del servidor sino que se superponen encima: los ticks del
+  // WebSocket y lo que produce el análisis de IA. Van juntos en un solo objeto para poder
+  // vaciarlos de golpe al cambiar de acción — si sobrevivieran al cambio, se vería el
+  // análisis de AAPL rotulado como MSFT.
+  const [parche, setParche] = useState({});
+  const parchear = useCallback((campos) => setParche((p) => ({ ...p, ...campos })), []);
+  // Espejo del parche en una ref: los callbacks (WebSocket, análisis) necesitan leer el
+  // valor actual sin que eso los obligue a recrearse en cada tick. Se sincroniza más abajo,
+  // con el parche YA vaciado si se acaba de cambiar de acción.
+  const parcheRef = useRef(parche);
 
   // Señales (caché compartido entre páginas) y futuros (refresco 60s) vía react-query.
   const { data: signals } = useSignals();
@@ -167,156 +170,169 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
     staleTime: 5 * 60_000,
   });
 
-  // Contador de petición: descarta respuestas que llegan tarde tras cambiar de símbolo
-  // (una petición lenta no debe pisar datos de un símbolo posterior).
-  const reqId = useRef(0);
-  // Petición en curso, para poder abortarla al cambiar de acción.
-  const abortRef = useRef(null);
-  // Último símbolo cuyos datos están en pantalla: distingue "cambio de acción" (hay que
-  // limpiar) de "refresco de la misma" (conservar y evitar el parpadeo).
-  const symbolCargadoRef = useRef(null);
+  // ── Datos del servidor, vía react-query ────────────────────────────────────
+  // El motivo de estar aquí: antes cada cambio de acción disparaba una carga completa,
+  // aunque volvieras a una que acababas de mirar. React Query guarda la respuesta POR
+  // SÍMBOLO, así que volver a una vista hace 5 minutos es instantáneo.
+  //
+  // A propósito SIN placeholderData/keepPreviousData: eso mostraría los datos de la acción
+  // ANTERIOR bajo el ticker NUEVO mientras carga. En una app de bolsa eso no es un parpadeo
+  // feo, es un precio incorrecto sobre el que alguien puede actuar. Mejor "cargando".
+  // Cuando el símbolo ya está en caché no hay hueco que rellenar, que es el caso que importa.
+  //
+  // Cancelación, deduplicación de peticiones y descarte de respuestas que llegan tarde los
+  // hace react-query: por eso desaparecen el AbortController y el contador de petición que
+  // había aquí a mano.
+  const esCancelada = (e) => e?.code === "ERR_CANCELED" || e?.name === "CanceledError";
 
-  const loadSymbolData = useCallback(async (sym, tf) => {
-    const my = ++reqId.current;
-    // Cancela la carga anterior: al ir saltando por la watchlist, esas peticiones ya no le
-    // sirven a nadie pero seguían gastando cuota de datos, y quedarse sin cuota es
-    // justamente lo que hacía fallar la carga siguiente.
-    abortRef.current?.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
+  // La clave se normaliza a mayúsculas: el backend hace symbol.upper(), así que "aapl" y
+  // "AAPL" son la misma respuesta, pero como claves distintas serían dos entradas de caché
+  // y dos peticiones. El buscador ya normaliza, esto cubre el resto de caminos.
+  const sym = (symbol || "").toUpperCase();
 
-    setLoadingQuote(true);
-    setAnalysis(null);
-    setMarketSignals(null);
-    setVolumeProfile(null);
-    setRelativeStrength(null);
-    setBuyLevels(null);
-    setChartLines(null);
-    setDataHealth(null);
-    // Al cambiar DE ACCIÓN hay que soltar también quote/velas/indicadores/noticias. No
-    // hacerlo dejaba en pantalla los datos de la acción ANTERIOR bajo el ticker NUEVO: el
-    // precio de AAPL rotulado como MSFT hasta que llegara la respuesta. En una app de bolsa
-    // eso no es un parpadeo feo, es un precio incorrecto sobre el que alguien puede actuar.
-    // Mejor un "cargando" honesto.
-    // Solo al CAMBIAR de símbolo: en un refresco del mismo, conservarlos evita el parpadeo.
-    if (symbolCargadoRef.current !== sym) {
-      symbolCargadoRef.current = sym;
-      setQuote(null);
-      setCandles([]);
-      setIndicators(null);
-      setNews([]);
-      setAnalystData(null);
-    }
-
-    const esCancelada = (e) => e?.code === "ERR_CANCELED" || e?.name === "CanceledError";
-    // Un reintento SOLO ante un fallo de red puntual. Antes reintentaba ante cualquier error:
-    // si la carga fallaba por cuota agotada, insistir 600 ms después la empeoraba, y saltar
-    // rápido entre acciones multiplicaba el efecto hasta tumbarlo todo.
-    const fetchWithRetry = async () => {
-      try {
-        return await api.dashboard(sym, tf, ac.signal);
-      } catch (e) {
-        const st = e?.response?.status;
-        // Cancelada, sin cuota (429) o error del servidor: NO insistir.
-        if (esCancelada(e) || st === 429 || (st >= 500 && st < 600)) throw e;
-        await new Promise((r) => setTimeout(r, 600));
-        return await api.dashboard(sym, tf, ac.signal);
-      }
-    };
-    try {
-      const data = await fetchWithRetry();
-      if (my !== reqId.current) return; // llegó tarde: ya cambiamos de símbolo
-      if (!data?.quote) {
-        // OJO: esto NO significa que el símbolo no exista. El endpoint responde 404 cuando
-        // el ticker es inválido (se trata en el catch). Llegar aquí con 200 y sin quote
-        // significa que las fuentes de datos no contestaron a tiempo — normalmente cuota
-        // agotada. Decir "no se encontró AAPL" mandaba a corregir un símbolo correcto.
-        toast.error(`No se pudieron cargar los datos de ${sym}. Las fuentes de datos no respondieron a tiempo — vuelve a intentarlo en unos segundos.`);
-        setQuote(null);
-        return;
-      }
-      setQuote(data.quote);
-      setCandles(data.candles || []);
-      setIndicators(data.indicators);
-      setNews(data.news || []);
-      setAnalystData(data.analyst);
-      // Niveles del motor (deterministas): disponibles ya al cargar, sin esperar a la IA.
-      if (data.buy_levels) setBuyLevels(data.buy_levels);
-      if (data.lines) setChartLines(data.lines);
-      if (data.volume_profile) setVolumeProfile(data.volume_profile);
-      // Se asigna siempre, incluso a null: si la acción anterior tenía Fuerza Relativa y esta
-      // no (histórico corto), dejarla puesta mostraría el dato de la acción anterior.
-      setRelativeStrength(data.relative_strength || null);
-      if (data.market_regime) setMarketRegime(data.market_regime);
-      setDataHealth(data.data_health || null);
-    } catch (e) {
-      // Cancelada al cambiar de acción: es lo esperado, no un fallo. Avisar aquí llenaba la
-      // pantalla de errores rojos justo cuando saltabas rápido por la watchlist.
-      if (esCancelada(e)) return;
-      if (my === reqId.current) {
-        const st = e?.response?.status;
-        if (st === 404) {
-          setQuote(null);
-          toast.error(`"${sym}" no existe. Revisa el símbolo (p.ej. AAPL, no APPL).`);
-        } else if (st === 429) {
-          toast.error("Demasiadas consultas seguidas. Espera unos segundos antes de cambiar de acción.");
-        } else {
-          toast.error("Error al cargar datos. Inténtalo de nuevo.");
-        }
-      }
-    } finally {
-      if (my === reqId.current) setLoadingQuote(false);
-    }
-  }, []);
-
-  const chartReqId = useRef(0);
-  const refreshTimeframe = useCallback(
-    async (tf) => {
-      const my = ++chartReqId.current;
-      setTimeframe(tf);
-      try {
-        const c = await api.chart(symbol, tf);
-        if (my !== chartReqId.current) return; // respuesta obsoleta
-        setCandles(c.candles || []);
-        setChartLines(c.lines || null);
-      } catch (e) {
-        if (my === chartReqId.current) toast.error("Error al cargar el gráfico");
-      }
+  const consultaDashboard = useQuery({
+    queryKey: ["dashboard", sym, TIMEFRAME_BASE],
+    queryFn: ({ signal }) => api.dashboard(sym, TIMEFRAME_BASE, signal),
+    enabled: !!sym,
+    staleTime: 60_000,        // dentro del minuto se sirve de caché sin ir al servidor
+    gcTime: 30 * 60_000,      // y se conserva media hora para volver a la acción
+    refetchOnWindowFocus: false,
+    // Un reintento SOLO ante un fallo de red puntual. Insistir tras un 429 (cuota agotada)
+    // la empeora, y saltar rápido entre acciones multiplicaba el efecto hasta tumbarlo todo.
+    retry: (intentos, e) => {
+      const st = e?.response?.status;
+      if (esCancelada(e) || st === 404 || st === 429 || (st >= 500 && st < 600)) return false;
+      return intentos < 1;
     },
-    [symbol]
-  );
+    retryDelay: 600,
+  });
+
+  // El gráfico en su timeframe base sale del dashboard, que ya lo trae. Los demás se piden
+  // aparte y se cachean por (símbolo, escala): antes cambiar de escala y volver recargaba.
+  const consultaGrafico = useQuery({
+    queryKey: ["chart", sym, timeframe],
+    queryFn: ({ signal }) => api.chart(sym, timeframe, signal),
+    enabled: !!sym && timeframe !== TIMEFRAME_BASE,
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+
+  const datos = consultaDashboard.data;
+  const grafico = timeframe === TIMEFRAME_BASE ? datos : consultaGrafico.data;
+
+  // El semáforo de mercado es del MERCADO, no de la acción: se conserva el último conocido
+  // para que no desaparezca la barra mientras carga la siguiente acción.
+  const regimenRef = useRef(null);
+  if (datos?.market_regime) regimenRef.current = datos.market_regime;
+  const marketRegime = datos?.market_regime || regimenRef.current;
+
+  // Vacía los parches al cambiar de acción. Va durante el render (no en un efecto) para que
+  // no llegue a pintarse ni un fotograma con el análisis de la acción anterior.
+  //
+  // OJO al orden: hay que decidir `p` con el resultado de la COMPARACIÓN, no volviendo a
+  // mirar la ref después de actualizarla. setParche({}) programa un re-render, pero ESTE
+  // render sigue teniendo el `parche` viejo en la mano; si se leyera la ref ya actualizada
+  // se daría por bueno y se pintaría un fotograma con el análisis de la acción anterior
+  // bajo el ticker nuevo — el mismo fallo que ya costó arreglar en la carga a mano.
+  const symbolParcheado = useRef(sym);
+  const cambioDeAccion = symbolParcheado.current !== sym;
+  if (cambioDeAccion) {
+    symbolParcheado.current = sym;
+    if (Object.keys(parche).length) setParche({});
+  }
+  const p = cambioDeAccion ? {} : parche;
+  parcheRef.current = p;
+
+  // Composición final: servidor debajo, parches encima.
+  const quote = useMemo(() => {
+    if (!datos?.quote) return p.quote || null;
+    return p.quote ? { ...datos.quote, ...p.quote } : datos.quote;
+  }, [datos?.quote, p.quote]);
+
+  const candles = grafico?.candles || [];
+  const chartLines = grafico?.lines || null;
+  const indicators = p.indicators || datos?.indicators || null;
+  const news = datos?.news || [];
+  const analystData = p.analystData || datos?.analyst || null;
+  const buyLevels = p.buyLevels || datos?.buy_levels || null;
+  const volumeProfile = p.volumeProfile || datos?.volume_profile || null;
+  const dataHealth = datos?.data_health || null;
+  // Se lee siempre del servidor, incluso a null: si la acción anterior tenía Fuerza
+  // Relativa y esta no (histórico corto), conservarla mostraría el dato de la anterior.
+  const relativeStrength = datos?.relative_strength || null;
+  const analysis = p.analysis || null;
+  const marketSignals = p.marketSignals || null;
+  // `isPending` de una consulta desactivada (enabled:false) también es true en react-query
+  // v5: sin el `!!symbol`, entrar sin acción seleccionada dejaría un "Cargando…" eterno.
+  const loadingQuote = !!sym && consultaDashboard.isPending;
+
+  // Errores → avisos. En un efecto y no en el render porque un toast es un efecto secundario.
+  const errorDashboard = consultaDashboard.error;
+  useEffect(() => {
+    if (!errorDashboard || esCancelada(errorDashboard)) return;
+    const st = errorDashboard?.response?.status;
+    if (st === 404) {
+      toast.error(`"${symbol}" no existe. Revisa el símbolo (p.ej. AAPL, no APPL).`);
+    } else if (st === 429) {
+      toast.error("Demasiadas consultas seguidas. Espera unos segundos antes de cambiar de acción.");
+    } else {
+      toast.error("Error al cargar datos. Inténtalo de nuevo.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [errorDashboard]);
+
+  // 200 pero sin cotización NO significa que el símbolo no exista (eso da 404, arriba):
+  // significa que las fuentes no contestaron a tiempo. Decir "no se encontró AAPL" mandaba
+  // a corregir un símbolo correcto.
+  useEffect(() => {
+    if (datos && !datos.quote) {
+      toast.error(`No se pudieron cargar los datos de ${symbol}. Las fuentes de datos no respondieron a tiempo — vuelve a intentarlo en unos segundos.`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datos]);
+
+  useEffect(() => {
+    if (consultaGrafico.error) toast.error("Error al cargar el gráfico");
+  }, [consultaGrafico.error]);
+
+  // El cambio de escala ya no dispara una petición a mano: basta con mover el estado, y
+  // react-query se encarga (consultaGrafico depende de `timeframe`). Además ahora queda
+  // cacheado, así que ir y volver entre 1D y 1Y es instantáneo la segunda vez.
+  const refreshTimeframe = useCallback((tf) => setTimeframe(tf), []);
 
   const runAnalysis = useCallback(async () => {
     if (!symbol) return;
     setLoadingAnalysis(true);
     try {
       const res = await api.analyze(symbol, model);
-      setAnalysis(res.analysis);
-      if (res.indicators) setIndicators(res.indicators);
+      const nuevo = { analysis: res.analysis };
+      if (res.indicators) nuevo.indicators = res.indicators;
       // Merge quote without overwriting good fields with nulls — yfinance .info
       // sometimes returns an incomplete quote (missing P/E, EPS, beta...).
       if (res.quote) {
-        setQuote((prev) => {
-          if (!prev) return res.quote;
-          const merged = { ...prev };
-          for (const [k, v] of Object.entries(res.quote)) {
-            if (v != null) merged[k] = v;
-          }
-          return merged;
-        });
+        const soloLlenos = {};
+        for (const [k, v] of Object.entries(res.quote)) {
+          if (v != null) soloLlenos[k] = v;
+        }
+        nuevo.quote = { ...(parcheRef.current.quote || {}), ...soloLlenos };
       }
       if (res.analyst_consensus || res.price_target) {
-        setAnalystData({
+        nuevo.analystData = {
           symbol,
           consensus: res.analyst_consensus,
           price_target: res.price_target,
-        });
+        };
       }
       if (res.insider || res.earnings_history) {
-        setMarketSignals({ insider: res.insider, earningsHistory: res.earnings_history });
+        nuevo.marketSignals = { insider: res.insider, earningsHistory: res.earnings_history };
       }
-      if (res.volume_profile) setVolumeProfile(res.volume_profile);
-      if (res.buy_levels) setBuyLevels(res.buy_levels);
+      if (res.volume_profile) nuevo.volumeProfile = res.volume_profile;
+      if (res.buy_levels) nuevo.buyLevels = res.buy_levels;
+      // Una sola escritura: antes eran hasta siete setState seguidos, o sea siete pasadas
+      // de render con el panel a medio rellenar.
+      parchear(nuevo);
       if (res.fellback) {
         toast.warning(`${res.requested_model} no disponible (límite o error) — análisis hecho con ${res.model}`);
       } else {
@@ -328,7 +344,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
     } finally {
       setLoadingAnalysis(false);
     }
-  }, [symbol, model]);
+  }, [symbol, model, parchear]);
 
   // #3 Análisis completo: dispara los 3 (Recomendación + Chartista + ¿Por qué se mueve?) de un toque.
   const runAll = useCallback(() => {
@@ -336,11 +352,6 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
     runAnalysis();
     setRunAllTrigger((t) => t + 1);
   }, [symbol, runAnalysis]);
-
-  useEffect(() => {
-    loadSymbolData(symbol, timeframe);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbol]);
 
   // Marca la entrada de señal del símbolo actual a partir del caché compartido.
   useEffect(() => {
@@ -367,7 +378,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       if (!pending.data) return;
       const next = pending.data;
       pending.data = null;
-      setQuote((prev) => (prev ? { ...prev, ...next } : prev));
+      parchear({ quote: { ...(parcheRef.current.quote || {}), ...next } });
     };
     const scheduleUpdate = (data) => {
       pending.data = { ...(pending.data || {}), ...data };
@@ -379,7 +390,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       fallbackRef.id = setInterval(async () => {
         try {
           const q = await api.quote(symbol);
-          if (!closed) setQuote(q);
+          if (!closed) parchear({ quote: q });
         } catch {}
       }, 30000);
     };
@@ -425,7 +436,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       if (fallbackRef.id) clearInterval(fallbackRef.id);
       if (ws) ws.close();
     };
-  }, [symbol]);
+  }, [symbol, parchear]);
 
 
   return (
