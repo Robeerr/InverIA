@@ -6,11 +6,11 @@ import React from "react";
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, error: null };
   }
 
-  static getDerivedStateFromError() {
-    return { hasError: true };
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
   }
 
   componentDidCatch(error, info) {
@@ -20,7 +20,7 @@ export default class ErrorBoundary extends React.Component {
   }
 
   handleReset = () => {
-    this.setState({ hasError: false });
+    this.setState({ hasError: false, error: null });
   };
 
   render() {
@@ -46,6 +46,21 @@ export default class ErrorBoundary extends React.Component {
               Ir al inicio
             </button>
           </div>
+          {/* El detalle técnico, plegado. Esta pantalla salió varias veces sin decir NUNCA
+              qué se había roto: había que pedir la consola del navegador para saberlo, y
+              desde el móvil eso no es viable. El mensaje de una excepción suele señalar la
+              línea culpable directamente. Va plegado para no asustar a quien solo quiere
+              recargar, y seleccionable para poder copiarlo y pegarlo. */}
+          {this.state.error && (
+            <details className="mt-6 text-left">
+              <summary className="text-[11px] font-mono text-[#5c6b66] cursor-pointer select-none">
+                Detalle técnico
+              </summary>
+              <pre className="mt-2 p-3 rounded-md bg-[#f0ece3] text-[#0e1f1a] text-[10px] font-mono whitespace-pre-wrap break-words select-all max-h-48 overflow-auto">
+                {String(this.state.error?.message || this.state.error)}
+              </pre>
+            </details>
+          )}
         </div>
       );
     }

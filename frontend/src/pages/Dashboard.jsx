@@ -261,8 +261,19 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   parcheRef.current = p;
 
   // Composición final: servidor debajo, parches encima.
+  //
+  // Los parches ENRIQUECEN una cotización del servidor; nunca la crean. Sin esta regla, un
+  // tick del WebSocket que llegue antes que la respuesta del dashboard —cosa que pasa a
+  // menudo al elegir una acción, porque el servidor manda su instantánea nada más
+  // conectar— produciría un quote con solo {price, change, day_high…}: sin symbol, sin
+  // name. Y QuoteHeader hace quote.symbol.slice(0, 3), que revienta la vista entera.
+  //
+  // La carga manual que había antes tenía esta guarda dentro del WebSocket
+  // (`prev ? {...prev, ...next} : prev`); al reescribirla se perdió. Ponerla aquí, en el
+  // único sitio donde se compone el quote, la hace válida para TODOS los parches
+  // (WebSocket, respaldo REST y análisis de IA) en vez de repetirla en cada uno.
   const quote = useMemo(() => {
-    if (!datos?.quote) return p.quote || null;
+    if (!datos?.quote) return null;
     return p.quote ? { ...datos.quote, ...p.quote } : datos.quote;
   }, [datos?.quote, p.quote]);
 

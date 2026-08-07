@@ -71,7 +71,11 @@ export default function QuoteHeader({ quote }) {
       <div className="flex items-start justify-between gap-6 flex-wrap">
         <div className="flex items-start gap-4 min-w-0">
           <div className="w-14 h-14 rounded-md bg-[#1a3a32] text-[#f5f3ef] flex items-center justify-center font-mono font-bold text-lg shrink-0">
-            {quote.symbol.slice(0, 3)}
+            {/* `?.` a propósito: un quote sin symbol tumbaba la vista ENTERA con un
+                TypeError, y el usuario solo veía "algo se ha roto". Aunque el Dashboard ya
+                garantiza que el symbol viene del servidor, un dato raro debe degradar lo
+                que toca, no llevarse la pantalla por delante. */}
+            {(quote.symbol || "—").slice(0, 3)}
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
