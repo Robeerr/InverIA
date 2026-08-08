@@ -124,19 +124,53 @@ function FilaVenta({ v, metodo, onBorrar }) {
         <div>
           <DetalleLotes lotes={m.lotes} divisa={v.divisa} />
           <div className="px-4 py-3 bg-[#faf8f4] dark:bg-[#0e1f1a] border-t border-[#e5e0d8] dark:border-[#1a3a32] text-xs space-y-1">
-            <div className="flex justify-between">
+            {/* Las DOS columnas, divisa y euros, en cada paso. Antes solo salían los
+                dólares y luego aparecía la ganancia en euros: el salto de "259 $" a "209 €"
+                había que creérselo. Con los dos lados y el tipo de cambio, la cuenta se
+                rehace a mano en un minuto — que es la única forma de fiarse de una cifra. */}
+            <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 gap-y-1 items-baseline">
+              <span className="text-[10px] uppercase tracking-wider text-[#5c6b66] font-mono">Concepto</span>
+              <span className="text-[10px] uppercase tracking-wider text-[#5c6b66] font-mono text-right">
+                {v.divisa === "USD" ? "Dólares" : v.divisa}
+              </span>
+              <span className="text-[10px] uppercase tracking-wider text-[#5c6b66] font-mono text-right">Euros</span>
+
               <span className="text-[#5c6b66]">Ingresado (menos comisión)</span>
-              <span className="font-mono">{usd(m.coste_divisa + m.ganancia_divisa, v.divisa)}</span>
-            </div>
-            <div className="flex justify-between">
+              <span className="font-mono text-right">{usd(m.ingreso_divisa, v.divisa)}</span>
+              <span className="font-mono text-right">{eur(m.ingreso_eur)}</span>
+
               <span className="text-[#5c6b66]">Coste de esas acciones</span>
-              <span className="font-mono">{usd(m.coste_divisa, v.divisa)}</span>
+              <span className="font-mono text-right">{usd(m.coste_divisa, v.divisa)}</span>
+              <span className="font-mono text-right">{eur(m.coste_eur)}</span>
+
+              <span className="font-semibold">Ganancia</span>
+              <span className={`font-mono text-right font-semibold ${tono(m.ganancia_divisa)}`}>
+                {usd(m.ganancia_divisa, v.divisa)}
+              </span>
+              <span className={`font-mono text-right font-semibold ${tono(m.ganancia_eur)}`}>
+                {eur(m.ganancia_eur)}
+              </span>
+
+              {/* Los DOS porcentajes, etiquetados. Antes se enseñaba solo el de euros junto
+                  a las cifras en dólares, donde el porcentaje es otro: en esta misma venta,
+                  +16,96% en euros y +18,41% en dólares. Parecía el de los dólares. */}
+              <span className="text-[#5c6b66]">Porcentaje</span>
+              <span className={`font-mono text-right ${tono(m.pct)}`}>{pct(m.pct)}</span>
+              <span className={`font-mono text-right ${tono(m.pct_eur)}`}>{pct(m.pct_eur)}</span>
             </div>
+
+            {v.tasa_venta && (
+              <p className="text-[10px] text-[#5c6b66] pt-1">
+                Cambio del día de la venta: 1 € = {v.tasa_venta} {v.divisa}. El coste va al
+                cambio del día de CADA compra, que es el que ves en cada línea de arriba.
+              </p>
+            )}
+
             {m.efecto_divisa_eur != null && (
               // Aparece sola en cuanto ves que ganaste en dólares y menos en euros.
-              <div className="flex justify-between">
-                <span className="text-[#5c6b66]" title="Parte del resultado que se debe al movimiento del euro frente a la divisa, y no a la acción.">
-                  De eso, por el movimiento del euro ⓘ
+              <div className="flex justify-between pt-1">
+                <span className="text-[#5c6b66]" title="Parte del resultado que se debe al movimiento del euro frente a la divisa, y no a la acción. Si es negativo, el euro se comió parte de tu ganancia.">
+                  De la ganancia en euros, por el movimiento del euro ⓘ
                 </span>
                 <span className={`font-mono ${tono(m.efecto_divisa_eur)}`}>{eur(m.efecto_divisa_eur)}</span>
               </div>
@@ -147,17 +181,36 @@ function FilaVenta({ v, metodo, onBorrar }) {
                 no se puede calcular y no entra en los totales.
               </p>
             )}
-            {difiere && (
-              <div className="flex justify-between pt-1 border-t border-[#e5e0d8] dark:border-[#1a3a32] mt-1">
-                <span className="text-[#5c6b66]">
-                  Por {metodo === "fifo" ? "LIFO" : "FIFO"} habría sido
-                </span>
-                <span className="font-mono text-[#5c6b66]">
-                  {otro.ganancia_eur != null ? eur(otro.ganancia_eur) : usd(otro.ganancia_divisa, v.divisa)}
-                  {" · "}{pct(otro.pct_eur ?? otro.pct)}
-                </span>
-              </div>
-            )}
+            {/* Los otros dos métodos, siempre. Es la misma venta contada de tres formas y
+                cada una sirve para algo distinto; enseñar solo una invita a usarla para todo. */}
+            <div className="pt-2 border-t border-[#e5e0d8] dark:border-[#1a3a32] mt-1 space-y-0.5">
+              {difiere && (
+                <div className="flex justify-between">
+                  <span className="text-[#5c6b66]">
+                    Por <b>{metodo === "fifo" ? "LIFO" : "FIFO"}</b>
+                    {metodo === "fifo"
+                      ? " (como vendes tú)"
+                      : " (lo que va a tu declaración)"}
+                  </span>
+                  <span className="font-mono text-[#5c6b66]">
+                    {otro.ganancia_eur != null ? eur(otro.ganancia_eur) : usd(otro.ganancia_divisa, v.divisa)}
+                    {" · "}{pct(otro.pct_eur ?? otro.pct)}
+                  </span>
+                </div>
+              )}
+              {v.ponderada && (
+                <div className="flex justify-between">
+                  <span className="text-[#5c6b66]"
+                        title="Media ponderada: el método que usa tu bróker para su pantalla. Todas tus acciones cuestan lo mismo (la media), así que no distingue niveles. Sirve para cuadrar con DEGIRO, no para la declaración.">
+                    Por <b>media ponderada</b> (como tu bróker) ⓘ
+                  </span>
+                  <span className="font-mono text-[#5c6b66]">
+                    {usd(v.ponderada.ganancia_divisa, v.divisa)}
+                    {v.ponderada.pct != null && ` · ${pct(v.ponderada.pct)}`}
+                  </span>
+                </div>
+              )}
+            </div>
             <div className="pt-2">
               <button onClick={() => onBorrar(v)} className="text-[11px] text-[#d85c41] hover:underline">
                 Borrar esta venta

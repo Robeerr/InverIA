@@ -345,14 +345,22 @@ async def historial(db, limite: int = 1000) -> dict:
         comp = lotes.comparar_metodos(libro["compras"], libro["ventas"])
         # Las ventas de los dos métodos van emparejadas: es la MISMA operación vista de dos
         # maneras, no dos operaciones. Presentarlas por separado invita a sumarlas.
+        # La media ponderada de la MISMA venta, para poder cuadrarla con el bróker: es el
+        # método que él usa y da un tercer resultado, distinto de FIFO y de LIFO.
+        pmp = {x["id"]: x for x in lotes.media_ponderada(
+            libro["compras"], libro["ventas"])["ventas"] if x.get("id")}
         for vf, vl in zip(comp["fifo"]["ventas"], comp["lifo"]["ventas"]):
             filas.append({
                 "id": vf.get("id"), "symbol": sym, "fecha": vf.get("fecha"),
                 "acciones": vf.get("acciones"), "precio_venta": vf.get("precio_venta"),
                 "divisa": vf.get("divisa"), "comision_venta": vf.get("comision_venta"),
                 "notas": vf.get("notas") or "",
+                # El cambio del día de la venta: sin él no se puede rehacer la cuenta en
+                # euros a mano, y comprobarla es justo lo que da confianza en la cifra.
+                "tasa_venta": vf.get("tasa"),
                 "fifo": _fila_metodo(vf),
                 "lifo": _fila_metodo(vl),
+                "ponderada": pmp.get(vf.get("id")),
                 "sin_cubrir": vf.get("sin_cubrir") or 0,
             })
         resumen_symbol.append({
@@ -375,11 +383,19 @@ async def historial(db, limite: int = 1000) -> dict:
 
 
 def _fila_metodo(v: dict) -> dict:
+    """Lo que hace falta para poder COMPROBAR la cifra a mano, no solo verla.
+
+    Se devuelven los dos lados —divisa y euros— de cada paso: ingresado, coste y ganancia.
+    Antes solo salía el coste y la ganancia, y el ingreso había que deducirlo sumando; en
+    euros no se podía ni eso, así que el salto de "259 $" a "209 €" era un acto de fe.
+    """
     return {
+        "ingreso_divisa": v.get("ingreso_divisa"), "ingreso_eur": v.get("ingreso_eur"),
         "coste_divisa": v.get("coste_divisa"), "coste_eur": v.get("coste_eur"),
         "ganancia_divisa": v.get("ganancia_divisa"), "ganancia_eur": v.get("ganancia_eur"),
         "pct": v.get("pct"), "pct_eur": v.get("pct_eur"),
         "efecto_divisa_eur": v.get("efecto_divisa_eur"),
+        "comisiones_totales": v.get("comisiones_totales"),
         "exacto": v.get("exacto"), "lotes": v.get("lotes"),
     }
 
