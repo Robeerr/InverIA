@@ -217,6 +217,27 @@ async def registrar_compra(db, symbol: str, acciones: float, precio: float,
     return compra
 
 
+async def asignar_nivel_compra(db, compra_id: str, nivel) -> dict:
+    """Asigna (o quita, con None) el nivel de una compra a mano.
+
+    La detección automática solo asigna si el precio de ejecución está a menos del 1,5% del
+    nivel, y una compra real puede desviarse más — pasó con 2 AAOI a 120,89 $ sobre un nivel
+    de 118,90: un 1,67% y el lote quedó "fuera de niveles", con su campanita sin apagar.
+    Subir la tolerancia asignaría compras al nivel equivocado cuando hay niveles juntos;
+    dejar que lo digas tú, no.
+    """
+    if nivel is not None and nivel not in {f"nivel{i}" for i in range(1, 6)}:
+        raise ValueError(f"Nivel desconocido: {nivel}")
+    doc = await db.compras.find_one({"id": compra_id}, {"_id": 0})
+    if not doc:
+        raise ValueError("No existe esa compra.")
+    etiqueta = f"Nivel {nivel[-1]}" if nivel else None
+    await db.compras.update_one(
+        {"id": compra_id}, {"$set": {"nivel": nivel, "nivel_etiqueta": etiqueta}})
+    await _sincronizar_posicion(db, doc.get("symbol"))
+    return {**doc, "nivel": nivel, "nivel_etiqueta": etiqueta}
+
+
 async def borrar_compra(db, compra_id: str) -> bool:
     doc = await db.compras.find_one({"id": compra_id}, {"_id": 0})
     r = await db.compras.delete_one({"id": compra_id})

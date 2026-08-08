@@ -113,6 +113,9 @@ export const api = {
     comprar: (payload) => client.post(`/cartera/compras`, payload).then((r) => r.data),
     vender: (payload) => client.post(`/cartera/ventas`, payload).then((r) => r.data),
     borrarCompra: (id) => client.delete(`/cartera/compras/${id}`).then((r) => r.data),
+    // Nivel a mano para las compras que la detección automática (±1,5% del nivel) no pilló.
+    cambiarNivelCompra: (id, nivel) =>
+      client.put(`/cartera/compras/${id}/nivel`, null, { params: nivel ? { nivel } : {} }).then((r) => r.data),
     borrarVenta: (id) => client.delete(`/cartera/ventas/${id}`).then((r) => r.data),
     // `reemplazar` rehace las posiciones ya importadas: sirve cuando la primera vez salió
     // mal y borrar los lotes a mano serían decenas de clics. Nunca toca las que ya tienen

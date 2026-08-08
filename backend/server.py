@@ -2248,6 +2248,19 @@ async def eliminar_compra(compra_id: str, _user: str = Depends(auth.get_current_
     return {"ok": True}
 
 
+@api_router.put("/cartera/compras/{compra_id}/nivel")
+async def cambiar_nivel_compra(compra_id: str, nivel: Optional[str] = None,
+                               _user: str = Depends(auth.get_current_user)):
+    """Asigna a mano el nivel de una compra que la detección automática (±1,5%) no pilló."""
+    try:
+        r = await cartera_api.asignar_nivel_compra(db, compra_id, nivel or None)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    for k in ("signals_list", "signals_hot"):
+        _cache._store.pop(k, None)
+    return r
+
+
 @api_router.post("/cartera/ventas")
 async def crear_venta(item: VentaLoteCreate, _user: str = Depends(auth.get_current_user)):
     """Registra una venta y devuelve el resultado por los DOS métodos (FIFO y LIFO)."""

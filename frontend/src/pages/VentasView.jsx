@@ -438,6 +438,18 @@ function LotesAbiertos({ symbol, metodo }) {
     onError: () => toast.error("No se pudo borrar"),
   });
 
+  // La detección automática solo asigna nivel si el precio está a menos del 1,5%; una
+  // compra real puede desviarse más (2 AAOI a 120,89 $ sobre un nivel de 118,90: 1,67%,
+  // lote "fuera de niveles" y campanita sin apagar). Aquí se corrige a mano.
+  const asignar = useMutation({
+    mutationFn: ({ id, nivel }) => api.cartera.cambiarNivelCompra(id, nivel),
+    onSuccess: () => {
+      toast.success("Nivel asignado — campanitas actualizadas");
+      qc.invalidateQueries({ queryKey: ["cartera"] });
+    },
+    onError: () => toast.error("No se pudo asignar el nivel"),
+  });
+
   if (isPending) return <p className="px-4 py-3 text-xs text-[#5c6b66]">Cargando…</p>;
 
   const est = data?.[metodo];
@@ -474,7 +486,21 @@ function LotesAbiertos({ symbol, metodo }) {
               )}
               {l.nivel
                 ? <Chip tono="nivel">{NIVEL_ETIQUETA[l.nivel] || l.nivel}</Chip>
-                : <Chip title="Esta compra no cae cerca de ninguno de los niveles que tienes en la Cartera.">fuera de niveles</Chip>}
+                : (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Chip title="Esta compra no cae a menos del 1,5% de ninguno de tus niveles. Si en realidad ES la compra de un nivel, asígnaselo aquí y su campanita se apagará.">fuera de niveles</Chip>
+                    <select value="" disabled={asignar.isPending}
+                            onChange={(e) => e.target.value && asignar.mutate({ id: l.id, nivel: e.target.value })}
+                            className="text-[10px] bg-transparent border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-1 py-0.5 text-[#5c6b66]">
+                      <option value="">asignar nivel…</option>
+                      {(data?.niveles || []).map((n) => (
+                        <option key={n.nivel} value={n.nivel}>
+                          {n.etiqueta} · {n.precio} {divisa === "EUR" ? "€" : "$"}
+                        </option>
+                      ))}
+                    </select>
+                  </span>
+                )}
               {l.comision_estimada && (
                 <Chip title="La comisión de esta compra es una estimación con la tarifa pública de DEGIRO, no una cifra de tu extracto.">
                   comisión estimada

@@ -1122,3 +1122,37 @@ def test_dos_ventas_del_csv_iguales_no_son_sospechosas():
     h = _correr(cartera_api.historial(db))
     assert h["posibles_duplicadas"] == []
     assert h["resumen"]["sin_cubrir_acciones"] == 0
+
+
+# ── Nivel a mano ─────────────────────────────────────────────────────────────
+
+def test_asignar_nivel_a_mano_apaga_su_campanita():
+    """La detección automática exige ±1,5% y una compra real puede desviarse más: 2 AAOI a
+    120,89 $ sobre un nivel de 118,90 (1,67%) quedaron "fuera de niveles" con la campanita
+    encendida. Asignar el nivel a mano debe dejar el lote en su nivel Y apagar la alerta."""
+    db = _DB([{"symbol": "AAOI", "nivel3": 118.90, "alert_nivel3": True}])
+    c = _correr(cartera_api.registrar_compra(
+        db, "AAOI", 2, 120.89, fecha="2026-07-02", comision=0, tasa=1.16))
+    assert c.get("nivel") is None  # 1,67% de desvío: la automática no lo pilla
+    r = _correr(cartera_api.asignar_nivel_compra(db, c["id"], "nivel3"))
+    assert r["nivel"] == "nivel3" and r["nivel_etiqueta"] == "Nivel 3"
+    entry = _correr(db.signal_entries.find_one({"symbol": "AAOI"}))
+    assert entry["alert_nivel3"] is False  # comprada -> campanita apagada
+
+
+def test_quitar_el_nivel_de_una_compra():
+    db = _DB([{"symbol": "AAOI", "nivel1": 181.0, "alert_nivel1": True}])
+    c = _correr(cartera_api.registrar_compra(
+        db, "AAOI", 5, 181.52, fecha="2026-06-08", comision=0, tasa=1.16))
+    assert c["nivel"] == "nivel1"
+    r = _correr(cartera_api.asignar_nivel_compra(db, c["id"], None))
+    assert r["nivel"] is None
+
+
+def test_no_se_puede_asignar_un_nivel_que_no_existe():
+    db = _DB([{"symbol": "AAOI"}])
+    c = _correr(cartera_api.registrar_compra(db, "AAOI", 1, 100.0, comision=0))
+    with pytest.raises(ValueError):
+        _correr(cartera_api.asignar_nivel_compra(db, c["id"], "nivel9"))
+    with pytest.raises(ValueError):
+        _correr(cartera_api.asignar_nivel_compra(db, "no-existe", "nivel1"))
