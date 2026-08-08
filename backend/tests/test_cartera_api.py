@@ -1156,3 +1156,41 @@ def test_no_se_puede_asignar_un_nivel_que_no_existe():
         _correr(cartera_api.asignar_nivel_compra(db, c["id"], "nivel9"))
     with pytest.raises(ValueError):
         _correr(cartera_api.asignar_nivel_compra(db, "no-existe", "nivel1"))
+
+
+# ── El precio del nivel se actualiza al precio real de compra ────────────────
+
+def test_comprar_con_nivel_actualiza_el_precio_del_nivel_en_la_cartera():
+    """Antes había que acordarse de actualizarlo a mano y no se hacía: los niveles se
+    quedaban con el precio planeado y la siguiente compra ya no casaba con ninguno."""
+    db = _DB([{"symbol": "AAOI", "nivel3": 118.90, "alert_nivel3": True}])
+    _correr(cartera_api.registrar_compra(
+        db, "AAOI", 2, 120.89, fecha="2026-07-02", comision=0, tasa=1.16, nivel="nivel3"))
+    entry = _correr(db.signal_entries.find_one({"symbol": "AAOI"}))
+    assert entry["nivel3"] == 120.89        # el precio real de la compra
+    assert entry["alert_nivel3"] is False   # y la campanita apagada
+
+
+def test_la_deteccion_automatica_tambien_actualiza_el_precio_del_nivel():
+    db = _DB([{"symbol": "ORCL", "nivel1": 145.0, "alert_nivel1": True}])
+    _correr(cartera_api.registrar_compra(
+        db, "ORCL", 5, 144.20, fecha="2026-07-02", comision=0, tasa=1.16))
+    entry = _correr(db.signal_entries.find_one({"symbol": "ORCL"}))
+    assert entry["nivel1"] == 144.20
+
+
+def test_asignar_nivel_a_posteriori_tambien_actualiza_el_precio():
+    db = _DB([{"symbol": "AAOI", "nivel3": 118.90, "alert_nivel3": True}])
+    c = _correr(cartera_api.registrar_compra(
+        db, "AAOI", 2, 120.89, fecha="2026-07-02", comision=0, tasa=1.16))
+    _correr(cartera_api.asignar_nivel_compra(db, c["id"], "nivel3"))
+    entry = _correr(db.signal_entries.find_one({"symbol": "AAOI"}))
+    assert entry["nivel3"] == 120.89
+
+
+def test_una_compra_fuera_de_niveles_no_toca_ningun_precio():
+    db = _DB([{"symbol": "AAOI", "nivel1": 181.0, "nivel3": 118.90}])
+    _correr(cartera_api.registrar_compra(
+        db, "AAOI", 2, 150.0, fecha="2026-07-02", comision=0, tasa=1.16))
+    entry = _correr(db.signal_entries.find_one({"symbol": "AAOI"}))
+    assert entry["nivel1"] == 181.0 and entry["nivel3"] == 118.90

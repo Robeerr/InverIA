@@ -204,6 +204,8 @@ async def registrar_compra(db, symbol: str, acciones: float, precio: float,
         await _comision_o_estimada(comision, float(acciones) * float(precio), divisa,
                                    compra["tasa"]))
 
+    if compra["nivel"] and compra["nivel"].startswith("nivel"):
+        compra["nivel_etiqueta"] = f"Nivel {compra['nivel'][-1]}"
     # Nivel: si no se indica a mano, se deduce del precio contra los niveles de la Cartera.
     if not compra["nivel"] and entry:
         det = lotes.detectar_nivel(compra["precio"], entry)
@@ -213,8 +215,33 @@ async def registrar_compra(db, symbol: str, acciones: float, precio: float,
         compra["desvio_nivel_pct"] = det.get("desvio_pct")
 
     await db.compras.insert_one(dict(compra))
+    # El precio del nivel en la Cartera pasa a ser el precio REAL al que se compró. Antes
+    # había que acordarse de actualizarlo a mano y no se hacía: los niveles se quedaban con
+    # el precio planeado y la siguiente compra ya no casaba con ninguno.
+    await _actualizar_precio_nivel(db, symbol, compra.get("nivel"), compra["precio"], entry)
     await _sincronizar_posicion(db, symbol)
     return compra
+
+
+async def _actualizar_precio_nivel(db, symbol: str, nivel, precio, entry=None) -> None:
+    """Pone el precio de `nivel` de la Cartera al precio real de la compra que lo tocó.
+
+    Solo niveles de compra (nivel1..5): `deseado` es el objetivo de VENTA y una compra no
+    debe moverlo. Y solo si de verdad cambia, para no reescribir la Cartera en balde.
+    """
+    if not nivel or nivel not in {f"nivel{i}" for i in range(1, 6)}:
+        return
+    if entry is None:
+        entry = await db.signal_entries.find_one({"symbol": symbol}, {"_id": 0})
+    if not entry:
+        return
+    try:
+        actual = float(entry.get(nivel) or 0)
+    except (TypeError, ValueError):
+        actual = 0
+    if precio and round(actual, 4) != round(float(precio), 4):
+        await db.signal_entries.update_one(
+            {"symbol": symbol}, {"$set": {nivel: round(float(precio), 4)}})
 
 
 async def asignar_nivel_compra(db, compra_id: str, nivel) -> dict:
@@ -234,6 +261,9 @@ async def asignar_nivel_compra(db, compra_id: str, nivel) -> dict:
     etiqueta = f"Nivel {nivel[-1]}" if nivel else None
     await db.compras.update_one(
         {"id": compra_id}, {"$set": {"nivel": nivel, "nivel_etiqueta": etiqueta}})
+    # Asignar el nivel a mano dice "ESTA compra fue la de ese nivel": el precio del nivel
+    # en la Cartera pasa a ser el real de la compra, igual que al registrarla.
+    await _actualizar_precio_nivel(db, doc.get("symbol"), nivel, doc.get("precio"))
     await _sincronizar_posicion(db, doc.get("symbol"))
     return {**doc, "nivel": nivel, "nivel_etiqueta": etiqueta}
 

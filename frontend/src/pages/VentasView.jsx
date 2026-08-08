@@ -862,9 +862,21 @@ function AvisoComision({ comision, acciones, precio }) {
 
 function FormularioOperacion({ tipo, onHecho, onCerrar }) {
   const hoy = new Date().toISOString().slice(0, 10);
-  const [f, setF] = React.useState({ symbol: "", acciones: "", precio: "", comision: "", fecha: hoy, notas: "" });
+  const [f, setF] = React.useState({ symbol: "", acciones: "", precio: "", comision: "", fecha: hoy, notas: "", nivel: "" });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   const qc = useQueryClient();
+
+  // Los niveles del valor, para poder decir de cuál es la compra. Con nivel elegido, el
+  // precio de ese nivel en la Cartera se actualiza al precio REAL de la compra — que es lo
+  // que antes había que acordarse de hacer a mano y se olvidaba.
+  const sym = f.symbol.trim().toUpperCase();
+  const { data: pos } = useQuery({
+    queryKey: ["cartera", "posicion", sym],
+    queryFn: () => api.cartera.posicion(sym),
+    enabled: tipo === "compra" && sym.length >= 1,
+    staleTime: 30_000,
+    retry: false,
+  });
 
   const mut = useMutation({
     mutationFn: (payload) => (tipo === "compra" ? api.cartera.comprar(payload) : api.cartera.vender(payload)),
@@ -888,6 +900,7 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
       symbol: sym, acciones: n, precio: p,
       comision: Number(f.comision) || 0,
       fecha: f.fecha || hoy, notas: f.notas || "",
+      ...(tipo === "compra" && f.nivel ? { nivel: f.nivel } : {}),
     });
   };
 
@@ -922,12 +935,26 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
         <Campo label="Notas">
           <input value={f.notas} onChange={set("notas")} placeholder="opcional" className={inputCls} />
         </Campo>
+        {tipo === "compra" && !!pos?.niveles?.length && (
+          <Campo label="¿De qué nivel es?"
+                 ayuda="Elige el nivel y el precio de ese nivel en la Cartera se actualizará al precio real de esta compra, con su campanita apagada. En automático solo se detecta si el precio cae a menos del 1,5% del nivel.">
+            <select value={f.nivel} onChange={set("nivel")} className={inputCls}>
+              <option value="">detectar solo (±1,5%)</option>
+              {pos.niveles.map((n) => (
+                <option key={n.nivel} value={n.nivel}>
+                  {n.etiqueta} · ahora {n.precio} {pos.divisa === "EUR" ? "€" : "$"}{n.comprado ? " · ya comprado" : ""}
+                </option>
+              ))}
+            </select>
+          </Campo>
+        )}
       </div>
 
       {tipo === "compra" && (
         <p className="text-[11px] text-[#5c6b66]">
-          El nivel se detecta solo: si el precio cae cerca de alguno de los niveles que tienes
-          puestos en la Cartera, la compra queda marcada con ese nivel.
+          {f.nivel
+            ? `El precio del ${NIVEL_ETIQUETA[f.nivel] || f.nivel} en la Cartera se actualizará a tu precio real de compra y su campanita se apagará sola.`
+            : "El nivel se detecta solo si el precio cae a menos del 1,5% de alguno de tus niveles; si compraste algo desviado, elígelo arriba y el precio del nivel en la Cartera se actualizará al tuyo."}
         </p>
       )}
 
