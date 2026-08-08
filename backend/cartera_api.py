@@ -12,6 +12,7 @@ ganado se CALCULAN reproduciendo el libro. Guardar además un saldo es garantiza
 día no cuadre con sus propios apuntes, y entonces no hay forma de saber cuál miente.
 """
 import logging
+import re
 from datetime import datetime, timezone
 
 import comisiones
@@ -453,6 +454,26 @@ async def _mapa_isin(db) -> dict:
     return mapa
 
 
+#: Valor especial del mapeo para "este producto no me interesa, sáltalo".
+#: Hace falta distinguirlo de "todavía no lo he decidido": si no, un producto que se quiere
+#: dejar fuera bloquearía la importación entera para siempre.
+IGNORAR = "__IGNORAR__"
+
+
+def _ticker_valido(v: str) -> str:
+    """Normaliza un ticker escrito a mano. Cadena vacía si no lo parece.
+
+    Se admite escribirlo libremente y no solo elegirlo de la Cartera: un CSV con años de
+    historial trae posiciones ya cerradas y valores que se dejaron de seguir, y esas ventas
+    son parte de lo ganado. Obligar a tenerlas en la Cartera para poder importarlas dejaría
+    fuera justo el historial que se quiere recuperar.
+    """
+    v = (v or "").strip().upper()
+    if v == IGNORAR:
+        return IGNORAR
+    return v if re.fullmatch(r"[A-Z0-9][A-Z0-9.\-]{0,14}", v or "") else ""
+
+
 async def preparar_importacion_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
     """Qué productos del fichero se sabe a qué acción corresponden y cuáles no.
 
@@ -460,8 +481,10 @@ async def preparar_importacion_degiro(db, operaciones: list, mapeo: dict = None)
     que la segunda importación no vuelva a preguntar: el ISIN se guarda en la Cartera.
     """
     mapa = await _mapa_isin(db)
-    mapa.update({k.strip().upper(): v.strip().upper()
-                 for k, v in (mapeo or {}).items() if k and v})
+    for k, v in (mapeo or {}).items():
+        limpio = _ticker_valido(v)
+        if k and limpio:
+            mapa[k.strip().upper()] = limpio
 
     entradas = await db.signal_entries.find(
         {}, {"_id": 0, "symbol": 1, "name": 1}).to_list(500)
@@ -487,8 +510,15 @@ async def preparar_importacion_degiro(db, operaciones: list, mapeo: dict = None)
                 break
 
     productos = sorted(por_isin.values(), key=lambda p: p["producto"])
+    for p in productos:
+        p["ignorado"] = p.get("symbol") == IGNORAR
+        if p["ignorado"]:
+            p["symbol"] = None
     return {"productos": productos,
-            "pendientes": [p for p in productos if not p.get("symbol")],
+            # Ignorado NO es pendiente: si lo fuera, un producto que se quiere dejar fuera
+            # bloquearía la importación entera.
+            "pendientes": [p for p in productos if not p.get("symbol") and not p["ignorado"]],
+            "ignorados": [p["isin"] for p in productos if p["ignorado"]],
             "simbolos_conocidos": conocidos}
 
 
@@ -504,8 +534,10 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
         return {**prep, "importadas": 0, "saltadas": 0,
                 "aviso": "Falta decir a qué acción corresponde cada producto."}
 
-    mapa = {p["isin"]: p["symbol"] for p in prep["productos"]}
-    # El ISIN se guarda en la Cartera: la próxima importación ya no pregunta.
+    mapa = {p["isin"]: p["symbol"] for p in prep["productos"] if p.get("symbol")}
+    # El ISIN se guarda en la Cartera: la próxima importación ya no pregunta. Solo para los
+    # que estén en ella — un valor que se dejó de seguir no tiene fila que anotar, y sus
+    # operaciones se guardan igual en el libro.
     for isin, sym in mapa.items():
         await db.signal_entries.update_one({"symbol": sym}, {"$set": {"isin": isin}})
 

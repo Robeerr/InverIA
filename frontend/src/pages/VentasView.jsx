@@ -210,7 +210,9 @@ function ImportarDegiro({ onCerrar }) {
     onError: (e) => toast.error(e?.response?.data?.detail || "No se pudo importar"),
   });
 
+  const IGNORAR = "__IGNORAR__";
   const pendientes = (previo?.productos || []).filter((p) => !mapeo[p.isin]);
+  const ignorados = (previo?.productos || []).filter((p) => mapeo[p.isin] === IGNORAR);
 
   return (
     <div className="card-flat p-4 space-y-3">
@@ -267,23 +269,43 @@ function ImportarDegiro({ onCerrar }) {
                 <div key={p.isin} className="flex items-center gap-2 flex-wrap text-xs">
                   <span className="flex-1 min-w-0 truncate" title={p.isin}>{p.producto}</span>
                   <span className="text-[10px] text-[#5c6b66] font-mono">{p.operaciones} ops</span>
-                  <select value={mapeo[p.isin] || ""}
-                          onChange={(e) => setMapeo((m) => ({ ...m, [p.isin]: e.target.value }))}
-                          className="border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-2 py-1 font-mono text-xs bg-transparent">
-                    <option value="">— elegir —</option>
-                    {(previo.simbolos_conocidos || []).map((sy) => (
-                      <option key={sy} value={sy}>{sy}</option>
-                    ))}
-                  </select>
-                  {p.symbol && <Chip title="Ya emparejado en una importación anterior.">recordado</Chip>}
+                  {/* Campo LIBRE con la Cartera como sugerencias, no un desplegable cerrado.
+                      Un CSV con años de historial trae posiciones ya cerradas y valores que
+                      se dejaron de seguir, y sus ventas son parte de lo ganado: exigir que
+                      estén en la Cartera dejaría fuera justo el historial a recuperar. */}
+                  <input
+                    list="tickers-cartera"
+                    value={mapeo[p.isin] === IGNORAR ? "" : (mapeo[p.isin] || "")}
+                    disabled={mapeo[p.isin] === IGNORAR}
+                    onChange={(e) => setMapeo((m) => ({ ...m, [p.isin]: e.target.value.toUpperCase() }))}
+                    placeholder="ticker"
+                    className="border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-2 py-1 font-mono text-xs w-28 bg-transparent disabled:opacity-40" />
+                  <label className="flex items-center gap-1 text-[10px] text-[#5c6b66] cursor-pointer"
+                         title="Deja este producto fuera de la importación. Útil para ETFs o valores que no quieres seguir.">
+                    <input type="checkbox"
+                           checked={mapeo[p.isin] === IGNORAR}
+                           onChange={(e) => setMapeo((m) => ({
+                             ...m, [p.isin]: e.target.checked ? IGNORAR : "" }))} />
+                    ignorar
+                  </label>
+                  {p.symbol && mapeo[p.isin] !== IGNORAR
+                    && <Chip title="Ya emparejado en una importación anterior.">recordado</Chip>}
                 </div>
               ))}
             </div>
+            <datalist id="tickers-cartera">
+              {(previo.simbolos_conocidos || []).map((sy) => <option key={sy} value={sy} />)}
+            </datalist>
+            <p className="text-[11px] text-[#5c6b66] mt-2">
+              Escribe el ticker. Los de tu Cartera salen como sugerencia al empezar a
+              teclear, pero puedes poner cualquiera: si es una posición que ya cerraste, su
+              ganancia entra igual en el historial aunque no la sigas.
+              {" "}Marca <b>ignorar</b> lo que no quieras (ETFs, valores que no llevas).
+            </p>
             {!!pendientes.length && (
-              <p className="text-[11px] text-[#8a6508] mt-2">
-                Faltan {pendientes.length} por emparejar. Si alguno no está en tu Cartera,
-                añádelo allí primero — sus operaciones no se pueden guardar sin saber de qué
-                acción son.
+              <p className="text-[11px] text-[#8a6508] mt-1">
+                Faltan <b>{pendientes.length}</b> por decidir: ponles ticker o márcalos como
+                ignorar.
               </p>
             )}
           </div>
@@ -291,7 +313,10 @@ function ImportarDegiro({ onCerrar }) {
           <button onClick={() => confirmar.mutate()}
                   disabled={confirmar.isPending || !!pendientes.length}
                   className="w-full bg-[#1a3a32] text-[#f5f3ef] rounded px-4 py-2 text-sm font-semibold disabled:opacity-60">
-            {confirmar.isPending ? "Importando…" : `Importar ${previo.resumen?.total || ""} operaciones`}
+            {confirmar.isPending ? "Importando…"
+              : ignorados.length
+                ? `Importar (ignorando ${ignorados.length} producto(s))`
+                : `Importar ${previo.resumen?.total || ""} operaciones`}
           </button>
         </div>
       )}

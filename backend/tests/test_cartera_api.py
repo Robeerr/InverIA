@@ -775,3 +775,57 @@ def test_dos_filas_identicas_del_mismo_fichero_no_entran_dos_veces():
     dobles = _OPS_DEGIRO + [{**_OPS_DEGIRO[0], "huella": "otra"}]
     r = _correr(cartera_api.importar_degiro(db, dobles, {"US5738741041": "MRVL"}))
     assert r["importadas"] == 2 and len(db.compras.docs) == 1
+
+
+# ── Productos que no estan en la Cartera ─────────────────────────────────────
+# Un CSV con anos de historial trae posiciones ya cerradas y valores que se dejaron de
+# seguir. Sus ventas son parte de lo ganado: obligar a tenerlos en la Cartera para poder
+# importarlos dejaria fuera justo el historial que se quiere recuperar.
+
+_OPS_OTRO = [
+    {"huella": "x1", "fecha": "2026-02-01", "hora": "10:00", "producto": "PLUG POWER INC.",
+     "isin": "US72919P2020", "tipo": "compra", "acciones": 100, "precio": 2.5,
+     "divisa": "USD", "tasa": 1.10, "comision": 2.2, "orden": "A"},
+    {"huella": "x2", "fecha": "2026-05-01", "hora": "10:00", "producto": "PLUG POWER INC.",
+     "isin": "US72919P2020", "tipo": "venta", "acciones": 100, "precio": 3.5,
+     "divisa": "USD", "tasa": 1.10, "comision": 2.2, "orden": "B"},
+]
+
+
+def test_se_puede_escribir_un_ticker_que_no_esta_en_la_cartera():
+    db = _DB([{"symbol": "MRVL", "name": "MARVELL"}])
+    r = _correr(cartera_api.importar_degiro(db, _OPS_OTRO, {"US72919P2020": "PLUG"}))
+    assert r["importadas"] == 2
+    assert db.compras.docs[0]["symbol"] == "PLUG"
+    # Su ganancia entra en el historial aunque no tenga fila en la Cartera.
+    fila = _correr(cartera_api.historial(db))["items"][0]
+    assert fila["symbol"] == "PLUG"
+
+
+def test_un_producto_se_puede_ignorar_sin_bloquear_la_importacion():
+    """Ignorado NO es lo mismo que pendiente: si lo fuera, un ETF que no interesa
+    impediria importar todo lo demas para siempre."""
+    db = _DB([{"symbol": "MRVL", "name": "MARVELL"}])
+    ops = _OPS_DEGIRO + _OPS_OTRO
+    r = _correr(cartera_api.importar_degiro(
+        db, ops, {"US5738741041": "MRVL", "US72919P2020": cartera_api.IGNORAR}))
+    assert r["pendientes"] == []
+    assert r["importadas"] == 2, "solo las de MRVL"
+    assert all(c["symbol"] == "MRVL" for c in db.compras.docs)
+
+
+@pytest.mark.parametrize("crudo,esperado", [
+    ("mrvl", "MRVL"), (" nvda ", "NVDA"), ("BRK.B", "BRK.B"), ("RDS-A", "RDS-A"),
+    ("", ""), ("   ", ""), ("no es un ticker", ""), ("<script>", ""),
+])
+def test_el_ticker_escrito_a_mano_se_valida(crudo, esperado):
+    """Sin validar, un nombre completo pegado por error crearia una posicion basura que
+    luego hay que ir a buscar y borrar."""
+    assert cartera_api._ticker_valido(crudo) == esperado
+
+
+def test_un_ticker_invalido_deja_el_producto_pendiente():
+    db = _DB()
+    prep = _correr(cartera_api.preparar_importacion_degiro(
+        db, _OPS_OTRO, {"US72919P2020": "esto no vale"}))
+    assert len(prep["pendientes"]) == 1
