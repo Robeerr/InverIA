@@ -3880,6 +3880,24 @@ async def create_signal(item: SignalEntryCreate, _user: str = Depends(auth.get_c
     if sym and await db.signal_entries.find_one({"symbol": sym}, {"_id": 0, "id": 1}):
         raise HTTPException(409, f"{sym} ya está en tu Cartera")
     entry = await signal_table.create_entry(db, item.model_dump())
+    # Una cotización AL MOMENTO, aunque el mercado esté cerrado. El worker solo trabaja en
+    # sesión, así que un valor añadido el sábado se quedaba sin precio ("—" en toda la fila)
+    # hasta el lunes a las 15:30 — pasó con UBER. Una única llamada; si falla, el worker lo
+    # rellenará igualmente al abrir.
+    try:
+        q = (await asyncio.to_thread(market_data.get_quote_fast, sym)
+             or await asyncio.to_thread(market_data.get_quote, sym))
+        precio = float((q or {}).get("price") or 0)
+        if precio > 0:
+            upd = {"last_price": precio, "updated_at": datetime.now(timezone.utc).isoformat()}
+            if q.get("previous_close"):
+                upd["previous_close"] = round(float(q["previous_close"]), 2)
+            if q.get("change_percent") is not None:
+                upd["daily_change_percent"] = round(float(q["change_percent"]), 2)
+            await db.signal_entries.update_one({"id": entry["id"]}, {"$set": upd})
+            entry.update(upd)
+    except Exception as e:
+        logger.info("Sin cotización inicial para %s: %s", sym, e)
     _cache._store.pop("signals_list", None)
     _cache._store.pop("signals_hot", None)
     return entry
