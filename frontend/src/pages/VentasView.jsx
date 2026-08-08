@@ -202,12 +202,25 @@ function ImportarDegiro({ onCerrar }) {
         setPrevio(r);
         return;
       }
-      toast.success(`${r.importadas} operación(es) importadas`
-        + (r.saltadas ? ` · ${r.saltadas} ya estaban` : ""));
+      toast.success(r.importadas
+        ? `${r.importadas} operación(es) importadas`
+          + (r.saltadas ? ` · ${r.saltadas} ya estaban` : "")
+        : `Ya estaba todo importado (${r.saltadas} operaciones). No hacía falta nada.`,
+        { duration: 8000 });
       qc.invalidateQueries({ queryKey: ["cartera"] });
       onCerrar();
     },
-    onError: (e) => toast.error(e?.response?.data?.detail || "No se pudo importar"),
+    // Un corte por tiempo NO significa que haya fallado: el servidor sigue trabajando y
+    // suele terminar. Decir "no se pudo importar" a secas hace pensar que no entró nada,
+    // cuando lo normal es que entrara todo. Pasó de verdad.
+    onError: (e) => {
+      const porTiempo = e?.code === "ECONNABORTED" || /timeout/i.test(e?.message || "");
+      toast.error(porTiempo
+        ? "Se ha agotado la espera, pero el servidor puede haber terminado igualmente. "
+          + "Vuelve a subir el mismo fichero: te dirá cuántas hay ya importadas."
+        : (e?.response?.data?.detail || "No se pudo importar"),
+        { duration: porTiempo ? 15000 : 5000 });
+    },
   });
 
   const IGNORAR = "__IGNORAR__";
