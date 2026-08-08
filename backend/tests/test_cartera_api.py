@@ -678,3 +678,79 @@ def test_la_media_ponderada_no_toca_la_ganancia_por_nivel():
     # LIFO: se vendio el nivel 5 (178) -> +110. La media ponderada (228,50) no interviene.
     assert fila["lifo"]["ganancia_divisa"] == pytest.approx(110.0)
     assert fila["lifo"]["lotes"][0]["nivel"] == "nivel5"
+
+
+# ── Importacion desde el CSV del broker ──────────────────────────────────────
+
+_OPS_DEGIRO = [
+    {"huella": "h1", "fecha": "2026-01-10", "hora": "10:00", "producto": "MARVELL TECHNOLOGY",
+     "isin": "US5738741041", "tipo": "compra", "acciones": 10, "precio": 279.0,
+     "divisa": "USD", "tasa": 1.10, "comision": 3.95, "orden": "O1"},
+    {"huella": "h2", "fecha": "2026-08-06", "hora": "18:09", "producto": "MARVELL TECHNOLOGY",
+     "isin": "US5738741041", "tipo": "venta", "acciones": 10, "precio": 214.205,
+     "divisa": "USD", "tasa": 1.1522, "comision": 7.66, "orden": "O2"},
+]
+
+
+def test_sin_saber_a_que_accion_corresponde_no_se_importa_nada():
+    """El CSV trae ISIN y nombre, no ticker. Meter operaciones en la posicion equivocada es
+    peor que no importarlas."""
+    db = _DB([{"symbol": "MRVL", "name": "MARVELL"}])
+    r = _correr(cartera_api.importar_degiro(db, _OPS_DEGIRO))
+    assert r["importadas"] == 0
+    assert len(r["pendientes"]) == 1
+    assert db.compras.docs == [] and db.ventas.docs == []
+
+
+def test_se_sugiere_el_ticker_por_el_nombre():
+    """Solo una propuesta: la confirma el usuario, porque acertar mal mete las operaciones
+    en otra posicion."""
+    db = _DB([{"symbol": "MRVL", "name": "MARVELL TECHNOLOGY"}])
+    prep = _correr(cartera_api.preparar_importacion_degiro(db, _OPS_DEGIRO))
+    assert prep["pendientes"][0]["sugerencia"] == "MRVL"
+
+
+def test_con_el_mapeo_se_importa_todo():
+    db = _DB([{"symbol": "MRVL", "name": "MARVELL", "nivel1": 279.0}])
+    r = _correr(cartera_api.importar_degiro(db, _OPS_DEGIRO, {"US5738741041": "MRVL"}))
+    assert r["importadas"] == 2
+    assert len(db.compras.docs) == 1 and len(db.ventas.docs) == 1
+    # La compra a 279 cae en el Nivel 1: se detecta igual que si se metiera a mano.
+    assert db.compras.docs[0]["nivel"] == "nivel1"
+    # Y la posicion queda a cero: se vendio todo.
+    assert db.signal_entries.docs[0]["acciones"] == 0
+
+
+def test_el_isin_se_recuerda_para_la_proxima_vez():
+    """Sin esto habria que emparejar los mismos productos en cada importacion."""
+    db = _DB([{"symbol": "MRVL", "name": "MARVELL"}])
+    _correr(cartera_api.importar_degiro(db, _OPS_DEGIRO, {"US5738741041": "MRVL"}))
+    assert db.signal_entries.docs[0]["isin"] == "US5738741041"
+    prep = _correr(cartera_api.preparar_importacion_degiro(db, _OPS_DEGIRO))
+    assert prep["pendientes"] == []
+
+
+def test_subir_el_mismo_fichero_dos_veces_no_duplica():
+    """Es la diferencia entre poder reexportar tranquilamente cada mes y tener que llevar la
+    cuenta de lo ya subido."""
+    db = _DB([{"symbol": "MRVL", "name": "MARVELL"}])
+    _correr(cartera_api.importar_degiro(db, _OPS_DEGIRO, {"US5738741041": "MRVL"}))
+    r2 = _correr(cartera_api.importar_degiro(db, _OPS_DEGIRO, {"US5738741041": "MRVL"}))
+    assert r2["importadas"] == 0 and r2["saltadas"] == 2
+    assert len(db.compras.docs) == 1 and len(db.ventas.docs) == 1
+
+
+def test_un_fichero_que_solapa_solo_mete_lo_nuevo():
+    db = _DB([{"symbol": "MRVL", "name": "MARVELL"}])
+    _correr(cartera_api.importar_degiro(db, _OPS_DEGIRO[:1], {"US5738741041": "MRVL"}))
+    r = _correr(cartera_api.importar_degiro(db, _OPS_DEGIRO, {"US5738741041": "MRVL"}))
+    assert r["importadas"] == 1 and r["saltadas"] == 1
+
+
+def test_las_comisiones_y_el_cambio_del_fichero_mandan():
+    """Son los REALES: dejan de estimarse con la tarifa publica y el cambio de mercado."""
+    db = _DB([{"symbol": "MRVL", "name": "MARVELL"}])
+    _correr(cartera_api.importar_degiro(db, _OPS_DEGIRO, {"US5738741041": "MRVL"}))
+    c = db.compras.docs[0]
+    assert c["comision"] == 3.95 and c["tasa"] == 1.10
+    assert c.get("comision_estimada") is not True

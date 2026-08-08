@@ -35,6 +35,7 @@ import daily_analyst
 import sp500_rsi_watch
 import ventas as ventas_mod
 import cartera_api
+import degiro_csv
 import lotes
 import fx
 import newsletter_ingest
@@ -2371,6 +2372,45 @@ async def guardar_ajustes(item: AjusteMetodo, _user: str = Depends(auth.get_curr
     for k in ("signals_list", "signals_hot"):
         _cache._store.pop(k, None)
     return r
+
+
+@api_router.post("/cartera/importar-degiro")
+async def importar_degiro(archivo: UploadFile = File(...),
+                          mapeo: Optional[str] = None,
+                          confirmar: bool = False,
+                          _user: str = Depends(auth.get_current_user)):
+    """Importa el CSV de Transacciones de DEGIRO.
+
+    Dos pasos a propósito. Sin `confirmar` solo se LEE y se devuelve lo que hay, incluidos
+    los productos que no se sabe a qué acción corresponden: el fichero trae ISIN y nombre,
+    no ticker, y meter operaciones en la posición equivocada es peor que no importarlas.
+    Con `confirmar=true` y el mapeo resuelto, se guardan.
+
+    `mapeo` es un JSON {"US5738741041": "MRVL", ...}.
+    """
+    contenido = await archivo.read()
+    if len(contenido) > 5_000_000:
+        raise HTTPException(413, "El fichero es demasiado grande (máximo 5 MB).")
+
+    leido = await asyncio.to_thread(degiro_csv.leer, contenido)
+    if leido["errores"] and not leido["operaciones"]:
+        raise HTTPException(400, leido["errores"][0])
+
+    try:
+        mapa = json.loads(mapeo) if mapeo else {}
+    except Exception:
+        raise HTTPException(400, "El mapeo de productos no es un JSON válido.")
+
+    if not confirmar:
+        prep = await cartera_api.preparar_importacion_degiro(db, leido["operaciones"], mapa)
+        return {**prep, "resumen": degiro_csv.resumen(leido["operaciones"]),
+                "errores": leido["errores"], "confirmado": False}
+
+    r = await cartera_api.importar_degiro(db, leido["operaciones"], mapa)
+    for k in ("signals_list", "signals_hot"):
+        _cache._store.pop(k, None)
+    return {**r, "resumen": degiro_csv.resumen(leido["operaciones"]),
+            "errores": leido["errores"], "confirmado": not r.get("pendientes")}
 
 
 @api_router.post("/cartera/importar-posiciones")

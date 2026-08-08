@@ -170,6 +170,135 @@ function FilaVenta({ v, metodo, onBorrar }) {
   );
 }
 
+// ── Importar el CSV del bróker ───────────────────────────────────────────────
+// Resuelve de una vez lo que se venía estimando: fecha exacta, comisión real y el tipo de
+// cambio que te aplicaron de verdad. Va en dos pasos porque el fichero identifica cada
+// acción por ISIN y nombre, no por ticker, y meter operaciones en la posición equivocada
+// es peor que no importarlas.
+function ImportarDegiro({ onCerrar }) {
+  const [archivo, setArchivo] = React.useState(null);
+  const [previo, setPrevio] = React.useState(null);
+  const [mapeo, setMapeo] = React.useState({});
+  const qc = useQueryClient();
+
+  const leer = useMutation({
+    mutationFn: () => api.cartera.importarDegiro(archivo, null, false),
+    onSuccess: (r) => {
+      setPrevio(r);
+      const inicial = {};
+      for (const p of r.productos || []) {
+        if (p.symbol || p.sugerencia) inicial[p.isin] = p.symbol || p.sugerencia;
+      }
+      setMapeo(inicial);
+    },
+    onError: (e) => toast.error(e?.response?.data?.detail || "No se pudo leer el fichero"),
+  });
+
+  const confirmar = useMutation({
+    mutationFn: () => api.cartera.importarDegiro(archivo, mapeo, true),
+    onSuccess: (r) => {
+      if (r.pendientes?.length) {
+        toast.error("Faltan productos por emparejar");
+        setPrevio(r);
+        return;
+      }
+      toast.success(`${r.importadas} operación(es) importadas`
+        + (r.saltadas ? ` · ${r.saltadas} ya estaban` : ""));
+      qc.invalidateQueries({ queryKey: ["cartera"] });
+      onCerrar();
+    },
+    onError: (e) => toast.error(e?.response?.data?.detail || "No se pudo importar"),
+  });
+
+  const pendientes = (previo?.productos || []).filter((p) => !mapeo[p.isin]);
+
+  return (
+    <div className="card-flat p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="font-heading font-bold text-sm">Importar el CSV de DEGIRO</h3>
+        <button type="button" onClick={onCerrar} className="text-[#5c6b66] text-sm">✕</button>
+      </div>
+
+      <p className="text-[11px] text-[#5c6b66] leading-relaxed">
+        En DEGIRO: <b>Actividad → Transacciones</b> → elige el periodo → <b>Exportar → CSV</b>.
+        Sube el fichero <b>Transactions.csv</b> (no el Account.csv, que es el de caja).
+        <br />
+        Trae la fecha, el precio, la comisión y el tipo de cambio <b>reales</b>, así que deja
+        de hacer falta estimarlos. Subirlo dos veces no duplica nada.
+      </p>
+
+      <input type="file" accept=".csv,text/csv"
+             onChange={(e) => { setArchivo(e.target.files?.[0] || null); setPrevio(null); }}
+             className="text-xs w-full" />
+
+      {archivo && !previo && (
+        <button onClick={() => leer.mutate()} disabled={leer.isPending}
+                className="w-full bg-[#1a3a32] text-[#f5f3ef] rounded px-4 py-2 text-sm font-semibold disabled:opacity-60">
+          {leer.isPending ? "Leyendo…" : "Leer el fichero"}
+        </button>
+      )}
+
+      {previo && (
+        <div className="space-y-3">
+          <div className="text-[11px] text-[#5c6b66] border-t border-[#e5e0d8] dark:border-[#1a3a32] pt-2">
+            <b>{previo.resumen?.total}</b> operaciones ·{" "}
+            {previo.resumen?.compras} compras · {previo.resumen?.ventas} ventas ·{" "}
+            de {fecha(previo.resumen?.desde)} a {fecha(previo.resumen?.hasta)} ·{" "}
+            {usd(previo.resumen?.comisiones)} de comisiones reales
+          </div>
+
+          {!!previo.errores?.length && (
+            <div className="text-[11px] text-[#8a6508]">
+              {previo.errores.length} línea(s) no se han entendido y quedan fuera:
+              <ul className="list-disc ml-4">
+                {previo.errores.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
+              </ul>
+            </div>
+          )}
+
+          {/* El emparejamiento. Solo se pregunta una vez por producto: el ISIN se guarda en
+              la Cartera y la próxima importación ya no lo pide. */}
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.15em] text-[#5c6b66] font-mono mb-2">
+              ¿A qué acción corresponde cada producto?
+            </p>
+            <div className="space-y-1.5">
+              {(previo.productos || []).map((p) => (
+                <div key={p.isin} className="flex items-center gap-2 flex-wrap text-xs">
+                  <span className="flex-1 min-w-0 truncate" title={p.isin}>{p.producto}</span>
+                  <span className="text-[10px] text-[#5c6b66] font-mono">{p.operaciones} ops</span>
+                  <select value={mapeo[p.isin] || ""}
+                          onChange={(e) => setMapeo((m) => ({ ...m, [p.isin]: e.target.value }))}
+                          className="border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-2 py-1 font-mono text-xs bg-transparent">
+                    <option value="">— elegir —</option>
+                    {(previo.simbolos_conocidos || []).map((sy) => (
+                      <option key={sy} value={sy}>{sy}</option>
+                    ))}
+                  </select>
+                  {p.symbol && <Chip title="Ya emparejado en una importación anterior.">recordado</Chip>}
+                </div>
+              ))}
+            </div>
+            {!!pendientes.length && (
+              <p className="text-[11px] text-[#8a6508] mt-2">
+                Faltan {pendientes.length} por emparejar. Si alguno no está en tu Cartera,
+                añádelo allí primero — sus operaciones no se pueden guardar sin saber de qué
+                acción son.
+              </p>
+            )}
+          </div>
+
+          <button onClick={() => confirmar.mutate()}
+                  disabled={confirmar.isPending || !!pendientes.length}
+                  className="w-full bg-[#1a3a32] text-[#f5f3ef] rounded px-4 py-2 text-sm font-semibold disabled:opacity-60">
+            {confirmar.isPending ? "Importando…" : `Importar ${previo.resumen?.total || ""} operaciones`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Los lotes vivos de una acción ────────────────────────────────────────────
 // Contesta a "¿cuántas me quedan y de qué compra son?" ANTES de vender. Sin esto los lotes
 // solo se veían dentro de una venta ya hecha, así que no había forma de comprobar lo que
@@ -756,6 +885,10 @@ export default function VentasView() {
           </p>
         </div>
         <div className="flex gap-2">
+          <button onClick={() => setForm("degiro")}
+                  className="bg-[#1a3a32] text-[#f5f3ef] rounded px-3 py-1.5 text-sm font-semibold">
+            Importar CSV de DEGIRO
+          </button>
           <button onClick={() => setForm("niveles")}
                   className="border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-3 py-1.5 text-sm font-semibold">
             + Compras por niveles
@@ -771,9 +904,11 @@ export default function VentasView() {
         </div>
       </div>
 
-      {form === "niveles"
-        ? <FormularioPorNiveles onCerrar={() => setForm(null)} />
-        : form && <FormularioOperacion tipo={form} onCerrar={() => setForm(null)} />}
+      {form === "degiro"
+        ? <ImportarDegiro onCerrar={() => setForm(null)} />
+        : form === "niveles"
+          ? <FormularioPorNiveles onCerrar={() => setForm(null)} />
+          : form && <FormularioOperacion tipo={form} onCerrar={() => setForm(null)} />}
 
       {/* Cifras de cabecera. Realizado y latente van SEPARADOS: uno está en tu cuenta y el
           otro puede evaporarse mañana. Sumarlos sin distinguirlos da una sensación de

@@ -116,6 +116,16 @@ export const api = {
     // `reemplazar` rehace las posiciones ya importadas: sirve cuando la primera vez salió
     // mal y borrar los lotes a mano serían decenas de clics. Nunca toca las que ya tienen
     // ventas registradas.
+    // CSV de Transacciones de DEGIRO. Dos pasos: sin `confirmar` solo LEE y devuelve que
+    // productos no se sabe a que accion corresponden; con el mapeo resuelto, guarda.
+    importarDegiro: (archivo, mapeo = null, confirmar = false) => {
+      const fd = new FormData();
+      fd.append("archivo", archivo);
+      return client.post(`/cartera/importar-degiro`, fd, {
+        params: { confirmar, mapeo: mapeo ? JSON.stringify(mapeo) : undefined },
+        timeout: 120000,
+      }).then((r) => r.data);
+    },
     importar: (reemplazar = false) =>
       client.post(`/cartera/importar-posiciones`, null, { params: { reemplazar } }).then((r) => r.data),
   },

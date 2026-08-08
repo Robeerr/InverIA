@@ -442,6 +442,116 @@ async def resumen_cartera(db, precios: dict) -> dict:
     }
 
 
+# ── Importación desde el CSV del bróker ──────────────────────────────────────
+
+async def _mapa_isin(db) -> dict:
+    """ISIN → símbolo, de lo ya emparejado en otras importaciones."""
+    mapa = {}
+    for e in await db.signal_entries.find({}, {"_id": 0, "symbol": 1, "isin": 1}).to_list(500):
+        if e.get("isin") and e.get("symbol"):
+            mapa[str(e["isin"]).strip().upper()] = e["symbol"].upper()
+    return mapa
+
+
+async def preparar_importacion_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
+    """Qué productos del fichero se sabe a qué acción corresponden y cuáles no.
+
+    El CSV trae ISIN y nombre, no ticker. Emparejarlos una vez y RECORDARLO es lo que hace
+    que la segunda importación no vuelva a preguntar: el ISIN se guarda en la Cartera.
+    """
+    mapa = await _mapa_isin(db)
+    mapa.update({k.strip().upper(): v.strip().upper()
+                 for k, v in (mapeo or {}).items() if k and v})
+
+    entradas = await db.signal_entries.find(
+        {}, {"_id": 0, "symbol": 1, "name": 1}).to_list(500)
+    conocidos = sorted({e["symbol"].upper() for e in entradas if e.get("symbol")})
+
+    por_isin = {}
+    for op in operaciones:
+        d = por_isin.setdefault(op["isin"], {"isin": op["isin"], "producto": op["producto"],
+                                             "operaciones": 0, "symbol": mapa.get(op["isin"])})
+        d["operaciones"] += 1
+
+    # Sugerencia por parecido del nombre. Es solo una propuesta: acertar el ticker
+    # equivocado metería las operaciones en otra posición, así que lo confirma el usuario.
+    for d in por_isin.values():
+        if d["symbol"]:
+            continue
+        nombre = (d["producto"] or "").upper()
+        for e in entradas:
+            sym = (e.get("symbol") or "").upper()
+            nom = (e.get("name") or "").upper()
+            if sym and (nombre.startswith(sym) or (nom and (nom in nombre or nombre in nom))):
+                d["sugerencia"] = sym
+                break
+
+    productos = sorted(por_isin.values(), key=lambda p: p["producto"])
+    return {"productos": productos,
+            "pendientes": [p for p in productos if not p.get("symbol")],
+            "simbolos_conocidos": conocidos}
+
+
+async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
+    """Guarda las operaciones del CSV como compras y ventas del libro.
+
+    Se salta las que ya estén (por huella), así que subir el mismo fichero dos veces —o uno
+    nuevo que solape con el anterior— no duplica nada. Es la diferencia entre poder
+    reexportar tranquilamente cada mes y tener que llevar la cuenta de lo ya subido.
+    """
+    prep = await preparar_importacion_degiro(db, operaciones, mapeo)
+    if prep["pendientes"]:
+        return {**prep, "importadas": 0, "saltadas": 0,
+                "aviso": "Falta decir a qué acción corresponde cada producto."}
+
+    mapa = {p["isin"]: p["symbol"] for p in prep["productos"]}
+    # El ISIN se guarda en la Cartera: la próxima importación ya no pregunta.
+    for isin, sym in mapa.items():
+        await db.signal_entries.update_one({"symbol": sym}, {"$set": {"isin": isin}})
+
+    ya = {c.get("huella") for c in await db.compras.find(
+        {}, {"_id": 0, "huella": 1}).to_list(5000)}
+    ya |= {v.get("huella") for v in await db.ventas.find(
+        {}, {"_id": 0, "huella": 1}).to_list(5000)}
+
+    importadas, saltadas, tocados = 0, 0, set()
+    for op in sorted(operaciones, key=lambda o: (o["fecha"], o.get("hora") or "")):
+        if op["huella"] in ya:
+            saltadas += 1
+            continue
+        sym = mapa.get(op["isin"])
+        if not sym:
+            saltadas += 1
+            continue
+        comun = dict(symbol=sym, acciones=op["acciones"], precio=op["precio"],
+                     fecha=op["fecha"], comision=op["comision"], divisa=op["divisa"],
+                     tasa=op["tasa"], notas=f"DEGIRO · orden {op.get('orden') or '—'}")
+        try:
+            if op["tipo"] == "compra":
+                doc = lotes.nueva_compra(**comun)
+                entry = await db.signal_entries.find_one({"symbol": sym}, {"_id": 0})
+                det = lotes.detectar_nivel(op["precio"], entry or {})
+                doc.update({"nivel": det.get("nivel"),
+                            "nivel_etiqueta": det.get("nivel_etiqueta")})
+                doc["huella"] = op["huella"]
+                await db.compras.insert_one(doc)
+            else:
+                doc = lotes.nueva_venta(**comun)
+                doc["huella"] = op["huella"]
+                await db.ventas.insert_one(doc)
+            importadas += 1
+            tocados.add(sym)
+        except ValueError as e:
+            logger.warning("Operación descartada (%s %s): %s", op["fecha"], sym, e)
+            saltadas += 1
+
+    for sym in sorted(tocados):
+        await _sincronizar_posicion(db, sym)
+
+    return {**prep, "importadas": importadas, "saltadas": saltadas,
+            "simbolos": sorted(tocados)}
+
+
 # ── Migración desde el modelo viejo ──────────────────────────────────────────
 
 async def importar_posiciones_existentes(db, reemplazar: bool = False) -> dict:
