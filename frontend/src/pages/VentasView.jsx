@@ -301,6 +301,10 @@ function ImportarDegiro({ onCerrar }) {
               teclear, pero puedes poner cualquiera: si es una posición que ya cerraste, su
               ganancia entra igual en el historial aunque no la sigas.
               {" "}Marca <b>ignorar</b> lo que no quieras (ETFs, valores que no llevas).
+              <br />
+              <b>Ignorar no es definitivo:</b> vuelve a subir este mismo fichero cuando
+              quieras y ponles ticker entonces. Lo ya importado no se duplica y lo ignorado
+              entrará. Si dudas de alguno, ignóralo y sigue.
             </p>
             {!!pendientes.length && (
               <p className="text-[11px] text-[#8a6508] mt-1">
