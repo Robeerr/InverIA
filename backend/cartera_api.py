@@ -69,8 +69,7 @@ async def guardar_metodo_gestion(db, metodo: str) -> dict:
     _metodo_cache.update({"valor": metodo, "ts": 0.0})   # ts=0 fuerza relectura
     compras, _ = await _libro(db)
     simbolos = sorted({c.get("symbol") for c in compras if c.get("symbol")})
-    for sym in simbolos:
-        await _sincronizar_posicion(db, sym, metodo=metodo)
+    await _sincronizar_varias(db, simbolos)
     return {"metodo_gestion": metodo.lower(), "posiciones_recalculadas": len(simbolos)}
 
 
@@ -128,6 +127,42 @@ async def _sincronizar_posicion(db, symbol: str, metodo: str = None):
 
     await db.signal_entries.update_one({"symbol": symbol}, {"$set": cambios})
     return estado
+
+
+async def _sincronizar_varias(db, simbolos):
+    """Sincroniza VARIAS posiciones leyendo el libro una sola vez.
+
+    Llamar a _sincronizar_posicion en bucle hace dos consultas por símbolo, y en una
+    importación con decenas de valores eso son cientos de idas y vueltas a Mongo. Aquí se
+    trae todo de una vez y se reparte en memoria.
+    """
+    simbolos = {(s or "").strip().upper() for s in simbolos if s}
+    if not simbolos:
+        return
+    metodo = await metodo_gestion(db)
+    compras, ventas = await _libro(db)
+    entradas = {e["symbol"].upper(): e for e in await db.signal_entries.find(
+        {}, {"_id": 0}).to_list(500) if e.get("symbol")}
+
+    por_sym = {s: {"compras": [], "ventas": []} for s in simbolos}
+    for c in compras:
+        if c.get("symbol") in por_sym:
+            por_sym[c["symbol"]]["compras"].append(c)
+    for v in ventas:
+        if v.get("symbol") in por_sym:
+            por_sym[v["symbol"]]["ventas"].append(v)
+
+    for sym, libro in por_sym.items():
+        if not libro["compras"] and not libro["ventas"]:
+            continue
+        estado = lotes.reproducir(libro["compras"], libro["ventas"], metodo)
+        cambios = {"acciones": estado["acciones_abiertas"], "updated_at": _ahora()}
+        if estado["precio_medio"] is not None:
+            cambios["compra"] = estado["precio_medio"]
+        entry = entradas.get(sym)
+        if entry:
+            cambios.update(lotes.estado_niveles(entry, libro["compras"], estado["abiertos"]))
+        await db.signal_entries.update_one({"symbol": sym}, {"$set": cambios})
 
 
 async def _comision_o_estimada(comision, importe, divisa, tasa, fx_manual=False):
@@ -563,6 +598,13 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
     ya_manual = ({_clave(c, "compra") for c in compras_db}
                  | {_clave(v, "venta") for v in ventas_db})
 
+    # Las posiciones de la Cartera, UNA vez. Antes se consultaba una por cada compra para
+    # detectar su nivel: con un fichero de años son cientos de idas y vueltas a Mongo, y la
+    # importación tardaba tanto que el navegador se rendía antes de terminar.
+    entradas = {e["symbol"].upper(): e for e in await db.signal_entries.find(
+        {}, {"_id": 0}).to_list(500) if e.get("symbol")}
+
+    nuevas_compras, nuevas_ventas = [], []
     importadas, saltadas, tocados = 0, 0, set()
     for op in sorted(operaciones, key=lambda o: (o["fecha"], o.get("hora") or "")):
         sym = mapa.get(op["isin"])
@@ -578,16 +620,15 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
         try:
             if op["tipo"] == "compra":
                 doc = lotes.nueva_compra(**comun)
-                entry = await db.signal_entries.find_one({"symbol": sym}, {"_id": 0})
-                det = lotes.detectar_nivel(op["precio"], entry or {})
+                det = lotes.detectar_nivel(op["precio"], entradas.get(sym) or {})
                 doc.update({"nivel": det.get("nivel"),
                             "nivel_etiqueta": det.get("nivel_etiqueta")})
                 doc["huella"] = op["huella"]
-                await db.compras.insert_one(doc)
+                nuevas_compras.append(doc)
             else:
                 doc = lotes.nueva_venta(**comun)
                 doc["huella"] = op["huella"]
-                await db.ventas.insert_one(doc)
+                nuevas_ventas.append(doc)
             importadas += 1
             tocados.add(sym)
             ya.add(op["huella"])
@@ -596,8 +637,14 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
             logger.warning("Operación descartada (%s %s): %s", op["fecha"], sym, e)
             saltadas += 1
 
-    for sym in sorted(tocados):
-        await _sincronizar_posicion(db, sym)
+    # Una escritura por colección en vez de una por operación. Con cientos de apuntes la
+    # diferencia no es de milisegundos: es que termine o que el navegador se canse.
+    if nuevas_compras:
+        await db.compras.insert_many(nuevas_compras)
+    if nuevas_ventas:
+        await db.ventas.insert_many(nuevas_ventas)
+
+    await _sincronizar_varias(db, tocados)
 
     return {**prep, "importadas": importadas, "saltadas": saltadas,
             "simbolos": sorted(tocados)}

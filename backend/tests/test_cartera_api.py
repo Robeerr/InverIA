@@ -58,6 +58,9 @@ class _Coleccion:
     async def insert_one(self, doc):
         self.docs.append(dict(doc))
 
+    async def insert_many(self, docs):
+        self.docs.extend(dict(d) for d in docs)
+
     async def update_one(self, filtro, cambios, upsert=False):
         for d in self.docs:
             if all(self._cumple(d, k, v) for k, v in filtro.items()):
@@ -829,3 +832,30 @@ def test_un_ticker_invalido_deja_el_producto_pendiente():
     prep = _correr(cartera_api.preparar_importacion_degiro(
         db, _OPS_OTRO, {"US72919P2020": "esto no vale"}))
     assert len(prep["pendientes"]) == 1
+
+
+def test_importar_no_consulta_la_base_de_datos_por_operacion():
+    """La importacion fallaba por lentitud con un fichero de anos: se consultaba la Cartera
+    una vez por cada compra (para detectar su nivel) y se insertaba de una en una. Con
+    cientos de apuntes son cientos de idas y vueltas, y el navegador se rendia antes."""
+    import inspect
+    src = inspect.getsource(cartera_api.importar_degiro)
+    assert "find_one" not in src, "las posiciones se leen UNA vez, antes del bucle"
+    assert "insert_many" in src, "una escritura por coleccion, no una por operacion"
+    assert "_sincronizar_varias" in src, "y una sola lectura del libro para sincronizar"
+
+
+def test_sincronizar_varias_deja_lo_mismo_que_una_a_una():
+    """La version rapida no puede dar otro resultado que la lenta."""
+    db = _DB([{"symbol": "A", "nivel1": 100.0}, {"symbol": "B"}])
+    _correr(cartera_api.registrar_compra(db, "A", 5, 100.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_compra(db, "B", 3, 50.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_venta(db, "A", 2, 120.0, fecha="2026-06-01", comision=0))
+    esperado = [(e["symbol"], e["acciones"], e.get("compra")) for e in db.signal_entries.docs]
+
+    # Se estropean a mano y se recalculan de golpe.
+    for e in db.signal_entries.docs:
+        e["acciones"], e["compra"] = 999, 999
+    _correr(cartera_api._sincronizar_varias(db, ["A", "B"]))
+    assert [(e["symbol"], e["acciones"], e.get("compra"))
+            for e in db.signal_entries.docs] == esperado
