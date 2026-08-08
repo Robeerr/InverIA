@@ -754,3 +754,24 @@ def test_las_comisiones_y_el_cambio_del_fichero_mandan():
     c = db.compras.docs[0]
     assert c["comision"] == 3.95 and c["tasa"] == 1.10
     assert c.get("comision_estimada") is not True
+
+
+def test_reimportar_no_duplica_lo_que_metiste_a_mano():
+    """La trampa de importar una vez, seguir a mano y reimportar meses despues: las
+    operaciones manuales no llevan huella, asi que el fichero las volveria a crear y la
+    posicion quedaria duplicada sin haber hecho nada raro."""
+    db = _DB([{"symbol": "MRVL", "name": "MARVELL", "isin": "US5738741041"}])
+    # Metida a mano, con los mismos datos que luego traera el CSV.
+    _correr(cartera_api.registrar_compra(db, "MRVL", 10, 279.0, fecha="2026-01-10",
+                                         comision=3.95))
+    r = _correr(cartera_api.importar_degiro(db, _OPS_DEGIRO, {"US5738741041": "MRVL"}))
+    assert r["saltadas"] >= 1, "la compra a mano debe reconocerse"
+    assert len(db.compras.docs) == 1, "y no duplicarse"
+    assert r["importadas"] == 1, "la venta, que no estaba, si entra"
+
+
+def test_dos_filas_identicas_del_mismo_fichero_no_entran_dos_veces():
+    db = _DB([{"symbol": "MRVL", "name": "MARVELL"}])
+    dobles = _OPS_DEGIRO + [{**_OPS_DEGIRO[0], "huella": "otra"}]
+    r = _correr(cartera_api.importar_degiro(db, dobles, {"US5738741041": "MRVL"}))
+    assert r["importadas"] == 2 and len(db.compras.docs) == 1

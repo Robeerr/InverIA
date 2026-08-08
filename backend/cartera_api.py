@@ -509,18 +509,35 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
     for isin, sym in mapa.items():
         await db.signal_entries.update_one({"symbol": sym}, {"$set": {"isin": isin}})
 
-    ya = {c.get("huella") for c in await db.compras.find(
-        {}, {"_id": 0, "huella": 1}).to_list(5000)}
-    ya |= {v.get("huella") for v in await db.ventas.find(
-        {}, {"_id": 0, "huella": 1}).to_list(5000)}
+    # Anti-duplicados por DOS vías, y la segunda importa más de lo que parece.
+    #
+    # La huella solo la llevan las operaciones que vinieron de un CSV. Las metidas a mano no
+    # tienen ninguna, así que un fichero que las incluya las volvería a crear — y basta con
+    # importar una vez, seguir a mano y reimportar meses después para acabar con la posición
+    # duplicada sin haber hecho nada raro.
+    #
+    # Por eso se compara también por lo que define la operación: mismo valor, misma fecha,
+    # mismo sentido, mismas acciones y precio. El precio se redondea a 4 decimales porque
+    # teclearlo a mano y leerlo del fichero rara vez dan exactamente el mismo float.
+    def _clave(op, tipo):
+        return (str(op.get("symbol") or "").upper(), tipo, str(op.get("fecha") or "")[:10],
+                round(float(op.get("acciones") or 0), 6),
+                round(float(op.get("precio") or 0), 4))
+
+    compras_db = await db.compras.find({}, {"_id": 0}).to_list(5000)
+    ventas_db = await db.ventas.find({}, {"_id": 0}).to_list(5000)
+    ya = {c.get("huella") for c in compras_db if c.get("huella")}
+    ya |= {v.get("huella") for v in ventas_db if v.get("huella")}
+    ya_manual = ({_clave(c, "compra") for c in compras_db}
+                 | {_clave(v, "venta") for v in ventas_db})
 
     importadas, saltadas, tocados = 0, 0, set()
     for op in sorted(operaciones, key=lambda o: (o["fecha"], o.get("hora") or "")):
-        if op["huella"] in ya:
-            saltadas += 1
-            continue
         sym = mapa.get(op["isin"])
         if not sym:
+            saltadas += 1
+            continue
+        if op["huella"] in ya or _clave({**op, "symbol": sym}, op["tipo"]) in ya_manual:
             saltadas += 1
             continue
         comun = dict(symbol=sym, acciones=op["acciones"], precio=op["precio"],
@@ -541,6 +558,8 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
                 await db.ventas.insert_one(doc)
             importadas += 1
             tocados.add(sym)
+            ya.add(op["huella"])
+            ya_manual.add(_clave({**op, "symbol": sym}, op["tipo"]))
         except ValueError as e:
             logger.warning("Operación descartada (%s %s): %s", op["fecha"], sym, e)
             saltadas += 1
