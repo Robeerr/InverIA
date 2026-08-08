@@ -457,7 +457,7 @@ function LotesAbiertos({ symbol, metodo }) {
   const asignar = useMutation({
     mutationFn: ({ id, nivel }) => api.cartera.cambiarNivelCompra(id, nivel),
     onSuccess: () => {
-      toast.success("Nivel asignado — campanitas actualizadas");
+      toast.success("Nivel actualizado — campanitas y precio del nivel al día");
       qc.invalidateQueries({ queryKey: ["cartera"] });
     },
     onError: () => toast.error("No se pudo asignar el nivel"),
@@ -497,23 +497,25 @@ function LotesAbiertos({ symbol, metodo }) {
               {l.acciones_abiertas !== l.acciones && (
                 <span className="text-[10px] text-[#5c6b66]">(de {l.acciones})</span>
               )}
-              {l.nivel
-                ? <Chip tono="nivel">{NIVEL_ETIQUETA[l.nivel] || l.nivel}</Chip>
-                : (
-                  <span className="inline-flex items-center gap-1.5">
-                    <Chip title="Esta compra no cae a menos del 1,5% de ninguno de tus niveles. Si en realidad ES la compra de un nivel, asígnaselo aquí y su campanita se apagará.">fuera de niveles</Chip>
-                    <select value="" disabled={asignar.isPending}
-                            onChange={(e) => e.target.value && asignar.mutate({ id: l.id, nivel: e.target.value })}
-                            className="text-[10px] bg-transparent border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-1 py-0.5 text-[#5c6b66]">
-                      <option value="">asignar nivel…</option>
-                      {(data?.niveles || []).map((n) => (
-                        <option key={n.nivel} value={n.nivel}>
-                          {n.etiqueta} · {n.precio} {divisa === "EUR" ? "€" : "$"}
-                        </option>
-                      ))}
-                    </select>
-                  </span>
-                )}
+              {/* El selector está SIEMPRE, no solo en los lotes sin nivel: equivocarse al
+                  asignar es un clic, y sin poder reasignar la única salida era borrar la
+                  compra y volver a meterla. Pasó de verdad con un nivel 4 puesto como 3. */}
+              <span className="inline-flex items-center gap-1.5">
+                {l.nivel
+                  ? <Chip tono="nivel">{NIVEL_ETIQUETA[l.nivel] || l.nivel}</Chip>
+                  : <Chip title="Esta compra no cae a menos del 1,5% de ninguno de tus niveles. Si en realidad ES la compra de un nivel, asígnaselo aquí y su campanita se apagará.">fuera de niveles</Chip>}
+                <select value={l.nivel || ""} disabled={asignar.isPending}
+                        onChange={(e) => asignar.mutate({ id: l.id, nivel: e.target.value || null })}
+                        title="Cambiar el nivel de esta compra. El precio del nivel en la Cartera se actualizará al precio real de la compra, y las campanitas se recalcularán."
+                        className="text-[10px] bg-transparent border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-1 py-0.5 text-[#5c6b66]">
+                  <option value="">{l.nivel ? "sin nivel" : "asignar nivel…"}</option>
+                  {(data?.niveles || []).map((n) => (
+                    <option key={n.nivel} value={n.nivel}>
+                      {n.etiqueta} · {n.precio} {divisa === "EUR" ? "€" : "$"}
+                    </option>
+                  ))}
+                </select>
+              </span>
               {l.comision_estimada && (
                 <Chip title="La comisión de esta compra es una estimación con la tarifa pública de DEGIRO, no una cifra de tu extracto.">
                   comisión estimada
