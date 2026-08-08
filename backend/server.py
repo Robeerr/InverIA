@@ -35,6 +35,7 @@ import daily_analyst
 import sp500_rsi_watch
 import ventas as ventas_mod
 import cartera_api
+import lotes
 import fx
 import newsletter_ingest
 import market_regime
@@ -2285,6 +2286,42 @@ async def posicion_simbolo(symbol: str, _user: str = Depends(auth.get_current_us
     except Exception:
         pass
     return await cartera_api.estado_simbolo(db, sym, precio_actual=precio)
+
+
+@api_router.get("/cartera/fechas-niveles/{symbol}")
+async def fechas_niveles(symbol: str, _user: str = Depends(auth.get_current_user)):
+    """Cuándo el precio tocó cada nivel de la Cartera, para estimar la fecha de cada compra.
+
+    Existe porque nadie recuerda en qué día compró cada nivel, y la fecha no es un adorno:
+    determina el tipo de cambio con el que se calculan los euros de esa compra.
+    """
+    sym = symbol.strip().upper()
+    entry = await db.signal_entries.find_one({"symbol": sym}, {"_id": 0})
+    if not entry:
+        raise HTTPException(404, f"{sym} no está en tu Cartera.")
+
+    df = await asyncio.to_thread(market_data.get_full_indicator_history, sym)
+    velas = market_data.df_to_candles(df) if df is not None and not df.empty else []
+
+    out = []
+    for i in range(1, 6):
+        precio = entry.get(f"nivel{i}")
+        if precio in (None, "", 0):
+            continue
+        try:
+            precio = float(precio)
+        except (TypeError, ValueError):
+            continue
+        if precio <= 0:
+            continue
+        out.append({"nivel": f"nivel{i}", "etiqueta": f"Nivel {i}", "precio": precio,
+                    **lotes.fechas_en_que_toco(velas, precio)})
+    out.sort(key=lambda n: n["precio"], reverse=True)
+    return {"symbol": sym, "niveles": out,
+            "desde": (velas[0]["date"][:10] if velas else None),
+            "aviso": ("Fechas estimadas por cuándo el precio pasó por cada nivel, sobre el "
+                      "histórico de 2 años. Si compraste antes, o el precio pasó varias "
+                      "veces, ajústalas: la fecha decide el tipo de cambio de esa compra.")}
 
 
 @api_router.get("/cartera/historial")

@@ -378,6 +378,7 @@ function FormularioPorNiveles({ onCerrar }) {
   const [fecha, setFecha] = React.useState(hoy);
   const [iguales, setIguales] = React.useState("");
   const [guardando, setGuardando] = React.useState(false);
+  const [estimadas, setEstimadas] = React.useState(null);   // {nivel: {toques, ...}}
   const qc = useQueryClient();
 
   const sym = symbol.trim().toUpperCase();
@@ -402,6 +403,27 @@ function FormularioPorNiveles({ onCerrar }) {
     .filter((n) => n.acciones > 0);
   const totalAcciones = filas.reduce((s, f) => s + f.acciones, 0);
   const totalCoste = filas.reduce((s, f) => s + f.acciones * f.precio, 0);
+
+  // Rellena las fechas con el día en que el precio pasó por cada nivel. Es una estimación,
+  // pero muchísimo mejor que la de hoy: comprando por niveles se entra cuando el precio
+  // llega, y la fecha determina el tipo de cambio de esa compra.
+  const estimarFechas = useMutation({
+    mutationFn: () => api.cartera.fechasNiveles(sym),
+    onSuccess: (r) => {
+      const nuevas = {}, info = {};
+      for (const n of r.niveles || []) {
+        if (n.fecha) nuevas[n.nivel] = n.fecha;
+        info[n.nivel] = n;
+      }
+      setFechaPorNivel((p) => ({ ...p, ...nuevas }));
+      setEstimadas(info);
+      const sinFecha = (r.niveles || []).filter((n) => !n.fecha).length;
+      toast.success(sinFecha
+        ? `Fechas estimadas. ${sinFecha} nivel(es) no aparecen en los últimos 2 años: ponlos a mano.`
+        : "Fechas estimadas por cuándo el precio pasó por cada nivel. Revísalas.");
+    },
+    onError: () => toast.error("No se pudieron estimar las fechas"),
+  });
 
   const guardar = async () => {
     if (!sym) return toast.error("Falta el ticker");
@@ -452,6 +474,19 @@ function FormularioPorNiveles({ onCerrar }) {
         </Campo>
       </div>
 
+      {sym && !!niveles.length && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <button type="button" onClick={() => estimarFechas.mutate()}
+                  disabled={estimarFechas.isPending}
+                  className="border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-3 py-1 text-[11px] font-semibold disabled:opacity-60">
+            {estimarFechas.isPending ? "Buscando…" : "Estimar las fechas por el precio"}
+          </button>
+          <span className="text-[11px] text-[#5c6b66]">
+            Busca el día en que el precio pasó por cada nivel. Útil si no las recuerdas.
+          </span>
+        </div>
+      )}
+
       {!sym ? (
         <p className="text-[11px] text-[#5c6b66]">Escribe un ticker para ver sus niveles.</p>
       ) : !niveles.length ? (
@@ -477,6 +512,17 @@ function FormularioPorNiveles({ onCerrar }) {
                 onChange={(e) => setFechaPorNivel((p) => ({ ...p, [n.nivel]: e.target.value }))}
                 title="Cuándo compraste ESTE nivel. Determina el tipo de cambio de esa compra."
                 className="border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-2 py-1 font-mono text-xs bg-transparent" />
+              {/* Con varios toques la estimación es ambigua. Decirlo es la diferencia entre
+                  una sugerencia y un dato inventado. */}
+              {estimadas?.[n.nivel] && (
+                estimadas[n.nivel].toques === 0
+                  ? <Chip tono="aviso" title="El precio no ha pasado por este nivel en los últimos 2 años. Pon la fecha a mano.">sin datos</Chip>
+                  : estimadas[n.nivel].toques > 1
+                    ? <Chip tono="aviso" title={`El precio pasó por aquí ${estimadas[n.nivel].toques} veces (la última, el ${fecha(estimadas[n.nivel].ultima)}). Se propone la primera: cámbiala si compraste en otra.`}>
+                        {estimadas[n.nivel].toques} veces
+                      </Chip>
+                    : <Chip title="El precio pasó por este nivel una sola vez: la fecha es fiable.">1 vez</Chip>
+              )}
             </div>
           ))}
         </div>

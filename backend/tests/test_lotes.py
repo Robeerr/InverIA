@@ -581,3 +581,54 @@ def test_vender_mas_de_lo_que_hay_no_genera_una_media_negativa():
     r = lotes.media_ponderada(compras, [_venta("2026-06-01", 8, 130.0)])
     assert r["acciones"] == 0
     assert r["precio_medio"] is None
+
+
+# ── Estimar la fecha de cada compra por el precio ────────────────────────────
+# Nadie recuerda en que dia compro cada nivel, y la fecha no es un adorno: decide el tipo de
+# cambio con el que se calculan los euros de esa compra. Comprando por niveles se entra
+# cuando el precio LLEGA al nivel, asi que el dia en que la vela cubrio ese precio es una
+# estimacion mucho mejor que poner la de hoy.
+
+def _vela(fecha, bajo, alto):
+    return {"date": fecha, "low": bajo, "high": alto}
+
+
+_VELAS = [
+    _vela("2026-01-05", 270.0, 285.0),   # cubre 279
+    _vela("2026-02-10", 235.0, 250.0),   # cubre 240
+    _vela("2026-03-15", 260.0, 275.0),
+    _vela("2026-04-20", 236.0, 244.0),   # cubre 240 otra vez
+]
+
+
+def test_encuentra_el_dia_en_que_el_precio_toco_el_nivel():
+    r = lotes.fechas_en_que_toco(_VELAS, 279.0)
+    assert r["fecha"] == "2026-01-05"
+    assert r["toques"] == 1
+
+
+def test_avisa_cuando_el_precio_paso_varias_veces():
+    """Con varios toques la estimacion es ambigua: hay que decirlo en vez de elegir por el
+    usuario."""
+    r = lotes.fechas_en_que_toco(_VELAS, 240.0)
+    assert r["toques"] == 2
+    assert r["fecha"] == "2026-02-10", "se propone la primera"
+    assert r["ultima"] == "2026-04-20"
+    assert r["otras"] == ["2026-04-20"]
+
+
+def test_un_nivel_que_nunca_se_toco_no_inventa_fecha():
+    r = lotes.fechas_en_que_toco(_VELAS, 100.0)
+    assert r["fecha"] is None and r["toques"] == 0
+
+
+def test_el_precio_justo_en_el_extremo_de_la_vela_cuenta():
+    """Comprar en el minimo del dia es exactamente lo que se busca al poner un nivel."""
+    assert lotes.fechas_en_que_toco([_vela("2026-01-05", 270.0, 285.0)], 270.0)["toques"] == 1
+    assert lotes.fechas_en_que_toco([_vela("2026-01-05", 270.0, 285.0)], 285.0)["toques"] == 1
+
+
+def test_sin_historico_o_con_datos_raros_no_revienta():
+    assert lotes.fechas_en_que_toco([], 100.0)["fecha"] is None
+    assert lotes.fechas_en_que_toco(_VELAS, None)["fecha"] is None
+    assert lotes.fechas_en_que_toco([{"date": "x"}], 100.0)["fecha"] is None

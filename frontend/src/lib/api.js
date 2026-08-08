@@ -105,6 +105,10 @@ export const api = {
       client.put(`/cartera/ajustes`, { metodo_gestion }).then((r) => r.data),
     historial: () => client.get(`/cartera/historial`).then((r) => r.data),
     posicion: (symbol) => client.get(`/cartera/posicion/${symbol}`).then((r) => r.data),
+    // Cuando el precio toco cada nivel, para estimar la fecha de cada compra sin tener que
+    // recordarla. La fecha decide el tipo de cambio con el que se calculan los euros.
+    fechasNiveles: (symbol) =>
+      client.get(`/cartera/fechas-niveles/${symbol}`, { timeout: 30000 }).then((r) => r.data),
     comprar: (payload) => client.post(`/cartera/compras`, payload).then((r) => r.data),
     vender: (payload) => client.post(`/cartera/ventas`, payload).then((r) => r.data),
     borrarCompra: (id) => client.delete(`/cartera/compras/${id}`).then((r) => r.data),

@@ -535,6 +535,49 @@ def reproducir(compras: list, ventas: list, metodo: str = FIFO) -> dict:
     }
 
 
+def fechas_en_que_toco(velas: list, precio: float, max_fechas: int = 6) -> dict:
+    """Cuándo el precio pasó por `precio`, según el histórico diario.
+
+    Sirve para no tener que recordar la fecha de cada compra. Comprando por niveles, se
+    entra cuando el precio LLEGA al nivel, así que el día en que la vela cubrió ese precio
+    es una estimación mucho mejor que poner la de hoy — y la fecha decide el tipo de cambio
+    con el que se calculan los euros.
+
+    Devuelve la PRIMERA vez como estimación y cuántas veces ocurrió: si fueron varias, la
+    estimación es ambigua y hay que decirlo en vez de elegir por el usuario.
+
+    `velas` son diccionarios con date/high/low (los que ya sirve el gráfico).
+    """
+    try:
+        precio = float(precio)
+    except (TypeError, ValueError):
+        return {"fecha": None, "toques": 0}
+    if precio <= 0 or not velas:
+        return {"fecha": None, "toques": 0}
+
+    fechas = []
+    for v in velas:
+        try:
+            alto = float(v.get("high"))
+            bajo = float(v.get("low"))
+        except (TypeError, ValueError):
+            continue
+        # La vela CUBRE el precio: ese día se pudo comprar ahí.
+        if bajo <= precio <= alto:
+            f = str(v.get("date") or "")[:10]
+            if f:
+                fechas.append(f)
+    fechas.sort()
+    return {
+        "fecha": fechas[0] if fechas else None,
+        "toques": len(fechas),
+        "primera": fechas[0] if fechas else None,
+        "ultima": fechas[-1] if fechas else None,
+        # Las intermedias no ayudan a decidir y llenarían la pantalla.
+        "otras": fechas[1:max_fechas] if len(fechas) > 1 else [],
+    }
+
+
 def media_ponderada(compras: list, ventas: list) -> dict:
     """Precio medio ponderado (PMP), que es lo que enseña DEGIRO — y casi todos los brókeres.
 
