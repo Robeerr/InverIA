@@ -532,6 +532,29 @@ def _totales(filas: list) -> dict:
     return out
 
 
+async def guardar_precio_manual(db, symbol: str, precio) -> dict:
+    """Precio puesto a mano para un valor sin cotización en vivo (un ETF, otro mercado).
+
+    Sin él la posición queda FUERA del latente y del total, y el aviso "⚠ 1 sin precio"
+    no se va nunca. Con precio 0 o vacío se borra y la posición vuelve a quedar fuera.
+    """
+    symbol = (symbol or "").strip().upper()
+    if not symbol:
+        raise ValueError("Falta el símbolo.")
+    try:
+        precio = float(precio or 0)
+    except (TypeError, ValueError):
+        raise ValueError("El precio no es un número.")
+    if precio <= 0:
+        await db.precios_manuales.delete_one({"symbol": symbol})
+        return {"symbol": symbol, "precio": None}
+    await db.precios_manuales.update_one(
+        {"symbol": symbol},
+        {"$set": {"symbol": symbol, "precio": precio, "updated_at": _ahora()}},
+        upsert=True)
+    return {"symbol": symbol, "precio": precio}
+
+
 async def resumen_cartera(db, precios: dict) -> dict:
     """P&L de la Cartera entera en EUROS: latente por posición + realizado.
 
@@ -539,6 +562,16 @@ async def resumen_cartera(db, precios: dict) -> dict:
     watchlist, para no volver a pedirlos aquí.
     """
     import asyncio
+    # Los precios manuales solo rellenan HUECOS: si el valor cotiza en vivo, manda el vivo.
+    # Un precio manual de hace un mes pisando la cotización de hoy sería el error contrario
+    # al que arregla.
+    precios = dict(precios or {})
+    manuales = set()
+    for m in await db.precios_manuales.find({}, {"_id": 0}).to_list(200):
+        s = (m.get("symbol") or "").upper()
+        if s and precios.get(s) is None and m.get("precio"):
+            precios[s] = m["precio"]
+            manuales.add(s)
     compras, ventas = await _libro(db)
     gestion = await metodo_gestion(db)
     por_symbol = {}
@@ -576,6 +609,9 @@ async def resumen_cartera(db, precios: dict) -> dict:
             "acciones": estado["acciones_abiertas"],
             "precio_medio": estado["precio_medio"],
             "precio_actual": precios.get(sym),
+            # Etiquetado siempre: un precio puesto a mano que pareciera de mercado haría
+            # creer que la posición está valorada en vivo cuando no lo está.
+            "precio_manual": sym in manuales,
             # El coste se sabe siempre; el valor de hoy solo con precio. Se ponen DESPUÉS
             # de val para que no los pise cuando la posición no se puede valorar.
             "coste_divisa": estado["coste_abierto_divisa"],

@@ -136,6 +136,10 @@ export const api = {
     // DEGIRO: las dos importaciones cuentan las mismas acciones y juntas duplican la posición.
     quitarDuplicados: () =>
       client.post(`/cartera/quitar-duplicados`).then((r) => r.data),
+    // Precio a mano para valores sin cotización en vivo (ETFs, otros mercados). Solo
+    // rellena huecos: si el valor cotiza, manda la cotización. Precio 0/vacío lo quita.
+    precioManual: (symbol, precio) =>
+      client.put(`/cartera/precio-manual`, { symbol, precio }).then((r) => r.data),
   },
   alerts: {
     create: (payload) => client.post(`/alerts`, payload).then((r) => r.data),

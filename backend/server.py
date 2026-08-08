@@ -2369,6 +2369,22 @@ async def resumen_cartera(_user: str = Depends(auth.get_current_user)):
     return await cartera_api.resumen_cartera(db, precios)
 
 
+class PrecioManual(BaseModel):
+    symbol: str
+    precio: Optional[float] = None       # 0 o vacío = quitarlo
+
+
+@api_router.put("/cartera/precio-manual")
+async def poner_precio_manual(item: PrecioManual,
+                              _user: str = Depends(auth.get_current_user)):
+    """Precio a mano para un valor sin cotización en vivo. Solo rellena huecos: si el valor
+    cotiza, manda la cotización."""
+    try:
+        return await cartera_api.guardar_precio_manual(db, item.symbol, item.precio)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 class AjusteMetodo(BaseModel):
     metodo_gestion: str          # "FIFO" o "LIFO"
 

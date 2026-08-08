@@ -873,6 +873,57 @@ function AvisoComision({ comision, acciones, precio }) {
   );
 }
 
+// Precio a mano para un valor sin cotización en vivo (un ETF, otro mercado). Sin él la
+// posición queda fuera del latente y del total y el "⚠ sin precio" no se va nunca. Solo
+// rellena huecos: si el valor cotiza en vivo, manda la cotización.
+function CeldaValorHoy({ p }) {
+  const qc = useQueryClient();
+  const [precio, setPrecio] = React.useState("");
+  const mut = useMutation({
+    mutationFn: ({ symbol, valor }) => api.cartera.precioManual(symbol, valor),
+    onSuccess: (r) => {
+      toast.success(r.precio
+        ? `Precio manual de ${r.symbol}: ${r.precio}`
+        : `Precio manual de ${r.symbol} quitado`);
+      qc.invalidateQueries({ queryKey: ["cartera"] });
+    },
+    onError: (e) => toast.error(e?.response?.data?.detail || "No se pudo guardar el precio"),
+  });
+
+  if (p.valor_eur == null) {
+    return (
+      <span className="inline-flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+        <input value={precio} onChange={(e) => setPrecio(e.target.value)} inputMode="decimal"
+               placeholder={`precio en ${p.divisa === "EUR" ? "€" : "$"}`}
+               className="w-24 text-[11px] bg-transparent border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-1.5 py-0.5 text-right font-mono" />
+        <button disabled={mut.isPending || !(Number(precio) > 0)}
+                onClick={() => mut.mutate({ symbol: p.symbol, valor: Number(precio) })}
+                className="text-[11px] underline text-[#5c6b66] disabled:opacity-50">
+          poner
+        </button>
+      </span>
+    );
+  }
+  return (
+    <>
+      {eur(p.valor_eur)}
+      {p.precio_manual && (
+        <div className="text-[10px] text-[#8a6508] cursor-pointer"
+             title="Este valor sale de un precio que pusiste tú a mano, no de una cotización en vivo. Pincha para cambiarlo o quitarlo."
+             onClick={(e) => {
+               e.stopPropagation();
+               const nuevo = window.prompt(
+                 `Precio manual de ${p.symbol} (ahora ${p.precio_actual}). `
+                 + "Pon el nuevo, o déjalo vacío para quitarlo:", p.precio_actual);
+               if (nuevo !== null) mut.mutate({ symbol: p.symbol, valor: Number(nuevo) || 0 });
+             }}>
+          precio manual · cambiar
+        </div>
+      )}
+    </>
+  );
+}
+
 function FormularioOperacion({ tipo, onHecho, onCerrar }) {
   const hoy = new Date().toISOString().slice(0, 10);
   const [f, setF] = React.useState({ symbol: "", acciones: "", precio: "", comision: "", fecha: hoy, notas: "", nivel: "" });
@@ -1400,7 +1451,7 @@ export default function VentasView() {
                       )}
                     </td>
                     <td className="py-2 text-right font-mono">{eur(p.coste_eur)}</td>
-                    <td className="py-2 text-right font-mono">{eur(p.valor_eur)}</td>
+                    <td className="py-2 text-right font-mono"><CeldaValorHoy p={p} /></td>
                     <td className="px-4 py-2 text-right">
                       <span className={`font-mono font-semibold ${tono(p.pnl_eur)}`}>{eur(p.pnl_eur)}</span>
                       <span className={`font-mono text-[10px] ml-1 ${tono(p.pct_eur)}`}>{pct(p.pct_eur)}</span>

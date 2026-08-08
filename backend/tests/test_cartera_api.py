@@ -87,6 +87,7 @@ class _DB:
         self.ajustes = _Coleccion()
         self.dividendos = _Coleccion()
         self.isin_map = _Coleccion()
+        self.precios_manuales = _Coleccion()
         self.signal_entries = _Coleccion(entries or [])
 
 
@@ -1301,3 +1302,45 @@ def test_reimportar_los_costes_no_los_duplica():
     _correr(cartera_api.importar_dividendos(db, apunte))
     r2 = _correr(cartera_api.importar_dividendos(db, apunte))
     assert r2["importados"] == 0 and r2["saltados"] == 1
+
+
+# ── Precio manual ────────────────────────────────────────────────────────────
+
+def test_el_precio_manual_valora_una_posicion_sin_cotizacion():
+    """Sin él, la posición queda fuera del latente y del total y el aviso "sin precio" no
+    se va nunca. Pasó con UBER y con un ETF que Finnhub no cotiza."""
+    db = _DB()
+    _correr(cartera_api.registrar_compra(
+        db, "VUSA", 1, 74.95, fecha="2026-01-10", comision=0, divisa="EUR", tasa=1.0))
+    r = _correr(cartera_api.resumen_cartera(db, {}))
+    assert r["posiciones"][0]["valor_eur"] is None
+    _correr(cartera_api.guardar_precio_manual(db, "VUSA", 76.80))
+    r = _correr(cartera_api.resumen_cartera(db, {}))
+    p = r["posiciones"][0]
+    # El valor exacto pasa por el tipo de cambio (falseado en estos tests): lo que importa
+    # es que la posición SE VALORA, con el precio etiquetado como manual.
+    assert p["valor_eur"] is not None and p["precio_actual"] == 76.80
+    assert p["precio_manual"] is True
+    assert r["posiciones_sin_valorar"] == 0
+
+
+def test_la_cotizacion_en_vivo_manda_sobre_el_precio_manual():
+    """Un precio manual de hace un mes pisando la cotización de hoy sería el error
+    contrario al que arregla: solo rellena huecos."""
+    db = _DB()
+    _correr(cartera_api.registrar_compra(
+        db, "UBER", 10, 80.0, fecha="2026-01-10", comision=0, tasa=1.20))
+    _correr(cartera_api.guardar_precio_manual(db, "UBER", 70.0))
+    r = _correr(cartera_api.resumen_cartera(db, {"UBER": 75.0}))
+    p = r["posiciones"][0]
+    assert p["precio_actual"] == 75.0 and p["precio_manual"] is False
+
+
+def test_precio_manual_vacio_lo_quita():
+    db = _DB()
+    _correr(cartera_api.registrar_compra(
+        db, "VUSA", 1, 74.95, fecha="2026-01-10", comision=0, divisa="EUR", tasa=1.0))
+    _correr(cartera_api.guardar_precio_manual(db, "VUSA", 76.80))
+    _correr(cartera_api.guardar_precio_manual(db, "VUSA", None))
+    r = _correr(cartera_api.resumen_cartera(db, {}))
+    assert r["posiciones"][0]["valor_eur"] is None
