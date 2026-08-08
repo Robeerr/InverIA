@@ -271,6 +271,12 @@ _COL_CUENTA = {
 _RETENCION = ("retención del impuesto", "retencion del impuesto", "dividend tax",
               "withholding tax", "impuesto sobre dividendo")
 _DIVIDENDO = ("dividendo", "dividend")
+# Costes que SOLO viven en el Account.csv: intereses del dinero prestado (operar con saldo
+# en negativo) y conectividad con mercados. Son lo que separa el total propio del Total P/L
+# del bróker. Las comisiones de transacción NO: esas ya vienen por operación en el
+# Transactions.csv y cogerlas también de aquí las contaría dos veces.
+_COSTE = ("interés", "interes", "interest", "conectividad", "connectivity",
+          "conexión", "conexion")
 
 
 def _clasificar(descripcion: str):
@@ -279,6 +285,10 @@ def _clasificar(descripcion: str):
         return "retencion"
     if any(t in d for t in _DIVIDENDO):
         return "dividendo"
+    if "transac" in d:
+        return None
+    if any(t in d for t in _COSTE):
+        return "coste"
     return None
 
 

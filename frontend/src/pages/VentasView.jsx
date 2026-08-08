@@ -1093,8 +1093,12 @@ export default function VentasView() {
   // mobiliario, no ganancias patrimoniales: van a casillas distintas de la declaración, y
   // mezclarlos daría un número que no sirve para rellenar ninguna de las dos.
   const dividendos = divs?.neto_eur ?? null;
+  // Intereses del saldo en negativo y conectividad, del Account.csv. Llegan YA en negativo,
+  // así que sumarlos resta. Van en el total porque el bróker también los descuenta del
+  // suyo: sin ellos las dos cifras no pueden coincidir nunca.
+  const costes = divs?.costes_eur ?? null;
   const total = (realizado != null || latente != null || dividendos != null)
-    ? (realizado || 0) + (latente || 0) + (dividendos || 0) : null;
+    ? (realizado || 0) + (latente || 0) + (dividendos || 0) + (costes || 0) : null;
 
   return (
     <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-5">
@@ -1176,8 +1180,17 @@ export default function VentasView() {
                    divs?.sin_convertir ? `⚠ ${divs.sin_convertir} sin convertir` : null,
                  ].filter(Boolean).join(" · ")}
              ayuda="Cobrado por dividendos, ya descontada la retención en origen. Los dividendos NO están en el Transactions.csv: hay que subir además el Account.csv (Actividad → Cuenta). Se cuentan aparte porque fiscalmente no son ganancias patrimoniales sino rendimientos del capital mobiliario, y van a otra casilla de la declaración. La retención de EE.UU. es recuperable en parte con el convenio de doble imposición." />
+        {costes != null && (
+          <Kpi etiqueta="Costes" valor={costes}
+               sub={`${divs?.n_costes ?? 0} apunte(s) · intereses y conectividad`}
+               ayuda="Intereses por operar con el saldo en negativo y conectividad con mercados, sacados del Account.csv. No incluye las comisiones de compraventa, que ya están descontadas en cada operación. Es lo que separa tu total del Total P/L de DEGIRO." />
+        )}
         <Kpi etiqueta="Total" valor={total}
-             sub={dividendos != null ? "realizado + latente + dividendos" : "realizado + latente"} />
+             sub={[
+               "realizado + latente",
+               dividendos != null ? "+ dividendos" : null,
+               costes != null ? "+ costes" : null,
+             ].filter(Boolean).join(" ")} />
         {tot?.efecto_divisa_eur != null && Math.abs(tot.efecto_divisa_eur) >= 0.01 && (
           <Kpi etiqueta="Efecto del euro" valor={tot.efecto_divisa_eur}
                sub="incluido en el realizado"

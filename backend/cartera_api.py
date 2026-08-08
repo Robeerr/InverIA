@@ -923,6 +923,10 @@ async def resumen_dividendos(db) -> dict:
     docs = await db.dividendos.find({}, {"_id": 0}).to_list(5000)
     brutos = [d for d in docs if d["tipo"] == "dividendo"]
     retenciones = [d for d in docs if d["tipo"] == "retencion"]
+    # Intereses del saldo en negativo y conectividad con mercados. Se enseñan aparte de los
+    # dividendos —son la otra cara: dinero que se va, no que llega— y son lo que separa el
+    # total propio del Total P/L del bróker, que sí los descuenta.
+    costes = [d for d in docs if d["tipo"] == "coste"]
 
     def _suma(lista):
         vals = [d["importe_eur"] for d in lista if d.get("importe_eur") is not None]
@@ -930,7 +934,7 @@ async def resumen_dividendos(db) -> dict:
 
     por_symbol = {}
     for d in docs:
-        if d.get("importe_eur") is None:
+        if d.get("importe_eur") is None or d["tipo"] == "coste":
             continue
         sym = d.get("symbol") or d.get("isin")
         por_symbol[sym] = round(por_symbol.get(sym, 0) + d["importe_eur"], 2)
@@ -942,6 +946,10 @@ async def resumen_dividendos(db) -> dict:
         "neto_eur": (round((bruto or 0) + (retenido or 0), 2)
                      if bruto is not None else None),
         "n_cobros": len(brutos),
+        # Los intereses llegan en negativo en el fichero y se respeta el signo: sumarlos al
+        # total ya los resta, sin acordarse de cambiar signos por el camino.
+        "costes_eur": _suma(costes),
+        "n_costes": len(costes),
         "por_symbol": sorted(({"symbol": k, "eur": v} for k, v in por_symbol.items()),
                              key=lambda x: x["eur"], reverse=True),
         "sin_convertir": sum(1 for d in docs if d.get("importe_eur") is None),

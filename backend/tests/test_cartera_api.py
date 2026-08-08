@@ -1271,3 +1271,33 @@ def test_un_apunte_manual_sigue_sin_duplicarse_al_importar_el_csv():
     assert r["importadas"] == 0 and r["saltadas"] == 1
     est = _correr(cartera_api.estado_simbolo(db, "MRVL"))
     assert est["fifo"]["acciones_abiertas"] == 5
+
+
+# ── Costes del Account.csv ───────────────────────────────────────────────────
+
+def test_los_costes_se_suman_aparte_y_en_negativo():
+    """Intereses del saldo en negativo y conectividad: la otra cara de los dividendos.
+    Llegan en negativo y se respeta el signo, así que sumarlos al total ya los resta."""
+    db = _DB()
+    _correr(cartera_api.importar_dividendos(db, [
+        {"fecha": "2026-01-02", "producto": "", "isin": "", "tipo": "coste",
+         "importe": -12.34, "divisa": "EUR", "tasa": None},
+        {"fecha": "2026-02-02", "producto": "", "isin": "", "tipo": "coste",
+         "importe": -2.50, "divisa": "EUR", "tasa": None},
+        {"fecha": "2026-01-15", "producto": "ORACLE", "isin": "US68389X1054",
+         "tipo": "dividendo", "importe": 11.0, "divisa": "EUR", "tasa": None},
+    ]))
+    r = _correr(cartera_api.resumen_dividendos(db))
+    assert r["costes_eur"] == -14.84 and r["n_costes"] == 2
+    # Los costes no se cuelan en los dividendos ni en su desglose por valor
+    assert r["bruto_eur"] == 11.0
+    assert all(x["symbol"] for x in r["por_symbol"])
+
+
+def test_reimportar_los_costes_no_los_duplica():
+    db = _DB()
+    apunte = [{"fecha": "2026-01-02", "producto": "", "isin": "", "tipo": "coste",
+               "importe": -12.34, "divisa": "EUR", "tasa": None}]
+    _correr(cartera_api.importar_dividendos(db, apunte))
+    r2 = _correr(cartera_api.importar_dividendos(db, apunte))
+    assert r2["importados"] == 0 and r2["saltados"] == 1

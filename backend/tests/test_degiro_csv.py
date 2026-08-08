@@ -314,3 +314,15 @@ def test_dos_ejecuciones_identicas_de_la_misma_orden_tienen_huellas_distintas():
     # Y releer el MISMO fichero da las MISMAS huellas: es lo que evita duplicar al resubir.
     r2 = degiro_csv.leer(csv.encode())
     assert {op["huella"] for op in r2["operaciones"]} == {h1, h2}
+
+
+def test_los_intereses_y_la_conectividad_se_clasifican_como_coste():
+    """Son los costes que SOLO viven en el Account.csv y lo que separa el total propio del
+    Total P/L del bróker, que sí los descuenta."""
+    assert degiro_csv._clasificar("Interés") == "coste"
+    assert degiro_csv._clasificar("Flatex Interest") == "coste"
+    assert degiro_csv._clasificar("DEGIRO Costes de Conectividad con el Mercado 2025") == "coste"
+    # Las comisiones de compraventa NO: ya vienen por operación en el Transactions.csv y
+    # cogerlas también de aquí las contaría dos veces.
+    assert degiro_csv._clasificar("Costes de transacción DEGIRO y/o costes de terceros") is None
+    assert degiro_csv._clasificar("Dividendo") == "dividendo"
