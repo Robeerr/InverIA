@@ -875,6 +875,37 @@ function AvisoComision({ comision, acciones, precio }) {
   );
 }
 
+// Sección plegable con memoria: con 146 ventas la página era un scroll interminable para
+// llegar a "Lo que tienes abierto". El estado se guarda por sección en localStorage para
+// que cada uno deje abierto lo que mira a diario y cerrado lo que no.
+function Plegable({ id, titulo, cabeceraExtra, abierta: porDefecto = true, children }) {
+  const clave = `ventas.seccion.${id}`;
+  const [abierta, setAbierta] = React.useState(() => {
+    try {
+      const v = window.localStorage.getItem(clave);
+      return v === null ? porDefecto : v === "1";
+    } catch { return porDefecto; }
+  });
+  const alternar = () => {
+    setAbierta((a) => {
+      try { window.localStorage.setItem(clave, a ? "0" : "1"); } catch { /* privado */ }
+      return !a;
+    });
+  };
+  return (
+    <div className="card-flat overflow-hidden">
+      <div className="px-4 py-3 border-b border-[#e5e0d8] dark:border-[#1a3a32] flex items-center justify-between flex-wrap gap-2">
+        <button onClick={alternar} className="flex items-center gap-2 text-left">
+          <span className="text-[#5c6b66] text-[10px]">{abierta ? "▲" : "▼"}</span>
+          <h2 className="font-heading font-bold text-sm">{titulo}</h2>
+        </button>
+        {cabeceraExtra}
+      </div>
+      {abierta && children}
+    </div>
+  );
+}
+
 // Precio a mano para un valor sin cotización en vivo (un ETF, otro mercado). Sin él la
 // posición queda fuera del latente y del total y el "⚠ sin precio" no se va nunca. Solo
 // rellena huecos: si el valor cotiza en vivo, manda la cotización.
@@ -1072,6 +1103,8 @@ export default function VentasView() {
   const setMetodo = (m) => cambiarMetodo.mutate(m);
   const [form, setForm] = React.useState(null);   // "compra" | "venta" | null
   const [abierta, setAbierta] = React.useState(null);   // símbolo desplegado en la tabla
+  const [verTodas, setVerTodas] = React.useState(false);   // historial completo o últimas 15
+  const [verExplicacion, setVerExplicacion] = React.useState(false);   // texto del método
 
   const { data: hist, isPending: cargandoHist } = useQuery({
     queryKey: ["cartera", "historial"],
@@ -1295,7 +1328,12 @@ export default function VentasView() {
           ) : (
             <span className="text-[11px] text-[#4a7c59] font-semibold">Vende lo más antiguo · tu precio medio BAJA al vender · es el de Hacienda</span>
           )}
+          <button onClick={() => setVerExplicacion((v) => !v)}
+                  className="text-[11px] text-[#5c6b66] underline ml-auto">
+            {verExplicacion ? "ocultar" : "¿cómo funciona?"}
+          </button>
         </div>
+        {verExplicacion && (
         <p className="text-[11px] text-[#5c6b66] mt-2 leading-relaxed">
           Esto no cambia solo lo que ves: gobierna qué lotes te quedan vivos, tu precio medio
           y qué campanitas se encienden. Cambiarlo recalcula todo, pero <b>no altera ninguna
@@ -1314,6 +1352,7 @@ export default function VentasView() {
               <b>{usd(Math.abs(hist.resumen.fifo.ganancia_divisa - hist.resumen.lifo.ganancia_divisa))}</b>.</>
           )}
         </p>
+        )}
       </div>
 
       {hist?.resumen?.aviso && (
@@ -1324,11 +1363,8 @@ export default function VentasView() {
       )}
 
       {/* Historial */}
-      <div className="card-flat overflow-hidden">
-        <div className="px-4 py-3 border-b border-[#e5e0d8] dark:border-[#1a3a32] flex items-center justify-between">
-          <h2 className="font-heading font-bold text-sm">Historial de ventas</h2>
-          <span className="text-[11px] text-[#5c6b66]">Toca una para ver de qué compra salió</span>
-        </div>
+      <Plegable id="historial" titulo={`Historial de ventas (${ventas.length})`}
+                cabeceraExtra={<span className="text-[11px] text-[#5c6b66]">Toca una para ver de qué compra salió</span>}>
         {cargandoHist ? (
           <p className="px-4 py-8 text-center text-sm text-[#5c6b66]">Cargando…</p>
         ) : !ventas.length ? (
@@ -1347,19 +1383,26 @@ export default function VentasView() {
             </button>
           </div>
         ) : (
-          ventas.map((v) => (
-            <FilaVenta key={v.id} v={v} metodo={metodo}
-                       onBorrar={(x) => window.confirm(`¿Borrar la venta de ${x.acciones} ${x.symbol} del ${fecha(x.fecha)}?`) && borrar.mutate(x)} />
-          ))
+          <>
+            {/* Las últimas 15 a la vista; el resto bajo demanda. Con 146 ventas la lista
+                entera convertía llegar al final de la página en una expedición. */}
+            {(verTodas ? ventas : ventas.slice(0, 15)).map((v) => (
+              <FilaVenta key={v.id} v={v} metodo={metodo}
+                         onBorrar={(x) => window.confirm(`¿Borrar la venta de ${x.acciones} ${x.symbol} del ${fecha(x.fecha)}?`) && borrar.mutate(x)} />
+            ))}
+            {ventas.length > 15 && (
+              <button onClick={() => setVerTodas((v) => !v)}
+                      className="w-full py-2.5 text-xs text-[#5c6b66] underline hover:bg-[#faf8f4] dark:hover:bg-[#0e1f1a]">
+                {verTodas ? "Enseñar solo las últimas 15" : `Enseñar las ${ventas.length - 15} restantes`}
+              </button>
+            )}
+          </>
         )}
-      </div>
+      </Plegable>
 
       {/* Por acción */}
       {!!hist?.por_symbol?.length && (
-        <div className="card-flat overflow-hidden">
-          <div className="px-4 py-3 border-b border-[#e5e0d8] dark:border-[#1a3a32]">
-            <h2 className="font-heading font-bold text-sm">Por acción</h2>
-          </div>
+        <Plegable id="por-accion" titulo={`Por acción (${hist.por_symbol.length})`} abierta={false}>
           {hist.por_symbol.map((s) => (
             <div key={s.symbol} className="px-4 py-2.5 flex items-center gap-3 border-b border-[#e5e0d8] dark:border-[#1a3a32] last:border-0">
               <span className="font-mono font-bold text-sm w-16">{s.symbol}</span>
@@ -1369,15 +1412,14 @@ export default function VentasView() {
               </span>
             </div>
           ))}
-        </div>
+        </Plegable>
       )}
 
       {/* Posiciones abiertas, en euros */}
       {!!resumen?.posiciones?.length && (
-        <div className="card-flat overflow-hidden">
-          <div className="px-4 py-3 border-b border-[#e5e0d8] dark:border-[#1a3a32] flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h2 className="font-heading font-bold text-sm">Lo que tienes abierto</h2>
+        <Plegable id="abierto" titulo={`Lo que tienes abierto (${resumen.posiciones.length})`}
+                  cabeceraExtra={
+            <div className="flex items-center gap-3 flex-wrap ml-auto">
               {/* Rehacer la importación: si la primera salió con los lotes mal repartidos,
                   borrarlos uno a uno serían decenas de clics. No toca las acciones que ya
                   tengan ventas registradas — ahí borrar compras falsearía la ganancia. */}
@@ -1401,14 +1443,14 @@ export default function VentasView() {
                       className="text-[11px] text-[#5c6b66] underline disabled:opacity-60">
                 {quitarDup.isPending ? "Quitando…" : "Quitar duplicados del CSV"}
               </button>
+              {resumen.tasas && (
+                <span className="text-[11px] text-[#5c6b66] font-mono">
+                  {Object.entries(resumen.tasas).filter(([d]) => d !== "EUR")
+                    .map(([d, t]) => `1 € = ${t} ${d}`).join(" · ")}
+                </span>
+              )}
             </div>
-            {resumen.tasas && (
-              <span className="text-[11px] text-[#5c6b66] font-mono">
-                {Object.entries(resumen.tasas).filter(([d]) => d !== "EUR")
-                  .map(([d, t]) => `1 € = ${t} ${d}`).join(" · ")}
-              </span>
-            )}
-          </div>
+                  }>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
@@ -1471,7 +1513,12 @@ export default function VentasView() {
               </tbody>
             </table>
           </div>
-          <p className="px-4 py-2 text-[11px] text-[#5c6b66] border-t border-[#e5e0d8] dark:border-[#1a3a32]">
+          {/* La explicación se lee una vez y luego estorba: plegada por defecto. */}
+          <details className="border-t border-[#e5e0d8] dark:border-[#1a3a32]">
+            <summary className="px-4 py-2 text-[11px] text-[#5c6b66] cursor-pointer">
+              Cómo leer esta tabla
+            </summary>
+          <p className="px-4 pb-2 text-[11px] text-[#5c6b66]">
             El precio medio es el de las acciones que te QUEDAN, por <b>{metodo.toUpperCase()}</b>.
             Tras vender parte, FIFO y LIFO dejan lotes distintos abiertos y el medio no
             coincide: si no cuadra con tu bróker, prueba el otro método arriba.
@@ -1485,7 +1532,8 @@ export default function VentasView() {
             las acciones que te quedan. Los dos son correctos y miden cosas distintas — el
             ponderado sirve para cuadrar pantallas, no para saber lo que ganaste en cada nivel.
           </p>
-        </div>
+          </details>
+        </Plegable>
       )}
     </div>
   );
