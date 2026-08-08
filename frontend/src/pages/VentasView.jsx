@@ -997,7 +997,15 @@ export default function VentasView() {
              sub={`${hist?.resumen?.n_ventas ?? 0} venta(s) · ${metodo.toUpperCase()}`}
              ayuda="Ganancia de las ventas ya hechas, con el tipo de cambio del día de cada compra y de cada venta. Es dinero que ya está en tu cuenta. Cambia según el método: mira la etiqueta de debajo." />
         <Kpi etiqueta="Latente" valor={latente}
-             sub={resumen?.posiciones?.length ? `${resumen.posiciones.length} posición(es) abiertas` : "sin posiciones"}
+             // Una posición sin cotización NO entra en el latente, y hasta ahora eso no se
+             // decía: el número parecía completo cuando le faltaba una posición entera. Es
+             // lo primero que hay que mirar cuando el total no cuadra con el bróker.
+             sub={[
+               resumen?.posiciones?.length
+                 ? `${resumen.posiciones.length} posición(es) abiertas` : "sin posiciones",
+               resumen?.posiciones_sin_valorar
+                 ? `⚠ ${resumen.posiciones_sin_valorar} sin precio, fuera del total` : null,
+             ].filter(Boolean).join(" · ")}
              ayuda="Lo que llevas ganado en lo que AÚN NO has vendido, al precio y al cambio de hoy. Puede cambiar mañana." />
         {/* SIEMPRE visible, aunque esté vacía. Escondiéndola hasta que hubiera dividendos,
             la única forma de enterarse de que existe era leer el texto del importador — y
