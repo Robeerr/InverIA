@@ -880,8 +880,16 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
 
   const mut = useMutation({
     mutationFn: (payload) => (tipo === "compra" ? api.cartera.comprar(payload) : api.cartera.vender(payload)),
-    onSuccess: () => {
+    onSuccess: (r) => {
       toast.success(tipo === "compra" ? "Compra registrada" : "Venta registrada");
+      // Un nivel vendido entero reactiva su campanita solo. Decirlo aquí ahorra ir a la
+      // Cartera a comprobar que ha pasado — que era justo la duda ("¿y las campanas?").
+      if (tipo === "venta" && r?.campanas?.reactivadas?.length) {
+        toast.info(
+          `🔔 ${r.campanas.reactivadas.join(" y ")} de ${r.symbol} vendido(s) entero(s) — `
+          + "campana reactivada: volverá a avisarte si el precio cae ahí.",
+          { duration: 10000 });
+      }
       qc.invalidateQueries({ queryKey: ["cartera"] });
       onHecho?.();
       onCerrar();

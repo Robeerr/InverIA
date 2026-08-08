@@ -1194,3 +1194,33 @@ def test_una_compra_fuera_de_niveles_no_toca_ningun_precio():
         db, "AAOI", 2, 150.0, fecha="2026-07-02", comision=0, tasa=1.16))
     entry = _correr(db.signal_entries.find_one({"symbol": "AAOI"}))
     assert entry["nivel1"] == 181.0 and entry["nivel3"] == 118.90
+
+
+# ── Aviso de campanas al vender ──────────────────────────────────────────────
+
+def test_vender_un_nivel_entero_dice_que_campana_reactivo():
+    """La respuesta de la venta cuenta qué campanitas ha movido: verlo en el aviso ahorra
+    ir a la Cartera a comprobar que ha pasado."""
+    db = _DB([{"symbol": "FN", "nivel1": 180.0, "nivel2": 160.0,
+               "alert_nivel1": False, "alert_nivel2": False}])
+    _correr(cartera_api.registrar_compra(
+        db, "FN", 3, 180.0, fecha="2026-01-10", comision=0, tasa=1.10, nivel="nivel1"))
+    _correr(cartera_api.registrar_compra(
+        db, "FN", 3, 160.0, fecha="2026-02-10", comision=0, tasa=1.10, nivel="nivel2"))
+    _correr(cartera_api.guardar_metodo_gestion(db, "LIFO"))
+    # LIFO consume primero el nivel 2 (el más reciente): vendido entero
+    r = _correr(cartera_api.registrar_venta(
+        db, "FN", 3, 200.0, fecha="2026-03-01", comision=0, tasa=1.15))
+    assert r["campanas"]["reactivadas"] == ["Nivel 2"]
+    entry = _correr(db.signal_entries.find_one({"symbol": "FN"}))
+    assert entry["alert_nivel2"] is True    # reactivada
+    assert entry["alert_nivel1"] is False   # aún quedan acciones: apagada
+
+
+def test_una_venta_parcial_no_reactiva_nada():
+    db = _DB([{"symbol": "FN", "nivel1": 180.0, "alert_nivel1": False}])
+    _correr(cartera_api.registrar_compra(
+        db, "FN", 5, 180.0, fecha="2026-01-10", comision=0, tasa=1.10, nivel="nivel1"))
+    r = _correr(cartera_api.registrar_venta(
+        db, "FN", 2, 200.0, fecha="2026-03-01", comision=0, tasa=1.15))
+    assert r["campanas"]["reactivadas"] == []

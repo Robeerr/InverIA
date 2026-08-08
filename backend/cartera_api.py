@@ -123,10 +123,16 @@ async def _sincronizar_posicion(db, symbol: str, metodo: str = None):
     # mano, la regla quedaría a medias y una campanita encendida podría significar dos cosas
     # distintas, que es peor que no automatizar nada.
     entry = await db.signal_entries.find_one({"symbol": symbol}, {"_id": 0})
-    if entry:
-        cambios.update(lotes.estado_niveles(entry, compras, estado["abiertos"]))
+    alertas = lotes.estado_niveles(entry, compras, estado["abiertos"]) if entry else {}
+    cambios.update(alertas)
 
     await db.signal_entries.update_one({"symbol": symbol}, {"$set": cambios})
+    # Qué campanitas ha movido esta sincronización, para poder CONTARLO en la respuesta:
+    # ver que "Nivel 1 vendido entero — campana reactivada" sin ir a la Cartera a mirarlo.
+    estado["campanas"] = {
+        "reactivadas": sorted(f"Nivel {k[-1]}" for k, v in alertas.items() if v is True),
+        "apagadas": sorted(f"Nivel {k[-1]}" for k, v in alertas.items() if v is False),
+    }
     return estado
 
 
@@ -302,8 +308,12 @@ async def registrar_venta(db, symbol: str, acciones: float, precio: float,
 
     await db.ventas.insert_one(dict(venta))
     # La Cartera se actualiza sola: no hay que tocar el número de acciones a mano.
-    await _sincronizar_posicion(db, symbol)
-    return await estado_simbolo(db, symbol)
+    sync = await _sincronizar_posicion(db, symbol)
+    res = await estado_simbolo(db, symbol)
+    # Qué campanitas ha movido esta venta: un nivel vendido entero se reactiva, y decirlo
+    # aquí ahorra ir a la Cartera a comprobar que ha pasado.
+    res["campanas"] = (sync or {}).get("campanas") or {"reactivadas": [], "apagadas": []}
+    return res
 
 
 async def borrar_venta(db, venta_id: str) -> bool:
