@@ -1344,3 +1344,22 @@ def test_precio_manual_vacio_lo_quita():
     _correr(cartera_api.guardar_precio_manual(db, "VUSA", None))
     r = _correr(cartera_api.resumen_cartera(db, {}))
     assert r["posiciones"][0]["valor_eur"] is None
+
+
+def test_el_resumen_trae_la_valoracion_del_broker_ademas_de_la_propia():
+    """Para poder comparar fila a fila con la pantalla del bróker sin que parezca que una
+    de las dos está mal."""
+    db = _DB()
+    _correr(cartera_api.registrar_compra(
+        db, "FN", 6, 500.0, fecha="2026-01-10", comision=0, tasa=1.10))
+    _correr(cartera_api.registrar_compra(
+        db, "FN", 6, 600.0, fecha="2026-02-10", comision=0, tasa=1.10))
+    _correr(cartera_api.registrar_venta(
+        db, "FN", 3, 700.0, fecha="2026-03-10", comision=0, tasa=1.10))
+    r = _correr(cartera_api.resumen_cartera(db, {"FN": 560.0}))
+    p = r["posiciones"][0]
+    assert p["precio_medio_ponderado"] == 550.0
+    assert p["ponderada"]["coste_divisa"] == 4950.0
+    # Y el latente del bróker sale distinto del propio, que es justo el punto
+    assert p["ponderada"]["pnl_eur"] != p["pnl_eur"]
+    assert r["latente_ponderada_eur"] == p["ponderada"]["pnl_eur"]

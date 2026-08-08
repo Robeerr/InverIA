@@ -1104,6 +1104,16 @@ export default function VentasView() {
   const [form, setForm] = React.useState(null);   // "compra" | "venta" | null
   const [abierta, setAbierta] = React.useState(null);   // símbolo desplegado en la tabla
   const [verTodas, setVerTodas] = React.useState(false);   // historial completo o últimas 15
+  // Valorar lo abierto como el bróker (media ponderada) o por tu método (FIFO/LIFO). No es
+  // que una esté mal: lo que FIFO/LIFO se apuntan de más en el latente ya se lo apuntaron
+  // en lo realizado. Se recuerda porque es una preferencia, no un vistazo puntual.
+  const [comoBroker, setComoBroker] = React.useState(() => {
+    try { return window.localStorage.getItem("ventas.comoBroker") === "1"; } catch { return false; }
+  });
+  const alternarBroker = () => setComoBroker((v) => {
+    try { window.localStorage.setItem("ventas.comoBroker", v ? "0" : "1"); } catch { /* privado */ }
+    return !v;
+  });
   const [verExplicacion, setVerExplicacion] = React.useState(false);   // texto del método
 
   const { data: hist, isPending: cargandoHist } = useQuery({
@@ -1174,6 +1184,9 @@ export default function VentasView() {
   const ventas = hist?.items || [];
   const realizado = tot?.ganancia_eur;
   const latente = resumen?.latente_eur;
+  // El mismo latente visto como lo ve el bróker. Nunca sustituye al de arriba: lo acompaña,
+  // porque cuál "cuadra" depende de con qué pantalla estés comparando.
+  const latenteBroker = resumen?.latente_ponderada_eur;
   // Los dividendos entran en el TOTAL —son dinero cobrado— pero se enseñan en su propia
   // cifra y nunca dentro de "Realizado". Fiscalmente son rendimientos del capital
   // mobiliario, no ganancias patrimoniales: van a casillas distintas de la declaración, y
@@ -1241,6 +1254,9 @@ export default function VentasView() {
                  : null,
              ].filter(Boolean).join(" · ")}
              ayuda="Ganancia de las ventas ya hechas, con el tipo de cambio del día de cada compra y de cada venta. Es dinero que ya está en tu cuenta. Cambia según el método: mira la etiqueta de debajo." />
+        {/* El valor NO cambia con el interruptor, a diferencia de la tabla: el Total suma
+            este latente con TU realizado, y mezclar bases daría una suma que no cuadra.
+            La cifra del bróker va debajo, que es lo que hace falta para comparar. */}
         <Kpi etiqueta="Latente" valor={latente}
              // Una posición sin cotización NO entra en el latente, y hasta ahora eso no se
              // decía: el número parecía completo cuando le faltaba una posición entera. Es
@@ -1250,8 +1266,10 @@ export default function VentasView() {
                  ? `${resumen.posiciones.length} posición(es) abiertas` : "sin posiciones",
                resumen?.posiciones_sin_valorar
                  ? `⚠ ${resumen.posiciones_sin_valorar} sin precio, fuera del total` : null,
+               latenteBroker != null && Math.abs(latenteBroker - (latente ?? 0)) > 0.5
+                 ? `en DEGIRO verás ${eur(latenteBroker)}` : null,
              ].filter(Boolean).join(" · ")}
-             ayuda="Lo que llevas ganado en lo que AÚN NO has vendido, al precio y al cambio de hoy. Puede cambiar mañana." />
+             ayuda="Lo que llevas ganado en lo que AÚN NO has vendido, al precio y al cambio de hoy. Puede cambiar mañana. Tu bróker enseña otra cifra porque valora TODAS las acciones al precio medio ponderado, mientras que FIFO/LIFO dejan vivos unos lotes concretos: lo que aquí falta, ya está contado en el Realizado. Sumados, los dos métodos dan el mismo total." />
         {/* SIEMPRE visible, aunque esté vacía. Escondiéndola hasta que hubiera dividendos,
             la única forma de enterarse de que existe era leer el texto del importador — y
             una función que no se ve no existe. Vacía dice qué falta para llenarla. */}
@@ -1420,6 +1438,16 @@ export default function VentasView() {
         <Plegable id="abierto" titulo={`Lo que tienes abierto (${resumen.posiciones.length})`}
                   cabeceraExtra={
             <div className="flex items-center gap-3 flex-wrap ml-auto">
+              {/* El interruptor que hace que esta tabla se pueda comparar fila a fila con la
+                  pantalla del bróker. Sin él, las posiciones donde se vendió parte enseñaban
+                  otro precio medio y otra ganancia, y parecía un error de cálculo. */}
+              <button onClick={alternarBroker}
+                      title="Tu bróker valora TODAS las acciones al precio medio ponderado, que no baja al vender. FIFO/LIFO dejan vivos unos lotes concretos —los caros o los baratos— y por eso dan otro número. Ninguna está mal: lo que una se apunta de más aquí, la otra ya se lo apuntó en lo realizado."
+                      className={`text-[11px] rounded px-2 py-0.5 border ${comoBroker
+                        ? "bg-[#1a3a32] text-[#f5f3ef] border-[#1a3a32]"
+                        : "border-[#e5e0d8] dark:border-[#1a3a32] text-[#5c6b66]"}`}>
+                {comoBroker ? "✓ Como en DEGIRO (media ponderada)" : "Ver como en DEGIRO"}
+              </button>
               {/* Rehacer la importación: si la primera salió con los lotes mal repartidos,
                   borrarlos uno a uno serían decenas de clics. No toca las acciones que ya
                   tengan ventas registradas — ahí borrar compras falsearía la ganancia. */}
@@ -1481,24 +1509,36 @@ export default function VentasView() {
                     </td>
                     <td className="py-2 text-right font-mono">{p.acciones}</td>
                     <td className="py-2 text-right font-mono">
-                      {usd(p.precio_medio, p.divisa)}
-                      {/* La media ponderada es OTRA medida, no una correccion de la de
-                          arriba: el broker la usa y no se mueve al vender. Se enseña debajo
-                          y etiquetada para poder cuadrar las dos pantallas sin pensar que
-                          una de las dos esta mal. Solo cuando difieren, o seria ruido. */}
+                      {/* Con el interruptor puesto manda la ponderada, que es la del bróker;
+                          la otra baja debajo etiquetada. Ninguna es una corrección de la
+                          otra: miden cosas distintas y las dos son correctas. */}
+                      {usd(comoBroker ? (p.precio_medio_ponderado ?? p.precio_medio) : p.precio_medio, p.divisa)}
                       {p.precio_medio_ponderado != null
                         && Math.abs(p.precio_medio_ponderado - (p.precio_medio ?? 0)) > 0.01 && (
                         <div className="text-[10px] text-[#5c6b66]"
-                             title="Precio medio ponderado: el que suele enseñar tu bróker. No cambia al vender, porque promedia TODO lo que has comprado. El de arriba es el coste de las acciones que te quedan de verdad.">
-                          bróker ≈ {usd(p.precio_medio_ponderado, p.divisa)}
+                             title={comoBroker
+                               ? `Arriba, la media ponderada (la de tu bróker). Debajo, el coste real de las ${p.acciones} acciones que te quedan por ${metodo.toUpperCase()}.`
+                               : "Precio medio ponderado: el que suele enseñar tu bróker. No cambia al vender, porque promedia TODO lo que has comprado. El de arriba es el coste de las acciones que te quedan de verdad."}>
+                          {comoBroker
+                            ? `${metodo.toUpperCase()} = ${usd(p.precio_medio, p.divisa)}`
+                            : `bróker ≈ ${usd(p.precio_medio_ponderado, p.divisa)}`}
                         </div>
                       )}
                     </td>
-                    <td className="py-2 text-right font-mono">{eur(p.coste_eur)}</td>
+                    <td className="py-2 text-right font-mono">
+                      {eur(comoBroker ? (p.ponderada?.coste_eur ?? p.coste_eur) : p.coste_eur)}
+                    </td>
                     <td className="py-2 text-right font-mono"><CeldaValorHoy p={p} /></td>
                     <td className="px-4 py-2 text-right">
-                      <span className={`font-mono font-semibold ${tono(p.pnl_eur)}`}>{eur(p.pnl_eur)}</span>
-                      <span className={`font-mono text-[10px] ml-1 ${tono(p.pct_eur)}`}>{pct(p.pct_eur)}</span>
+                      {(() => {
+                        const g = comoBroker && p.ponderada?.pnl_eur != null ? p.ponderada : p;
+                        return (
+                          <>
+                            <span className={`font-mono font-semibold ${tono(g.pnl_eur)}`}>{eur(g.pnl_eur)}</span>
+                            <span className={`font-mono text-[10px] ml-1 ${tono(g.pct_eur)}`}>{pct(g.pct_eur)}</span>
+                          </>
+                        );
+                      })()}
                     </td>
                   </tr>
                   {abierta === p.symbol && (

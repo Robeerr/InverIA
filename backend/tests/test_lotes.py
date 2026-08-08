@@ -632,3 +632,68 @@ def test_sin_historico_o_con_datos_raros_no_revienta():
     assert lotes.fechas_en_que_toco([], 100.0)["fecha"] is None
     assert lotes.fechas_en_que_toco(_VELAS, None)["fecha"] is None
     assert lotes.fechas_en_que_toco([{"date": "x"}], 100.0)["fecha"] is None
+
+
+# ── Valoración como el bróker (media ponderada) ──────────────────────────────
+
+def test_el_latente_ponderado_reparte_el_coste_entre_todas_las_acciones():
+    """El caso real de FN: 12 compradas en dos niveles, 3 vendidas. Por LIFO quedan vivos
+    los lotes caros y el latente sale mucho peor; el bróker promedia todo y da otra cifra.
+    Ninguna está mal — lo que LIFO se apunta de más aquí ya se lo apuntó en lo realizado."""
+    compras = [{"id": "c1", "acciones": 6, "precio": 500.0, "comision": 0, "tasa": 1.10,
+                "fecha": "2026-01-10"},
+               {"id": "c2", "acciones": 6, "precio": 600.0, "comision": 0, "tasa": 1.10,
+                "fecha": "2026-02-10"}]
+    ventas = [{"id": "v1", "acciones": 3, "precio": 700.0, "comision": 0, "tasa": 1.10,
+               "fecha": "2026-03-10"}]
+
+    pmp = lotes.media_ponderada(compras, ventas)
+    assert pmp["precio_medio"] == 550.0          # no se mueve al vender
+    assert pmp["acciones"] == 9
+    assert pmp["coste_divisa"] == 4950.0         # 9 × 550
+    assert pmp["precio_medio_eur"] == 500.0      # 550 / 1,10
+    assert pmp["coste_eur"] == 4500.0
+
+    val = lotes.valorar_ponderado(pmp, 560.0, 1.12)
+    assert val["valor_divisa"] == 5040.0         # 9 × 560
+    assert val["pnl_divisa"] == 90.0             # 5040 − 4950
+    assert val["coste_eur"] == 4500.0
+    assert val["valor_eur"] == 4500.0            # 5040 / 1,12
+    assert val["pnl_eur"] == 0.0                 # el euro se comió la ganancia
+
+    # Por LIFO la venta se come 3 del lote caro: quedan 6×500 + 3×600 = 4800, otro coste
+    # y por tanto otro latente que el del bróker.
+    rep = lotes.reproducir(compras, ventas, lotes.LIFO)
+    assert rep["coste_abierto_divisa"] == 4800.0
+    assert rep["coste_abierto_divisa"] != pmp["coste_divisa"]
+
+
+def test_realizado_mas_latente_da_lo_mismo_con_los_dos_metodos():
+    """La invariante que justifica enseñar las dos cifras sin que ninguna sea un error."""
+    compras = [{"id": "c1", "acciones": 6, "precio": 500.0, "comision": 0, "tasa": 1.10,
+                "fecha": "2026-01-10"},
+               {"id": "c2", "acciones": 6, "precio": 600.0, "comision": 0, "tasa": 1.10,
+                "fecha": "2026-02-10"}]
+    ventas = [{"id": "v1", "acciones": 3, "precio": 700.0, "comision": 0, "tasa": 1.10,
+               "fecha": "2026-03-10"}]
+    pmp = lotes.media_ponderada(compras, ventas)
+    rep = lotes.reproducir(compras, ventas, lotes.LIFO)
+
+    latente_pmp = lotes.valorar_ponderado(pmp, 560.0, 1.10)["pnl_divisa"]
+    latente_lifo = lotes.valorar_abierto(rep, 560.0, 1.10)["pnl_divisa"]
+    realizado_pmp = pmp["ganancia_realizada_divisa"]
+    realizado_lifo = sum(v["ganancia_divisa"] for v in rep["ventas"])
+
+    assert round(realizado_pmp + latente_pmp, 6) == round(realizado_lifo + latente_lifo, 6)
+
+
+def test_sin_el_cambio_de_una_compra_no_se_inventa_la_media_en_euros():
+    """Arrastrarla a medias daría una cifra falsa sin avisar."""
+    compras = [{"id": "c1", "acciones": 5, "precio": 100.0, "comision": 0, "tasa": 1.10,
+                "fecha": "2026-01-10"},
+               {"id": "c2", "acciones": 5, "precio": 120.0, "comision": 0, "tasa": None,
+                "fecha": "2026-02-10"}]
+    pmp = lotes.media_ponderada(compras, [])
+    assert pmp["precio_medio"] == 110.0
+    assert pmp["precio_medio_eur"] is None and pmp["coste_eur"] is None
+    assert lotes.valorar_ponderado(pmp, 130.0, 1.12)["pnl_eur"] is None

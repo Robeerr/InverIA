@@ -606,6 +606,10 @@ async def resumen_cartera(db, precios: dict) -> dict:
             # Para cuadrar con el bróker. Va aparte del precio_medio y etiquetado: son dos
             # medidas distintas y mezclarlas haría pensar que una de las dos está mal.
             "precio_medio_ponderado": pmp["precio_medio"],
+            # La posición valorada COMO EL BRÓKER, para poder comparar fila a fila. Lo que
+            # FIFO/LIFO se apuntan de más aquí ya se lo apuntaron en lo realizado: sumando
+            # latente y realizado, los dos métodos dan el mismo total.
+            "ponderada": lotes.valorar_ponderado(pmp, precios.get(sym), tasas.get(divisa)),
             "acciones": estado["acciones_abiertas"],
             "precio_medio": estado["precio_medio"],
             "precio_actual": precios.get(sym),
@@ -622,10 +626,16 @@ async def resumen_cartera(db, precios: dict) -> dict:
     posiciones.sort(key=lambda p: p.get("pnl_eur") or 0, reverse=True)
 
     latentes = [p["pnl_eur"] for p in posiciones if p.get("pnl_eur") is not None]
+    lat_pmp = [p["ponderada"]["pnl_eur"] for p in posiciones
+               if (p.get("ponderada") or {}).get("pnl_eur") is not None]
     hist = await historial(db)
     return {
         "posiciones": posiciones,
         "latente_eur": round(sum(latentes), 2) if latentes else None,
+        # El mismo latente visto como lo ve el bróker. Se devuelve siempre para poder
+        # enseñar las dos cifras juntas: al usuario le cuadra una u otra según con qué
+        # pantalla esté comparando, y esconder una de las dos parecía un error de cálculo.
+        "latente_ponderada_eur": round(sum(lat_pmp), 2) if lat_pmp else None,
         "invertido_eur": round(sum(p["coste_eur"] for p in posiciones
                                    if p.get("coste_eur") is not None), 2) or None,
         "valor_eur": round(sum(p["valor_eur"] for p in posiciones

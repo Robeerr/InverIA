@@ -600,12 +600,24 @@ def media_ponderada(compras: list, ventas: list) -> dict:
     ops = sorted([{**c, "_t": "c"} for c in compras] + [{**v, "_t": "v"} for v in ventas],
                  key=lambda x: (str(x.get("fecha") or ""), str(x.get("created_at") or "")))
     media, cantidad, realizado, ventas_pmp = 0.0, 0.0, 0.0, []
+    # La media EN EUROS se lleva en paralelo, cada compra a SU cambio. Sin ella la posición
+    # abierta solo se puede valorar pasando la media en dólares al cambio de hoy, y eso
+    # borra el efecto del euro: es la diferencia entre los -68 € que enseña el bróker y un
+    # número inventado. Si a una compra le falta el cambio, la media en euros deja de
+    # existir para siempre (arrastrarla a medias daría una cifra falsa sin avisar).
+    media_eur, eur_completo = 0.0, True
     for op in ops:
         n = float(op.get("acciones") or 0)
         precio = float(op.get("precio") or 0)
         comision = float(op.get("comision") or 0.0)
         if op["_t"] == "c":
             coste = cantidad * media + n * precio + comision
+            en_eur = _a_eur(n * precio + comision, op.get("tasa"))
+            if en_eur is None:
+                eur_completo = False
+            elif eur_completo:
+                media_eur = ((cantidad * media_eur + en_eur) / (cantidad + n)
+                             if cantidad + n > 1e-9 else 0.0)
             cantidad += n
             media = (coste / cantidad) if cantidad > 1e-9 else 0.0
         else:
@@ -622,10 +634,54 @@ def media_ponderada(compras: list, ventas: list) -> dict:
             # bróker no se mueva al vender.
     return {
         "precio_medio": round(media, 4) if cantidad > 1e-9 else None,
+        "precio_medio_eur": (round(media_eur, 4)
+                             if eur_completo and cantidad > 1e-9 else None),
         "acciones": round(cantidad, 6),
         "coste_divisa": round(cantidad * media, 2) if cantidad > 1e-9 else 0.0,
+        "coste_eur": (round(cantidad * media_eur, 2)
+                      if eur_completo and cantidad > 1e-9 else None),
         "ganancia_realizada_divisa": round(realizado, 2),
         "ventas": ventas_pmp,
+    }
+
+
+def valorar_ponderado(pmp: dict, precio_actual, tasa_hoy) -> dict:
+    """Latente valorando la posición POR MEDIA PONDERADA, que es como lo hace el bróker.
+
+    Misma forma que `valorar_abierto` para poder enseñar las dos y compararlas. La
+    diferencia entre ambas no es un error de ninguna: FIFO/LIFO dejan vivos unos lotes
+    concretos —los caros o los baratos— mientras que el PMP reparte el coste entre todas
+    las acciones. Lo que una se apunta de más en el latente, la otra ya se lo apuntó en lo
+    realizado; sumadas dan lo mismo.
+    """
+    n = pmp.get("acciones") or 0
+    vacio = {"acciones": n, "valor_divisa": None, "coste_divisa": None, "pnl_divisa": None,
+             "valor_eur": None, "coste_eur": None, "pnl_eur": None,
+             "pct": None, "pct_eur": None}
+    if n <= 1e-9 or precio_actual in (None, ""):
+        return vacio
+    try:
+        precio_actual = float(precio_actual)
+    except (TypeError, ValueError):
+        return vacio
+
+    valor_divisa = n * precio_actual
+    coste_divisa = pmp.get("coste_divisa") or 0
+    pnl_divisa = valor_divisa - coste_divisa
+    valor_eur = _a_eur(valor_divisa, tasa_hoy)
+    coste_eur = pmp.get("coste_eur")
+    pnl_eur = (valor_eur - coste_eur) if (valor_eur is not None and coste_eur is not None) else None
+    return {
+        "acciones": n,
+        "valor_divisa": round(valor_divisa, 2),
+        "coste_divisa": round(coste_divisa, 2),
+        "pnl_divisa": round(pnl_divisa, 2),
+        "valor_eur": round(valor_eur, 2) if valor_eur is not None else None,
+        "coste_eur": round(coste_eur, 2) if coste_eur is not None else None,
+        "pnl_eur": round(pnl_eur, 2) if pnl_eur is not None else None,
+        "pct": round(pnl_divisa / coste_divisa * 100, 2) if coste_divisa else None,
+        "pct_eur": (round(pnl_eur / coste_eur * 100, 2)
+                    if (pnl_eur is not None and coste_eur) else None),
     }
 
 
