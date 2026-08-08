@@ -373,7 +373,27 @@ async def historial(db, limite: int = 1000) -> dict:
 
     filas.sort(key=lambda f: str(f.get("fecha") or ""), reverse=True)
     resumen_symbol.sort(key=lambda r: r.get("ganancia_eur") or 0, reverse=True)
+
+    # Una venta metida a mano y la misma venta venida luego del CSV solo se detectan como
+    # iguales si coinciden al céntimo; tecleada de memoria, rara vez lo hace. El resultado
+    # es la MISMA venta contada dos veces — y en una posición ya cerrada no se nota en el
+    # número de acciones, solo en que la ganancia se dispara. Se avisa de las parejas
+    # sospechosas (misma acción, misma fecha, mismas acciones, y solo una con huella de CSV)
+    # para poder borrar la copia manual con su botón.
+    dudosas = []
+    for sym, libro in por_symbol.items():
+        vistos = {}
+        for v in libro["ventas"]:
+            k = (str(v.get("fecha") or "")[:10], round(float(v.get("acciones") or 0), 6))
+            vistos.setdefault(k, []).append(v)
+        for (fch, acc), grupo in vistos.items():
+            if len(grupo) > 1 and any(g.get("huella") for g in grupo) \
+                    and any(not g.get("huella") for g in grupo):
+                dudosas.append({"symbol": sym, "fecha": fch, "acciones": acc,
+                                "ids_manuales": [g["id"] for g in grupo if not g.get("huella")]})
+
     return {
+        "posibles_duplicadas": dudosas,
         "items": filas[:limite],
         "por_symbol": resumen_symbol,
         "resumen": _totales(filas),
@@ -419,6 +439,31 @@ def _totales(filas: list) -> dict:
     sin_cambio = sum(1 for f in filas if not f["fifo"].get("exacto"))
     out["n_ventas"] = len(filas)
     out["ventas_sin_tipo_de_cambio"] = sin_cambio
+    # Ventas con más acciones que compras registradas. Esas acciones salen con COSTE CERO
+    # y todo su ingreso cuenta como ganancia: el total está HINCHADO exactamente en eso.
+    # Pasó de verdad: al quitar los lotes duplicados de la foto, las ventas cuyas compras
+    # antiguas no venían en el CSV se quedaron sin coste y el Realizado saltó de golpe.
+    # Se estima cuánto sobra (ingreso de las acciones sin cubrir) para que la cifra grande
+    # no se lea como buena mientras falten compras.
+    descuadre_acciones, descuadre_eur, descuadre_syms = 0.0, 0.0, {}
+    for f in filas:
+        sc = f.get("sin_cubrir") or 0
+        if sc <= 0:
+            continue
+        descuadre_acciones += sc
+        ingreso = sc * float(f.get("precio_venta") or 0)
+        try:
+            tasa = float(f.get("tasa_venta") or 0)
+        except (TypeError, ValueError):
+            tasa = 0
+        descuadre_eur += (ingreso / tasa) if tasa > 0 else ingreso
+        s = descuadre_syms.setdefault(f["symbol"], 0.0)
+        descuadre_syms[f["symbol"]] = round(s + sc, 6)
+    out["sin_cubrir_acciones"] = round(descuadre_acciones, 6)
+    out["sin_cubrir_eur_aprox"] = round(descuadre_eur, 2)
+    out["sin_cubrir_por_symbol"] = sorted(
+        ({"symbol": k, "acciones": v} for k, v in descuadre_syms.items()),
+        key=lambda x: x["acciones"], reverse=True)
     out["aviso"] = (
         f"{sin_cambio} venta(s) no tienen el tipo de cambio de la compra, así que su "
         "ganancia en euros no está incluida en el total. Añade la fecha y el cambio en la "

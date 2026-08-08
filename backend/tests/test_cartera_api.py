@@ -1069,3 +1069,56 @@ def test_la_limpieza_dos_veces_no_hace_nada_la_segunda():
     _correr(cartera_api.quitar_lotes_de_la_foto(db))
     r2 = _correr(cartera_api.quitar_lotes_de_la_foto(db))
     assert r2["borrados"] == 0
+
+
+# ── Ventas contadas dos veces y ganancias sin coste ──────────────────────────
+
+def test_el_total_avisa_de_las_acciones_vendidas_sin_compra():
+    """Una venta sin lotes que consumir sale con coste CERO: todo el ingreso cuenta como
+    ganancia y el Realizado queda hinchado. El total debe decirlo, no disimularlo."""
+    db = _DB()
+    _correr(cartera_api.registrar_compra(
+        db, "SPCX", 5, 100.0, fecha="2026-01-10", comision=0, tasa=1.10))
+    _correr(cartera_api.registrar_venta(
+        db, "SPCX", 8, 120.0, fecha="2026-02-01", comision=0, tasa=1.20))
+    h = _correr(cartera_api.historial(db))
+    assert h["resumen"]["sin_cubrir_acciones"] == 3
+    # 3 acciones × 120 $ a 1,20 $/€ = 300 €: lo que puede sobrar del total
+    assert h["resumen"]["sin_cubrir_eur_aprox"] == 300.0
+    assert h["resumen"]["sin_cubrir_por_symbol"] == [{"symbol": "SPCX", "acciones": 3}]
+
+
+def test_una_venta_manual_y_la_misma_del_csv_se_señalan_como_duplicadas():
+    """El anti-duplicados compara el precio a 4 decimales; tecleado de memoria no coincide y
+    la MISMA venta queda dos veces. En una posición cerrada no se ve en las acciones — solo
+    en que la ganancia se dispara. Hay que señalar la pareja para poder borrar la copia."""
+    db = _DB()
+    _correr(cartera_api.registrar_compra(
+        db, "MRVL", 10, 200.0, fecha="2026-01-10", comision=0, tasa=1.10))
+    # A mano (sin huella), con el precio de memoria
+    _correr(cartera_api.registrar_venta(
+        db, "MRVL", 5, 250.0, fecha="2026-03-01", comision=0, tasa=1.15))
+    # La misma, venida del CSV (con huella) y el precio exacto
+    _correr(cartera_api.importar_degiro(
+        db, [_op_csv("MRVL", "venta", 5, 250.13, "2026-03-01", "h9")],
+        {"US0000000001": "MRVL"}))
+    h = _correr(cartera_api.historial(db))
+    assert len(h["posibles_duplicadas"]) == 1
+    d = h["posibles_duplicadas"][0]
+    assert d["symbol"] == "MRVL" and d["acciones"] == 5
+    assert len(d["ids_manuales"]) == 1
+
+
+def test_dos_ventas_del_csv_iguales_no_son_sospechosas():
+    """Vender dos veces 5 acciones el mismo día puede pasar de verdad (dos órdenes). Solo es
+    sospechosa la pareja mano+CSV, que es la que nace del anti-duplicados fallando."""
+    db = _DB()
+    _correr(cartera_api.registrar_compra(
+        db, "ORCL", 20, 100.0, fecha="2026-01-10", comision=0, tasa=1.10))
+    _correr(cartera_api.importar_degiro(
+        db, [_op_csv("ORCL", "venta", 5, 150.0, "2026-03-01", "ha"),
+             _op_csv("ORCL", "venta", 5, 151.0, "2026-03-01", "hb")],
+        {"US0000000001": "ORCL"}))
+    h = _correr(cartera_api.historial(db))
+    assert h["posibles_duplicadas"] == []
+    assert h["resumen"]["sin_cubrir_acciones"] == 0

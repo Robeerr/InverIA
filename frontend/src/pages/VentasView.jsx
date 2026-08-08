@@ -1065,7 +1065,17 @@ export default function VentasView() {
              // n_ventas cuelga del resumen, no del método: el número de ventas es el
              // mismo se mire con FIFO o con LIFO. Leerlo de dentro del método daba
              // siempre 0, o sea "no has vendido nada" con 148 ventas en la lista.
-             sub={`${hist?.resumen?.n_ventas ?? 0} venta(s) · ${metodo.toUpperCase()}`}
+             // El descuadre va EN el KPI y no en una fila perdida: si hay acciones vendidas
+             // sin compra registrada, salen con coste CERO y esta cifra está hinchada en
+             // hasta esos euros. Sin el aviso, el número gordo se lee como bueno.
+             sub={[
+               `${hist?.resumen?.n_ventas ?? 0} venta(s) · ${metodo.toUpperCase()}`,
+               hist?.resumen?.sin_cubrir_acciones
+                 ? `⚠ ${hist.resumen.sin_cubrir_acciones} acción(es) vendidas sin compra registrada`
+                   + ` (${(hist.resumen.sin_cubrir_por_symbol || []).map((s) => s.symbol).join(", ")})`
+                   + ` — hasta ${eur(hist.resumen.sin_cubrir_eur_aprox)} de esta cifra pueden sobrar`
+                 : null,
+             ].filter(Boolean).join(" · ")}
              ayuda="Ganancia de las ventas ya hechas, con el tipo de cambio del día de cada compra y de cada venta. Es dinero que ya está en tu cuenta. Cambia según el método: mira la etiqueta de debajo." />
         <Kpi etiqueta="Latente" valor={latente}
              // Una posición sin cotización NO entra en el latente, y hasta ahora eso no se
@@ -1100,6 +1110,28 @@ export default function VentasView() {
                ayuda="Cuánto de tu ganancia realizada viene del movimiento del euro frente al dólar, y no de que la acción subiera." />
         )}
       </div>
+
+      {/* La misma venta metida a mano Y venida del CSV solo se detecta como duplicada si
+          coincide al céntimo; tecleada de memoria, rara vez lo hace. En una posición ya
+          cerrada no se nota en las acciones — solo en que el Realizado se dispara. */}
+      {!!hist?.posibles_duplicadas?.length && (
+        <div className="card-flat px-4 py-3 border-l-4 border-l-amber-500">
+          <p className="text-sm font-semibold mb-1">
+            ⚠ {hist.posibles_duplicadas.length} venta(s) posiblemente contadas dos veces
+          </p>
+          <p className="text-xs text-[#5c6b66] mb-2">
+            Estas ventas están una vez metidas a mano y otra vez traídas del CSV de DEGIRO
+            (misma acción, misma fecha, mismas acciones). Cada pareja suma su ganancia dos
+            veces. Busca la copia manual en la lista de abajo (la que NO pone «DEGIRO» en
+            las notas) y bórrala con su botón.
+          </p>
+          {hist.posibles_duplicadas.map((d, i) => (
+            <p key={i} className="text-xs font-mono">
+              {d.symbol} · {d.fecha} · {d.acciones} acciones
+            </p>
+          ))}
+        </div>
+      )}
 
       {/* Selector de método. Va acompañado SIEMPRE de la explicación fiscal: enseñar dos
           cifras distintas para la misma venta sin decir cuál vale para Hacienda sería peor
