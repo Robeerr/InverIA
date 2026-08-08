@@ -279,6 +279,19 @@ function ImportarDegiro({ onCerrar }) {
           + (r.saltadas ? ` · ${r.saltadas} ya estaban` : "")
         : `Ya estaba todo importado (${r.saltadas} operaciones). No hacía falta nada.`,
         { duration: 8000 });
+      // Una compra descartada es una venta futura SIN COSTE: su ganancia saldrá hinchada.
+      // Pasó con OHLA y CRWV (filas a precio 0 de ampliaciones/splits) y desde el log del
+      // servidor nadie se entera. Aquí se cuenta cuáles y por qué, para meterlas a mano.
+      if (r.descartadas?.length) {
+        toast.warning(
+          `${r.descartadas.length} fila(s) NO han entrado y hay que meterlas a mano con `
+          + "+ Compra: "
+          + r.descartadas.slice(0, 6).map((d) =>
+              `${d.symbol} ${d.fecha} (${d.tipo} ${d.acciones} × ${d.precio})`).join(" · ")
+          + (r.descartadas.length > 6 ? ` · y ${r.descartadas.length - 6} más` : "")
+          + `. Motivo: ${r.descartadas[0]?.motivo || ""}`,
+          { duration: 20000 });
+      }
       qc.invalidateQueries({ queryKey: ["cartera"] });
       onCerrar();
     },

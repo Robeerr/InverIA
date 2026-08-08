@@ -760,7 +760,7 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
     entradas = {e["symbol"].upper(): e for e in await db.signal_entries.find(
         {}, {"_id": 0}).to_list(500) if e.get("symbol")}
 
-    nuevas_compras, nuevas_ventas = [], []
+    nuevas_compras, nuevas_ventas, descartadas = [], [], []
     importadas, saltadas, tocados = 0, 0, set()
     for op in sorted(operaciones, key=lambda o: (o["fecha"], o.get("hora") or "")):
         sym = mapa.get(op["isin"])
@@ -790,7 +790,14 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
             ya.add(op["huella"])
             ya_manual.add(_clave({**op, "symbol": sym}, op["tipo"]))
         except ValueError as e:
+            # A la lista, no solo al log: una compra descartada aquí es una venta futura
+            # SIN COSTE — su ganancia saldrá hinchada — y desde el log del servidor nadie
+            # se entera. Pasó con OHLA y CRWV: filas a precio 0 (ampliaciones, splits)
+            # descartadas en silencio y 205 acciones vendidas "sin compra registrada".
             logger.warning("Operación descartada (%s %s): %s", op["fecha"], sym, e)
+            descartadas.append({"symbol": sym, "fecha": op["fecha"], "tipo": op["tipo"],
+                                "acciones": op["acciones"], "precio": op["precio"],
+                                "motivo": str(e)})
             saltadas += 1
 
     # Una escritura por colección en vez de una por operación. Con cientos de apuntes la
@@ -803,7 +810,7 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
     await _sincronizar_varias(db, tocados)
 
     return {**prep, "importadas": importadas, "saltadas": saltadas,
-            "simbolos": sorted(tocados)}
+            "descartadas": descartadas, "simbolos": sorted(tocados)}
 
 
 async def quitar_lotes_de_la_foto(db) -> dict:

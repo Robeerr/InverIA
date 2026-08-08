@@ -1224,3 +1224,18 @@ def test_una_venta_parcial_no_reactiva_nada():
     r = _correr(cartera_api.registrar_venta(
         db, "FN", 2, 200.0, fecha="2026-03-01", comision=0, tasa=1.15))
     assert r["campanas"]["reactivadas"] == []
+
+
+def test_una_fila_descartada_se_devuelve_con_su_motivo():
+    """Una compra descartada en silencio es una venta futura SIN coste: su ganancia saldrá
+    hinchada. Pasó con OHLA y CRWV (filas a precio 0 de ampliaciones/splits) — el descarte
+    iba solo al log del servidor y nadie se enteraba."""
+    db = _DB()
+    ops = [_op_csv("OHLA", "compra", 200, 0.0, "2021-06-15", "hz"),
+           _op_csv("OHLA", "venta", 200, 0.55, "2022-03-01", "hy")]
+    r = _correr(cartera_api.importar_degiro(db, ops, {"US0000000001": "OHLA"}))
+    assert r["importadas"] == 1  # la venta sí entra
+    assert len(r["descartadas"]) == 1
+    d = r["descartadas"][0]
+    assert d["symbol"] == "OHLA" and d["tipo"] == "compra" and d["acciones"] == 200
+    assert "precio" in d["motivo"].lower() or "cero" in d["motivo"].lower()
