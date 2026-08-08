@@ -86,6 +86,7 @@ class _DB:
         self.ventas = _Coleccion()
         self.ajustes = _Coleccion()
         self.dividendos = _Coleccion()
+        self.isin_map = _Coleccion()
         self.signal_entries = _Coleccion(entries or [])
 
 
@@ -967,3 +968,51 @@ def test_dos_pagos_identicos_el_mismo_dia_entran_los_dos():
     # Y reimportar ese mismo fichero sigue sin duplicar.
     r2 = _correr(cartera_api.importar_dividendos(db, doble))
     assert r2["importados"] == 0 and len(db.dividendos.docs) == 2
+
+
+# ── El emparejamiento se recuerda ────────────────────────────────────────────
+# Antes se guardaba dentro de la ficha de la accion, asi que los ETFs y las posiciones ya
+# cerradas —que no tienen ficha— habia que emparejarlos otra vez en CADA importacion. Son
+# justo los que mas cuestan, porque hay que ir a buscar su ticker fuera.
+
+def test_se_recuerda_el_ticker_de_algo_que_no_esta_en_la_cartera():
+    db = _DB([{"symbol": "MRVL", "name": "MARVELL"}])
+    _correr(cartera_api.importar_degiro(db, _OPS_OTRO, {"US72919P2020": "PLUG"}))
+    prep = _correr(cartera_api.preparar_importacion_degiro(db, _OPS_OTRO))
+    assert prep["pendientes"] == []
+    assert prep["productos"][0]["symbol"] == "PLUG"
+
+
+def test_se_recuerda_tambien_lo_que_se_decidio_ignorar():
+    """Sin esto, cada importacion volveria a preguntar por los mismos ETFs que ya se
+    decidio dejar fuera."""
+    db = _DB()
+    _correr(cartera_api.importar_degiro(db, _OPS_OTRO,
+                                        {"US72919P2020": cartera_api.IGNORAR}))
+    prep = _correr(cartera_api.preparar_importacion_degiro(db, _OPS_OTRO))
+    assert prep["pendientes"] == []
+    assert prep["productos"][0]["ignorado"] is True
+
+
+def test_lo_emparejado_se_guarda_aunque_falten_otros():
+    """Emparejar diez y dejarse dos no puede tirar por la borda los diez: volver a
+    teclearlo todo es lo que hace que uno no quiera repetir la importacion."""
+    db = _DB()
+    ops = _OPS_DEGIRO + _OPS_OTRO
+    r = _correr(cartera_api.importar_degiro(db, ops, {"US5738741041": "MRVL"}))
+    assert r["importadas"] == 0, "no importa nada mientras falte alguno"
+    assert len(r["pendientes"]) == 1
+
+    # Pero el que si se resolvio queda recordado.
+    prep = _correr(cartera_api.preparar_importacion_degiro(db, ops))
+    recordados = {p["isin"]: p.get("symbol") for p in prep["productos"]}
+    assert recordados["US5738741041"] == "MRVL"
+
+
+def test_un_ticker_recordado_se_puede_cambiar_despues():
+    db = _DB()
+    _correr(cartera_api.importar_degiro(db, _OPS_OTRO, {"US72919P2020": "PLUG"}))
+    _correr(cartera_api.guardar_mapa_isin(db, {"US72919P2020": "PLUGX"}))
+    prep = _correr(cartera_api.preparar_importacion_degiro(db, _OPS_OTRO))
+    assert prep["productos"][0]["symbol"] == "PLUGX"
+    assert len(db.isin_map.docs) == 1, "se actualiza, no se acumula"

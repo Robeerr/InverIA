@@ -482,12 +482,41 @@ async def resumen_cartera(db, precios: dict) -> dict:
 # ── Importación desde el CSV del bróker ──────────────────────────────────────
 
 async def _mapa_isin(db) -> dict:
-    """ISIN → símbolo, de lo ya emparejado en otras importaciones."""
+    """ISIN → símbolo, de lo ya emparejado en otras importaciones.
+
+    Se guarda en su PROPIA colección y no dentro de la ficha de la acción. El motivo: un
+    CSV con años de historial trae ETFs y posiciones ya cerradas que NO están en la Cartera,
+    y esos no tienen ficha donde anotar nada. Guardándolo ahí, cada importación volvía a
+    preguntar por ellos — que son justo los que más cuesta emparejar, porque hay que ir a
+    buscar su ticker fuera.
+
+    Se sigue leyendo también de las fichas, para no perder lo emparejado antes de esto.
+    """
     mapa = {}
     for e in await db.signal_entries.find({}, {"_id": 0, "symbol": 1, "isin": 1}).to_list(500):
         if e.get("isin") and e.get("symbol"):
             mapa[str(e["isin"]).strip().upper()] = e["symbol"].upper()
+    for d in await db.isin_map.find({}, {"_id": 0}).to_list(2000):
+        if d.get("isin") and d.get("symbol"):
+            mapa[str(d["isin"]).strip().upper()] = str(d["symbol"]).upper()
     return mapa
+
+
+async def guardar_mapa_isin(db, mapeo: dict):
+    """Recuerda cada decisión: el ticker elegido, y también el "ignorar".
+
+    Lo segundo importa tanto como lo primero. Sin ello, cada importación volvería a
+    preguntar por los mismos ETFs que ya se decidió dejar fuera.
+    """
+    for isin, valor in (mapeo or {}).items():
+        limpio = _ticker_valido(valor)
+        if not isin or not limpio:
+            continue
+        await db.isin_map.update_one(
+            {"isin": isin.strip().upper()},
+            {"$set": {"isin": isin.strip().upper(), "symbol": limpio,
+                      "updated_at": _ahora()}},
+            upsert=True)
 
 
 #: Valor especial del mapeo para "este producto no me interesa, sáltalo".
@@ -565,6 +594,10 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
     nuevo que solape con el anterior— no duplica nada. Es la diferencia entre poder
     reexportar tranquilamente cada mes y tener que llevar la cuenta de lo ya subido.
     """
+    # Se recuerda ANTES de comprobar si falta algo: así emparejar diez y dejarse dos no
+    # tira por la borda los diez. Con un fichero de años, volver a teclearlo todo es lo que
+    # hace que uno no quiera repetir la importación.
+    await guardar_mapa_isin(db, mapeo)
     prep = await preparar_importacion_degiro(db, operaciones, mapeo)
     if prep["pendientes"]:
         return {**prep, "importadas": 0, "saltadas": 0,

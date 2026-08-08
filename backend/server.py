@@ -266,6 +266,7 @@ async def lifespan(app: FastAPI):
     await db.chartist_state.create_index("symbol", unique=True)
     await db.alerts.create_index("symbol")
     # Libro de operaciones: todo se consulta por símbolo y se ordena por fecha.
+    await db.isin_map.create_index("isin", unique=True)
     for coleccion in (db.compras, db.ventas, db.dividendos):
         await coleccion.create_index([("symbol", 1), ("fecha", 1)])
         await coleccion.create_index("id", unique=True)
@@ -2417,6 +2418,8 @@ async def importar_degiro(archivo: UploadFile = File(...),
         raise HTTPException(400, "El mapeo de productos no es un JSON válido.")
 
     if not confirmar:
+        if mapa:
+            await cartera_api.guardar_mapa_isin(db, mapa)
         prep = await cartera_api.preparar_importacion_degiro(db, leido["operaciones"], mapa)
         return {**prep, "resumen": degiro_csv.resumen(leido["operaciones"]),
                 "errores": leido["errores"], "confirmado": False}

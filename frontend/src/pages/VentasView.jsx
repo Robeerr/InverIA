@@ -176,6 +176,7 @@ function FilaVenta({ v, metodo, onBorrar }) {
 // acción por ISIN y nombre, no por ticker, y meter operaciones en la posición equivocada
 // es peor que no importarlas.
 function ImportarDegiro({ onCerrar }) {
+  const IGNORAR = "__IGNORAR__";
   const [archivo, setArchivo] = React.useState(null);
   const [previo, setPrevio] = React.useState(null);
   const [mapeo, setMapeo] = React.useState({});
@@ -185,11 +186,21 @@ function ImportarDegiro({ onCerrar }) {
     mutationFn: () => api.cartera.importarDegiro(archivo, null, false),
     onSuccess: (r) => {
       setPrevio(r);
+      // Se rellena con lo YA decidido en importaciones anteriores —ticker o "ignorar"— y,
+      // para lo que quede, con la sugerencia por el nombre. Así una segunda importación
+      // solo pide lo nuevo en vez de volver a preguntarlo todo.
       const inicial = {};
       for (const p of r.productos || []) {
-        if (p.symbol || p.sugerencia) inicial[p.isin] = p.symbol || p.sugerencia;
+        if (p.ignorado) inicial[p.isin] = IGNORAR;
+        else if (p.symbol || p.sugerencia) inicial[p.isin] = p.symbol || p.sugerencia;
       }
       setMapeo(inicial);
+      const yaResueltos = (r.productos || []).filter((p) => p.symbol || p.ignorado).length;
+      if (yaResueltos) {
+        toast.info(`${yaResueltos} producto(s) ya emparejados de antes. `
+          + `Solo tienes que rellenar los ${r.pendientes?.length || 0} que faltan.`,
+          { duration: 8000 });
+      }
     },
     onError: (e) => toast.error(e?.response?.data?.detail || "No se pudo leer el fichero"),
   });
@@ -231,7 +242,6 @@ function ImportarDegiro({ onCerrar }) {
     },
   });
 
-  const IGNORAR = "__IGNORAR__";
   const pendientes = (previo?.productos || []).filter((p) => !mapeo[p.isin]);
   const ignorados = (previo?.productos || []).filter((p) => mapeo[p.isin] === IGNORAR);
 
@@ -311,8 +321,11 @@ function ImportarDegiro({ onCerrar }) {
                              ...m, [p.isin]: e.target.checked ? IGNORAR : "" }))} />
                     ignorar
                   </label>
-                  {p.symbol && mapeo[p.isin] !== IGNORAR
-                    && <Chip title="Ya emparejado en una importación anterior.">recordado</Chip>}
+                  {(p.symbol || p.ignorado) && (
+                    <Chip title="Decidido en una importación anterior. Puedes cambiarlo si quieres.">
+                      recordado
+                    </Chip>
+                  )}
                 </div>
               ))}
             </div>
