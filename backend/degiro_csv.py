@@ -171,6 +171,18 @@ def leer(contenido: bytes) -> dict:
         if op is None:
             continue
         operaciones.append(op)
+    # Contador de repetición en la huella, como en los dividendos: DEGIRO parte una orden en
+    # varias ejecuciones y dos pueden ser IDÉNTICAS hasta en la hora y el nº de orden (pasó
+    # con 2×5 CRWV a 90,55 el mismo segundo). Sin esto, la segunda se pierde en silencio y
+    # la posición descuadra en exactamente esas acciones.
+    vistas = {}
+    for op in operaciones:
+        n = vistas.get(op["huella"], 0)
+        vistas[op["huella"]] = n + 1
+        if n:
+            op["huella"] = hashlib.sha1(
+                f"{op['huella']}|{n}".encode()).hexdigest()[:16]
+    for op in operaciones:
         productos.setdefault(op["isin"], {"isin": op["isin"], "producto": op["producto"],
                                           "operaciones": 0})
         productos[op["isin"]]["operaciones"] += 1

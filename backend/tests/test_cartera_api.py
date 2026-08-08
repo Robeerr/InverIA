@@ -775,11 +775,18 @@ def test_reimportar_no_duplica_lo_que_metiste_a_mano():
     assert r["importadas"] == 1, "la venta, que no estaba, si entra"
 
 
-def test_dos_filas_identicas_del_mismo_fichero_no_entran_dos_veces():
+def test_dos_filas_identicas_del_mismo_fichero_entran_las_dos():
+    """Decisión revisada. Antes se descartaba la segunda por "idéntica" — pero DEGIRO parte
+    una orden en varias ejecuciones que pueden ser iguales hasta en la hora, y descartarla
+    perdía acciones reales (2×5 CRWV a 90,55). Contra el doble-clic al resubir el MISMO
+    fichero protege la huella, que degiro_csv.leer hace única con un contador."""
     db = _DB([{"symbol": "MRVL", "name": "MARVELL"}])
     dobles = _OPS_DEGIRO + [{**_OPS_DEGIRO[0], "huella": "otra"}]
     r = _correr(cartera_api.importar_degiro(db, dobles, {"US5738741041": "MRVL"}))
-    assert r["importadas"] == 2 and len(db.compras.docs) == 1
+    assert r["importadas"] == 3 and len(db.compras.docs) == 2
+    # La MISMA huella (resubir el fichero) sí se salta.
+    r2 = _correr(cartera_api.importar_degiro(db, dobles, {"US5738741041": "MRVL"}))
+    assert r2["importadas"] == 0
 
 
 # ── Productos que no estan en la Cartera ─────────────────────────────────────
@@ -1239,3 +1246,28 @@ def test_una_fila_descartada_se_devuelve_con_su_motivo():
     d = r["descartadas"][0]
     assert d["symbol"] == "OHLA" and d["tipo"] == "compra" and d["acciones"] == 200
     assert "precio" in d["motivo"].lower() or "cero" in d["motivo"].lower()
+
+
+def test_dos_ejecuciones_identicas_del_csv_entran_las_dos():
+    """El filtro semántico existe para no duplicar apuntes MANUALES; aplicado a lo que trae
+    huella descartaba la segunda ejecución legítima de una orden partida (2×5 CRWV a 90,55
+    el mismo segundo) y la posición descuadraba en exactamente esas acciones."""
+    db = _DB()
+    ops = [_op_csv("CRWV", "compra", 5, 90.55, "2025-09-03", "hh1"),
+           _op_csv("CRWV", "compra", 5, 90.55, "2025-09-03", "hh2")]
+    r = _correr(cartera_api.importar_degiro(db, ops, {"US0000000001": "CRWV"}))
+    assert r["importadas"] == 2
+    est = _correr(cartera_api.estado_simbolo(db, "CRWV"))
+    assert est["fifo"]["acciones_abiertas"] == 10
+
+
+def test_un_apunte_manual_sigue_sin_duplicarse_al_importar_el_csv():
+    db = _DB()
+    _correr(cartera_api.registrar_compra(
+        db, "MRVL", 5, 200.0, fecha="2026-01-10", comision=0, tasa=1.10))
+    r = _correr(cartera_api.importar_degiro(
+        db, [_op_csv("MRVL", "compra", 5, 200.0, "2026-01-10", "hm1")],
+        {"US0000000001": "MRVL"}))
+    assert r["importadas"] == 0 and r["saltadas"] == 1
+    est = _correr(cartera_api.estado_simbolo(db, "MRVL"))
+    assert est["fifo"]["acciones_abiertas"] == 5

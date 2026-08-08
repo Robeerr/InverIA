@@ -751,8 +751,13 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
     ventas_db = await db.ventas.find({}, {"_id": 0}).to_list(5000)
     ya = {c.get("huella") for c in compras_db if c.get("huella")}
     ya |= {v.get("huella") for v in ventas_db if v.get("huella")}
-    ya_manual = ({_clave(c, "compra") for c in compras_db}
-                 | {_clave(v, "venta") for v in ventas_db})
+    # SOLO los apuntes metidos a mano (sin huella). Este filtro existe para no duplicar lo
+    # que tecleaste tú; aplicárselo también a lo que viene con huella descartaba ejecuciones
+    # legítimas: DEGIRO parte una orden en varias, y dos ejecuciones de la misma orden pueden
+    # ser idénticas (misma fecha, cantidad y precio — pasó con 2×5 CRWV a 90,55 el mismo
+    # segundo). Entre filas del CSV ya distingue la huella, que lleva contador de repetición.
+    ya_manual = ({_clave(c, "compra") for c in compras_db if not c.get("huella")}
+                 | {_clave(v, "venta") for v in ventas_db if not v.get("huella")})
 
     # Las posiciones de la Cartera, UNA vez. Antes se consultaba una por cada compra para
     # detectar su nivel: con un fichero de años son cientos de idas y vueltas a Mongo, y la
@@ -788,7 +793,6 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
             importadas += 1
             tocados.add(sym)
             ya.add(op["huella"])
-            ya_manual.add(_clave({**op, "symbol": sym}, op["tipo"]))
         except ValueError as e:
             # A la lista, no solo al log: una compra descartada aquí es una venta futura
             # SIN COSTE — su ganancia saldrá hinchada — y desde el log del servidor nadie

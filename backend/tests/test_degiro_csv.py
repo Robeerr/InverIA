@@ -293,3 +293,24 @@ def test_la_huella_es_estable_entre_exportaciones():
     a = degiro_csv.leer_cuenta(_CSV_CUENTA)["dividendos"]
     b = degiro_csv.leer_cuenta(_CSV_CUENTA)["dividendos"]
     assert [x["huella"] for x in a] == [x["huella"] for x in b]
+
+
+def test_dos_ejecuciones_identicas_de_la_misma_orden_tienen_huellas_distintas():
+    """DEGIRO parte una orden en varias ejecuciones y dos pueden ser IDÉNTICAS hasta en la
+    hora y el nº de orden — pasó con 2×5 CRWV a 90,55 el mismo segundo (una con comisión y
+    otra sin, pero la comisión no está en la huella). Sin contador, la segunda se pierde en
+    silencio y la posición descuadra en exactamente esas acciones."""
+    fila = ('03-09-2025,17:23,"COREWEAVE, INC. CLASS A",US21873S1087,NDQ,SOHO,5,'
+            '"90,5500",USD,"-452,75",USD,"-387,66","1,1679","-0,97",{fee},'
+            '"-388,63",51ad4a30-5811-4c41-a2df-9763dc2dc514')
+    cabecera = ("Fecha,Hora,Producto,ISIN,Bolsa de,Centro de ejecución,Número,Precio,,"
+                "Valor local,,Valor,Tipo de cambio,Tasa de cambio,"
+                "Costes de transacción,Total,ID de orden")
+    csv = "\n".join([cabecera, fila.format(fee=''), fila.format(fee='"-2,00"')])
+    r = degiro_csv.leer(csv.encode())
+    assert len(r["operaciones"]) == 2
+    h1, h2 = (op["huella"] for op in r["operaciones"])
+    assert h1 != h2
+    # Y releer el MISMO fichero da las MISMAS huellas: es lo que evita duplicar al resubir.
+    r2 = degiro_csv.leer(csv.encode())
+    assert {op["huella"] for op in r2["operaciones"]} == {h1, h2}
