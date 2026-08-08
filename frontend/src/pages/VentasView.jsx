@@ -986,13 +986,16 @@ export default function VentasView() {
         <Kpi etiqueta="Latente" valor={latente}
              sub={resumen?.posiciones?.length ? `${resumen.posiciones.length} posición(es) abiertas` : "sin posiciones"}
              ayuda="Lo que llevas ganado en lo que AÚN NO has vendido, al precio y al cambio de hoy. Puede cambiar mañana." />
-        {dividendos != null && (
-          <Kpi etiqueta="Dividendos" valor={dividendos}
-               sub={divs?.retenido_eur
+        {/* SIEMPRE visible, aunque esté vacía. Escondiéndola hasta que hubiera dividendos,
+            la única forma de enterarse de que existe era leer el texto del importador — y
+            una función que no se ve no existe. Vacía dice qué falta para llenarla. */}
+        <Kpi etiqueta="Dividendos" valor={dividendos}
+             sub={dividendos == null
+               ? "sube tu Account.csv de DEGIRO"
+               : divs?.retenido_eur
                  ? `${divs.n_cobros} cobros · ${eur(divs.retenido_eur)} retenidos`
                  : `${divs?.n_cobros ?? 0} cobros`}
-               ayuda="Cobrado por dividendos, ya descontada la retención en origen. Se cuenta aparte porque fiscalmente NO son ganancias patrimoniales sino rendimientos del capital mobiliario: van a otra casilla de la declaración. La retención de EE.UU. es recuperable en parte con el convenio de doble imposición." />
-        )}
+             ayuda="Cobrado por dividendos, ya descontada la retención en origen. Los dividendos NO están en el Transactions.csv: hay que subir además el Account.csv (Actividad → Cuenta). Se cuentan aparte porque fiscalmente no son ganancias patrimoniales sino rendimientos del capital mobiliario, y van a otra casilla de la declaración. La retención de EE.UU. es recuperable en parte con el convenio de doble imposición." />
         <Kpi etiqueta="Total" valor={total}
              sub={dividendos != null ? "realizado + latente + dividendos" : "realizado + latente"} />
         {tot?.efecto_divisa_eur != null && Math.abs(tot.efecto_divisa_eur) >= 0.01 && (
