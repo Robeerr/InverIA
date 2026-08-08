@@ -647,3 +647,34 @@ def test_la_foto_original_se_guarda_una_sola_vez():
     _correr(cartera_api.importar_posiciones_existentes(db, reemplazar=True))
     assert db.signal_entries.docs[0]["import_origen"] == origen
     assert origen == {"acciones": 10, "compra": 130.0}
+
+
+def test_la_posicion_trae_tambien_la_media_ponderada_para_cuadrar_con_el_broker():
+    """El broker enseña PMP, que no se mueve al vender. Sin esta cifra no hay forma de
+    comparar las dos pantallas y parece que una de las dos esta mal."""
+    db = _DB()
+    for i, precio in enumerate([279.0, 240.0, 219.0, 190.60, 178.0]):
+        _correr(cartera_api.registrar_compra(db, "MRVL", 5, precio,
+                                             fecha=f"2026-0{i+1}-10", comision=0))
+    _correr(cartera_api.registrar_venta(db, "MRVL", 10, 200.0, fecha="2026-08-07", comision=0))
+
+    est = _correr(cartera_api.estado_simbolo(db, "MRVL"))
+    # LIFO deja los niveles 1-3 (246,00); el broker sigue diciendo 221,32 porque no se movio.
+    assert est["lifo"]["precio_medio"] == pytest.approx(246.00, abs=0.01)
+    assert est["ponderada"]["precio_medio"] == pytest.approx(221.32, abs=0.01)
+
+    res = _correr(cartera_api.resumen_cartera(db, {"MRVL": 200.0}))
+    assert res["posiciones"][0]["precio_medio_ponderado"] == pytest.approx(221.32, abs=0.01)
+
+
+def test_la_media_ponderada_no_toca_la_ganancia_por_nivel():
+    """Es una cifra de conciliacion, no un tercer metodo de calculo: el desglose por nivel
+    sigue saliendo del libro de lotes."""
+    db = _DB([{"symbol": "MRVL", "nivel1": 279.0, "nivel5": 178.0}])
+    _correr(cartera_api.registrar_compra(db, "MRVL", 5, 279.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_compra(db, "MRVL", 5, 178.0, fecha="2026-05-10", comision=0))
+    _correr(cartera_api.registrar_venta(db, "MRVL", 5, 200.0, fecha="2026-08-07", comision=0))
+    fila = _correr(cartera_api.historial(db))["items"][0]
+    # LIFO: se vendio el nivel 5 (178) -> +110. La media ponderada (228,50) no interviene.
+    assert fila["lifo"]["ganancia_divisa"] == pytest.approx(110.0)
+    assert fila["lifo"]["lotes"][0]["nivel"] == "nivel5"

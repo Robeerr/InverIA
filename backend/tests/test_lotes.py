@@ -511,3 +511,73 @@ def test_el_reparto_de_tres_o_mas_sigue_marcado_como_no_exacto():
     revisarlo, y decir 'exacto' invitaria a no hacerlo."""
     e = _pos(30, 142.43, n1=(200.0, False), n2=(150.0, False), n3=(100.0, False))
     assert lotes.plan_importacion(e)["exacto"] is False
+
+
+# ── Media ponderada (lo que enseña el broker) ────────────────────────────────
+# Comprobado con datos reales: 25 acciones en 5 niveles (279/240/219/190,60/178) dan una
+# media de 221,32 $, y DEGIRO enseñaba 221,54 $ para las 15 que quedaban tras vender 10.
+# Ni FIFO (195,87 $) ni LIFO (246,00 $) se acercan. El PMP si, porque no se movio.
+
+_NIVELES_MRVL = [279.0, 240.0, 219.0, 190.60, 178.0]
+
+
+def _compras_mrvl():
+    return [_compra(f"2026-0{i+1}-10", 5, p, orden=str(i))
+            for i, p in enumerate(_NIVELES_MRVL)]
+
+
+def test_la_media_ponderada_reproduce_la_cifra_del_broker():
+    r = lotes.media_ponderada(_compras_mrvl(), [])
+    assert r["precio_medio"] == pytest.approx(221.32, abs=0.01)
+    assert r["acciones"] == 25
+
+
+def test_vender_NO_mueve_la_media_ponderada():
+    """Es lo que define al metodo y la razon de que la cifra del broker no cambiara."""
+    compras = _compras_mrvl()
+    antes = lotes.media_ponderada(compras, [])["precio_medio"]
+    despues = lotes.media_ponderada(compras, [_venta("2026-08-07", 10, 200.0)])["precio_medio"]
+    assert despues == pytest.approx(antes, abs=0.001)
+
+
+def test_los_tres_metodos_dan_medias_distintas_para_lo_que_queda():
+    """El motivo de que la pantalla no cuadrara con el broker: no era un error de calculo,
+    es que cada metodo mide una cosa distinta."""
+    compras, ventas = _compras_mrvl(), [_venta("2026-08-07", 10, 200.0)]
+    lifo = lotes.reproducir(compras, ventas, lotes.LIFO)["precio_medio"]
+    fifo = lotes.reproducir(compras, ventas, lotes.FIFO)["precio_medio"]
+    pmp = lotes.media_ponderada(compras, ventas)["precio_medio"]
+    assert lifo == pytest.approx(246.00, abs=0.01)    # quedan los niveles 1, 2 y 3
+    assert fifo == pytest.approx(195.87, abs=0.01)    # quedan los niveles 3, 4 y 5
+    assert pmp == pytest.approx(221.32, abs=0.01)     # no se movio
+    assert len({round(lifo, 2), round(fifo, 2), round(pmp, 2)}) == 3
+
+
+def test_comprar_mas_barato_despues_de_vender_si_baja_la_media():
+    """Por eso se recorre en orden cronologico: calcularlo de otra forma daria un numero
+    que nunca existio."""
+    compras = [_compra("2026-01-10", 10, 100.0), _compra("2026-07-10", 10, 50.0, orden="b")]
+    ventas = [_venta("2026-03-10", 5, 120.0)]
+    r = lotes.media_ponderada(compras, ventas)
+    # Tras vender 5 quedan 5@100. Se compran 10 a 50 -> (500 + 500) / 15 = 66,67
+    assert r["precio_medio"] == pytest.approx(66.67, abs=0.01)
+    assert r["acciones"] == 15
+
+
+def test_la_ganancia_por_media_ponderada_usa_la_media_del_momento():
+    compras = [_compra("2026-01-10", 10, 100.0)]
+    r = lotes.media_ponderada(compras, [_venta("2026-06-01", 4, 130.0)])
+    assert r["ganancia_realizada_divisa"] == pytest.approx(120.0)   # 4 * (130 - 100)
+
+
+def test_las_comisiones_tambien_cuentan_en_la_media_ponderada():
+    compras = [_compra("2026-01-10", 10, 100.0, comision=10.0)]
+    r = lotes.media_ponderada(compras, [])
+    assert r["precio_medio"] == pytest.approx(101.0)
+
+
+def test_vender_mas_de_lo_que_hay_no_genera_una_media_negativa():
+    compras = [_compra("2026-01-10", 5, 100.0)]
+    r = lotes.media_ponderada(compras, [_venta("2026-06-01", 8, 130.0)])
+    assert r["acciones"] == 0
+    assert r["precio_medio"] is None

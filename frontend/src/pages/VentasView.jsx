@@ -370,6 +370,11 @@ function FormularioPorNiveles({ onCerrar }) {
   const hoy = new Date().toISOString().slice(0, 10);
   const [symbol, setSymbol] = React.useState("");
   const [porNivel, setPorNivel] = React.useState({});
+  // Fecha POR NIVEL. Los niveles no se compran el mismo día: se entra en uno cuando el
+  // precio llega y hay liquidez, y entre uno y otro pueden pasar días, semanas o meses.
+  // Con una sola fecha para todos, los euros de cada compra saldrían al tipo de cambio de
+  // un día que no fue el suyo — y ese es justo el dato que hace exacta la ganancia en euros.
+  const [fechaPorNivel, setFechaPorNivel] = React.useState({});
   const [fecha, setFecha] = React.useState(hoy);
   const [iguales, setIguales] = React.useState("");
   const [guardando, setGuardando] = React.useState(false);
@@ -392,7 +397,8 @@ function FormularioPorNiveles({ onCerrar }) {
   };
 
   const filas = niveles
-    .map((n) => ({ ...n, acciones: Number(porNivel[n.nivel]) || 0 }))
+    .map((n) => ({ ...n, acciones: Number(porNivel[n.nivel]) || 0,
+                   fecha: fechaPorNivel[n.nivel] || fecha }))
     .filter((n) => n.acciones > 0);
   const totalAcciones = filas.reduce((s, f) => s + f.acciones, 0);
   const totalCoste = filas.reduce((s, f) => s + f.acciones * f.precio, 0);
@@ -403,11 +409,11 @@ function FormularioPorNiveles({ onCerrar }) {
     setGuardando(true);
     try {
       // En serie y de más caro a más barato: el orden de creación es el que desempata
-      // FIFO cuando las fechas coinciden.
+      // FIFO/LIFO cuando dos compras comparten fecha.
       for (const f of filas) {
         await api.cartera.comprar({
           symbol: sym, acciones: f.acciones, precio: f.precio,
-          fecha, nivel: f.nivel,   // comisión vacía: se estima con la tarifa
+          fecha: f.fecha, nivel: f.nivel,   // comisión vacía: se estima con la tarifa
           notas: `Alta por niveles (${f.etiqueta})`,
         });
       }
@@ -433,9 +439,11 @@ function FormularioPorNiveles({ onCerrar }) {
           <input value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())}
                  placeholder="MRVL" className={inputCls} autoFocus />
         </Campo>
-        <Campo label="Fecha"
-               ayuda="La misma para todas. Si las compraste en fechas distintas y las recuerdas, dalas de alta una a una para que los euros salgan con el cambio correcto de cada día.">
-          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className={inputCls} />
+        <Campo label="Fecha (para todas)"
+               ayuda="Punto de partida: cada nivel puede llevar la suya abajo. La fecha decide el tipo de cambio con el que se calculan tus euros, así que cuanto más ajustada, más exacta la ganancia.">
+          <input type="date" value={fecha}
+                 onChange={(e) => { setFecha(e.target.value); setFechaPorNivel({}); }}
+                 className={inputCls} />
         </Campo>
         <Campo label="Mismas en cada nivel"
                ayuda="Atajo para el caso normal: si en cada nivel compraste lo mismo, escríbelo una vez.">
@@ -463,6 +471,12 @@ function FormularioPorNiveles({ onCerrar }) {
                 onChange={(e) => setPorNivel((p) => ({ ...p, [n.nivel]: e.target.value }))}
                 inputMode="decimal" placeholder="acciones"
                 className="ml-auto border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-2 py-1 font-mono text-xs w-24 bg-transparent" />
+              <input
+                type="date"
+                value={fechaPorNivel[n.nivel] || fecha}
+                onChange={(e) => setFechaPorNivel((p) => ({ ...p, [n.nivel]: e.target.value }))}
+                title="Cuándo compraste ESTE nivel. Determina el tipo de cambio de esa compra."
+                className="border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-2 py-1 font-mono text-xs bg-transparent" />
             </div>
           ))}
         </div>
@@ -474,6 +488,9 @@ function FormularioPorNiveles({ onCerrar }) {
           coste <b>{usd(totalCoste, data?.divisa)}</b> · precio medio{" "}
           <b>{usd(totalCoste / totalAcciones, data?.divisa)}</b>.
           {" "}Compruébalo contra lo que tenías en la Cartera antes de vender.
+          {filas.some((f) => f.fecha !== filas[0].fecha)
+            ? " Cada nivel se guardará con su fecha, así que los euros saldrán al cambio de cada día."
+            : " Todos con la misma fecha: si los compraste en días distintos, ajústalos arriba — la fecha decide el tipo de cambio."}
         </p>
       )}
 
@@ -885,7 +902,20 @@ export default function VentasView() {
                       )}
                     </td>
                     <td className="py-2 text-right font-mono">{p.acciones}</td>
-                    <td className="py-2 text-right font-mono">{usd(p.precio_medio, p.divisa)}</td>
+                    <td className="py-2 text-right font-mono">
+                      {usd(p.precio_medio, p.divisa)}
+                      {/* La media ponderada es OTRA medida, no una correccion de la de
+                          arriba: el broker la usa y no se mueve al vender. Se enseña debajo
+                          y etiquetada para poder cuadrar las dos pantallas sin pensar que
+                          una de las dos esta mal. Solo cuando difieren, o seria ruido. */}
+                      {p.precio_medio_ponderado != null
+                        && Math.abs(p.precio_medio_ponderado - (p.precio_medio ?? 0)) > 0.01 && (
+                        <div className="text-[10px] text-[#5c6b66]"
+                             title="Precio medio ponderado: el que suele enseñar tu bróker. No cambia al vender, porque promedia TODO lo que has comprado. El de arriba es el coste de las acciones que te quedan de verdad.">
+                          bróker ≈ {usd(p.precio_medio_ponderado, p.divisa)}
+                        </div>
+                      )}
+                    </td>
                     <td className="py-2 text-right font-mono">{eur(p.coste_eur)}</td>
                     <td className="py-2 text-right font-mono">{eur(p.valor_eur)}</td>
                     <td className="px-4 py-2 text-right">
@@ -913,6 +943,11 @@ export default function VentasView() {
             Las campanitas de la Cartera se mueven solas: se apagan al comprar en un nivel y
             vuelven a encenderse en cuanto vendes la última acción de ese nivel. Los niveles
             que no tengan compras registradas no se tocan.
+            <br />
+            <b>bróker ≈</b> es el precio medio ponderado, el que suele enseñar tu bróker: promedia
+            TODO lo que has comprado y no cambia al vender. El de arriba es el coste real de
+            las acciones que te quedan. Los dos son correctos y miden cosas distintas — el
+            ponderado sirve para cuadrar pantallas, no para saber lo que ganaste en cada nivel.
           </p>
         </div>
       )}

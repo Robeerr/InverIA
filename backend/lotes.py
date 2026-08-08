@@ -535,6 +535,57 @@ def reproducir(compras: list, ventas: list, metodo: str = FIFO) -> dict:
     }
 
 
+def media_ponderada(compras: list, ventas: list) -> dict:
+    """Precio medio ponderado (PMP), que es lo que enseña DEGIRO — y casi todos los brókeres.
+
+    Es un método DISTINTO de FIFO y LIFO, no una variante: no hay lotes. Todas las acciones
+    valen lo mismo, la media, y al vender se retira a ese precio. Consecuencia que despista
+    mucho: **vender no cambia tu precio medio**. Solo lo mueven las compras.
+
+    Se comprobó con datos reales: con 25 acciones en 5 niveles (279/240/219/190,60/178) la
+    media sale 221,32 $ y el bróker enseñaba 221,54 $ para las 15 que quedaban tras vender
+    10. Ni FIFO (195,87 $) ni LIFO (246,00 $) se acercan; el PMP sí, porque no se movió.
+
+    Está aquí SOLO para poder cuadrar las dos pantallas. No sirve para lo que se quiere
+    saber de verdad —cuánto se ganó en cada nivel— porque bajo PMP los niveles dejan de
+    existir: todas las acciones cuestan lo mismo. Y en España tampoco vale para la
+    declaración, donde es obligatorio FIFO (art. 37.2 LIRPF).
+
+    Se recorre en orden cronológico porque el orden importa: comprar barato DESPUÉS de una
+    venta baja la media, y calcularlo de otra forma daría un número que nunca existió.
+    """
+    ops = sorted([{**c, "_t": "c"} for c in compras] + [{**v, "_t": "v"} for v in ventas],
+                 key=lambda x: (str(x.get("fecha") or ""), str(x.get("created_at") or "")))
+    media, cantidad, realizado, ventas_pmp = 0.0, 0.0, 0.0, []
+    for op in ops:
+        n = float(op.get("acciones") or 0)
+        precio = float(op.get("precio") or 0)
+        comision = float(op.get("comision") or 0.0)
+        if op["_t"] == "c":
+            coste = cantidad * media + n * precio + comision
+            cantidad += n
+            media = (coste / cantidad) if cantidad > 1e-9 else 0.0
+        else:
+            usadas = min(n, cantidad)
+            ganancia = n * precio - comision - usadas * media
+            realizado += ganancia
+            ventas_pmp.append({"id": op.get("id"), "fecha": op.get("fecha"),
+                               "acciones": n, "coste_divisa": round(usadas * media, 2),
+                               "ganancia_divisa": round(ganancia, 2),
+                               "pct": (round(ganancia / (usadas * media) * 100, 2)
+                                       if usadas * media else None)})
+            cantidad = max(0.0, cantidad - n)
+            # La media NO se toca: es lo que define al método y lo que hace que la cifra del
+            # bróker no se mueva al vender.
+    return {
+        "precio_medio": round(media, 4) if cantidad > 1e-9 else None,
+        "acciones": round(cantidad, 6),
+        "coste_divisa": round(cantidad * media, 2) if cantidad > 1e-9 else 0.0,
+        "ganancia_realizada_divisa": round(realizado, 2),
+        "ventas": ventas_pmp,
+    }
+
+
 def valorar_abierto(estado: dict, precio_actual, tasa_hoy) -> dict:
     """Ganancia LATENTE (lo que llevas ganado sin vender) en divisa y en euros.
 

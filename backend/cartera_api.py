@@ -276,6 +276,10 @@ async def estado_simbolo(db, symbol: str, precio_actual=None) -> dict:
         **comp,
         # Con el metodo de gestion: es la cifra de "cuanto llevo ganado", no la fiscal.
         "metodo_gestion": gestion,
+        # Media ponderada: la cifra que enseña el bróker, SOLO para poder cuadrar las dos
+        # pantallas. No entra en ningún cálculo de ganancia por nivel — bajo PMP los niveles
+        # dejan de existir, porque todas las acciones cuestan lo mismo.
+        "ponderada": lotes.media_ponderada(compras, ventas),
         "latente": lotes.valorar_abierto(comp[gestion], precio_actual, tasa_hoy),
         "tasa_hoy": round(tasa_hoy, 4) if tasa_hoy else None,
     }
@@ -403,9 +407,13 @@ async def resumen_cartera(db, precios: dict) -> dict:
             continue
         divisa = (libro["compras"] or libro["ventas"])[0].get("divisa", "USD")
         val = lotes.valorar_abierto(estado, precios.get(sym), tasas.get(divisa))
+        pmp = lotes.media_ponderada(libro["compras"], libro["ventas"])
         posiciones.append({
             "symbol": sym, "divisa": divisa,
             **val,
+            # Para cuadrar con el bróker. Va aparte del precio_medio y etiquetado: son dos
+            # medidas distintas y mezclarlas haría pensar que una de las dos está mal.
+            "precio_medio_ponderado": pmp["precio_medio"],
             "acciones": estado["acciones_abiertas"],
             "precio_medio": estado["precio_medio"],
             "precio_actual": precios.get(sym),
