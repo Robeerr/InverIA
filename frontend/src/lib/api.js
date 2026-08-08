@@ -129,6 +129,10 @@ export const api = {
     },
     importar: (reemplazar = false) =>
       client.post(`/cartera/importar-posiciones`, null, { params: { reemplazar } }).then((r) => r.data),
+    // Quita los lotes de "Importar mis posiciones" en los símbolos que ya cubre el CSV de
+    // DEGIRO: las dos importaciones cuentan las mismas acciones y juntas duplican la posición.
+    quitarDuplicados: () =>
+      client.post(`/cartera/quitar-duplicados`).then((r) => r.data),
   },
   alerts: {
     create: (payload) => client.post(`/alerts`, payload).then((r) => r.data),

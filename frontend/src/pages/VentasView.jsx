@@ -992,6 +992,24 @@ export default function VentasView() {
     },
   });
 
+  // La foto de la Cartera y el CSV de DEGIRO cuentan LAS MISMAS acciones; con ambos en el
+  // libro cada posición sale al doble (24 RDDT en pantalla con 12 en el bróker). Esto quita
+  // la foto donde el CSV ya cubre el símbolo y deja la versión con fechas y precios reales.
+  const quitarDup = useMutation({
+    mutationFn: api.cartera.quitarDuplicados,
+    onSuccess: (r) => {
+      if (!r.borrados) {
+        toast.info("No había lotes duplicados que quitar");
+      } else {
+        toast.success(
+          `${r.borrados} lote(s) duplicados quitados de ${r.simbolos.join(", ")}. ` +
+          "Compara ahora las acciones con tu bróker.", { duration: 12000 });
+      }
+      qc.invalidateQueries({ queryKey: ["cartera"] });
+    },
+    onError: () => toast.error("No se pudieron quitar los duplicados"),
+  });
+
   const tot = hist?.resumen?.[metodo];
   const ventas = hist?.items || [];
   const realizado = tot?.ganancia_eur;
@@ -1199,6 +1217,17 @@ export default function VentasView() {
                       disabled={importar.isPending}
                       className="text-[11px] text-[#5c6b66] underline disabled:opacity-60">
                 {importar.isPending ? "Rehaciendo…" : "Rehacer la importación"}
+              </button>
+              <button onClick={() => window.confirm(
+                        "Si importaste tus posiciones Y ADEMÁS el CSV de DEGIRO, cada "
+                        + "posición está contada dos veces (verás el doble de acciones que "
+                        + "en tu bróker).\n\nEsto quita los lotes de \"Importar mis "
+                        + "posiciones\" en los símbolos que ya cubre el CSV, y deja la "
+                        + "versión del CSV, que trae las fechas y precios reales.\n\n¿Continuar?")
+                        && quitarDup.mutate()}
+                      disabled={quitarDup.isPending}
+                      className="text-[11px] text-[#5c6b66] underline disabled:opacity-60">
+                {quitarDup.isPending ? "Quitando…" : "Quitar duplicados del CSV"}
               </button>
             </div>
             {resumen.tasas && (

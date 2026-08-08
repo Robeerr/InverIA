@@ -700,6 +700,38 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
             "simbolos": sorted(tocados)}
 
 
+async def quitar_lotes_de_la_foto(db) -> dict:
+    """Borra los lotes de "Importar mis posiciones" en los símbolos que ya están en el CSV.
+
+    Las dos importaciones cuentan LAS MISMAS acciones: la foto de la Cartera es tu posición
+    en un momento dado, y el CSV de DEGIRO es la historia completa que desemboca en esa misma
+    posición. Con ambas en el libro, cada posición sale al doble — pasó de verdad: 24 RDDT en
+    pantalla con 12 en el bróker. El CSV es la versión buena (trae fechas y precios reales,
+    no un reparto estimado), así que lo que sobra es la foto.
+
+    Solo se toca un símbolo si tiene apuntes con huella (es decir, si el CSV lo cubre): una
+    posición que nunca vino en ningún fichero se queda exactamente como está.
+    """
+    compras = await db.compras.find({}, {"_id": 0}).to_list(5000)
+    ventas = await db.ventas.find({}, {"_id": 0}).to_list(5000)
+    con_csv = ({c["symbol"] for c in compras if c.get("huella")}
+               | {v["symbol"] for v in ventas if v.get("huella")})
+    borrados, detalle = 0, {}
+    for c in compras:
+        if (c["symbol"] in con_csv and not c.get("huella")
+                and str(c.get("notas") or "").startswith("Importada de tu Cartera")):
+            await db.compras.delete_one({"id": c["id"]})
+            borrados += 1
+            d = detalle.setdefault(c["symbol"], {"lotes": 0, "acciones": 0})
+            d["lotes"] += 1
+            d["acciones"] = round(d["acciones"] + (c.get("acciones") or 0), 6)
+    await _sincronizar_varias(db, set(detalle))
+    return {"borrados": borrados,
+            "detalle": sorted(({"symbol": k, **v} for k, v in detalle.items()),
+                              key=lambda x: x["symbol"]),
+            "simbolos": sorted(detalle)}
+
+
 # ── Dividendos ───────────────────────────────────────────────────────────────
 
 async def importar_dividendos(db, dividendos: list, mapeo: dict = None) -> dict:

@@ -1016,3 +1016,56 @@ def test_un_ticker_recordado_se_puede_cambiar_despues():
     prep = _correr(cartera_api.preparar_importacion_degiro(db, _OPS_OTRO))
     assert prep["productos"][0]["symbol"] == "PLUGX"
     assert len(db.isin_map.docs) == 1, "se actualiza, no se acumula"
+
+
+# ── Duplicados foto + CSV ────────────────────────────────────────────────────
+
+def _op_csv(sym, tipo, acciones, precio, fecha, huella):
+    return {"isin": "US0000000001", "symbol": sym, "tipo": tipo, "acciones": acciones,
+            "precio": precio, "fecha": fecha, "comision": 2.0, "divisa": "USD",
+            "tasa": 1.10, "huella": huella, "orden": "abc", "producto": sym}
+
+
+def test_la_foto_y_el_csv_juntos_duplican_y_la_limpieza_lo_arregla():
+    """Pasó de verdad: 24 RDDT en pantalla con 12 en el bróker. La foto de la Cartera y el
+    CSV de DEGIRO cuentan LAS MISMAS acciones; la limpieza quita la foto y deja el CSV."""
+    db = _DB([{"symbol": "RDDT", "acciones": 12, "compra": 150.0, "divisa": "USD"}])
+    _correr(cartera_api.importar_posiciones_existentes(db))
+    _correr(cartera_api.importar_degiro(
+        db, [_op_csv("RDDT", "compra", 12, 150.0, "2026-01-05", "h1")],
+        {"US0000000001": "RDDT"}))
+    est = _correr(cartera_api.estado_simbolo(db, "RDDT"))
+    assert est["fifo"]["acciones_abiertas"] == 24  # el doble: ese era el bug en pantalla
+
+    r = _correr(cartera_api.quitar_lotes_de_la_foto(db))
+    assert r["borrados"] == 1 and r["simbolos"] == ["RDDT"]
+    est = _correr(cartera_api.estado_simbolo(db, "RDDT"))
+    assert est["fifo"]["acciones_abiertas"] == 12
+    # Lo que queda es la versión del CSV, con su huella
+    assert all(c.get("huella") for c in db.compras.docs)
+
+
+def test_la_limpieza_no_toca_posiciones_que_el_csv_no_cubre():
+    """Un valor que nunca vino en ningún fichero (VUSA, metido a mano desde la foto) debe
+    quedarse exactamente como está: quitarlo dejaría la posición a cero sin motivo."""
+    db = _DB([{"symbol": "VUSA", "acciones": 1, "compra": 74.95, "divisa": "EUR"},
+              {"symbol": "ORCL", "acciones": 35, "compra": 142.43, "divisa": "USD"}])
+    _correr(cartera_api.importar_posiciones_existentes(db))
+    _correr(cartera_api.importar_degiro(
+        db, [_op_csv("ORCL", "compra", 35, 142.43, "2025-11-02", "h2")],
+        {"US0000000001": "ORCL"}))
+    r = _correr(cartera_api.quitar_lotes_de_la_foto(db))
+    assert r["simbolos"] == ["ORCL"]
+    est = _correr(cartera_api.estado_simbolo(db, "VUSA"))
+    assert est["fifo"]["acciones_abiertas"] == 1
+
+
+def test_la_limpieza_dos_veces_no_hace_nada_la_segunda():
+    db = _DB([{"symbol": "ORCL", "acciones": 35, "compra": 142.43, "divisa": "USD"}])
+    _correr(cartera_api.importar_posiciones_existentes(db))
+    _correr(cartera_api.importar_degiro(
+        db, [_op_csv("ORCL", "compra", 35, 142.43, "2025-11-02", "h3")],
+        {"US0000000001": "ORCL"}))
+    _correr(cartera_api.quitar_lotes_de_la_foto(db))
+    r2 = _correr(cartera_api.quitar_lotes_de_la_foto(db))
+    assert r2["borrados"] == 0

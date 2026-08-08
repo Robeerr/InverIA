@@ -2443,6 +2443,19 @@ async def importar_posiciones(reemplazar: bool = False,
     return await cartera_api.importar_posiciones_existentes(db, reemplazar=reemplazar)
 
 
+@api_router.post("/cartera/quitar-duplicados")
+async def quitar_duplicados(_user: str = Depends(auth.get_current_user)):
+    """Quita los lotes de "Importar mis posiciones" en los símbolos que ya cubre el CSV.
+
+    Las dos importaciones describen las mismas acciones; con ambas en el libro cada posición
+    sale al doble. Se conserva la versión del CSV, que trae fechas y precios reales.
+    """
+    r = await cartera_api.quitar_lotes_de_la_foto(db)
+    for k in ("signals_list", "signals_hot"):
+        _cache._store.pop(k, None)
+    return r
+
+
 @api_router.get("/fx/{divisa}")
 async def tipo_cambio(divisa: str, fecha: Optional[str] = None,
                       _user: str = Depends(auth.get_current_user)):
