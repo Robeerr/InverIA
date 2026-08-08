@@ -957,7 +957,10 @@ export default function VentasView() {
           riqueza que el mercado no ha confirmado. */}
       <div className="flex gap-3 flex-wrap">
         <Kpi etiqueta="Realizado" valor={realizado} acento
-             sub={`${tot?.n_ventas ?? 0} venta(s) · ${metodo.toUpperCase()}`}
+             // n_ventas cuelga del resumen, no del método: el número de ventas es el
+             // mismo se mire con FIFO o con LIFO. Leerlo de dentro del método daba
+             // siempre 0, o sea "no has vendido nada" con 148 ventas en la lista.
+             sub={`${hist?.resumen?.n_ventas ?? 0} venta(s) · ${metodo.toUpperCase()}`}
              ayuda="Ganancia de las ventas ya hechas, con el tipo de cambio del día de cada compra y de cada venta. Es dinero que ya está en tu cuenta. Cambia según el método: mira la etiqueta de debajo." />
         <Kpi etiqueta="Latente" valor={latente}
              sub={resumen?.posiciones?.length ? `${resumen.posiciones.length} posición(es) abiertas` : "sin posiciones"}
@@ -1014,10 +1017,10 @@ export default function VentasView() {
         </p>
       </div>
 
-      {tot?.aviso && (
+      {hist?.resumen?.aviso && (
         <div className="card-flat px-4 py-2.5 border border-[#c9a14a]/40 bg-[#c9a14a]/[0.06] flex items-start gap-2">
           <span>⚠️</span>
-          <span className="text-[11px] text-[#8a6508] leading-snug">{tot.aviso}</span>
+          <span className="text-[11px] text-[#8a6508] leading-snug">{hist.resumen.aviso}</span>
         </div>
       )}
 
