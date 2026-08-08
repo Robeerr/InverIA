@@ -992,9 +992,13 @@ export default function VentasView() {
         <Kpi etiqueta="Dividendos" valor={dividendos}
              sub={dividendos == null
                ? "sube tu Account.csv de DEGIRO"
-               : divs?.retenido_eur
-                 ? `${divs.n_cobros} cobros · ${eur(divs.retenido_eur)} retenidos`
-                 : `${divs?.n_cobros ?? 0} cobros`}
+               : [
+                   `${divs?.n_cobros ?? 0} cobros`,
+                   divs?.retenido_eur ? `${eur(divs.retenido_eur)} retenidos` : null,
+                   // Los que no se pudieron pasar a euros quedan FUERA del total. Callarlo
+                   // haria que el numero pareciera completo cuando no lo es.
+                   divs?.sin_convertir ? `⚠ ${divs.sin_convertir} sin convertir` : null,
+                 ].filter(Boolean).join(" · ")}
              ayuda="Cobrado por dividendos, ya descontada la retención en origen. Los dividendos NO están en el Transactions.csv: hay que subir además el Account.csv (Actividad → Cuenta). Se cuentan aparte porque fiscalmente no son ganancias patrimoniales sino rendimientos del capital mobiliario, y van a otra casilla de la declaración. La retención de EE.UU. es recuperable en parte con el convenio de doble imposición." />
         <Kpi etiqueta="Total" valor={total}
              sub={dividendos != null ? "realizado + latente + dividendos" : "realizado + latente"} />
