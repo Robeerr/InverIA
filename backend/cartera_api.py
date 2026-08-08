@@ -13,6 +13,7 @@ día no cuadre con sus propios apuntes, y entonces no hay forma de saber cuál m
 """
 import logging
 import re
+import uuid
 from datetime import datetime, timezone
 
 import comisiones
@@ -669,12 +670,29 @@ async def importar_dividendos(db, dividendos: list, mapeo: dict = None) -> dict:
         if k and limpio and limpio != IGNORAR:
             mapa[k.strip().upper()] = limpio
 
-    ya = {d.get("huella") for d in await db.dividendos.find(
-        {}, {"_id": 0, "huella": 1}).to_list(5000)}
+    # Anti-duplicados por CONTEO, no por huella.
+    #
+    # La huella funciona mientras su forma no cambie, y ya cambió una vez (hubo que añadirle
+    # un contador para no perder dos apuntes idénticos el mismo día). Un método que se rompe
+    # al arreglar otra cosa no sirve para algo que se va a reimportar cada pocos meses.
+    #
+    # Aquí se cuenta: de cada apunte idéntico —misma fecha, valor, tipo, importe y divisa—
+    # se mira cuántos hay ya guardados y cuántos trae el fichero, y solo entra la
+    # diferencia. Funciona reimportando, con ficheros que se solapan y con pagos repetidos.
+    def _clave(d):
+        return (str(d.get("fecha") or "")[:10], str(d.get("isin") or "").upper(),
+                d.get("tipo"), round(float(d.get("importe") or 0), 4),
+                str(d.get("divisa") or "").upper())
+
+    guardados = {}
+    for d in await db.dividendos.find({}, {"_id": 0}).to_list(5000):
+        guardados[_clave(d)] = guardados.get(_clave(d), 0) + 1
 
     nuevos, saltados = [], 0
     for d in dividendos:
-        if d["huella"] in ya:
+        k = _clave(d)
+        if guardados.get(k, 0) > 0:
+            guardados[k] -= 1
             saltados += 1
             continue
         tasa = d.get("tasa")
@@ -683,10 +701,14 @@ async def importar_dividendos(db, dividendos: list, mapeo: dict = None) -> dict:
         importe_eur = None
         if tasa and float(tasa) > 0:
             importe_eur = round(float(d["importe"]) / float(tasa), 2)
-        nuevos.append({**d, "symbol": mapa.get(d["isin"]) or d["isin"],
+        nuevos.append({**d,
+                       # `id` propio, como las compras y las ventas. Sin él todos los
+                       # apuntes entraban con id nulo y el índice único de Mongo los
+                       # rechazaba a partir del segundo: la importación fallaba entera.
+                       "id": str(uuid.uuid4()),
+                       "symbol": mapa.get(d["isin"]) or d["isin"],
                        "tasa": tasa, "importe_eur": importe_eur,
                        "created_at": _ahora()})
-        ya.add(d["huella"])
 
     if nuevos:
         await db.dividendos.insert_many(nuevos)

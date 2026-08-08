@@ -299,6 +299,10 @@ def leer_cuenta(contenido) -> dict:
     idx["divisa"] = idx["cambio"]
     idx["importe"] = idx["cambio"] + 1
 
+    # Dos apuntes IDÉNTICOS el mismo día (mismo valor, importe y divisa) son posibles: un
+    # pago partido, o dos posiciones del mismo valor. Sin distinguirlos, la huella colisiona
+    # y el segundo se toma por duplicado y se pierde. Se lleva la cuenta de las repeticiones.
+    vistas = {}
     dividendos, errores = [], []
     for n, fila in enumerate(filas[1:], start=2):
         if not any((c or "").strip() for c in fila):
@@ -313,9 +317,13 @@ def leer_cuenta(contenido) -> dict:
             continue
         isin = (str(_celda(fila, idx, "isin") or "")).strip().upper()
         divisa = (str(_celda(fila, idx, "divisa") or "EUR")).strip().upper() or "EUR"
+        base = f"{fecha}|{isin}|{tipo}|{importe}|{divisa}"
+        vistas[base] = vistas.get(base, 0) + 1
         dividendos.append({
+            # El orden de las filas dentro del fichero es estable entre exportaciones, así
+            # que el contador tampoco cambia y la huella sigue sirviendo para no duplicar.
             "huella": hashlib.sha1(
-                f"{fecha}|{isin}|{tipo}|{importe}|{divisa}".encode()).hexdigest()[:16],
+                f"{base}|{vistas[base]}".encode()).hexdigest()[:16],
             "fecha": fecha,
             "producto": (str(_celda(fila, idx, "producto") or "")).strip(),
             "isin": isin,

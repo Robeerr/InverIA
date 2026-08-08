@@ -935,3 +935,35 @@ def test_un_dividendo_en_euros_no_necesita_conversion():
             "divisa": "EUR", "tasa": None}]
     _correr(cartera_api.importar_dividendos(db, div))
     assert db.dividendos.docs[0]["importe_eur"] == pytest.approx(31.0)
+
+
+def test_cada_dividendo_lleva_su_propio_id():
+    """Sin id, todos entraban con id nulo y el indice unico de Mongo los rechazaba a partir
+    del segundo: la importacion fallaba entera con un error de clave duplicada."""
+    db = _DB()
+    _correr(cartera_api.importar_dividendos(db, _DIVS))
+    ids = [d.get("id") for d in db.dividendos.docs]
+    assert all(ids) and len(set(ids)) == len(ids)
+
+
+def test_reimportar_dividendos_no_duplica_aunque_cambie_la_huella():
+    """La huella ya cambio una vez (hubo que anadirle un contador). Un anti-duplicados que
+    se rompe al arreglar otra cosa no sirve para algo que se reimporta cada pocos meses."""
+    db = _DB()
+    _correr(cartera_api.importar_dividendos(db, _DIVS))
+    # Mismo dividendo, huella distinta: es el mismo apunte del broker.
+    otros = [{**d, "huella": d["huella"] + "-cambiada"} for d in _DIVS]
+    r = _correr(cartera_api.importar_dividendos(db, otros))
+    assert r["importados"] == 0 and r["saltados"] == 2
+    assert len(db.dividendos.docs) == 2
+
+
+def test_dos_pagos_identicos_el_mismo_dia_entran_los_dos():
+    """El reverso: contar de menos perderia un cobro de verdad."""
+    db = _DB()
+    doble = _DIVS[:1] + [{**_DIVS[0], "huella": "otra"}]
+    r = _correr(cartera_api.importar_dividendos(db, doble))
+    assert r["importados"] == 2
+    # Y reimportar ese mismo fichero sigue sin duplicar.
+    r2 = _correr(cartera_api.importar_dividendos(db, doble))
+    assert r2["importados"] == 0 and len(db.dividendos.docs) == 2
