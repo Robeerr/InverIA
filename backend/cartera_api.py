@@ -106,11 +106,9 @@ async def _sincronizar_posicion(db, symbol: str, metodo: str = None):
     compras, ventas = await _libro(db, symbol)
     if not compras and not ventas:
         return None   # sin libro para este valor: no se toca lo que haya puesto a mano
-    # METODO_GESTION (LIFO), no el fiscal: qué lotes quedan vivos —y por tanto qué
-    # campanitas y qué precio medio— depende del método, y aquí la pregunta es cómo llevas
-    # tú la posición. Vendiendo por niveles según cae el precio, lo que se vende es lo más
-    # reciente; con FIFO las campanitas se encenderían por el extremo contrario.
-    # El número total de acciones sale igual con los dos.
+    # Con el método de GESTIÓN elegido (ajustable, ver metodo_gestion). Qué lotes quedan
+    # vivos —y por tanto el precio medio y las campanitas— depende de él; el número total de
+    # acciones sale igual con los dos.
     estado = lotes.reproducir(compras, ventas, metodo or await metodo_gestion(db))
     cambios = {"acciones": estado["acciones_abiertas"], "updated_at": _ahora()}
     if estado["precio_medio"] is not None:
@@ -465,7 +463,21 @@ async def importar_posiciones_existentes(db, reemplazar: bool = False) -> dict:
         # Las campanitas apagadas dicen EN QUÉ NIVELES se compró, así que en vez de un
         # único lote al precio medio se reconstruyen los lotes de verdad. Ver
         # lotes.plan_importacion: con uno o dos niveles el reparto es exacto.
-        plan = lotes.plan_importacion(e)
+        # De dónde salen `acciones` y `compra` para repartir. NO se leen de la Cartera tal
+        # cual: _sincronizar_posicion ESCRIBE en esos mismos campos el resultado de la
+        # importación, así que una segunda importación leería su propia salida y reproduciría
+        # el reparto anterior en vez de corregirlo. Pasó de verdad: una posición se quedó
+        # clavada en 166,20 $ cuando lo que se había tecleado era 142,43 $.
+        #
+        # Por eso se guarda una foto de los valores ORIGINALES la primera vez y se usa
+        # siempre esa. Es el único registro de lo que tecleaste antes de que nada derivado
+        # lo pisara.
+        origen = e.get("import_origen")
+        if not origen:
+            origen = {"acciones": e.get("acciones"), "compra": e.get("compra")}
+            await db.signal_entries.update_one(
+                {"symbol": sym}, {"$set": {"import_origen": origen}})
+        plan = lotes.plan_importacion({**e, **origen})
         fecha = (str(e.get("fecha_compra"))[:10] if e.get("fecha_compra") else None)
         nota_base = ("Importada de tu Cartera"
                      if plan["exacto"] else

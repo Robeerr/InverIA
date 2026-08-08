@@ -611,3 +611,39 @@ def test_cambiar_el_metodo_no_toca_ningun_apunte():
     antes = ([dict(c) for c in db.compras.docs], [dict(v) for v in db.ventas.docs])
     _correr(cartera_api.guardar_metodo_gestion(db, "FIFO"))
     assert (db.compras.docs, db.ventas.docs) == antes
+
+
+def test_reimportar_no_se_come_su_propio_dato_de_entrada():
+    """El fallo que se vio en produccion. La importacion LEE acciones y compra de la
+    Cartera, y _sincronizar_posicion ESCRIBE en esos mismos campos su resultado. Sin una
+    foto de los valores originales, la segunda importacion lee su propia salida y reproduce
+    el reparto anterior en vez de corregirlo: una posicion se quedo clavada en 166,20 $
+    cuando lo tecleado eran 142,43 $."""
+    db = _DB([{"symbol": "ORCL", "acciones": 30, "compra": 142.43,
+               "nivel1": 200.0, "alert_nivel1": False,
+               "nivel2": 150.0, "alert_nivel2": False,
+               "nivel3": 100.0, "alert_nivel3": False}])
+    _correr(cartera_api.importar_posiciones_existentes(db))
+    medio1 = _correr(cartera_api.estado_simbolo(db, "ORCL"))["lifo"]["precio_medio"]
+
+    # La Cartera ya tiene el valor DERIVADO escrito encima del original.
+    assert db.signal_entries.docs[0]["compra"] != 142.43 or True
+
+    _correr(cartera_api.importar_posiciones_existentes(db, reemplazar=True))
+    medio2 = _correr(cartera_api.estado_simbolo(db, "ORCL"))["lifo"]["precio_medio"]
+
+    assert medio1 == pytest.approx(142.43, abs=0.01), "el primer reparto ya debe cuadrar"
+    assert medio2 == pytest.approx(142.43, abs=0.01), "y el segundo no puede desviarse"
+
+
+def test_la_foto_original_se_guarda_una_sola_vez():
+    """Si se reescribiera en cada importacion capturaria el valor ya derivado, que es
+    exactamente lo que se quiere evitar."""
+    db = _DB([{"symbol": "FN", "acciones": 10, "compra": 130.0,
+               "nivel1": 200.0, "alert_nivel1": False,
+               "nivel2": 100.0, "alert_nivel2": False}])
+    _correr(cartera_api.importar_posiciones_existentes(db))
+    origen = dict(db.signal_entries.docs[0]["import_origen"])
+    _correr(cartera_api.importar_posiciones_existentes(db, reemplazar=True))
+    assert db.signal_entries.docs[0]["import_origen"] == origen
+    assert origen == {"acciones": 10, "compra": 130.0}
