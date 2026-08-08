@@ -266,7 +266,7 @@ async def lifespan(app: FastAPI):
     await db.chartist_state.create_index("symbol", unique=True)
     await db.alerts.create_index("symbol")
     # Libro de operaciones: todo se consulta por símbolo y se ordena por fecha.
-    for coleccion in (db.compras, db.ventas):
+    for coleccion in (db.compras, db.ventas, db.dividendos):
         await coleccion.create_index([("symbol", 1), ("fecha", 1)])
         await coleccion.create_index("id", unique=True)
     # Las tres consultas de newsletters filtran por received_at >= cutoff y ordenan por
@@ -2325,6 +2325,12 @@ async def fechas_niveles(symbol: str, _user: str = Depends(auth.get_current_user
                       "veces, ajústalas: la fecha decide el tipo de cambio de esa compra.")}
 
 
+@api_router.get("/cartera/dividendos")
+async def dividendos(_user: str = Depends(auth.get_current_user)):
+    """Lo cobrado por dividendos, en euros, con la retención en origen aparte."""
+    return await cartera_api.resumen_dividendos(db)
+
+
 @api_router.get("/cartera/historial")
 async def historial_ventas(_user: str = Depends(auth.get_current_user)):
     """Todas las ventas hechas, con lo ganado por FIFO y por LIFO, y los totales."""
@@ -2392,8 +2398,17 @@ async def importar_degiro(archivo: UploadFile = File(...),
     if len(contenido) > 5_000_000:
         raise HTTPException(413, "El fichero es demasiado grande (máximo 5 MB).")
 
+    # Se detecta SOLO qué fichero es. Pedir un botón distinto para cada uno obliga a saber
+    # cuál trae qué, y los dos se llaman parecido: Transactions.csv y Account.csv.
     leido = await asyncio.to_thread(degiro_csv.leer, contenido)
     if leido["errores"] and not leido["operaciones"]:
+        cuenta = await asyncio.to_thread(degiro_csv.leer_cuenta, contenido)
+        if cuenta["dividendos"]:
+            r = await cartera_api.importar_dividendos(db, cuenta["dividendos"])
+            return {"tipo": "dividendos", "confirmado": True,
+                    "productos": [], "pendientes": [],
+                    "resumen": degiro_csv.resumen_dividendos(cuenta["dividendos"]),
+                    "errores": cuenta["errores"], **r}
         raise HTTPException(400, leido["errores"][0])
 
     try:

@@ -104,6 +104,7 @@ export const api = {
     guardarMetodo: (metodo_gestion) =>
       client.put(`/cartera/ajustes`, { metodo_gestion }).then((r) => r.data),
     historial: () => client.get(`/cartera/historial`).then((r) => r.data),
+    dividendos: () => client.get(`/cartera/dividendos`).then((r) => r.data),
     posicion: (symbol) => client.get(`/cartera/posicion/${symbol}`).then((r) => r.data),
     // Cuando el precio toco cada nivel, para estimar la fecha de cada compra sin tener que
     // recordarla. La fecha decide el tipo de cambio con el que se calculan los euros.

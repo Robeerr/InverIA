@@ -189,3 +189,89 @@ def test_el_resumen_cuenta_compras_y_ventas(leido):
 def test_los_numeros_se_leen_bien(crudo, esperado):
     assert degiro_csv._numero(crudo) == (pytest.approx(esperado) if esperado is not None
                                          else None)
+
+
+# ── Dividendos (Account.csv) ─────────────────────────────────────────────────
+# Transactions.csv SOLO tiene compraventas. Los dividendos estan en el otro fichero, el de
+# caja, y son dinero de verdad: en una cartera de varios anos explican buena parte de la
+# diferencia entre lo que dice el broker y lo que sale de las operaciones.
+
+_CAB_CUENTA = ("Date,Time,Value date,Product,ISIN,Description,FX,Change,,Balance,,Order Id")
+
+_FILAS_CUENTA = [
+    # Un dividendo de NextEra en dolares
+    '15-06-2026,08:00,15-06-2026,NEXTERA ENERGY INC,US65339F1012,Dividendo,,USD,'
+    '"12,50",USD,"1250,00",',
+    # Su retencion en origen (el 15% de EE.UU.)
+    '15-06-2026,08:00,15-06-2026,NEXTERA ENERGY INC,US65339F1012,'
+    'Retención del impuesto sobre dividendo,,USD,"-1,88",USD,"1248,12",',
+    # Un dividendo en euros
+    '20-06-2026,08:00,20-06-2026,IBERDROLA SA,ES0144580Y14,Dividendo,,EUR,'
+    '"31,00",EUR,"1279,12",',
+    # Ruido que NO debe colarse: ya viene de Transactions.csv
+    '07-08-2026,21:55,07-08-2026,SPACE EXPLORATION,US84615Q1031,Venta 5 Space Exploration,'
+    ',USD,"655,85",USD,"655,85",08d08d',
+    '07-08-2026,21:55,07-08-2026,SPACE EXPLORATION,US84615Q1031,'
+    'Costes de transacción y/o externos de DEGIRO,,EUR,"-2,00",EUR,"-9951,43",',
+]
+
+_CSV_CUENTA = ("\n".join([_CAB_CUENTA] + _FILAS_CUENTA)).encode("utf-8")
+
+
+def test_solo_se_cogen_los_dividendos_del_fichero_de_caja():
+    """Las compras, ventas y comisiones ya vienen mejor de Transactions.csv: cogerlas
+    tambien de aqui las duplicaria."""
+    r = degiro_csv.leer_cuenta(_CSV_CUENTA)
+    assert len(r["dividendos"]) == 3
+    assert all(d["tipo"] in ("dividendo", "retencion") for d in r["dividendos"])
+
+
+def test_la_retencion_se_distingue_del_dividendo():
+    """Su descripcion CONTIENE la palabra "dividendo", asi que si se comprobara primero el
+    dividendo todas las retenciones se tomarian por cobros y el neto saldria inflado."""
+    r = degiro_csv.leer_cuenta(_CSV_CUENTA)
+    tipos = [d["tipo"] for d in r["dividendos"] if d["isin"] == "US65339F1012"]
+    assert sorted(tipos) == ["dividendo", "retencion"]
+
+
+def test_la_retencion_conserva_su_signo_negativo():
+    """Asi sumar dividendos y retenciones da el neto sin acordarse de restar."""
+    r = degiro_csv.leer_cuenta(_CSV_CUENTA)
+    nee = [d for d in r["dividendos"] if d["isin"] == "US65339F1012"]
+    assert sum(d["importe"] for d in nee) == pytest.approx(10.62)   # 12,50 - 1,88
+
+
+def test_se_lee_la_divisa_de_cada_dividendo():
+    r = degiro_csv.leer_cuenta(_CSV_CUENTA)
+    por_isin = {d["isin"]: d["divisa"] for d in r["dividendos"]}
+    assert por_isin["US65339F1012"] == "USD"
+    assert por_isin["ES0144580Y14"] == "EUR"
+
+
+def test_cada_dividendo_lleva_huella_para_no_duplicar():
+    r = degiro_csv.leer_cuenta(_CSV_CUENTA)
+    huellas = [d["huella"] for d in r["dividendos"]]
+    assert len(set(huellas)) == len(huellas)
+
+
+def test_subir_el_fichero_de_transacciones_por_error_lo_dice():
+    r = degiro_csv.leer_cuenta(_CSV.decode().encode())
+    assert r["dividendos"] == []
+    assert r["errores"] and "Cuenta" in r["errores"][0]
+
+
+def test_el_resumen_separa_cobros_de_retenciones():
+    r = degiro_csv.leer_cuenta(_CSV_CUENTA)
+    res = degiro_csv.resumen_dividendos(r["dividendos"])
+    assert res["cobros"] == 2 and res["retenciones"] == 1
+    assert res["desde"] == "2026-06-15" and res["hasta"] == "2026-06-20"
+
+
+def test_se_reconoce_el_fichero_en_ingles():
+    """DEGIRO exporta en el idioma de la cuenta."""
+    filas = ['15-06-2026,08:00,15-06-2026,APPLE INC,US0378331005,Dividend,,USD,'
+             '"5,00",USD,"100,00",',
+             '15-06-2026,08:00,15-06-2026,APPLE INC,US0378331005,Dividend Tax,,USD,'
+             '"-0,75",USD,"99,25",']
+    r = degiro_csv.leer_cuenta(("\n".join([_CAB_CUENTA] + filas)).encode())
+    assert sorted(d["tipo"] for d in r["dividendos"]) == ["dividendo", "retencion"]

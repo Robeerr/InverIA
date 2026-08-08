@@ -202,6 +202,14 @@ function ImportarDegiro({ onCerrar }) {
         setPrevio(r);
         return;
       }
+      if (r.tipo === "dividendos") {
+        toast.success(r.importados
+          ? `${r.importados} apunte(s) de dividendos importados`
+          : `Ya estaban todos los dividendos (${r.saltados} apuntes).`, { duration: 8000 });
+        qc.invalidateQueries({ queryKey: ["cartera"] });
+        onCerrar();
+        return;
+      }
       toast.success(r.importadas
         ? `${r.importadas} operación(es) importadas`
           + (r.saltadas ? ` · ${r.saltadas} ya estaban` : "")
@@ -236,10 +244,12 @@ function ImportarDegiro({ onCerrar }) {
 
       <p className="text-[11px] text-[#5c6b66] leading-relaxed">
         En DEGIRO: <b>Actividad → Transacciones</b> → elige el periodo → <b>Exportar → CSV</b>.
-        Sube el fichero <b>Transactions.csv</b> (no el Account.csv, que es el de caja).
-        <br />
         Trae la fecha, el precio, la comisión y el tipo de cambio <b>reales</b>, así que deja
-        de hacer falta estimarlos. Subirlo dos veces no duplica nada.
+        de hacer falta estimarlos.
+        <br />
+        Sube también el <b>Account.csv</b> (Actividad → Cuenta): es el único sitio donde
+        están los <b>dividendos</b>, que no aparecen en el de transacciones. Se reconoce solo
+        cuál es cuál. Subir cualquiera dos veces no duplica nada.
       </p>
 
       <input type="file" accept=".csv,text/csv"
@@ -880,6 +890,12 @@ export default function VentasView() {
     queryFn: api.cartera.resumen,
     staleTime: 60_000,
   });
+  const { data: divs } = useQuery({
+    queryKey: ["cartera", "dividendos"],
+    queryFn: api.cartera.dividendos,
+    staleTime: 60_000,
+    retry: false,
+  });
 
   const borrar = useMutation({
     mutationFn: (v) => api.cartera.borrarVenta(v.id),
@@ -914,8 +930,13 @@ export default function VentasView() {
   const ventas = hist?.items || [];
   const realizado = tot?.ganancia_eur;
   const latente = resumen?.latente_eur;
-  const total = (realizado != null || latente != null)
-    ? (realizado || 0) + (latente || 0) : null;
+  // Los dividendos entran en el TOTAL —son dinero cobrado— pero se enseñan en su propia
+  // cifra y nunca dentro de "Realizado". Fiscalmente son rendimientos del capital
+  // mobiliario, no ganancias patrimoniales: van a casillas distintas de la declaración, y
+  // mezclarlos daría un número que no sirve para rellenar ninguna de las dos.
+  const dividendos = divs?.neto_eur ?? null;
+  const total = (realizado != null || latente != null || dividendos != null)
+    ? (realizado || 0) + (latente || 0) + (dividendos || 0) : null;
 
   return (
     <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-5">
@@ -965,8 +986,15 @@ export default function VentasView() {
         <Kpi etiqueta="Latente" valor={latente}
              sub={resumen?.posiciones?.length ? `${resumen.posiciones.length} posición(es) abiertas` : "sin posiciones"}
              ayuda="Lo que llevas ganado en lo que AÚN NO has vendido, al precio y al cambio de hoy. Puede cambiar mañana." />
+        {dividendos != null && (
+          <Kpi etiqueta="Dividendos" valor={dividendos}
+               sub={divs?.retenido_eur
+                 ? `${divs.n_cobros} cobros · ${eur(divs.retenido_eur)} retenidos`
+                 : `${divs?.n_cobros ?? 0} cobros`}
+               ayuda="Cobrado por dividendos, ya descontada la retención en origen. Se cuenta aparte porque fiscalmente NO son ganancias patrimoniales sino rendimientos del capital mobiliario: van a otra casilla de la declaración. La retención de EE.UU. es recuperable en parte con el convenio de doble imposición." />
+        )}
         <Kpi etiqueta="Total" valor={total}
-             sub="realizado + latente" />
+             sub={dividendos != null ? "realizado + latente + dividendos" : "realizado + latente"} />
         {tot?.efecto_divisa_eur != null && Math.abs(tot.efecto_divisa_eur) >= 0.01 && (
           <Kpi etiqueta="Efecto del euro" valor={tot.efecto_divisa_eur}
                sub="incluido en el realizado"

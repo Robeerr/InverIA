@@ -650,6 +650,84 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
             "simbolos": sorted(tocados)}
 
 
+# ── Dividendos ───────────────────────────────────────────────────────────────
+
+async def importar_dividendos(db, dividendos: list, mapeo: dict = None) -> dict:
+    """Guarda los dividendos del Account.csv.
+
+    Van en su PROPIA colección y no como una venta rara: fiscalmente son rendimientos del
+    capital mobiliario, no ganancias patrimoniales, y en la declaración van a casillas
+    distintas. Sumarlos a lo realizado por ventas daría un total que no sirve para nada
+    oficial.
+
+    Un dividendo de un valor que no está en la Cartera se guarda igual, con el ISIN por
+    nombre: es dinero cobrado, y perderlo por no tener ficha sería absurdo.
+    """
+    mapa = await _mapa_isin(db)
+    for k, v in (mapeo or {}).items():
+        limpio = _ticker_valido(v)
+        if k and limpio and limpio != IGNORAR:
+            mapa[k.strip().upper()] = limpio
+
+    ya = {d.get("huella") for d in await db.dividendos.find(
+        {}, {"_id": 0, "huella": 1}).to_list(5000)}
+
+    nuevos, saltados = [], 0
+    for d in dividendos:
+        if d["huella"] in ya:
+            saltados += 1
+            continue
+        tasa = d.get("tasa")
+        if not tasa or float(tasa) <= 0:
+            tasa = 1.0 if d["divisa"] == "EUR" else await _tasa(d["divisa"], d["fecha"])
+        importe_eur = None
+        if tasa and float(tasa) > 0:
+            importe_eur = round(float(d["importe"]) / float(tasa), 2)
+        nuevos.append({**d, "symbol": mapa.get(d["isin"]) or d["isin"],
+                       "tasa": tasa, "importe_eur": importe_eur,
+                       "created_at": _ahora()})
+        ya.add(d["huella"])
+
+    if nuevos:
+        await db.dividendos.insert_many(nuevos)
+    return {"importados": len(nuevos), "saltados": saltados}
+
+
+async def resumen_dividendos(db) -> dict:
+    """Lo cobrado por dividendos, en euros, con la retención aparte.
+
+    Se separan a propósito: la retención en origen de EE.UU. es recuperable en parte con el
+    convenio de doble imposición, así que verla suelta no es un detalle contable — es dinero
+    que puede volver.
+    """
+    docs = await db.dividendos.find({}, {"_id": 0}).to_list(5000)
+    brutos = [d for d in docs if d["tipo"] == "dividendo"]
+    retenciones = [d for d in docs if d["tipo"] == "retencion"]
+
+    def _suma(lista):
+        vals = [d["importe_eur"] for d in lista if d.get("importe_eur") is not None]
+        return round(sum(vals), 2) if vals else None
+
+    por_symbol = {}
+    for d in docs:
+        if d.get("importe_eur") is None:
+            continue
+        sym = d.get("symbol") or d.get("isin")
+        por_symbol[sym] = round(por_symbol.get(sym, 0) + d["importe_eur"], 2)
+
+    bruto, retenido = _suma(brutos), _suma(retenciones)
+    return {
+        "bruto_eur": bruto,
+        "retenido_eur": retenido,
+        "neto_eur": (round((bruto or 0) + (retenido or 0), 2)
+                     if bruto is not None else None),
+        "n_cobros": len(brutos),
+        "por_symbol": sorted(({"symbol": k, "eur": v} for k, v in por_symbol.items()),
+                             key=lambda x: x["eur"], reverse=True),
+        "sin_convertir": sum(1 for d in docs if d.get("importe_eur") is None),
+    }
+
+
 # ── Migración desde el modelo viejo ──────────────────────────────────────────
 
 async def importar_posiciones_existentes(db, reemplazar: bool = False) -> dict:

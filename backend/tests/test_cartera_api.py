@@ -85,6 +85,7 @@ class _DB:
         self.compras = _Coleccion()
         self.ventas = _Coleccion()
         self.ajustes = _Coleccion()
+        self.dividendos = _Coleccion()
         self.signal_entries = _Coleccion(entries or [])
 
 
@@ -859,3 +860,78 @@ def test_sincronizar_varias_deja_lo_mismo_que_una_a_una():
     _correr(cartera_api._sincronizar_varias(db, ["A", "B"]))
     assert [(e["symbol"], e["acciones"], e.get("compra"))
             for e in db.signal_entries.docs] == esperado
+
+
+# ── Dividendos ───────────────────────────────────────────────────────────────
+# Van en su PROPIA coleccion y no como una venta rara: fiscalmente son rendimientos del
+# capital mobiliario, no ganancias patrimoniales, y en la declaracion van a casillas
+# distintas. Sumarlos a lo realizado por ventas daria un total que no sirve para nada.
+
+_DIVS = [
+    {"huella": "d1", "fecha": "2026-06-15", "producto": "NEXTERA ENERGY",
+     "isin": "US65339F1012", "tipo": "dividendo", "importe": 12.50, "divisa": "USD",
+     "tasa": 1.10},
+    {"huella": "d2", "fecha": "2026-06-15", "producto": "NEXTERA ENERGY",
+     "isin": "US65339F1012", "tipo": "retencion", "importe": -1.88, "divisa": "USD",
+     "tasa": 1.10},
+]
+
+
+def test_los_dividendos_se_guardan_aparte_de_las_ventas():
+    db = _DB([{"symbol": "NEE", "isin": "US65339F1012"}])
+    r = _correr(cartera_api.importar_dividendos(db, _DIVS))
+    assert r["importados"] == 2
+    assert db.ventas.docs == [], "un dividendo no es una venta"
+    assert len(db.dividendos.docs) == 2
+
+
+def test_la_retencion_se_resta_del_bruto():
+    db = _DB([{"symbol": "NEE", "isin": "US65339F1012"}])
+    _correr(cartera_api.importar_dividendos(db, _DIVS))
+    r = _correr(cartera_api.resumen_dividendos(db))
+    assert r["bruto_eur"] == pytest.approx(11.36, abs=0.01)     # 12,50 / 1,10
+    assert r["retenido_eur"] == pytest.approx(-1.71, abs=0.01)  # -1,88 / 1,10
+    assert r["neto_eur"] == pytest.approx(9.65, abs=0.01)
+    assert r["n_cobros"] == 1
+
+
+def test_la_retencion_se_ve_suelta_porque_puede_volver():
+    """La retencion en origen de EE.UU. es recuperable en parte con el convenio de doble
+    imposicion: verla aparte no es un detalle contable, es dinero que puede volver."""
+    db = _DB()
+    _correr(cartera_api.importar_dividendos(db, _DIVS))
+    r = _correr(cartera_api.resumen_dividendos(db))
+    assert r["retenido_eur"] is not None and r["retenido_eur"] < 0
+
+
+def test_el_dividendo_se_asocia_al_ticker_por_el_isin():
+    db = _DB([{"symbol": "NEE", "isin": "US65339F1012"}])
+    _correr(cartera_api.importar_dividendos(db, _DIVS))
+    assert all(d["symbol"] == "NEE" for d in db.dividendos.docs)
+    r = _correr(cartera_api.resumen_dividendos(db))
+    assert r["por_symbol"][0]["symbol"] == "NEE"
+
+
+def test_un_dividendo_de_algo_que_no_esta_en_la_cartera_se_guarda_igual():
+    """Es dinero cobrado: perderlo por no tener ficha seria absurdo."""
+    db = _DB()
+    _correr(cartera_api.importar_dividendos(db, _DIVS))
+    assert len(db.dividendos.docs) == 2
+    assert db.dividendos.docs[0]["symbol"] == "US65339F1012"
+
+
+def test_subir_dos_veces_el_mismo_fichero_no_duplica_dividendos():
+    db = _DB()
+    _correr(cartera_api.importar_dividendos(db, _DIVS))
+    r2 = _correr(cartera_api.importar_dividendos(db, _DIVS))
+    assert r2["importados"] == 0 and r2["saltados"] == 2
+    assert len(db.dividendos.docs) == 2
+
+
+def test_un_dividendo_en_euros_no_necesita_conversion():
+    db = _DB()
+    div = [{"huella": "e1", "fecha": "2026-06-20", "producto": "IBERDROLA",
+            "isin": "ES0144580Y14", "tipo": "dividendo", "importe": 31.0,
+            "divisa": "EUR", "tasa": None}]
+    _correr(cartera_api.importar_dividendos(db, div))
+    assert db.dividendos.docs[0]["importe_eur"] == pytest.approx(31.0)

@@ -101,6 +101,18 @@ def _fecha_iso(valor) -> str:
     return s if m else ""
 
 
+def _texto(contenido):
+    """Decodifica el fichero. None si no se puede con ninguna codificación conocida."""
+    if not isinstance(contenido, bytes):
+        return contenido
+    for codificacion in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            return contenido.decode(codificacion)
+        except UnicodeDecodeError:
+            continue
+    return None
+
+
 def _dialecto(texto: str) -> str:
     """Separador de campos. Con decimales por coma, el fichero suele ir con punto y coma;
     pero DEGIRO también exporta con coma y los campos entrecomillados."""
@@ -132,18 +144,9 @@ def leer(contenido: bytes) -> dict:
     se entienden se informan en vez de descartarse en silencio: una operación que falta
     descuadra la posición y no habría forma de saber por qué.
     """
-    if isinstance(contenido, bytes):
-        texto = None
-        for codificacion in ("utf-8-sig", "utf-8", "latin-1"):
-            try:
-                texto = contenido.decode(codificacion)
-                break
-            except UnicodeDecodeError:
-                continue
-        if texto is None:
-            return {"operaciones": [], "productos": [], "errores": ["No se pudo leer el fichero."]}
-    else:
-        texto = contenido
+    texto = _texto(contenido)
+    if texto is None:
+        return {"operaciones": [], "productos": [], "errores": ["No se pudo leer el fichero."]}
 
     filas = list(csv.reader(io.StringIO(texto), delimiter=_dialecto(texto)))
     if not filas:
@@ -230,6 +233,114 @@ def _fila_a_operacion(fila, idx):
         "tasa": tasa,
         "comision": round(comision, 4),
         "orden": orden,
+    }
+
+
+# ── Account.csv: dividendos ──────────────────────────────────────────────────
+# El otro fichero de DEGIRO, el libro de CAJA. Para las compras y ventas no sirve (obliga a
+# recomponer cada operación desde cuatro apuntes), pero es el ÚNICO sitio donde están los
+# dividendos: Transactions.csv solo tiene operaciones de compraventa.
+#
+# Y son dinero de verdad: en una cartera con varios años y valores que reparten, explican
+# buena parte de la diferencia entre lo que dice el bróker y lo que sale de las operaciones.
+
+_COL_CUENTA = {
+    "fecha": ("date", "fecha"),
+    "producto": ("product", "producto"),
+    "isin": ("isin",),
+    "descripcion": ("description", "descripción", "descripcion"),
+    "fx": ("fx", "tipo de cambio"),
+    "cambio": ("change", "variación", "variacion"),
+}
+
+#: La retención se comprueba ANTES que el dividendo: su descripción contiene la palabra
+#: "dividendo", así que al revés todas las retenciones se tomarían por dividendos y el
+#: importe neto saldría inflado.
+_RETENCION = ("retención del impuesto", "retencion del impuesto", "dividend tax",
+              "withholding tax", "impuesto sobre dividendo")
+_DIVIDENDO = ("dividendo", "dividend")
+
+
+def _clasificar(descripcion: str):
+    d = (descripcion or "").strip().lower()
+    if any(t in d for t in _RETENCION):
+        return "retencion"
+    if any(t in d for t in _DIVIDENDO):
+        return "dividendo"
+    return None
+
+
+def leer_cuenta(contenido) -> dict:
+    """Extrae los DIVIDENDOS (y sus retenciones) del Account.csv.
+
+    Todo lo demás del fichero se ignora a propósito: las compras, ventas y comisiones ya
+    vienen mejor desde Transactions.csv, y cogerlas también de aquí las duplicaría.
+    """
+    texto = _texto(contenido)
+    if texto is None:
+        return {"dividendos": [], "errores": ["No se pudo leer el fichero."]}
+
+    filas = list(csv.reader(io.StringIO(texto), delimiter=_dialecto(texto)))
+    if not filas:
+        return {"dividendos": [], "errores": ["El fichero está vacío."]}
+
+    cabeceras = [_normaliza(h) for h in filas[0]]
+    idx = {}
+    for campo, alias in _COL_CUENTA.items():
+        for i, h in enumerate(cabeceras):
+            if any(h == a or h.startswith(a) for a in alias):
+                idx[campo] = i
+                break
+    if "descripcion" not in idx or "cambio" not in idx:
+        return {"dividendos": [],
+                "errores": ["No parece el CSV de Cuenta (Account) de DEGIRO: falta la "
+                            "columna de descripción o la de importe."]}
+    # La columna "Change" lleva la DIVISA; el importe va en la de al lado, sin nombre.
+    idx["divisa"] = idx["cambio"]
+    idx["importe"] = idx["cambio"] + 1
+
+    dividendos, errores = [], []
+    for n, fila in enumerate(filas[1:], start=2):
+        if not any((c or "").strip() for c in fila):
+            continue
+        tipo = _clasificar(_celda(fila, idx, "descripcion"))
+        if tipo is None:
+            continue
+        importe = _numero(_celda(fila, idx, "importe"))
+        fecha = _fecha_iso(_celda(fila, idx, "fecha"))
+        if importe is None or not fecha:
+            errores.append(f"Línea {n}: dividendo sin importe o sin fecha.")
+            continue
+        isin = (str(_celda(fila, idx, "isin") or "")).strip().upper()
+        divisa = (str(_celda(fila, idx, "divisa") or "EUR")).strip().upper() or "EUR"
+        dividendos.append({
+            "huella": hashlib.sha1(
+                f"{fecha}|{isin}|{tipo}|{importe}|{divisa}".encode()).hexdigest()[:16],
+            "fecha": fecha,
+            "producto": (str(_celda(fila, idx, "producto") or "")).strip(),
+            "isin": isin,
+            "tipo": tipo,
+            # La retención llega ya en negativo en el fichero; se respeta el signo para que
+            # sumar dividendos y retenciones dé el neto sin tener que acordarse de restar.
+            "importe": importe,
+            "divisa": divisa,
+            "tasa": _numero(_celda(fila, idx, "fx")),
+        })
+
+    dividendos.sort(key=lambda d: d["fecha"])
+    return {"dividendos": dividendos, "errores": errores}
+
+
+def resumen_dividendos(dividendos: list) -> dict:
+    brutos = [d for d in dividendos if d["tipo"] == "dividendo"]
+    retenciones = [d for d in dividendos if d["tipo"] == "retencion"]
+    fechas = sorted(d["fecha"] for d in dividendos if d["fecha"])
+    return {
+        "total": len(dividendos),
+        "cobros": len(brutos),
+        "retenciones": len(retenciones),
+        "desde": fechas[0] if fechas else None,
+        "hasta": fechas[-1] if fechas else None,
     }
 
 
