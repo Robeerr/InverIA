@@ -152,14 +152,46 @@ def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(_bcrypt_trunc(password), bcrypt.gensalt()).decode("ascii")
 
 
-def authenticate_user(username: str, password: str) -> bool:
+# Un hash bcrypt son siempre 60 caracteres. Los tres prefijos conviven por motivos
+# históricos y bcrypt verifica los tres.
+_PREFIJOS_BCRYPT = ("$2a$", "$2b$", "$2y$")
+
+
+def hash_bien_formado(valor: str) -> bool:
+    """¿Esto tiene forma de hash bcrypt completo?
+
+    Sirve para distinguir "no hay hash" de "hay un hash roto": son averías distintas
+    y llevan a buscar en sitios distintos. Un hash recortado al copiar, o con comillas,
+    da exactamente el mismo 401 que una contraseña equivocada.
+    """
+    return bool(valor) and isinstance(valor, str) and \
+        valor.startswith(_PREFIJOS_BCRYPT) and len(valor) == 60
+
+
+def motivo_de_rechazo(username: str, password: str) -> Optional[str]:
+    """En qué ETAPA falla el login, o None si es correcto.
+
+    Existe para poder registrar el porqué sin escribir en el log ni la contraseña, ni
+    el hash, ni el usuario configurado. Un 401 a secas obliga a adivinar entre cuatro
+    causas que se arreglan de forma distinta: usuario que no coincide, hash mal
+    pegado, contraseña incorrecta o respaldo de desarrollo.
+    """
     if username.lower() != APP_USERNAME.lower():
-        return False
+        return "usuario_no_coincide"
     stored = os.environ.get("APP_PASSWORD_HASH")
-    if stored:
-        return verify_password(password, stored)
-    # Fallback: compare plain (only for dev, set APP_PASSWORD_HASH in prod)
-    return password == APP_PASSWORD
+    if not stored:
+        return None if password == APP_PASSWORD else "password_de_respaldo_no_coincide"
+    if not hash_bien_formado(stored):
+        return "APP_PASSWORD_HASH_mal_formado"
+    if not verify_password(password, stored):
+        return "bcrypt_no_valida_la_contrasena"
+    return None
+
+
+def authenticate_user(username: str, password: str) -> bool:
+    """Mismo comportamiento de siempre, expresado sobre `motivo_de_rechazo` para que
+    la comprobación y su explicación no puedan divergir."""
+    return motivo_de_rechazo(username, password) is None
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:

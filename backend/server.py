@@ -706,7 +706,14 @@ async def health():
 # ---------- Auth ----------
 @api_router.post("/auth/login", response_model=auth.Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    if not auth.authenticate_user(form_data.username, form_data.password):
+    motivo = auth.motivo_de_rechazo(form_data.username, form_data.password)
+    if motivo:
+        # Se registra la ETAPA, nunca el dato. Sin esto, un 401 obliga a adivinar entre
+        # cuatro causas que se arreglan de forma distinta: el usuario no coincide, el
+        # hash está mal pegado, la contraseña es incorrecta, o se está cayendo al
+        # respaldo de desarrollo. Al usuario se le sigue devolviendo el mismo mensaje
+        # genérico: decirle cuál de las cuatro es sería decirle si el usuario existe.
+        logger.warning("Login rechazado · etapa: %s", motivo)
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
     token = auth.create_access_token({"sub": form_data.username})
     return {"access_token": token, "token_type": "bearer", "username": form_data.username}
