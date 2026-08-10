@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import auth  # noqa: E402
 
-LIMITE_BCRYPT = 72
+LIMITE_BCRYPT = auth.BCRYPT_MAX_BYTES
 
 
 def main() -> int:
@@ -53,7 +53,7 @@ def main() -> int:
         return 1
 
     bytes_clave = len(clave.encode("utf-8"))
-    if bytes_clave > LIMITE_BCRYPT:
+    if auth.excede_limite_bcrypt(clave):
         # No es un aviso cosmético: bcrypt ignora lo que pase de 72 bytes, así que
         # una frase larga tendría caracteres finales que NO cuentan para entrar.
         print(f"\nAviso: tu contraseña ocupa {bytes_clave} bytes y bcrypt solo usa los "
