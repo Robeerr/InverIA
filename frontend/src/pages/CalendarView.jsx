@@ -1,5 +1,4 @@
 import React from "react";
-import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarBlank, ArrowRight, ArrowClockwise } from "@phosphor-icons/react";
 import { api } from "../lib/api";
@@ -18,7 +17,6 @@ function hourLabel(h) {
 }
 
 export default function CalendarView({ setSymbol }) {
-  const navigate = useNavigate();
   const [days, setDays] = React.useState(14);
   const [refreshN, setRefreshN] = React.useState(0);
 
@@ -110,7 +108,10 @@ export default function CalendarView({ setSymbol }) {
                 key={`${it.symbol}-${i}`}
                 data-testid={`earnings-${it.symbol}`}
                 className="flex items-center gap-3 p-2 hover:bg-[#f5f3ef] rounded cursor-pointer"
-                onClick={() => { setSymbol(it.symbol); navigate("/"); }}
+                /* setSymbol ya navega a /accion/:symbol. El navigate("/") que había
+                   aquí ahora llevaría a la portada, que es lo contrario de lo que
+                   espera quien pulsa una fila del calendario. */
+                onClick={() => setSymbol(it.symbol)}
               >
                 <div className="w-11 h-11 rounded-md bg-[#1a3a32] text-[#f5f3ef] flex items-center justify-center font-mono font-bold text-xs shrink-0">
                   {it.symbol.slice(0, 4)}

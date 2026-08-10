@@ -1,6 +1,6 @@
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, useCallback, Suspense } from "react";
 import "./App.css";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Header from "./components/Header";
@@ -19,6 +19,7 @@ const DiagnosticoView  = React.lazy(() => import("./pages/DiagnosticoView"));
 // Página de estilos viva: la validación de la Fase 1. Va bajo /sistema/ porque es
 // una herramienta de desarrollo, no una sección del producto.
 const EstilosView      = React.lazy(() => import("./pages/EstilosView"));
+const HoyView          = React.lazy(() => import("./pages/HoyView"));
 
 const PageLoader = () => (
   <div className="min-h-[60vh] flex items-center justify-center">
@@ -28,8 +29,38 @@ const PageLoader = () => (
   </div>
 );
 
+/* La acción vive en la URL, no solo en el estado.
+   ─────────────────────────────────────────────────────────────────────────────
+   Antes el ticker solo existía en un useState, con dos consecuencias: no se podía
+   guardar ni compartir el enlace de una acción concreta, y pulsar un ticker en la
+   Cartera o en el Radar cambiaba el estado sin llevarte a ninguna parte —parecía
+   un enlace roto porque, a efectos prácticos, lo era.
+
+   Este componente sincroniza el parámetro de la URL con el estado de la app, para
+   que ambos sentidos funcionen: escribir /accion/NVDA a mano y pulsar un ticker. */
+function PaginaAccion({ symbol, setSymbol, model, setModel }) {
+  const { symbol: symbolUrl } = useParams();
+
+  useEffect(() => {
+    const sym = (symbolUrl || "").toUpperCase();
+    if (sym && sym !== symbol) setSymbol(sym);
+  }, [symbolUrl, symbol, setSymbol]);
+
+  // Se pinta con el de la URL para que el primer render ya sea el correcto: usar el
+  // del estado enseñaría la acción anterior durante un fotograma al navegar.
+  return (
+    <Dashboard
+      symbol={(symbolUrl || symbol || "").toUpperCase()}
+      setSymbol={setSymbol}
+      model={model}
+      setModel={setModel}
+    />
+  );
+}
+
 function AppInner() {
   const { isAuth, loading } = useAuth();
+  const navigate = useNavigate();
   const [symbol, setSymbol] = useState("AAPL");
   const [model, setModel] = useState(() => localStorage.getItem("inveria-model-v3") || "gemini-2.5-flash");
 
@@ -54,6 +85,17 @@ function AppInner() {
     document.title = symbol ? `${symbol} · InverIA` : "InverIA · Análisis Bursátil";
   }, [symbol]);
 
+  /* Elegir un ticker en cualquier pantalla lleva a su ficha.
+     Se pasa con el nombre `setSymbol` a propósito: las ocho pantallas que ya lo
+     reciben siguen funcionando sin tocarlas, y de paso quedan arregladas las que
+     hasta ahora cambiaban el estado sin navegar. */
+  const irAAccion = useCallback((s) => {
+    const sym = (s || "").toString().toUpperCase().trim();
+    if (!sym) return;
+    setSymbol(sym);
+    navigate(`/accion/${sym}`);
+  }, [navigate]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#f5f3ef] flex items-center justify-center">
@@ -73,20 +115,26 @@ function AppInner() {
     <div className="App min-h-screen overflow-x-hidden">
       <Header
         symbol={symbol}
-        setSymbol={setSymbol}
-        onSearch={setSymbol}
+        setSymbol={irAAccion}
+        onSearch={irAAccion}
         darkMode={darkMode}
         setDarkMode={setDarkMode}
       />
       <ErrorBoundary>
       <Suspense fallback={<PageLoader />}>
         <Routes>
-          <Route path="/" element={<Dashboard symbol={symbol} setSymbol={setSymbol} model={model} setModel={setModel} />} />
-          <Route path="/oportunidades" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><OpportunitiesView setSymbol={setSymbol} /></div>} />
-          <Route path="/calendario" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><CalendarView setSymbol={setSymbol} /></div>} />
-          <Route path="/signals" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><SignalsView setSymbol={setSymbol} /></div>} />
-          <Route path="/radar" element={<Navigate to="/oportunidades" replace />} />
-          <Route path="/ventas" element={<VentasView />} />
+          {/* La portada. Hasta ahora "/" montaba la ficha de UNA acción, así que
+              entrar exigía saber ya qué ticker mirar. */}
+          <Route path="/" element={<HoyView />} />
+
+          <Route path="/accion/:symbol" element={
+            <PaginaAccion symbol={symbol} setSymbol={irAAccion} model={model} setModel={setModel} />
+          } />
+
+          <Route path="/oportunidades" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><OpportunitiesView setSymbol={irAAccion} /></div>} />
+          <Route path="/calendario" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><CalendarView setSymbol={irAAccion} /></div>} />
+          <Route path="/cartera" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><SignalsView setSymbol={irAAccion} /></div>} />
+          <Route path="/operaciones" element={<VentasView />} />
           <Route path="/track-record" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><TrackRecordView /></div>} />
           <Route path="/telegram" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><TelegramConnectView /></div>} />
           <Route path="/cerebro" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><BrainView /></div>} />
@@ -94,7 +142,16 @@ function AppInner() {
           {/* Sin wrapper: EstilosView trae su propio PageShell, que es justamente
               el componente que sustituye a este div copiado ocho veces. */}
           <Route path="/sistema/estilos" element={<EstilosView />} />
-          <Route path="*" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><Dashboard symbol={symbol} setSymbol={setSymbol} model={model} setModel={setModel} /></div>} />
+
+          {/* Rutas viejas: redirección, no ruptura. Están en tu historial y en tus
+              marcadores, y algunas llevan meses ahí. */}
+          <Route path="/signals" element={<Navigate to="/cartera" replace />} />
+          <Route path="/ventas" element={<Navigate to="/operaciones" replace />} />
+          <Route path="/radar" element={<Navigate to="/oportunidades" replace />} />
+
+          {/* Una ruta desconocida ya no cae en la ficha de una acción cualquiera:
+              cae en la portada, que es la que sabe qué enseñarte sin contexto. */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
       </ErrorBoundary>

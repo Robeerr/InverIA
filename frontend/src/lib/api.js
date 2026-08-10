@@ -27,6 +27,11 @@ client.interceptors.response.use(
 );
 
 export const api = {
+  // Portada. `desde` es la última visita, para poder decir qué ha cambiado. El
+  // servidor no calcula nada caro aquí: lee de las cachés que deja el precalentado.
+  hoy: (desde, limite = 5) =>
+    client.get(`/hoy`, { params: { desde: desde || undefined, limite }, timeout: 30000 })
+      .then((r) => r.data),
   // signal: permite CANCELAR la petición al cambiar de acción. Sin esto, ir saltando por la
   // watchlist dejaba peticiones anteriores vivas, cada una gastando cuota de datos que ya no
   // le servía a nadie — y agotarla es lo que hacía fallar la carga siguiente.

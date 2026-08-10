@@ -43,6 +43,7 @@ import newsletter_ingest
 import market_regime
 import chart_lines
 import chartist
+import hoy
 import mem
 import levels_engine
 import auth
@@ -4095,6 +4096,262 @@ async def hot_signals(limit: int = 5, _user: str = Depends(auth.get_current_user
     top = results[:limit]
     _cache.set("signals_hot", top, ttl=300)
     return top
+
+
+# ---------- Dashboard «Hoy» ----------
+async def _fuentes_por_ticker(days: int = 14) -> dict:
+    """Mapa ticker → menciones, sentimiento, quién lo dice y el veredicto del motor.
+
+    Es lo mismo que agrega /radar, pero devuelto como mapa para poder cruzarlo por
+    símbolo. Reutiliza la lectura cacheada de newsletters, así que no cuesta ni una
+    consulta nueva cuando el precalentado ya ha pasado por aquí.
+    """
+    docs = await _newsletters_recientes(days, 300)
+    out: dict = {}
+    for d in docs:
+        ex = d.get("extracted") or {}
+        src = _clean_source(d.get("sender"), d.get("subject"))
+        for a in (ex.get("acciones") or []):
+            tk = (a.get("ticker") or "").strip().upper()
+            if not tk or newsletter_ingest._is_sponsor(a):
+                continue
+            slot = out.setdefault(tk, {
+                "menciones": 0, "positivos": 0, "negativos": 0,
+                "fuentes": set(), "inveria": None, "ultima": d.get("received_at"),
+                "nombre": a.get("nombre") or "",
+            })
+            slot["menciones"] += 1
+            slot["fuentes"].add(src)
+            sent = (a.get("sentimiento") or "").upper()
+            if sent == "POSITIVO":
+                slot["positivos"] += 1
+            elif sent == "NEGATIVO":
+                slot["negativos"] += 1
+            if a.get("inveria") and not slot["inveria"]:
+                slot["inveria"] = a["inveria"]
+            if not slot["nombre"] and a.get("nombre"):
+                slot["nombre"] = a["nombre"]
+
+    for tk, s in out.items():
+        s["fuentes"] = sorted(s["fuentes"])
+        # El veredicto guardado es una foto del día que llegó el correo. Si el radar
+        # ya lo ha refrescado en segundo plano, mandamos el fresco — pero NUNCA se
+        # calcula aquí: puntuar 25 tickers tardaría más que toda la portada.
+        fresco = _cache.get(f"radar_score_{tk}")
+        if fresco is not None:
+            s["inveria"] = fresco
+    return out
+
+
+def _dashboard_cacheado(symbol: str):
+    """El dashboard de un símbolo SOLO si ya está en caché. Nunca lo calcula.
+
+    Es la pieza que hace que esta portada responda en un par de segundos: los
+    niveles con su fuerza y sus razones, el `data_warning` y los indicadores ya los
+    deja calculados el bucle de precalentado. Si un símbolo no está caliente, su
+    tarjeta sale igual con lo que sí es barato —la distancia a TU nivel, que vive en
+    la tabla— y sin el porqué del motor. Preferimos una tarjeta con menos detalle
+    que una portada que tarda veinte segundos.
+    """
+    valor, _ = _cache.get_stale(f"dashboard:{symbol}:{_TIMEFRAME_PREWARM}",
+                                max_age=_DASHBOARD_STALE_MAX)
+    return valor or {}
+
+
+def _mejor_zona(dash: dict, precio_objetivo):
+    """La zona de confluencia del motor más cercana al nivel que ha disparado.
+
+    Se busca la más cercana y no la más fuerte a propósito: lo que queremos saber es
+    si el precio al que va a llegar el mercado tiene respaldo, no cuál es la mejor
+    zona en abstracto.
+    """
+    niveles = ((dash.get("analysis") or {}).get("buy_levels")
+               or dash.get("buy_levels") or [])
+    objetivo = None
+    try:
+        objetivo = float(precio_objetivo)
+    except (TypeError, ValueError):
+        return None
+    mejor, mejor_dist = None, None
+    for z in niveles:
+        try:
+            centro = float(z.get("price"))
+        except (TypeError, ValueError):
+            continue
+        dist = abs(centro - objetivo) / objetivo * 100 if objetivo else None
+        # Más allá del 3% ya no está hablando del mismo precio.
+        if dist is not None and dist <= 3 and (mejor_dist is None or dist < mejor_dist):
+            mejor, mejor_dist = z, dist
+    return mejor
+
+
+@api_router.get("/hoy")
+async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_POR_DEFECTO,
+                        _user: str = Depends(auth.get_current_user)):
+    """Portada: qué merece tu atención hoy, por qué, y qué deberías revisar.
+
+    `desde` es la última visita (la guarda el navegador). Sin ella se usan 24 h, que
+    es lo razonable para «qué me he perdido».
+
+    Todo lo que sirve sale de datos que ya existían y que el frontend no usaba. La
+    única regla dura: aquí no se CALCULA nada caro. Se lee de las cachés que el
+    precalentado deja listas, y lo que no esté caliente sale con menos detalle en vez
+    de hacer esperar a la página.
+    """
+    limite = max(1, min(int(limite or hoy.LIMITE_POR_DEFECTO), 10))
+    if desde:
+        corte = desde
+    else:
+        corte = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+
+    entradas, calientes, alertas, resumen, fuentes = await asyncio.gather(
+        db.signal_entries.find({"active": True}, {"_id": 0}).to_list(200),
+        hot_signals(limit=50, _user="hoy"),
+        db.alert_history.find({"fired_at": {"$gte": corte}}, {"_id": 0})
+                        .sort("fired_at", -1).limit(20).to_list(20),
+        resumen_cartera(_user="hoy"),
+        _fuentes_por_ticker(14),
+        return_exceptions=True,
+    )
+    # Un fallo aislado degrada su bloque, no la portada entera: es preferible una
+    # portada con cuatro fuentes de cinco que una pantalla de error.
+    def _ok(v, por_defecto):
+        if isinstance(v, Exception):
+            logger.warning("Portada «Hoy»: un bloque falló: %s", v)
+            return por_defecto
+        return v
+
+    entradas = _ok(entradas, [])
+    calientes = _ok(calientes, [])
+    alertas = _ok(alertas, [])
+    resumen = _ok(resumen, {})
+    fuentes = _ok(fuentes, {})
+
+    por_symbol = {(e.get("symbol") or "").upper(): e for e in entradas}
+    posiciones = {(p.get("symbol") or "").upper(): p
+                  for p in (resumen.get("posiciones") or [])}
+
+    tarjetas = []
+
+    # 1 · Rupturas donde hay dinero dentro.
+    for sym, pos in posiciones.items():
+        if not (pos.get("acciones") or 0) > 0:
+            continue
+        dash = _dashboard_cacheado(sym)
+        indicadores = dash.get("indicators") or {}
+        tarjetas.append(hoy.tarjeta_ruptura(por_symbol.get(sym, {"symbol": sym}), pos, indicadores))
+
+    # 2 · Alertas disparadas desde la última visita.
+    for a in alertas:
+        tarjetas.append(hoy.tarjeta_alerta(a, por_symbol.get((a.get("symbol") or "").upper())))
+
+    # 3 · Niveles cerca, con el porqué del motor cuando esté caliente.
+    for c in calientes:
+        sym = (c.get("symbol") or "").upper()
+        dash = _dashboard_cacheado(sym)
+        zona = _mejor_zona(dash, c.get("target"))
+        aviso = (dash.get("analysis") or {}).get("data_warning")
+        tiene = (posiciones.get(sym, {}).get("acciones") or 0) > 0
+        tarjetas.append(hoy.tarjeta_nivel(c, zona, aviso=aviso, tiene_posicion=tiene))
+
+    # 4 y 5 · Choque y coincidencia entre motor y fuentes.
+    for tk, f in fuentes.items():
+        dash = _dashboard_cacheado(tk)
+        zona = None
+        niveles = ((dash.get("analysis") or {}).get("buy_levels") or [])
+        if niveles:
+            zona = max(niveles, key=lambda z: z.get("strength") or 0)
+        estado = hoy.confluencia(
+            f, f.get("inveria"),
+            distancia_nivel=(zona or {}).get("distance_pct"),
+            fuerza_nivel=(zona or {}).get("strength"),
+        )
+        tiene = (posiciones.get(tk, {}).get("acciones") or 0) > 0
+        tarjetas.append(hoy.tarjeta_confluencia(
+            tk, f.get("nombre"), estado, f, f.get("inveria"),
+            distancia_nivel=(zona or {}).get("distance_pct"),
+            fuerza_nivel=(zona or {}).get("strength"),
+            tiene_posicion=tiene,
+        ))
+
+    # 6 · Resultados con posición abierta.
+    proximos = []
+    try:
+        simbolos_cartera = [s for s, p in posiciones.items() if (p.get("acciones") or 0) > 0]
+        if simbolos_cartera:
+            cal = await earnings_calendar(days=7, symbols=",".join(simbolos_cartera), _user="hoy")
+            hoy_fecha = datetime.now(timezone.utc).date()
+            for it in (cal.get("items") or []):
+                try:
+                    dias = (datetime.fromisoformat(it["date"]).date() - hoy_fecha).days
+                except Exception:
+                    continue
+                evento = {**it, "dias": dias, "symbol": (it.get("symbol") or "").upper()}
+                proximos.append(evento)
+                tarjetas.append(hoy.tarjeta_resultados(
+                    evento, posiciones.get(evento["symbol"]),
+                    (_dashboard_cacheado(evento["symbol"]).get("analysis") or {}).get("earnings_sorpresas"),
+                ))
+    except Exception as e:
+        logger.warning("Portada «Hoy»: calendario no disponible: %s", e)
+
+    importa = hoy.ordenar_y_recortar(tarjetas, limite)
+
+    # Novedades del Cerebro desde la última visita.
+    cerebro = {"desde": corte, "tickers_nuevos": [], "menciones_nuevas": 0}
+    try:
+        recientes = await _newsletters_recientes(14, 300)
+        vistos_antes, nuevos = set(), {}
+        for d in recientes:
+            reciente = (d.get("received_at") or "") >= corte
+            for a in ((d.get("extracted") or {}).get("acciones") or []):
+                tk = (a.get("ticker") or "").strip().upper()
+                if not tk or newsletter_ingest._is_sponsor(a):
+                    continue
+                if reciente:
+                    nuevos[tk] = nuevos.get(tk, 0) + 1
+                else:
+                    vistos_antes.add(tk)
+        cerebro["menciones_nuevas"] = sum(nuevos.values())
+        cerebro["tickers_nuevos"] = sorted(t for t in nuevos if t not in vistos_antes)
+    except Exception as e:
+        logger.warning("Portada «Hoy»: novedades del Cerebro no disponibles: %s", e)
+
+    # Posiciones que piden atención: las que están en pérdidas o han roto algo. No
+    # las diez: solo las que tienen algo que decir hoy.
+    atencion = []
+    for sym, p in posiciones.items():
+        if not (p.get("acciones") or 0) > 0:
+            continue
+        pnl = p.get("pnl_pct")
+        if pnl is not None and pnl <= -8:
+            atencion.append({"symbol": sym, "motivo": "en pérdidas",
+                             "pnl_pct": pnl, "pnl_eur": p.get("pnl_eur")})
+    atencion.sort(key=lambda x: x.get("pnl_pct") or 0)
+
+    regimen = None
+    try:
+        regimen = market_regime.get_market_regime()
+    except Exception as e:
+        logger.warning("Portada «Hoy»: régimen no disponible: %s", e)
+
+    return {
+        "generado_en": datetime.now(timezone.utc).isoformat(),
+        "desde": corte,
+        "saludo": hoy.resumen_de_saludo(importa, cerebro),
+        "importa_hoy": importa,
+        "cartera": {
+            "valor_eur": resumen.get("valor_eur"),
+            "latente_eur": resumen.get("latente_eur"),
+            "realizado_eur": resumen.get("realizado_eur"),
+            "invertido_eur": resumen.get("invertido_eur"),
+            "posiciones_sin_valorar": resumen.get("posiciones_sin_valorar"),
+            "atencion": atencion[:4],
+        },
+        "mercado": regimen,
+        "cerebro": cerebro,
+        "proximos_7_dias": sorted(proximos, key=lambda e: e.get("dias") or 99)[:5],
+    }
 
 
 # ---------- WebSocket: live quote streaming ----------

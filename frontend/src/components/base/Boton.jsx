@@ -1,4 +1,5 @@
 import React from "react";
+import { Slot } from "@radix-ui/react-slot";
 import { cva } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
@@ -45,20 +46,27 @@ const botonVariants = cva(
 );
 
 export const Boton = React.forwardRef(function Boton(
-  { variante, tamano, className, type = "button", ocupado = false, disabled, children, ...props },
+  { variante, tamano, className, type = "button", ocupado = false, disabled,
+    asChild = false, children, ...props },
   ref
 ) {
+  // `asChild` para que un enlace pueda tener aspecto de botón sin dejar de ser un
+  // enlace: un <button> que navega rompe abrir en pestaña nueva, el clic central y
+  // el menú contextual, y eso en una app que se usa con el teclado se nota.
+  const Comp = asChild ? Slot : "button";
+  const propsDeBoton = asChild
+    ? {}
+    : { type, disabled: disabled || ocupado, "aria-busy": ocupado || undefined };
+
   return (
-    <button
+    <Comp
       ref={ref}
-      type={type}
-      aria-busy={ocupado || undefined}
-      disabled={disabled || ocupado}
       className={cn(botonVariants({ variante, tamano }), className)}
+      {...propsDeBoton}
       {...props}
     >
       {children}
-    </button>
+    </Comp>
   );
 });
 

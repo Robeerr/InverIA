@@ -7,12 +7,15 @@ import { api } from "../lib/api";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
 
+// Cada entrada se llama como lo que hay dentro. "Dashboard" montaba la ficha de una
+// acción, "Cartera" vivía en /signals y "Ventas" era en realidad el libro de
+// operaciones completo, con compras incluidas.
 const NAV = [
-  { to: "/", label: "Dashboard", icon: House, testId: "nav-dashboard" },
+  { to: "/", label: "Hoy", icon: House, testId: "nav-hoy" },
   { to: "/oportunidades", label: "Oportunidades", icon: Lightning, testId: "nav-opportunities" },
   { to: "/calendario", label: "Calendario", icon: CalendarBlank, testId: "nav-calendar" },
-  { to: "/signals", label: "Cartera", icon: Bell, testId: "nav-signals" },
-  { to: "/ventas", label: "Ventas", icon: Coins, testId: "nav-ventas" },
+  { to: "/cartera", label: "Cartera", icon: Bell, testId: "nav-signals" },
+  { to: "/operaciones", label: "Operaciones", icon: Coins, testId: "nav-ventas" },
   { to: "/track-record", label: "Track record", icon: ChartLineUp, testId: "nav-track-record" },
   { to: "/cerebro", label: "Cerebro", icon: Brain, testId: "nav-brain" },
   // Telegram: setup puntual (conectar / cambiar temas). Fuera del menú para no

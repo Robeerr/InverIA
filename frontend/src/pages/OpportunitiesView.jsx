@@ -1,5 +1,4 @@
 import React from "react";
-import { useNavigate } from "react-router-dom";
 import { Lightning, TrendDown, TrendUp, Sparkle, Pulse, Sun, ArrowRight, ArrowClockwise, Funnel, Fire, Target } from "@phosphor-icons/react";
 import { Button } from "../components/ui/button";
 import { api } from "../lib/api";
@@ -253,7 +252,6 @@ function MoversColumn({ title, icon: Icon, rows, color, onPick }) {
 }
 
 export default function OpportunitiesView({ setSymbol }) {
-  const navigate = useNavigate();
   const [mode, setMode] = React.useState("signals"); // "signals" | "screener"
 
   // --- Signals mode state ---
@@ -327,10 +325,9 @@ export default function OpportunitiesView({ setSymbol }) {
     if (mode === "movers" && !movers) loadMovers();
   }, [mode, movers, loadMovers]);
 
-  const handlePick = (sym) => {
-    setSymbol(sym);
-    navigate("/");
-  };
+  // setSymbol ya lleva a /accion/:symbol. El navigate("/") que había aquí ahora
+  // llevaría a la portada en vez de a la acción que se acaba de elegir.
+  const handlePick = (sym) => setSymbol(sym);
 
   const filtered = React.useMemo(() => {
     if (!data) return [];
