@@ -33,19 +33,46 @@ function Chip({ children, tono: t = "neutro", title }) {
 }
 
 // ── Cifra grande de cabecera ─────────────────────────────────────────────────
+// La ayuda NO puede vivir solo en `title=`: en el móvil no hay ratón que posar encima, así
+// que el texto era sencillamente inalcanzable. Es un botón que despliega el texto bajo la
+// cifra, y de paso funciona con teclado.
 function Kpi({ etiqueta, valor, sub, acento = false, ayuda }) {
+  const [abierta, setAbierta] = React.useState(false);
   return (
     <div className="card-flat px-4 py-3 flex-1 min-w-[150px]">
       <p className="text-[10px] uppercase tracking-[0.15em] text-[#5c6b66] font-mono flex items-center gap-1">
         {etiqueta}
-        {ayuda && <span title={ayuda} className="cursor-help opacity-60">ⓘ</span>}
+        {ayuda && (
+          <button type="button" onClick={() => setAbierta((a) => !a)}
+                  aria-expanded={abierta}
+                  aria-label={`Qué significa ${etiqueta}`}
+                  className="opacity-60 hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 rounded">
+            ⓘ
+          </button>
+        )}
       </p>
       <p className={`font-mono font-bold mt-1 ${acento ? "text-2xl" : "text-xl"} ${tono(valor)}`}>
         {eur(valor)}
       </p>
       {sub && <p className="text-[11px] text-[#5c6b66] mt-0.5">{sub}</p>}
+      {abierta && ayuda && (
+        <p className="text-[11px] text-[#5c6b66] mt-2 pt-2 border-t border-[#e5e0d8] dark:border-[#1a3a32] leading-relaxed">
+          {ayuda}
+        </p>
+      )}
     </div>
   );
+}
+
+// Cuánto hace que se consultó una cifra. Un "1 € = 1,1563 USD" sin edad se lee como si
+// fuera de ahora mismo, y puede tener hasta una hora.
+function haceCuanto(segundos) {
+  if (segundos == null) return null;
+  if (segundos < 90) return "ahora mismo";
+  const min = Math.round(segundos / 60);
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.round(min / 60);
+  return `hace ${h} h`;
 }
 
 // ── Detalle de una venta: de qué lotes salió ─────────────────────────────────
@@ -89,7 +116,12 @@ function FilaVenta({ v, metodo, onBorrar }) {
   return (
     <div className="border-b border-[#e5e0d8] dark:border-[#1a3a32] last:border-0">
       <div className="px-4 py-3 flex items-center gap-3 flex-wrap hover:bg-[#faf8f4] dark:hover:bg-[#0e1f1a] transition-colors">
-        <button onClick={() => setAbierto((o) => !o)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+        {/* aria-label descriptivo, no fijo: un lector de pantalla leía 146 botones
+            idénticos. min-h para que el dedo acierte en el móvil. */}
+        <button onClick={() => setAbierto((o) => !o)}
+                aria-expanded={abierto}
+                aria-label={`${abierto ? "Ocultar" : "Ver"} el detalle de la venta de ${v.acciones} ${v.symbol} del ${fecha(v.fecha)}`}
+                className="flex items-center gap-3 flex-1 min-w-0 text-left min-h-[44px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 rounded">
           <span className="font-mono text-[11px] text-[#5c6b66] w-16 shrink-0">{fecha(v.fecha)}</span>
           <span className="font-mono font-bold text-sm w-16 shrink-0">{v.symbol}</span>
           <span className="font-mono text-xs text-[#5c6b66] shrink-0">
@@ -212,7 +244,9 @@ function FilaVenta({ v, metodo, onBorrar }) {
               )}
             </div>
             <div className="pt-2">
-              <button onClick={() => onBorrar(v)} className="text-[11px] text-[#d85c41] hover:underline">
+              <button onClick={() => onBorrar(v)}
+                      aria-label={`Borrar la venta de ${v.acciones} ${v.symbol} del ${fecha(v.fecha)}`}
+                      className="text-[11px] text-[#d85c41] hover:underline min-h-[44px] px-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 rounded">
                 Borrar esta venta
               </button>
             </div>
@@ -548,7 +582,7 @@ function LotesAbiertos({ symbol, metodo }) {
               </span>
               <button
                 onClick={() => window.confirm(`¿Borrar la compra de ${l.acciones} ${symbol} del ${fecha(l.fecha)}?`) && borrar.mutate({ id: l.id })}
-                className="text-[11px] text-[#d85c41] hover:underline shrink-0">
+                className="text-[11px] text-[#d85c41] hover:underline shrink-0 min-h-[44px] px-2 -my-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 rounded">
                 borrar
               </button>
             </div>
@@ -1548,9 +1582,13 @@ export default function VentasView() {
                 {quitarDup.isPending ? "Quitando…" : "Quitar duplicados del CSV"}
               </button>
               {resumen.tasas && (
-                <span className="text-[11px] text-[#5c6b66] font-mono">
+                <span className="text-[11px] text-[#5c6b66] font-mono"
+                      title="El tipo de cambio se consulta como mucho una vez por hora, y esta pantalla no se refresca sola: para ver el más reciente, recarga.">
                   {Object.entries(resumen.tasas).filter(([d]) => d !== "EUR")
-                    .map(([d, t]) => `1 € = ${t} ${d}`).join(" · ")}
+                    .map(([d, t]) => {
+                      const edad = haceCuanto(resumen.tasas_edad_s?.[d]);
+                      return `1 € = ${t} ${d}${edad ? ` (${edad})` : ""}`;
+                    }).join(" · ")}
                 </span>
               )}
             </div>
@@ -1559,12 +1597,22 @@ export default function VentasView() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-left text-[#5c6b66] border-b border-[#e5e0d8] dark:border-[#1a3a32]">
-                  <th className="px-4 py-2 font-normal">Acción</th>
-                  <th className="py-2 font-normal text-right">Acciones</th>
-                  <th className="py-2 font-normal text-right">Precio medio</th>
-                  <th className="py-2 font-normal text-right">Invertido</th>
-                  <th className="py-2 font-normal text-right">Valor hoy</th>
-                  <th className="px-4 py-2 font-normal text-right">Ganancia</th>
+                  {/* Las unidades EN LA CABECERA: el precio medio va en la divisa del
+                      valor y el resto en euros, y sin decirlo la tabla parecía mezclar. */}
+                  <th scope="col" className="px-4 py-2 font-normal">Acción</th>
+                  <th scope="col" className="py-2 font-normal text-right">Acciones</th>
+                  <th scope="col" className="py-2 font-normal text-right">
+                    Precio medio <span className="opacity-60">(divisa)</span>
+                  </th>
+                  <th scope="col" className="py-2 font-normal text-right">
+                    Invertido <span className="opacity-60">(€)</span>
+                  </th>
+                  <th scope="col" className="py-2 font-normal text-right">
+                    Valor hoy <span className="opacity-60">(€)</span>
+                  </th>
+                  <th scope="col" className="px-4 py-2 font-normal text-right">
+                    Ganancia <span className="opacity-60">(€)</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1573,8 +1621,18 @@ export default function VentasView() {
                   <tr className="border-b border-[#e5e0d8] dark:border-[#1a3a32] cursor-pointer hover:bg-[#faf8f4] dark:hover:bg-[#0e1f1a]"
                       onClick={() => setAbierta(abierta === p.symbol ? null : p.symbol)}>
                     <td className="px-4 py-2">
-                      <span className="text-[#5c6b66] mr-1 text-[10px]">{abierta === p.symbol ? "▲" : "▼"}</span>
-                      <span className="font-mono font-bold">{p.symbol}</span>
+                      {/* Un botón de verdad, no un <tr onClick>: así se despliega también
+                          con teclado y un lector de pantalla dice qué hace y si está
+                          abierto. min-h/min-w para que el dedo acierte en el móvil. */}
+                      <button type="button"
+                              onClick={(e) => { e.stopPropagation();
+                                                setAbierta(abierta === p.symbol ? null : p.symbol); }}
+                              aria-expanded={abierta === p.symbol}
+                              aria-label={`${abierta === p.symbol ? "Ocultar" : "Ver"} las compras de ${p.symbol}`}
+                              className="inline-flex items-center gap-1 min-h-[44px] -my-2 pr-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 rounded">
+                        <span className="text-[#5c6b66] text-[10px]">{abierta === p.symbol ? "▲" : "▼"}</span>
+                        <span className="font-mono font-bold">{p.symbol}</span>
+                      </button>
                       {!!p.divisas_mezcladas && (
                         <Chip tono="aviso"
                               title={`Esta posición tiene lotes en ${p.divisas_mezcladas.join(" y ")}. El precio medio y el invertido EN DIVISA suman monedas distintas y no significan nada; las cifras en euros sí son correctas, porque cada lote se convierte con su propia tasa. Revisa la divisa de cada compra.`}>
@@ -1633,6 +1691,35 @@ export default function VentasView() {
                   </React.Fragment>
                 ))}
               </tbody>
+              {/* Totales: hasta ahora había que sumar las filas a mano para saber cuánto
+                  llevas metido y cuánto vale hoy. El % agregado es sobre lo invertido. */}
+              <tfoot>
+                <tr className="border-t-2 border-[#e5e0d8] dark:border-[#1a3a32] font-semibold">
+                  <td className="px-4 py-2">Total</td>
+                  <td className="py-2 text-right font-mono text-[#5c6b66]">
+                    {resumen.posiciones.length} pos.
+                  </td>
+                  <td />
+                  <td className="py-2 text-right font-mono">{eur(resumen.invertido_eur)}</td>
+                  <td className="py-2 text-right font-mono">{eur(resumen.valor_eur)}</td>
+                  <td className="px-4 py-2 text-right">
+                    {(() => {
+                      const lat = comoBroker && latenteBroker != null ? latenteBroker : latente;
+                      const base = resumen.invertido_eur;
+                      return (
+                        <>
+                          <span className={`font-mono ${tono(lat)}`}>{eur(lat)}</span>
+                          {base ? (
+                            <span className={`font-mono text-[10px] ml-1 ${tono(lat)}`}>
+                              {pct((lat / base) * 100)}
+                            </span>
+                          ) : null}
+                        </>
+                      );
+                    })()}
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
           {/* La explicación se lee una vez y luego estorba: plegada por defecto. */}

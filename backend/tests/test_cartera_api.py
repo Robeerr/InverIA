@@ -1509,3 +1509,14 @@ def test_el_descuadre_en_euros_no_suma_dolares_sin_convertir():
     assert h["resumen"]["sin_cubrir_acciones"] == 100
     assert h["resumen"]["sin_cubrir_eur_aprox"] == 0.0   # no convertible: no se suma
     assert h["resumen"]["sin_cubrir_sin_tasa"] == 1
+
+
+def test_el_resumen_dice_cuanto_hace_que_se_consulto_el_cambio():
+    """Un "1 € = 1,1563 USD" sin edad se lee como si fuera de ahora mismo, y puede tener
+    hasta una hora: la caché del cambio de hoy dura 3600 s y nadie lo refresca solo."""
+    db = _DB()
+    _correr(cartera_api.registrar_compra(
+        db, "AAPL", 1, 200.0, fecha="2026-01-10", comision=0, tasa=1.10))
+    r = _correr(cartera_api.resumen_cartera(db, {"AAPL": 210.0}))
+    assert "tasas_edad_s" in r
+    assert set(r["tasas_edad_s"]) == set(r["tasas"])

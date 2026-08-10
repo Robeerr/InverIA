@@ -55,6 +55,20 @@ def tasa_actual(divisa: str) -> Optional[float]:
         return None
 
 
+def edad_tasa_actual(divisa: str) -> Optional[int]:
+    """Segundos desde que se consultó el cambio de hoy. None si no hay nada cacheado.
+
+    Saber la EDAD de una cifra vale más que refrescarla más a menudo: un "1 € = 1,1563 USD"
+    sin fecha se lee como si fuera de ahora mismo, y puede tener hasta una hora.
+    """
+    if (divisa or "").strip().upper() in ("", "EUR"):
+        return 0
+    hit = _cache.get((divisa.upper(), "hoy"))
+    if not hit:
+        return None
+    return int(datetime.now(timezone.utc).timestamp() - hit[1])
+
+
 def tasa_en_fecha(divisa: str, fecha: str) -> Optional[float]:
     """Unidades de `divisa` por 1 EUR en una fecha (YYYY-MM-DD).
 

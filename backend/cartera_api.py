@@ -732,6 +732,9 @@ async def resumen_cartera(db, precios: dict) -> dict:
             1 for p in posiciones
             if p.get("precio_actual") is not None and not tasas.get(p["divisa"])),
         "tasas": {d: (round(t, 4) if t else None) for d, t in tasas.items()},
+        # Cuántos segundos hace que se consultó cada cambio. Sin esto, un "1 € = 1,1563 USD"
+        # se lee como si fuera de ahora mismo cuando puede tener hasta una hora.
+        "tasas_edad_s": {d: fx.edad_tasa_actual(d) for d in tasas},
     }
 
 
