@@ -32,14 +32,16 @@ if os.environ.get("RENDER") and SECRET_KEY == _DEFAULT_SECRET:
         "en Render con un valor aleatorio largo y vuelve a desplegar."
     )
 # ── Guardarraíl de la contraseña en producción ────────────────────────────────
-# Mientras esto sea False, la falta de APP_PASSWORD_HASH solo AVISA: es el
-# comportamiento de hoy y no puede romper un despliegue en marcha. Se pone a True
-# cuando la variable esté configurada en Render, y entonces arrancar sin ella pasa a
-# ser imposible — igual que ya ocurre con JWT_SECRET.
+# APP_PASSWORD_HASH ya está configurada en Render y el login está verificado, así que
+# arrancar sin ella pasa a ser imposible — igual que ya ocurre con JWT_SECRET.
+#
+# El modo de fallo es deliberado: si la variable desapareciera, el servicio NO arranca
+# en vez de arrancar aceptando `inveria2024`, que es pública y está en el repositorio.
+# Un despliegue que no levanta se ve; una contraseña por defecto aceptada, no.
 #
 # La comprobación vive en una función aparte para poder probarla en los dos estados
 # sin depender de reimportar el módulo con el entorno trucado.
-EXIGIR_HASH_EN_PRODUCCION = False
+EXIGIR_HASH_EN_PRODUCCION = True
 
 
 def motivo_para_no_arrancar(en_produccion: bool, hash_configurado: bool,

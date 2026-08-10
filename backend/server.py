@@ -3,7 +3,7 @@ import math
 import json
 import re
 import hmac
-from fastapi import FastAPI, APIRouter, HTTPException, Request, UploadFile, File, Depends, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, APIRouter, HTTPException, Header, Request, UploadFile, File, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
@@ -3119,9 +3119,8 @@ async def radar(days: int = 14, _user: str = Depends(auth.get_current_user)):
 
 
 @api_router.api_route("/inbound/news/ingest", methods=["GET", "POST"])
-async def inbound_news_ingest(token: str = ""):
+async def inbound_news_ingest(_user: str = Depends(auth.get_current_user)):
     """Dispara la ingesta de noticias de mercado al vuelo (para probar). Protegido."""
-    _check_inbound_token(token)
     import news_ingest
     return await news_ingest.ingest_general_news(db)
 
@@ -3702,15 +3701,15 @@ def _check_inbound_token(token: str):
 
 
 @api_router.get("/telegram/status")
-async def telegram_status(token: str = ""):
-    _check_inbound_token(token)
+async def telegram_status(x_inbound_token: str = Header(default="")):
+    _check_inbound_token(x_inbound_token)
     import telegram_reader
     return await telegram_reader.status(db)
 
 
 @api_router.post("/telegram/login/start")
-async def telegram_login_start(request: Request, token: str = ""):
-    _check_inbound_token(token)
+async def telegram_login_start(request: Request, x_inbound_token: str = Header(default="")):
+    _check_inbound_token(x_inbound_token)
     import telegram_reader
     payload = await request.json()
     phone = (payload.get("phone") or "").strip()
@@ -3720,8 +3719,8 @@ async def telegram_login_start(request: Request, token: str = ""):
 
 
 @api_router.post("/telegram/login/code")
-async def telegram_login_code(request: Request, token: str = ""):
-    _check_inbound_token(token)
+async def telegram_login_code(request: Request, x_inbound_token: str = Header(default="")):
+    _check_inbound_token(x_inbound_token)
     import telegram_reader
     payload = await request.json()
     return await telegram_reader.login_code(
@@ -3729,15 +3728,15 @@ async def telegram_login_code(request: Request, token: str = ""):
 
 
 @api_router.get("/telegram/dialogs")
-async def telegram_dialogs(token: str = ""):
-    _check_inbound_token(token)
+async def telegram_dialogs(x_inbound_token: str = Header(default="")):
+    _check_inbound_token(x_inbound_token)
     import telegram_reader
     return await telegram_reader.list_dialogs(db)
 
 
 @api_router.post("/telegram/capture")
-async def telegram_capture(request: Request, token: str = ""):
-    _check_inbound_token(token)
+async def telegram_capture(request: Request, x_inbound_token: str = Header(default="")):
+    _check_inbound_token(x_inbound_token)
     import telegram_reader
     payload = await request.json()
     return await telegram_reader.set_capture(db, payload.get("chat_ids") or [])
@@ -3751,9 +3750,21 @@ async def inbound_newsletter(request: Request, token: str = ""):
     secret = os.environ.get("INBOUND_SECRET")
     if not secret:
         raise HTTPException(503, "INBOUND_SECRET no configurado en el servidor.")
-    provided = token or request.headers.get("x-inbound-token") or ""
+    por_cabecera = request.headers.get("x-inbound-token") or ""
+    # La cabecera manda; el query param se sigue aceptando A PROPÓSITO. Es el único
+    # endpoint que llama una máquina externa —el conector de correo—, y cerrarlo sin
+    # que esté reconfigurado dejaría de alimentar el Cerebro sin avisar.
+    provided = por_cabecera or token or ""
     if not hmac.compare_digest(provided, secret):
         raise HTTPException(401, "Token de entrada inválido.")
+    if not por_cabecera and token:
+        # Cuando este aviso deje de aparecer, el conector ya usa cabecera y se puede
+        # cerrar el query param. Mientras salga, cerrarlo rompería la ingesta.
+        logger.warning(
+            "INBOUND: /inbound/newsletter autenticado por QUERY PARAM. El secreto viaja "
+            "en la URL y queda en logs de proxies e historiales. Reconfigura el conector "
+            "para que mande la cabecera X-Inbound-Token; cuando este aviso desaparezca, "
+            "se podrá cerrar el parámetro.")
 
     ctype = request.headers.get("content-type", "")
     if "application/json" in ctype:
@@ -3781,11 +3792,10 @@ async def inbound_newsletter(request: Request, token: str = ""):
 
 
 @api_router.api_route("/inbound/newsletter/backfill-knowledge", methods=["GET", "POST"])
-async def inbound_newsletter_backfill(token: str = "", limit: int = 200):
+async def inbound_newsletter_backfill(limit: int = 200, _user: str = Depends(auth.get_current_user)):
     """Reprocesa los correos ya guardados para poblar el cerebro (investing_knowledge)
     con el método/sabiduría que enseñan. Protegido con INBOUND_SECRET. Acepta GET para
     poder lanzarlo tocando un enlace desde el móvil."""
-    _check_inbound_token(token)
 
     # Reprocesar N correos con una llamada al LLM cada uno tarda minutos: si se hace de
     # forma síncrona, el navegador/Render cortan ("server stopped responding"). Se lanza
@@ -3806,21 +3816,19 @@ async def inbound_newsletter_backfill(token: str = "", limit: int = 200):
 
 
 @api_router.api_route("/inbound/newsletter/dedupe-knowledge", methods=["GET", "POST"])
-async def inbound_newsletter_dedupe(token: str = ""):
+async def inbound_newsletter_dedupe(_user: str = Depends(auth.get_current_user)):
     """Fusiona principios casi idénticos del cerebro (dedup semántico) y reconstruye el
     cache. Protegido con INBOUND_SECRET. Acepta GET para lanzarlo desde el móvil."""
-    _check_inbound_token(token)
     import knowledge_base
     result = await knowledge_base.dedupe_semantic(db)
     return {"ok": True, **result}
 
 
 @api_router.api_route("/inbound/newsletter/dedupe-knowledge-llm", methods=["GET", "POST"])
-async def inbound_newsletter_dedupe_llm(token: str = ""):
+async def inbound_newsletter_dedupe_llm(_user: str = Depends(auth.get_current_user)):
     """Dedup SEMÁNTICO con LLM (entiende paráfrasis) del cerebro. Tarda (varias llamadas
     al modelo), así que va en segundo plano; mira el resultado en /knowledge (baja el nº
     de principios). Protegido con INBOUND_SECRET."""
-    _check_inbound_token(token)
     import knowledge_base
 
     async def _bg():
@@ -3839,20 +3847,18 @@ async def inbound_newsletter_dedupe_llm(token: str = ""):
 
 
 @api_router.api_route("/inbound/newsletter/fix-encoding", methods=["GET", "POST"])
-async def inbound_newsletter_fix_encoding(token: str = ""):
+async def inbound_newsletter_fix_encoding(_user: str = Depends(auth.get_current_user)):
     """Repara el mojibake (acentos corruptos: 'selecciÃ³n' → 'selección') de los
     principios ya guardados en el cerebro y reconstruye el cache. Acepta GET para
     lanzarlo desde el móvil."""
-    _check_inbound_token(token)
     import knowledge_base
     result = await knowledge_base.fix_existing_encoding(db)
     return {"ok": True, **result}
 
 
 @api_router.get("/inbound/newsletter/knowledge")
-async def inbound_newsletter_knowledge(token: str = ""):
+async def inbound_newsletter_knowledge(_user: str = Depends(auth.get_current_user)):
     """Estado del cerebro: cuántos principios ha aprendido y el digest actual."""
-    _check_inbound_token(token)
     import knowledge_base
     total = await db.investing_knowledge.count_documents({})
     top = await db.investing_knowledge.find({}, {"_id": 0}).sort(
@@ -3870,11 +3876,10 @@ async def inbound_newsletter_knowledge(token: str = ""):
 
 
 @api_router.get("/inbound/newsletter/debug")
-async def inbound_newsletter_debug(token: str = ""):
+async def inbound_newsletter_debug(_user: str = Depends(auth.get_current_user)):
     """Diagnóstico: devuelve el resultado de los últimos procesados de newsletter
     (extracción / envío de email) para depurar sin acceso a los logs de Render.
     Protegido con el mismo INBOUND_SECRET."""
-    _check_inbound_token(token)
     return {
         "resend_configurado": bool(os.environ.get("RESEND_API_KEY")),
         "destino": (os.environ.get("ANALYST_RECIPIENT_EMAIL")

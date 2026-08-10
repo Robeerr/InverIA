@@ -26,6 +26,10 @@ client.interceptors.response.use(
   }
 );
 
+/** El secreto de ingesta como cabecera. Vacío = sin cabecera, para que el servidor
+ *  responda 401 en vez de recibir una cabecera con "undefined" dentro. */
+const cabeceraIngesta = (token) => (token ? { "X-Inbound-Token": token } : {});
+
 export const api = {
   // Portada. `desde` es la última visita, para poder decir qué ha cambiado. El
   // servidor no calcula nada caro aquí: lee de las cachés que deja el precalentado.
@@ -85,12 +89,26 @@ export const api = {
   ingestText: (text, fuente) => client.post(`/ingest/text`, { text, fuente }, { timeout: 120000 }).then((r) => r.data),
   trackRecord: (days = 180, refresh = false) =>
     client.get(`/track-record`, { params: { days, refresh: refresh || undefined }, timeout: 120000 }).then((r) => r.data),
+  // El secreto de ingesta viaja por CABECERA, no en la URL. En la barra de direcciones
+  // acababa en el historial del navegador, en el log de cualquier proxy y en la cabecera
+  // Referer de lo que se cargara después — y INBOUND_SECRET no caduca ni se rota solo.
   telegram: {
-    status: (token) => client.get(`/telegram/status`, { params: { token } }).then((r) => r.data),
-    loginStart: (token, phone) => client.post(`/telegram/login/start`, { phone }, { params: { token }, timeout: 60000 }).then((r) => r.data),
-    loginCode: (token, code, password) => client.post(`/telegram/login/code`, { code, password }, { params: { token }, timeout: 60000 }).then((r) => r.data),
-    dialogs: (token) => client.get(`/telegram/dialogs`, { params: { token }, timeout: 60000 }).then((r) => r.data),
-    setCapture: (token, chat_ids) => client.post(`/telegram/capture`, { chat_ids }, { params: { token } }).then((r) => r.data),
+    status: (token) => client.get(`/telegram/status`, { headers: cabeceraIngesta(token) }).then((r) => r.data),
+    loginStart: (token, phone) => client.post(`/telegram/login/start`, { phone }, { headers: cabeceraIngesta(token), timeout: 60000 }).then((r) => r.data),
+    loginCode: (token, code, password) => client.post(`/telegram/login/code`, { code, password }, { headers: cabeceraIngesta(token), timeout: 60000 }).then((r) => r.data),
+    dialogs: (token) => client.get(`/telegram/dialogs`, { headers: cabeceraIngesta(token), timeout: 60000 }).then((r) => r.data),
+    setCapture: (token, chat_ids) => client.post(`/telegram/capture`, { chat_ids }, { headers: cabeceraIngesta(token) }).then((r) => r.data),
+  },
+  // Mantenimiento del Cerebro. Ya NO llevan secreto: van con la sesión normal, como
+  // el resto de la app. Antes se lanzaban tocando un enlace con el secreto dentro.
+  mantenimiento: {
+    estado: () => client.get(`/inbound/newsletter/knowledge`).then((r) => r.data),
+    diagnostico: () => client.get(`/inbound/newsletter/debug`).then((r) => r.data),
+    reprocesar: (limit = 200) => client.post(`/inbound/newsletter/backfill-knowledge`, null, { params: { limit }, timeout: 120000 }).then((r) => r.data),
+    fusionarPrincipios: () => client.post(`/inbound/newsletter/dedupe-knowledge`, null, { timeout: 120000 }).then((r) => r.data),
+    fusionarPrincipiosIA: () => client.post(`/inbound/newsletter/dedupe-knowledge-llm`, null, { timeout: 120000 }).then((r) => r.data),
+    repararAcentos: () => client.post(`/inbound/newsletter/fix-encoding`, null, { timeout: 120000 }).then((r) => r.data),
+    ingerirNoticias: () => client.post(`/inbound/news/ingest`, null, { timeout: 180000 }).then((r) => r.data),
   },
   signals: () => client.get(`/signals`).then((r) => r.data),
   signalsCreate: (payload) => client.post(`/signals`, payload).then((r) => r.data),

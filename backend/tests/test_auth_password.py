@@ -145,15 +145,53 @@ def test_en_produccion_sin_hash_y_exigiendolo_no_se_arranca():
     assert motivo and "APP_PASSWORD_HASH" in motivo
 
 
-def test_hoy_todavia_no_bloquea_solo_avisa():
-    """Punto 8 del encargo: no puede impedir un despliegue hasta que el hash exista."""
-    assert auth.EXIGIR_HASH_EN_PRODUCCION is False
-    motivo = auth.motivo_para_no_arrancar(
-        en_produccion=True, hash_configurado=False,
-        password_por_defecto=True, exigir=False)
-    assert motivo and "por defecto" in motivo  # avisa…
-    # …y el módulo se importa igualmente, que es lo que no puede romperse.
-    assert auth.get_password_hash("x")
+def test_el_guardarrail_esta_activado():
+    """Se activó una vez verificado en Render que la variable existe y que el login
+    funciona. Antes estaba en False a propósito, para no poder tumbar un despliegue
+    en marcha con una variable que aún no existía."""
+    assert auth.EXIGIR_HASH_EN_PRODUCCION is True
+
+
+def test_en_produccion_sin_hash_el_proceso_NO_arranca(monkeypatch):
+    """El efecto real, no solo la función: se importa auth en un proceso aparte con
+    RENDER puesto y sin APP_PASSWORD_HASH, y tiene que reventar al importar.
+
+    En subproceso porque el módulo ya está cargado en este intérprete y recargarlo
+    rompería otros tests que guardan referencias a sus funciones.
+    """
+    import json
+    import subprocess
+    import sys
+
+    def arranca(con_hash: bool) -> bool:
+        entorno = dict(os.environ)
+        entorno.update({
+            "RENDER": "true",
+            "JWT_SECRET": "secreto-de-test-suficientemente-largo-para-produccion",
+        })
+        if con_hash:
+            entorno["APP_PASSWORD_HASH"] = auth.get_password_hash("lo-que-sea")
+        else:
+            entorno.pop("APP_PASSWORD_HASH", None)
+        r = subprocess.run([sys.executable, "-c", "import auth"],
+                           cwd=os.path.dirname(os.path.abspath(auth.__file__)),
+                           env=entorno, capture_output=True, text=True, timeout=60)
+        return r.returncode == 0, r.stderr
+
+    ok_sin, err = arranca(con_hash=False)
+    assert not ok_sin, "sin APP_PASSWORD_HASH el proceso debería negarse a arrancar"
+    assert "APP_PASSWORD_HASH" in err
+
+    ok_con, err = arranca(con_hash=True)
+    assert ok_con, f"con la variable puesta tiene que arrancar: {err[-500:]}"
+
+
+def test_en_local_sigue_sin_bloquear():
+    """El guardarraíl es solo de producción: en local no hay nada expuesto y la
+    contraseña por defecto es una comodidad."""
+    assert auth.motivo_para_no_arrancar(
+        en_produccion=False, hash_configurado=False,
+        password_por_defecto=True, exigir=True) is None
 
 
 def test_con_el_hash_configurado_se_arranca_siempre():

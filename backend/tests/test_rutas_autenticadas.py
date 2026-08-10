@@ -43,20 +43,22 @@ RUTAS_PUBLICAS = {
 # Ingesta y mantenimiento máquina-a-máquina: no usan JWT porque las llama un servicio (el
 # conector de email, un enlace desde el móvil), no un navegador con sesión. Van con secreto
 # compartido `INBOUND_SECRET`, y abajo se comprueba que la validación es a prueba de fallos.
+# Quedan DOS grupos, y solo el primero sigue exento de sesión.
+#
+#   · Por secreto compartido: los llama una máquina, no un navegador. El de Telegram
+#     lo manda ahora por CABECERA (antes iba en la URL); /inbound/newsletter acepta
+#     todavía las dos formas porque lo llama un conector externo que hay que migrar.
+#   · Los SIETE de mantenimiento del Cerebro (backfill, dedupe, fix-encoding…) ya NO
+#     están aquí: pasaron a sesión normal. Eran operaciones del dueño lanzadas desde
+#     un enlace en el móvil, y un enlace no puede mandar cabeceras, así que el secreto
+#     acababa en el historial del navegador. Con sesión desaparece de la URL.
 RUTAS_POR_TOKEN = {
-    "/api/inbound/news/ingest",
     "/api/telegram/status",
     "/api/telegram/login/start",
     "/api/telegram/login/code",
     "/api/telegram/dialogs",
     "/api/telegram/capture",
     "/api/inbound/newsletter",
-    "/api/inbound/newsletter/backfill-knowledge",
-    "/api/inbound/newsletter/dedupe-knowledge",
-    "/api/inbound/newsletter/dedupe-knowledge-llm",
-    "/api/inbound/newsletter/fix-encoding",
-    "/api/inbound/newsletter/knowledge",
-    "/api/inbound/newsletter/debug",
 }
 
 
@@ -167,9 +169,12 @@ def test_la_validacion_del_token_esta_en_un_solo_sitio():
     )
     # Nadie fuera del helper vuelve a comparar el secreto a mano.
     assert len(re.findall(r"if not secret or token != secret", src)) == 0
-    # Y el helper se usa al menos una vez por cada ruta que depende de él.
-    usos = len(re.findall(r"_check_inbound_token\(token\)", src))
-    assert usos >= 12, f"solo {usos} rutas llaman al validador; hay {len(RUTAS_POR_TOKEN)} por token"
+    # Y el helper se usa una vez por cada ruta que depende de él. Son las cinco de
+    # Telegram: /inbound/newsletter valida en línea porque acepta las dos formas
+    # mientras se migra el conector externo.
+    usos = len(re.findall(r"_check_inbound_token\(\w+\)", src))
+    assert usos == len(RUTAS_POR_TOKEN) - 1, (
+        f"{usos} llamadas al validador para {len(RUTAS_POR_TOKEN)} rutas por token")
 
 
 def test_el_token_se_compara_en_tiempo_constante():
@@ -199,6 +204,9 @@ def _rutas_en_subproceso(render: bool):
         "DB_NAME": "inveria_test",
         # Largo y propio: el guardarraíl de producción rechaza el secreto por defecto.
         "JWT_SECRET": "secreto-de-test-suficientemente-largo-para-produccion",
+        # Desde que EXIGIR_HASH_EN_PRODUCCION está activo, con RENDER puesto y sin esta
+        # variable el proceso se niega a arrancar — que es justo lo que se quería.
+        "APP_PASSWORD_HASH": auth.get_password_hash("solo-para-el-test"),
     })
     if render:
         entorno["RENDER"] = "true"

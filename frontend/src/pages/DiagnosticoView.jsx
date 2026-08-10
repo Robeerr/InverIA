@@ -1,5 +1,5 @@
 import React from "react";
-import { API } from "../lib/api";
+import { API, api } from "../lib/api";
 
 // El API de lib/api.js YA incluye el sufijo /api, así que las rutas van sin él.
 const authHeaders = () => {
@@ -86,6 +86,80 @@ function VelocidadWeb() {
             la culpa de la lentitud es del tamaño. Si sale 0 KB, vino todo de caché: recarga
             con Ctrl+Shift+R y vuelve a medir.
           </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+
+/* Mantenimiento del Cerebro.
+   ─────────────────────────────────────────────────────────────────────────────
+   Estas operaciones se lanzaban tocando un enlace con el secreto INBOUND_SECRET
+   dentro de la URL. Cómodo desde el móvil, pero el secreto acababa en el historial
+   del navegador, en el log de cualquier proxy y en la cabecera Referer — y ese
+   secreto no caduca ni se rota solo.
+
+   Ahora van con la sesión normal, como el resto de la app: en el móvil ya estás
+   dentro, así que se pierde comodidad cero y el secreto desaparece de la URL. */
+function MantenimientoCerebro() {
+  const [ocupada, setOcupada] = React.useState(null);
+  const [resultado, setResultado] = React.useState(null);
+  const [fallo, setFallo] = React.useState(null);
+
+  const ACCIONES = [
+    { id: "estado", texto: "Ver estado del Cerebro", fn: api.mantenimiento.estado },
+    { id: "diagnostico", texto: "Diagnóstico de ingesta", fn: api.mantenimiento.diagnostico },
+    { id: "noticias", texto: "Ingerir noticias ahora", fn: api.mantenimiento.ingerirNoticias },
+    { id: "reprocesar", texto: "Reprocesar correos guardados", fn: () => api.mantenimiento.reprocesar(200),
+      confirmar: "Reprocesará los últimos 200 correos con una llamada al modelo por cada uno. Tarda minutos y consume cuota. ¿Seguir?" },
+    { id: "acentos", texto: "Reparar acentos", fn: api.mantenimiento.repararAcentos,
+      confirmar: "Reescribirá los principios con acentos corruptos. ¿Seguir?" },
+    // Las dos de fusión MODIFICAN principios de forma irreversible: piden confirmación
+    // con el efecto escrito, no un "¿estás seguro?" que nadie lee.
+    { id: "fusionar", texto: "Fusionar principios casi idénticos", fn: api.mantenimiento.fusionarPrincipios,
+      confirmar: "Fusionará principios casi idénticos del Cerebro. NO se puede deshacer. ¿Seguir?" },
+    { id: "fusionar-ia", texto: "Fusionar con IA (entiende paráfrasis)", fn: api.mantenimiento.fusionarPrincipiosIA,
+      confirmar: "Fusión semántica con el modelo: entiende paráfrasis, tarda varios minutos y NO se puede deshacer. ¿Seguir?" },
+  ];
+
+  const lanzar = async (accion) => {
+    if (accion.confirmar && !window.confirm(accion.confirmar)) return;
+    setOcupada(accion.id); setFallo(null); setResultado(null);
+    try {
+      setResultado({ accion: accion.texto, datos: await accion.fn() });
+    } catch (e) {
+      setFallo(e?.response?.data?.detail || e?.message || "Error desconocido");
+    } finally {
+      setOcupada(null);
+    }
+  };
+
+  return (
+    <section className="card-flat p-4">
+      <h2 className="font-heading font-semibold text-lg text-[#0e1f1a] mb-1">Mantenimiento del Cerebro</h2>
+      <p className="text-xs text-[#5c6b66] mb-3">
+        Antes se lanzaban desde un enlace con el secreto en la URL. Ahora usan tu sesión.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {ACCIONES.map((a) => (
+          <button
+            key={a.id}
+            onClick={() => lanzar(a)}
+            disabled={ocupada !== null}
+            className="px-3 py-1.5 rounded border border-[#e5e0d8] text-xs font-mono text-[#1a3a32] disabled:opacity-50"
+          >
+            {ocupada === a.id ? "Ejecutando…" : a.texto}
+          </button>
+        ))}
+      </div>
+      {fallo && <p className="text-xs text-[#d85c41] mt-3">{fallo}</p>}
+      {resultado && (
+        <div className="mt-3">
+          <p className="text-xs text-[#5c6b66] mb-1">{resultado.accion}</p>
+          <pre className="text-[11px] bg-[#f5f3ef] p-2 rounded overflow-x-auto max-h-64">
+            {JSON.stringify(resultado.datos, null, 2)}
+          </pre>
         </div>
       )}
     </section>
@@ -278,6 +352,8 @@ export default function DiagnosticoView() {
         )}
         {estudio?.error && <p className="text-xs text-[#d85c41] mt-2">{estudio.error}</p>}
       </section>
+
+      <MantenimientoCerebro />
 
       {error && <p className="text-sm text-[#d85c41]">{error}</p>}
     </div>
