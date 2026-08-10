@@ -4158,6 +4158,32 @@ def _dashboard_cacheado(symbol: str):
     return valor or {}
 
 
+def _niveles_del_motor(dash: dict) -> list:
+    """Las zonas de confluencia del dashboard cacheado.
+
+    `buy_levels` cuelga de la RAÍZ del dashboard, no de un `analysis`: ese objeto solo
+    existe en la respuesta de /analyze, que es otra cosa. Se centraliza aquí porque
+    equivocarse en la ruta no da error, da una lista vacía — y una lista vacía se lee
+    como "el motor no tiene zona para este precio", que es una afirmación falsa y
+    tranquilizadora.
+    """
+    return dash.get("buy_levels") or []
+
+
+def _aviso_de_datos(dash: dict) -> Optional[str]:
+    """El aviso de calidad de dato del dashboard, si lo hay.
+
+    El dashboard no trae `data_warning` —ese campo lo redacta /analyze— sino
+    `data_health`, con la fuente y si está degradada. Se redacta aquí con las mismas
+    palabras que usa /analyze para que el usuario lea siempre lo mismo.
+    """
+    salud = dash.get("data_health") or {}
+    if not salud.get("degraded"):
+        return None
+    return ("⚠️ Datos de respaldo/con retraso (" + (salud.get("note") or "fuente degradada")
+            + "). Trátalo con cautela.")
+
+
 def _mejor_zona(dash: dict, precio_objetivo):
     """La zona de confluencia del motor más cercana al nivel que ha disparado.
 
@@ -4165,8 +4191,7 @@ def _mejor_zona(dash: dict, precio_objetivo):
     si el precio al que va a llegar el mercado tiene respaldo, no cuál es la mejor
     zona en abstracto.
     """
-    niveles = ((dash.get("analysis") or {}).get("buy_levels")
-               or dash.get("buy_levels") or [])
+    niveles = _niveles_del_motor(dash)
     objetivo = None
     try:
         objetivo = float(precio_objetivo)
@@ -4250,7 +4275,7 @@ async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_PO
         sym = (c.get("symbol") or "").upper()
         dash = _dashboard_cacheado(sym)
         zona = _mejor_zona(dash, c.get("target"))
-        aviso = (dash.get("analysis") or {}).get("data_warning")
+        aviso = _aviso_de_datos(dash)
         tiene = (posiciones.get(sym, {}).get("acciones") or 0) > 0
         tarjetas.append(hoy.tarjeta_nivel(c, zona, aviso=aviso, tiene_posicion=tiene))
 
@@ -4258,7 +4283,7 @@ async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_PO
     for tk, f in fuentes.items():
         dash = _dashboard_cacheado(tk)
         zona = None
-        niveles = ((dash.get("analysis") or {}).get("buy_levels") or [])
+        niveles = _niveles_del_motor(dash)
         if niveles:
             zona = max(niveles, key=lambda z: z.get("strength") or 0)
         estado = hoy.confluencia(
@@ -4288,10 +4313,11 @@ async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_PO
                     continue
                 evento = {**it, "dias": dias, "symbol": (it.get("symbol") or "").upper()}
                 proximos.append(evento)
+                # Sin historial de sorpresas por ahora: no viaja en el dashboard y
+                # pedirlo aquí sería una llamada de red por símbolo en el camino de la
+                # portada. La tarjeta funciona sin él.
                 tarjetas.append(hoy.tarjeta_resultados(
-                    evento, posiciones.get(evento["symbol"]),
-                    (_dashboard_cacheado(evento["symbol"]).get("analysis") or {}).get("earnings_sorpresas"),
-                ))
+                    evento, posiciones.get(evento["symbol"])))
     except Exception as e:
         logger.warning("Portada «Hoy»: calendario no disponible: %s", e)
 
@@ -4337,15 +4363,20 @@ async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_PO
 
     # Posiciones que piden atención: las que están en pérdidas o han roto algo. No
     # las diez: solo las que tienen algo que decir hoy.
+    # `pct` (rendimiento de la acción en su divisa) y no `pct_eur`: lo que dice si una
+    # tesis va mal es cómo se comporta la acción, no cuánto se ha movido el dólar. El
+    # euro se enseña aparte, en el importe.
     atencion = []
     for sym, p in posiciones.items():
         if not (p.get("acciones") or 0) > 0:
             continue
-        pnl = p.get("pnl_pct")
-        if pnl is not None and pnl <= -8:
+        pct = p.get("pct")
+        if pct is None:
+            pct = p.get("pct_eur")
+        if pct is not None and pct <= -8:
             atencion.append({"symbol": sym, "motivo": "en pérdidas",
-                             "pnl_pct": pnl, "pnl_eur": p.get("pnl_eur")})
-    atencion.sort(key=lambda x: x.get("pnl_pct") or 0)
+                             "pct": pct, "pnl_eur": p.get("pnl_eur")})
+    atencion.sort(key=lambda x: x.get("pct") or 0)
 
     regimen = None
     try:

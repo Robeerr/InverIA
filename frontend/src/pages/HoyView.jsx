@@ -192,7 +192,12 @@ export default function HoyView() {
                   <Link to={`/accion/${p.symbol}`} className="iv-cifra text-apoyo text-tinta hover:text-marca">
                     {p.symbol}
                   </Link>
-                  <span className="iv-cifra text-apoyo text-baja">{fmtPct(p.pnl_pct)}</span>
+                  <span
+                    className="iv-cifra text-apoyo text-baja"
+                    title="Rendimiento de la acción en su divisa: lo que dice si la tesis va mal, sin el ruido del tipo de cambio"
+                  >
+                    {fmtPct(p.pct)}
+                  </span>
                 </div>
               ))}
             </div>
