@@ -490,6 +490,7 @@ async def lifespan(app: FastAPI):
 
                 if tanda:
                     calentados = 0
+                    omitidos = []
                     for sym in tanda:
                         # CEDER EL PASO. Medido en producción: con la cuota en 49/50, una
                         # carga que normalmente son ~500 ms se fue a 5.043 ms, porque cada
@@ -513,14 +514,34 @@ async def lifespan(app: FastAPI):
                                 uso, market_data.get_finnhub_limiter().max_per_min,
                                 _umbral_prewarm())
                             break
-                        clave = f"dashboard:{sym}:{_TIMEFRAME_PREWARM}"
-                        # Si sigue FRESCA no se toca: quien la pida no va a ir al servidor.
-                        _, fresco = _cache.get_stale(clave, max_age=_DASHBOARD_STALE_MAX)
-                        if fresco:
+                        # Si el dashboard COMPLETO sigue fresco —porque abriste la acción
+                        # hace poco— no hay nada que hacer: ya trae las tres claves.
+                        _, fresco = _cache.get_stale(
+                            f"dashboard:{sym}:{_TIMEFRAME_PREWARM}",
+                            max_age=_DASHBOARD_STALE_MAX)
+                        clave = f"{CLAVE_NIVELES}:{sym}"
+                        if fresco or _cache.get_stale(clave, max_age=_DASHBOARD_STALE_MAX)[1]:
+                            continue
+
+                        # P2 · CAMINO LIGERO. Se calculan solo las tres claves que consume
+                        # la portada, con el precio que el worker de señales ya guardó en
+                        # Mongo. Cero llamadas a Finnhub por símbolo, frente a las cinco
+                        # del dashboard completo.
+                        entry = await db.signal_entries.find_one(
+                            {"symbol": sym}, {"_id": 0, "last_price": 1, "updated_at": 1})
+                        precio, motivo = precio_para_niveles(entry or {})
+                        if precio is None:
+                            # Ni se calcula con un precio viejo ni se pide una cotización a
+                            # escondidas para aparentar frescura: el símbolo se queda sin
+                            # datos y la tarjeta lo dice.
+                            omitidos.append(f"{sym}({motivo})")
                             continue
                         try:
-                            await _construir_dashboard(sym, _TIMEFRAME_PREWARM, clave)
-                            calentados += 1
+                            ligero = await construir_niveles_ligero(sym, precio)
+                            if ligero:
+                                _cache.set(clave, ligero, ttl=DASHBOARD_TTL,
+                                           servible_hasta=_DASHBOARD_STALE_MAX)
+                                calentados += 1
                         except Exception as e:
                             logger.warning("Precalentado de %s falló: %s", sym, str(e)[:120])
                         # El Backtest se carga SOLO al elegir una acción y se cachea 6 h,
@@ -545,9 +566,15 @@ async def lifespan(app: FastAPI):
                     # de un endpoint nuevo: la caché vive en la memoria de este proceso y
                     # un script en la Shell arranca otro proceso con la caché vacía, así
                     # que preguntarle a él no dice nada de lo que tiene el servicio web.
-                    if calentados:
-                        logger.info("Dashboards precalentados (vuelta %d): %d de %d · %s",
+                    if calentados or omitidos:
+                        logger.info("Niveles precalentados (vuelta %d): %d de %d · %s",
                                     vuelta, calentados, len(syms), ", ".join(tanda))
+                    if omitidos:
+                        # Se dice CUÁLES y POR QUÉ. Un símbolo omitido acaba viéndose como
+                        # "Motor de niveles: sin datos todavía", y sin esta línea no habría
+                        # forma de saber si es por falta de precio o por precio desfasado.
+                        logger.info("Omitidos por el contrato de last_price: %s",
+                                    ", ".join(omitidos))
                     mem.trim()  # el ensamblado crea DataFrames: devuélvelos al SO
             except Exception as e:
                 logger.warning("Bucle de precalentado de dashboards: %s", e)
@@ -649,6 +676,90 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 
 # Referencias fuertes a tareas en segundo plano (si no, el GC puede cancelarlas).
 _bg_tasks: set = set()
+
+
+# ── Contrato de frescura de last_price ───────────────────────────────────────
+# El worker de señales escribe `last_price` y `updated_at` en signal_entries, pero SOLO
+# durante la sesión extendida (L-V 04:00-20:00 ET). Fuera de ella duerme.
+#
+# Por eso un umbral en minutos a secas sería un error: rechazaría el precio todo el fin
+# de semana, y justo entonces pedir una cotización nueva devolvería EL MISMO cierre del
+# viernes, gastando cuota para obtener lo que ya teníamos.
+#
+# El fondo: fuera de sesión, un precio de 49 horas no es viejo, es el precio actual. Lo
+# que caduca un precio no es el reloj, es que el mercado haya cotizado después. De ahí
+# las dos reglas:
+#
+#   · Sesión activa  -> `updated_at` dentro de LAST_PRICE_MAX_EDAD. Con 40 símbolos el
+#                       ciclo del worker es de ~96 s, así que 10 min tolera seis ciclos
+#                       perdidos: absorbe una pausa del limitador o un reinicio sin
+#                       rechazar en falso.
+#   · Sesión cerrada -> vale si `updated_at` es POSTERIOR al último cierre, sin límite
+#                       en minutos, porque refleja el último precio que existió.
+#
+# Si no se cumple ninguna, no se calcula nada: ni con un precio viejo disfrazado de
+# actual, ni pidiendo una cotización a escondidas para aparentar frescura.
+LAST_PRICE_MAX_EDAD = int(os.environ.get("LAST_PRICE_MAX_EDAD", 600))  # 10 min
+
+
+def _inicio_de_la_ultima_sesion(ahora_et):
+    """Las 04:00 ET del día de la última sesión extendida (la de hoy o la anterior).
+
+    Se compara contra el INICIO y no contra el cierre. Parece un detalle y no lo es: el
+    worker escribe DURANTE la sesión, así que su última anotación del viernes es de las
+    19:59 — anterior al cierre de las 20:00. Comparando contra el cierre, ningún precio
+    lo superaría nunca y el contrato rechazaría absolutamente todo fuera de horario,
+    justo el caso que venía a resolver.
+
+    Lo que se quiere comprobar es otra cosa: que el precio se escribiera DURANTE la
+    última sesión, o sea que no haya habido negociación posterior que lo deje viejo.
+    """
+    from datetime import time as _t
+    dia = ahora_et.date()
+    if ahora_et.weekday() < 5 and ahora_et.time() >= _t(4, 0):
+        return datetime.combine(dia, _t(4, 0), tzinfo=ahora_et.tzinfo)
+    while True:
+        dia -= timedelta(days=1)
+        if dia.weekday() < 5:
+            return datetime.combine(dia, _t(4, 0), tzinfo=ahora_et.tzinfo)
+
+
+def precio_para_niveles(entry: dict, ahora=None, sesion_activa=None):
+    """El precio con el que se pueden calcular niveles, o None si no lo hay.
+
+    Devuelve (precio, motivo). El motivo es para poder explicarlo, no para adornar:
+    "sin_precio" y "precio_desfasado" llevan a sitios distintos.
+    """
+    import signal_table
+    from zoneinfo import ZoneInfo
+
+    precio = (entry or {}).get("last_price")
+    marca = (entry or {}).get("updated_at")
+    if not precio or not marca:
+        # Símbolo recién añadido: no tiene precio hasta que el worker complete un ciclo.
+        # Quedarse en "sin datos" un minuto es preferible a inventarse una señal.
+        return None, "sin_precio"
+
+    try:
+        actualizado = datetime.fromisoformat(str(marca))
+    except (TypeError, ValueError):
+        return None, "sin_precio"
+    if actualizado.tzinfo is None:
+        actualizado = actualizado.replace(tzinfo=timezone.utc)
+
+    ahora = ahora or datetime.now(timezone.utc)
+    if sesion_activa is None:
+        sesion_activa = signal_table._extended_session_active()
+
+    if sesion_activa:
+        if (ahora - actualizado).total_seconds() <= LAST_PRICE_MAX_EDAD:
+            return float(precio), "fresco"
+        return None, "precio_desfasado"
+
+    inicio = _inicio_de_la_ultima_sesion(ahora.astimezone(ZoneInfo("America/New_York")))
+    if actualizado >= inicio:
+        return float(precio), "cierre_vigente"
+    return None, "precio_desfasado"
 
 
 # ── Cola de calentado a petición ─────────────────────────────────────────────
@@ -4330,6 +4441,67 @@ async def _fuentes_por_ticker(days: int = 14) -> dict:
     return out
 
 
+CLAVE_NIVELES = "niveles"  # caché del cálculo ligero, separada del dashboard completo
+
+
+async def construir_niveles_ligero(sym: str, precio: float) -> dict:
+    """Las TRES claves que consume la portada, y nada más: sin una sola llamada a Finnhub.
+
+    El dashboard completo cuesta 5 llamadas por símbolo —quote, news, trends,
+    price_target y fundamentales— y la portada solo lee `buy_levels`, `data_health` e
+    `indicators`. Está verificado con un test que construye el dashboard con esas cuatro
+    fuentes anuladas y comprueba que las tres claves salen idénticas.
+
+    Las tres se calculan sobre el histórico (yfinance/Stooq, sin cuota) y un único
+    escalar: el precio, que aquí llega de `last_price` en vez de una cotización nueva.
+
+    NO se toca el motor: se llama a `levels_engine.compute_buy_levels` con los mismos
+    argumentos que usa el camino completo.
+    """
+    loop = asyncio.get_running_loop()
+    df_ind = await loop.run_in_executor(None, market_data.get_full_indicator_history, sym)
+    if df_ind is None or getattr(df_ind, "empty", True):
+        return {}
+
+    indicadores = await loop.run_in_executor(None, ind.compute_all, df_ind)
+    if not indicadores:
+        return {}
+
+    vp = await loop.run_in_executor(None, _cached_vp, sym)
+    vp_dict = vp if isinstance(vp, dict) else {}
+
+    niveles = []
+    try:
+        niveles = await loop.run_in_executor(
+            None,
+            partial(
+                levels_engine.compute_buy_levels,
+                df_ind, vp_dict, precio, indicadores.get("sma"),
+                atr_val=indicadores.get("atr"),
+                regime=indicadores.get("regime"),
+                vwap_anchored=indicadores.get("vwap_anchored"),
+            ),
+        )
+    except Exception:
+        logger.exception("niveles ligeros[%s] compute_buy_levels falló", sym)
+
+    salud = None
+    try:
+        salud = market_data.data_health(df_ind)
+    except Exception:
+        salud = None
+
+    return {
+        "symbol": sym,
+        "buy_levels": niveles or [],
+        "indicators": indicadores,
+        "data_health": salud,
+        "precio_usado": precio,
+        "ligero": True,
+        "generado_en": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def _dashboard_cacheado(symbol: str):
     """El dashboard de un símbolo SOLO si ya está en caché. Nunca lo calcula.
 
@@ -4339,9 +4511,23 @@ def _dashboard_cacheado(symbol: str):
     tarjeta sale igual con lo que sí es barato —la distancia a TU nivel, que vive en
     la tabla— y sin el porqué del motor. Preferimos una tarjeta con menos detalle
     que una portada que tarda veinte segundos.
+
+    Mira DOS cachés, en este orden:
+
+      1. El dashboard completo, que deja quien abre la página de acción.
+      2. El cálculo ligero del precalentado, que trae las mismas tres claves sin gastar
+         cuota.
+
+    Van en claves separadas a propósito. Guardar el ligero bajo la clave del completo
+    haría que /dashboard/{symbol} sirviera a la página de acción un objeto sin
+    cotización, sin noticias y sin analistas — y el fallo aparecería en otra pantalla,
+    lejos del cambio que lo causó.
     """
     valor, _ = _cache.get_stale(f"dashboard:{symbol}:{_TIMEFRAME_PREWARM}",
                                 max_age=_DASHBOARD_STALE_MAX)
+    if valor:
+        return valor
+    valor, _ = _cache.get_stale(f"{CLAVE_NIVELES}:{symbol}", max_age=_DASHBOARD_STALE_MAX)
     return valor or {}
 
 
