@@ -274,12 +274,36 @@ async def asignar_nivel_compra(db, compra_id: str, nivel) -> dict:
     return {**doc, "nivel": nivel, "nivel_etiqueta": etiqueta}
 
 
-async def borrar_compra(db, compra_id: str) -> bool:
+async def borrar_compra(db, compra_id: str, forzar: bool = False) -> dict:
+    """Borra una compra. Se niega si eso dejaría ventas sin coste, salvo `forzar`.
+
+    Borrar el lote del que salió una venta no da un error en ninguna parte: la venta se
+    queda sin base de coste, su ingreso entero pasa a contar como ganancia y el Realizado
+    sube solo. Antes esto devolvía {"ok": true} sin decir nada. La comprobación se hace
+    reproduciendo el libro SIN esa compra, antes de tocar la base de datos.
+    """
     doc = await db.compras.find_one({"id": compra_id}, {"_id": 0})
+    if not doc:
+        return {"borrada": False, "motivo": "no_existe"}
+    sym = doc.get("symbol")
+    compras, ventas = await _libro(db, sym)
+    if ventas and not forzar:
+        quedan = [c for c in compras if c.get("id") != compra_id]
+        estado = lotes.reproducir(quedan, ventas, await metodo_gestion(db))
+        sin_cubrir = round(estado.get("acciones_sin_cubrir") or 0, 6)
+        if sin_cubrir > 1e-9:
+            return {"borrada": False, "motivo": "dejaria_ventas_sin_coste",
+                    "acciones_sin_cubrir": sin_cubrir, "symbol": sym}
     r = await db.compras.delete_one({"id": compra_id})
-    if r.deleted_count and doc:
-        await _sincronizar_posicion(db, doc.get("symbol"))
-    return r.deleted_count > 0
+    if r.deleted_count:
+        # Si era el último apunte del símbolo, _sincronizar_posicion se retira sin tocar
+        # nada y la Cartera seguiría enseñando acciones que ya no existen en el libro.
+        if not [c for c in compras if c.get("id") != compra_id] and not ventas:
+            await db.signal_entries.update_one(
+                {"symbol": sym}, {"$set": {"acciones": 0, "updated_at": _ahora()}})
+        else:
+            await _sincronizar_posicion(db, sym)
+    return {"borrada": r.deleted_count > 0, "symbol": sym}
 
 
 # ── Ventas ───────────────────────────────────────────────────────────────────
@@ -593,8 +617,16 @@ async def resumen_cartera(db, precios: dict) -> dict:
             tasas[d] = None
 
     posiciones = []
+    # El realizado se acumula AQUÍ, del mismo `reproducir` que ya hace falta para valorar.
+    # Antes se sacaba llamando a historial() entero al final: una segunda lectura completa
+    # de las dos colecciones y el libro reproducido otra vez por los DOS métodos, más la
+    # media ponderada, para quedarse con un único float que ya estaba calculado.
+    realizado_eur, hay_realizado = 0.0, False
     for sym, libro in por_symbol.items():
         estado = lotes.reproducir(libro["compras"], libro["ventas"], gestion)
+        if estado["ganancia_realizada_eur"] is not None:
+            realizado_eur += estado["ganancia_realizada_eur"]
+            hay_realizado = True
         if estado["acciones_abiertas"] <= 1e-9:
             continue
         divisa = (libro["compras"] or libro["ventas"])[0].get("divisa", "USD")
@@ -628,7 +660,6 @@ async def resumen_cartera(db, precios: dict) -> dict:
     latentes = [p["pnl_eur"] for p in posiciones if p.get("pnl_eur") is not None]
     lat_pmp = [p["ponderada"]["pnl_eur"] for p in posiciones
                if (p.get("ponderada") or {}).get("pnl_eur") is not None]
-    hist = await historial(db)
     return {
         "posiciones": posiciones,
         "latente_eur": round(sum(latentes), 2) if latentes else None,
@@ -640,7 +671,7 @@ async def resumen_cartera(db, precios: dict) -> dict:
                                    if p.get("coste_eur") is not None), 2) or None,
         "valor_eur": round(sum(p["valor_eur"] for p in posiciones
                                if p.get("valor_eur") is not None), 2) or None,
-        "realizado_eur": hist["resumen"][gestion.lower()]["ganancia_eur"],
+        "realizado_eur": round(realizado_eur, 2) if hay_realizado else None,
         "metodo_gestion": gestion.lower(),
         "posiciones_sin_valorar": sum(1 for p in posiciones if p.get("pnl_eur") is None),
         "tasas": {d: (round(t, 4) if t else None) for d, t in tasas.items()},
@@ -802,8 +833,19 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
     # legítimas: DEGIRO parte una orden en varias, y dos ejecuciones de la misma orden pueden
     # ser idénticas (misma fecha, cantidad y precio — pasó con 2×5 CRWV a 90,55 el mismo
     # segundo). Entre filas del CSV ya distingue la huella, que lleva contador de repetición.
-    ya_manual = ({_clave(c, "compra") for c in compras_db if not c.get("huella")}
-                 | {_clave(v, "venta") for v in ventas_db if not v.get("huella")})
+    # Un CONTEO, no un conjunto: un apunte manual debe tapar UNA fila del CSV, no todas las
+    # que se le parezcan. DEGIRO parte una orden en ejecuciones idénticas, así que con un
+    # set bastaba haber tecleado una para perder las demás — y esas acciones desaparecían
+    # del libro. Es el mismo patrón que ya usa importar_dividendos.
+    ya_manual = {}
+    for c in compras_db:
+        if not c.get("huella"):
+            k = _clave(c, "compra")
+            ya_manual[k] = ya_manual.get(k, 0) + 1
+    for v in ventas_db:
+        if not v.get("huella"):
+            k = _clave(v, "venta")
+            ya_manual[k] = ya_manual.get(k, 0) + 1
 
     # Las posiciones de la Cartera, UNA vez. Antes se consultaba una por cada compra para
     # detectar su nivel: con un fichero de años son cientos de idas y vueltas a Mongo, y la
@@ -818,7 +860,12 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
         if not sym:
             saltadas += 1
             continue
-        if op["huella"] in ya or _clave({**op, "symbol": sym}, op["tipo"]) in ya_manual:
+        if op["huella"] in ya:
+            saltadas += 1
+            continue
+        km = _clave({**op, "symbol": sym}, op["tipo"])
+        if ya_manual.get(km, 0) > 0:
+            ya_manual[km] -= 1      # esta fila la cubre UN apunte manual, no todas
             saltadas += 1
             continue
         comun = dict(symbol=sym, acciones=op["acciones"], precio=op["precio"],

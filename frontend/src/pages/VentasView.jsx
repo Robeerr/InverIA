@@ -270,7 +270,10 @@ function ImportarDegiro({ onCerrar }) {
         toast.success(r.importados
           ? `${r.importados} apunte(s) de dividendos importados`
           : `Ya estaban todos los dividendos (${r.saltados} apuntes).`, { duration: 8000 });
-        qc.invalidateQueries({ queryKey: ["cartera"] });
+        qc.invalidateQueries({ queryKey: ["cartera", "historial"] });
+      qc.invalidateQueries({ queryKey: ["cartera", "resumen"] });
+      qc.invalidateQueries({ queryKey: ["cartera", "posicion"] });
+      qc.invalidateQueries({ queryKey: ["cartera", "dividendos"] });
         onCerrar();
         return;
       }
@@ -443,12 +446,24 @@ function LotesAbiertos({ symbol, metodo }) {
   });
 
   const borrar = useMutation({
-    mutationFn: (id) => api.cartera.borrarCompra(id),
+    mutationFn: ({ id, forzar }) => api.cartera.borrarCompra(id, forzar),
     onSuccess: () => {
       toast.success("Compra borrada");
-      qc.invalidateQueries({ queryKey: ["cartera"] });
+      qc.invalidateQueries({ queryKey: ["cartera", "historial"] });
+      qc.invalidateQueries({ queryKey: ["cartera", "resumen"] });
+      qc.invalidateQueries({ queryKey: ["cartera", "posicion"] });
     },
-    onError: () => toast.error("No se pudo borrar"),
+    // Un 409 NO es un fallo: es el servidor avisando de que ese lote sostiene ventas y
+    // borrarlo las dejaría sin coste (su ganancia saldría hinchada). Se pregunta en vez de
+    // tragárselo, porque a veces borrar es justo lo que quieres.
+    onError: (e, vars) => {
+      const aviso = e?.response?.status === 409 && e?.response?.data?.detail;
+      if (aviso && window.confirm(`${aviso}\n\n¿Borrarla de todos modos?`)) {
+        borrar.mutate({ id: vars.id, forzar: true });
+        return;
+      }
+      if (!aviso) toast.error("No se pudo borrar");
+    },
   });
 
   // La detección automática solo asigna nivel si el precio está a menos del 1,5%; una
@@ -458,7 +473,9 @@ function LotesAbiertos({ symbol, metodo }) {
     mutationFn: ({ id, nivel }) => api.cartera.cambiarNivelCompra(id, nivel),
     onSuccess: () => {
       toast.success("Nivel actualizado — campanitas y precio del nivel al día");
-      qc.invalidateQueries({ queryKey: ["cartera"] });
+      qc.invalidateQueries({ queryKey: ["cartera", "historial"] });
+      qc.invalidateQueries({ queryKey: ["cartera", "resumen"] });
+      qc.invalidateQueries({ queryKey: ["cartera", "posicion"] });
     },
     onError: () => toast.error("No se pudo asignar el nivel"),
   });
@@ -530,7 +547,7 @@ function LotesAbiertos({ symbol, metodo }) {
                 {l.coste_eur != null ? eur(l.coste_eur) : usd(l.coste_divisa, divisa)}
               </span>
               <button
-                onClick={() => window.confirm(`¿Borrar la compra de ${l.acciones} ${symbol} del ${fecha(l.fecha)}?`) && borrar.mutate(l.id)}
+                onClick={() => window.confirm(`¿Borrar la compra de ${l.acciones} ${symbol} del ${fecha(l.fecha)}?`) && borrar.mutate({ id: l.id })}
                 className="text-[11px] text-[#d85c41] hover:underline shrink-0">
                 borrar
               </button>
@@ -570,13 +587,26 @@ const inputCls = "mt-1 w-full border border-[#e5e0d8] dark:border-[#1a3a32] roun
 // —y por tanto de qué nivel— sale lo que vendes, y eso no es evidente: con FIFO, vender
 // consume la compra más antigua aunque fuera la más cara. Verlo antes evita registrar una
 // venta pensando que salía de otro sitio.
+// Retrasa el valor hasta que se deja de escribir. Sin esto, cada TECLA del ticker montaba
+// una queryKey nueva: teclear "MRVL" pedía M, MR, MRV y MRVL, y el backend salía a Finnhub
+// por cada prefijo inexistente gastando cuota.
+function useTicker(valor, ms = 400) {
+  const limpio = (valor || "").trim().toUpperCase();
+  const [lento, setLento] = React.useState(limpio);
+  React.useEffect(() => {
+    const t = setTimeout(() => setLento(limpio), ms);
+    return () => clearTimeout(t);
+  }, [limpio, ms]);
+  return lento;
+}
+
 function VistaPreviaVenta({ symbol, acciones }) {
-  const sym = (symbol || "").trim().toUpperCase();
+  const sym = useTicker(symbol);
   const n = Number(acciones);
   const { data } = useQuery({
     queryKey: ["cartera", "posicion", sym],
     queryFn: () => api.cartera.posicion(sym),
-    enabled: sym.length >= 1,
+    enabled: sym.length >= 2,
     staleTime: 30_000,
     retry: false,
   });
@@ -663,17 +693,23 @@ function FormularioPorNiveles({ onCerrar }) {
   // Con una sola fecha para todos, los euros de cada compra saldrían al tipo de cambio de
   // un día que no fue el suyo — y ese es justo el dato que hace exacta la ganancia en euros.
   const [fechaPorNivel, setFechaPorNivel] = React.useState({});
-  const [fecha, setFecha] = React.useState(hoy);
+  // `fechaBase`, no `fecha`: llamarlo `fecha` TAPABA al formateador fecha() del módulo y
+  // el title del chip de "N veces" reventaba el render entero — la pantalla de Ventas se
+  // caía al ErrorBoundary y se perdía todo lo tecleado.
+  const [fechaBase, setFechaBase] = React.useState(hoy);
   const [iguales, setIguales] = React.useState("");
   const [guardando, setGuardando] = React.useState(false);
   const [estimadas, setEstimadas] = React.useState(null);   // {nivel: {toques, ...}}
   const qc = useQueryClient();
 
+  // `sym` inmediato para guardar y estimar (lo que pulsa el usuario debe usar lo que ve);
+  // `symLento` solo para la CONSULTA, que es lo que gastaba una petición por tecla.
   const sym = symbol.trim().toUpperCase();
+  const symLento = useTicker(symbol);
   const { data } = useQuery({
-    queryKey: ["cartera", "posicion", sym],
-    queryFn: () => api.cartera.posicion(sym),
-    enabled: sym.length >= 1,
+    queryKey: ["cartera", "posicion", symLento],
+    queryFn: () => api.cartera.posicion(symLento),
+    enabled: symLento.length >= 2,
     staleTime: 30_000,
     retry: false,
   });
@@ -751,8 +787,8 @@ function FormularioPorNiveles({ onCerrar }) {
         </Campo>
         <Campo label="Fecha (para todas)"
                ayuda="Punto de partida: cada nivel puede llevar la suya abajo. La fecha decide el tipo de cambio con el que se calculan tus euros, así que cuanto más ajustada, más exacta la ganancia.">
-          <input type="date" value={fecha}
-                 onChange={(e) => { setFecha(e.target.value); setFechaPorNivel({}); }}
+          <input type="date" value={fechaBase}
+                 onChange={(e) => { setFechaBase(e.target.value); setFechaPorNivel({}); }}
                  className={inputCls} />
         </Campo>
         <Campo label="Mismas en cada nivel"
@@ -796,7 +832,7 @@ function FormularioPorNiveles({ onCerrar }) {
                 className="ml-auto border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-2 py-1 font-mono text-xs w-24 bg-transparent" />
               <input
                 type="date"
-                value={fechaPorNivel[n.nivel] || fecha}
+                value={fechaPorNivel[n.nivel] || fechaBase}
                 onChange={(e) => setFechaPorNivel((p) => ({ ...p, [n.nivel]: e.target.value }))}
                 title="Cuándo compraste ESTE nivel. Determina el tipo de cambio de esa compra."
                 className="border border-[#e5e0d8] dark:border-[#1a3a32] rounded px-2 py-1 font-mono text-xs bg-transparent" />
@@ -918,7 +954,7 @@ function CeldaValorHoy({ p }) {
       toast.success(r.precio
         ? `Precio manual de ${r.symbol}: ${r.precio}`
         : `Precio manual de ${r.symbol} quitado`);
-      qc.invalidateQueries({ queryKey: ["cartera"] });
+      qc.invalidateQueries({ queryKey: ["cartera", "resumen"] });
     },
     onError: (e) => toast.error(e?.response?.data?.detail || "No se pudo guardar el precio"),
   });
@@ -966,11 +1002,11 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
   // Los niveles del valor, para poder decir de cuál es la compra. Con nivel elegido, el
   // precio de ese nivel en la Cartera se actualiza al precio REAL de la compra — que es lo
   // que antes había que acordarse de hacer a mano y se olvidaba.
-  const sym = f.symbol.trim().toUpperCase();
+  const symLento = useTicker(f.symbol);
   const { data: pos } = useQuery({
-    queryKey: ["cartera", "posicion", sym],
-    queryFn: () => api.cartera.posicion(sym),
-    enabled: tipo === "compra" && sym.length >= 1,
+    queryKey: ["cartera", "posicion", symLento],
+    queryFn: () => api.cartera.posicion(symLento),
+    enabled: tipo === "compra" && symLento.length >= 2,
     staleTime: 30_000,
     retry: false,
   });
@@ -987,7 +1023,9 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
           + "campana reactivada: volverá a avisarte si el precio cae ahí.",
           { duration: 10000 });
       }
-      qc.invalidateQueries({ queryKey: ["cartera"] });
+      qc.invalidateQueries({ queryKey: ["cartera", "historial"] });
+      qc.invalidateQueries({ queryKey: ["cartera", "resumen"] });
+      qc.invalidateQueries({ queryKey: ["cartera", "posicion"] });
       onHecho?.();
       onCerrar();
     },
@@ -1137,7 +1175,9 @@ export default function VentasView() {
     mutationFn: (v) => api.cartera.borrarVenta(v.id),
     onSuccess: () => {
       toast.success("Venta borrada");
-      qc.invalidateQueries({ queryKey: ["cartera"] });
+      qc.invalidateQueries({ queryKey: ["cartera", "historial"] });
+      qc.invalidateQueries({ queryKey: ["cartera", "resumen"] });
+      qc.invalidateQueries({ queryKey: ["cartera", "posicion"] });
     },
     onError: () => toast.error("No se pudo borrar"),
   });
@@ -1175,7 +1215,9 @@ export default function VentasView() {
           `${r.borrados} lote(s) duplicados quitados de ${r.simbolos.join(", ")}. ` +
           "Compara ahora las acciones con tu bróker.", { duration: 12000 });
       }
-      qc.invalidateQueries({ queryKey: ["cartera"] });
+      qc.invalidateQueries({ queryKey: ["cartera", "historial"] });
+      qc.invalidateQueries({ queryKey: ["cartera", "resumen"] });
+      qc.invalidateQueries({ queryKey: ["cartera", "posicion"] });
     },
     onError: () => toast.error("No se pudieron quitar los duplicados"),
   });
@@ -1301,6 +1343,23 @@ export default function VentasView() {
                ayuda="Cuánto de tu ganancia realizada viene del movimiento del euro frente al dólar, y no de que la acción subiera." />
         )}
       </div>
+
+      {/* Ventas de la contabilidad VIEJA (el diálogo Vender de la Cartera antes de que
+          escribiera en el libro). Si quedan, ni sus acciones ni su ganancia están en
+          ninguna cifra de esta pantalla, y hay que meterlas como ventas normales. */}
+      {!!hist?.ventas_antiguas && (
+        <div className="card-flat px-4 py-3 border-l-4 border-l-amber-500">
+          <p className="text-sm font-semibold mb-1">
+            ⚠ {hist.ventas_antiguas} venta(s) del sistema antiguo, fuera de estas cifras
+          </p>
+          <p className="text-xs text-[#5c6b66]">
+            Se registraron con el botón «Vender» de la Cartera cuando ese botón llevaba su
+            propia contabilidad aparte. No cuentan en el Realizado ni descuentan acciones del
+            libro. Vuelve a meterlas aquí con <b>+ Venta</b> (o impórtalas con el CSV de
+            DEGIRO, que las trae) y quedarán contadas de verdad.
+          </p>
+        </div>
+      )}
 
       {/* La misma venta metida a mano Y venida del CSV solo se detecta como duplicada si
           coincide al céntimo; tecleada de memoria, rara vez lo hace. En una posición ya

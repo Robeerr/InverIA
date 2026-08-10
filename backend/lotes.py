@@ -489,6 +489,12 @@ def reproducir(compras: list, ventas: list, metodo: str = FIFO) -> dict:
         descuadres += sin_cubrir
         res = resultado_venta(v, consumos)
         res["sin_cubrir"] = sin_cubrir
+        # Una venta que no tiene lotes que la cubran NO es exacta, por muchos tipos de
+        # cambio que tenga: le falta la base de coste. Sin esto se colaba en el total
+        # "exacto" de euros con coste 0 y su ingreso entero contaba como ganancia — el
+        # Realizado salía hinchado y con pinta de cifra buena.
+        if sin_cubrir > 1e-9:
+            res["exacto"] = False
         realizadas.append({**{k: val for k, val in v.items() if k != "_libres"}, **res,
                            "metodo": metodo})
 

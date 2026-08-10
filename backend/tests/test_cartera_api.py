@@ -189,7 +189,10 @@ def test_borrar_una_compra_recalcula_todo():
 def test_borrar_algo_que_no_existe_no_miente():
     db = _DB()
     assert _correr(cartera_api.borrar_venta(db, "no-existe")) is False
-    assert _correr(cartera_api.borrar_compra(db, "no-existe")) is False
+    # borrar_compra devuelve un dict desde que puede NEGARSE a borrar (dejaría ventas sin
+    # coste); el motivo hace falta para que el endpoint distinga 404 de 409.
+    assert _correr(cartera_api.borrar_compra(db, "no-existe")) == {
+        "borrada": False, "motivo": "no_existe"}
 
 
 # ── Varios símbolos ──────────────────────────────────────────────────────────
@@ -1363,3 +1366,73 @@ def test_el_resumen_trae_la_valoracion_del_broker_ademas_de_la_propia():
     # Y el latente del bróker sale distinto del propio, que es justo el punto
     assert p["ponderada"]["pnl_eur"] != p["pnl_eur"]
     assert r["latente_ponderada_eur"] == p["ponderada"]["pnl_eur"]
+
+
+# ── Protecciones de la auditoría ─────────────────────────────────────────────
+
+def test_no_se_borra_una_compra_que_sostiene_ventas():
+    """Borrarla deja la venta sin base de coste: su ingreso entero pasa a contar como
+    ganancia y el Realizado sube solo. Antes devolvía {"ok": true} sin decir nada."""
+    db = _DB()
+    c = _correr(cartera_api.registrar_compra(
+        db, "MRVL", 10, 96.0, fecha="2026-01-10", comision=0, tasa=1.10))
+    _correr(cartera_api.registrar_venta(
+        db, "MRVL", 10, 214.20, fecha="2026-08-06", comision=0, tasa=1.16))
+    r = _correr(cartera_api.borrar_compra(db, c["id"]))
+    assert r["borrada"] is False and r["motivo"] == "dejaria_ventas_sin_coste"
+    assert r["acciones_sin_cubrir"] == 10
+    assert len(db.compras.docs) == 1          # sigue ahí
+    # Con forzar sí se borra: a veces borrar es justo lo que quieres.
+    r2 = _correr(cartera_api.borrar_compra(db, c["id"], forzar=True))
+    assert r2["borrada"] is True and not db.compras.docs
+
+
+def test_borrar_la_ultima_compra_deja_la_cartera_a_cero():
+    """_sincronizar_posicion se retira con el libro vacío, así que la Cartera seguía
+    enseñando acciones que ya no existían en ningún apunte."""
+    db = _DB([{"symbol": "META", "acciones": 10, "compra": 500.0}])
+    c = _correr(cartera_api.registrar_compra(
+        db, "META", 10, 500.0, fecha="2026-01-10", comision=0, tasa=1.10))
+    _correr(cartera_api.borrar_compra(db, c["id"]))
+    entry = _correr(db.signal_entries.find_one({"symbol": "META"}))
+    assert entry["acciones"] == 0
+
+
+def test_un_apunte_manual_solo_tapa_UNA_fila_del_csv():
+    """DEGIRO parte una orden en ejecuciones idénticas. Con un conjunto en vez de un
+    conteo, haber tecleado una tapaba TODAS y esas acciones desaparecían del libro."""
+    db = _DB()
+    _correr(cartera_api.registrar_compra(
+        db, "CRWV", 5, 90.55, fecha="2025-09-03", comision=0, tasa=1.16))
+    ops = [_op_csv("CRWV", "compra", 5, 90.55, "2025-09-03", "hx1"),
+           _op_csv("CRWV", "compra", 5, 90.55, "2025-09-03", "hx2")]
+    r = _correr(cartera_api.importar_degiro(db, ops, {"US0000000001": "CRWV"}))
+    assert r["importadas"] == 1 and r["saltadas"] == 1   # una tapada, la otra entra
+    est = _correr(cartera_api.estado_simbolo(db, "CRWV"))
+    assert est["fifo"]["acciones_abiertas"] == 10
+
+
+def test_una_venta_sin_cobertura_no_cuenta_como_exacta():
+    """Con coste 0 y `exacto: True` se colaba entera en el total de euros del Realizado y
+    parecía una cifra buena."""
+    db = _DB()
+    _correr(cartera_api.registrar_venta(
+        db, "OHLA", 205, 0.35, fecha="2026-05-13", comision=0, tasa=1.0))
+    h = _correr(cartera_api.historial(db))
+    assert h["items"][0]["fifo"]["exacto"] is False
+    assert h["resumen"]["fifo"]["ganancia_eur"] is None   # nada exacto que sumar
+    assert h["resumen"]["sin_cubrir_acciones"] == 205
+
+
+def test_el_resumen_no_repite_el_trabajo_del_historial():
+    """resumen_cartera sacaba el realizado llamando a historial() entero: otra lectura
+    completa de las dos colecciones y el libro reproducido por los DOS métodos, para
+    quedarse con un float que ya tenía calculado. El valor debe ser el mismo."""
+    db = _DB()
+    _correr(cartera_api.registrar_compra(
+        db, "FN", 6, 500.0, fecha="2026-01-10", comision=0, tasa=1.10))
+    _correr(cartera_api.registrar_venta(
+        db, "FN", 3, 700.0, fecha="2026-03-10", comision=0, tasa=1.10))
+    res = _correr(cartera_api.resumen_cartera(db, {"FN": 560.0}))
+    hist = _correr(cartera_api.historial(db))
+    assert res["realizado_eur"] == hist["resumen"][res["metodo_gestion"]]["ganancia_eur"]

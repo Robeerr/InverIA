@@ -112,7 +112,10 @@ export const api = {
       client.get(`/cartera/fechas-niveles/${symbol}`, { timeout: 30000 }).then((r) => r.data),
     comprar: (payload) => client.post(`/cartera/compras`, payload).then((r) => r.data),
     vender: (payload) => client.post(`/cartera/ventas`, payload).then((r) => r.data),
-    borrarCompra: (id) => client.delete(`/cartera/compras/${id}`).then((r) => r.data),
+    // `forzar` sortea la negativa del servidor cuando el borrado dejaría ventas sin coste.
+    borrarCompra: (id, forzar = false) =>
+      client.delete(`/cartera/compras/${id}`, { params: forzar ? { forzar: true } : {} })
+        .then((r) => r.data),
     // Nivel a mano para las compras que la detección automática (±1,5% del nivel) no pilló.
     cambiarNivelCompra: (id, nivel) =>
       client.put(`/cartera/compras/${id}/nivel`, null, { params: nivel ? { nivel } : {} }).then((r) => r.data),

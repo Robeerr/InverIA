@@ -204,8 +204,19 @@ def _fila_a_operacion(fila, idx):
     fecha = _fecha_iso(_celda(fila, idx, "fecha"))
     if cantidad is None or precio is None or not fecha:
         return None                      # cabecera repetida o fila de resumen
-    if abs(cantidad) < 1e-9 or precio <= 0:
+    if abs(cantidad) < 1e-9:
         return None
+    if precio <= 0:
+        # Operación REAL a precio cero: ampliaciones liberadas, splits, entregas de
+        # derechos. Antes se devolvía None y desaparecía sin dejar rastro — ni en `errores`
+        # ni en `descartadas`— y como las acciones sí entraban en el bróker, la venta
+        # posterior salía SIN COSTE y su ingreso entero contaba como ganancia. Pasó con
+        # OHLA: 205 acciones vendidas sin compra registrada. Se avisa lanzando el error,
+        # que `leer()` recoge en `errores` con el número de línea.
+        raise ValueError(
+            f"{'venta' if cantidad < 0 else 'entrega/compra'} de {abs(cantidad):g} "
+            f"a precio 0 (ampliación, split o entrega de derechos): no se importa sola, "
+            f"mira si hay que meterla a mano")
 
     divisa = (str(_celda(fila, idx, "divisa") or "USD").strip().upper() or "USD")
     tasa = _numero(_celda(fila, idx, "tasa"))

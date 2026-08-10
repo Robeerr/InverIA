@@ -2168,15 +2168,37 @@ async def registrar_venta(entry_id: str, item: VentaCreate,
     entry = await db.signal_entries.find_one({"id": entry_id}, {"_id": 0})
     if not entry:
         raise HTTPException(404, "Esa posición no existe en tu Cartera.")
+    # ESTA VENTA VA AL LIBRO, como cualquier otra. Antes se guardaba en su propia colección
+    # (`signal_sales`) y descontaba a mano las acciones de la Cartera: eran DOS
+    # contabilidades. La de Ventas no veía estas ventas —su Realizado no las contaba— y en
+    # cuanto cualquier cosa disparaba _sincronizar_posicion, la Cartera se recalculaba desde
+    # el libro y las acciones vendidas VOLVÍAN. Un solo libro, una sola verdad.
     try:
-        venta = await ventas_mod.registrar(
-            db, entry, item.acciones, item.precio_venta,
-            fecha=item.fecha, tasa_compra=item.tasa_compra, tasa_venta=item.tasa_venta)
+        estado = await cartera_api.registrar_venta(
+            db, entry.get("symbol"), item.acciones, item.precio_venta,
+            fecha=item.fecha, tasa=item.tasa_venta,
+            divisa=entry.get("divisa"), notas="Vendida desde la Cartera")
     except ValueError as e:
         raise HTTPException(400, str(e))
     for k in ("signals_list", "signals_hot"):
         _cache._store.pop(k, None)
-    return venta
+
+    # Respuesta con la forma que espera el diálogo de la Cartera, sacada del libro.
+    metodo = (estado.get("metodo_gestion") or "lifo").lower()
+    ultima = ((estado.get(metodo) or {}).get("ventas") or [{}])[-1]
+    return {
+        "symbol": entry.get("symbol"),
+        "acciones": item.acciones,
+        "divisa": ultima.get("divisa") or entry.get("divisa") or "USD",
+        "ganancia_divisa": ultima.get("ganancia_divisa"),
+        "ganancia_pct": ultima.get("pct"),
+        "ganancia_eur": ultima.get("ganancia_eur"),
+        "efecto_divisa_eur": ultima.get("efecto_divisa_eur"),
+        "exacto": ultima.get("exacto"),
+        "acciones_restantes": (estado.get(metodo) or {}).get("acciones_abiertas"),
+        "campanas": estado.get("campanas"),
+        "sin_cubrir": ultima.get("sin_cubrir") or 0,
+    }
 
 
 @api_router.get("/ventas")
@@ -2240,8 +2262,20 @@ async def crear_compra(item: CompraCreate, _user: str = Depends(auth.get_current
 
 
 @api_router.delete("/cartera/compras/{compra_id}")
-async def eliminar_compra(compra_id: str, _user: str = Depends(auth.get_current_user)):
-    if not await cartera_api.borrar_compra(db, compra_id):
+async def eliminar_compra(compra_id: str, forzar: bool = False,
+                          _user: str = Depends(auth.get_current_user)):
+    """Borra una compra. Se niega (409) si dejaría ventas sin coste; `forzar=true` la borra
+    igualmente, para poder corregir de verdad cuando sabes lo que haces."""
+    r = await cartera_api.borrar_compra(db, compra_id, forzar=forzar)
+    if r.get("motivo") == "no_existe":
+        raise HTTPException(404, "Esa compra no existe.")
+    if r.get("motivo") == "dejaria_ventas_sin_coste":
+        raise HTTPException(409,
+            f"Si borras esta compra, {r['acciones_sin_cubrir']:g} acción(es) vendidas de "
+            f"{r['symbol']} se quedan sin coste y su ganancia saldrá hinchada. "
+            f"Mete antes la compra que las cubra, o bórrala de todos modos si sabes lo que "
+            f"haces.")
+    if not r.get("borrada"):
         raise HTTPException(404, "Esa compra no existe.")
     for k in ("signals_list", "signals_hot"):
         _cache._store.pop(k, None)
@@ -2348,7 +2382,15 @@ async def dividendos(_user: str = Depends(auth.get_current_user)):
 @api_router.get("/cartera/historial")
 async def historial_ventas(_user: str = Depends(auth.get_current_user)):
     """Todas las ventas hechas, con lo ganado por FIFO y por LIFO, y los totales."""
-    return await cartera_api.historial(db)
+    r = await cartera_api.historial(db)
+    # Ventas de la contabilidad VIEJA (`signal_sales`, el diálogo Vender de la Cartera antes
+    # de que escribiera en el libro). Si quedan, sus acciones y su ganancia no están en
+    # ninguna cifra de esta pantalla. Se cuentan para poder avisar en vez de callarlo.
+    try:
+        r["ventas_antiguas"] = await db.signal_sales.count_documents({})
+    except Exception:
+        r["ventas_antiguas"] = 0
+    return r
 
 
 @api_router.get("/cartera/resumen")

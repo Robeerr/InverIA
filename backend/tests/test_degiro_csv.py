@@ -326,3 +326,35 @@ def test_los_intereses_y_la_conectividad_se_clasifican_como_coste():
     # cogerlas también de aquí las contaría dos veces.
     assert degiro_csv._clasificar("Costes de transacción DEGIRO y/o costes de terceros") is None
     assert degiro_csv._clasificar("Dividendo") == "dividendo"
+
+
+def test_una_fila_a_precio_cero_se_avisa_en_vez_de_desaparecer():
+    """Ampliaciones liberadas, splits y entregas de derechos vienen a precio 0. Devolverlas
+    como None las hacía desaparecer sin rastro ni en `errores`, y como las acciones SÍ
+    entraban en el bróker, la venta posterior salía sin coste y su ingreso entero contaba
+    como ganancia. Pasó con OHLA: 205 acciones vendidas sin compra registrada."""
+    cabecera = ("Fecha,Hora,Producto,ISIN,Bolsa de,Centro de ejecución,Número,Precio,,"
+                "Valor local,,Valor,Tipo de cambio,Tasa de cambio,"
+                "Costes de transacción,Total,ID de orden")
+    filas = [
+        '14-01-2025,00:00,OBRASCON HUARTE LAIN SA,ES0642090932,MAD,,200,"0,0000",EUR,'
+        '"0,00",EUR,"0,00",,"0,00",,"0,00",',
+        '05-02-2025,10:05,OBRASCON HUARTE LAIN SA,ES0142090317,MAD,MESI,-200,"0,3610",EUR,'
+        '"72,20",EUR,"72,20",,"0,00","-2,00","70,20",0e322f39',
+    ]
+    r = degiro_csv.leer("\n".join([cabecera] + filas).encode())
+    assert len(r["operaciones"]) == 1               # solo la venta real
+    assert len(r["errores"]) == 1                   # y la otra NO se calla
+    assert "precio 0" in r["errores"][0]
+    assert "200" in r["errores"][0]
+
+
+def test_una_fila_de_cantidad_cero_sigue_siendo_ruido_silencioso():
+    """Cabeceras repetidas y filas de resumen no son operaciones: esas sí se ignoran."""
+    cabecera = ("Fecha,Hora,Producto,ISIN,Bolsa de,Centro de ejecución,Número,Precio,,"
+                "Valor local,,Valor,Tipo de cambio,Tasa de cambio,"
+                "Costes de transacción,Total,ID de orden")
+    fila = ('14-01-2025,00:00,ALGO,ES0000000000,MAD,,0,"1,0000",EUR,"0,00",EUR,"0,00",,'
+            '"0,00",,"0,00",')
+    r = degiro_csv.leer("\n".join([cabecera, fila]).encode())
+    assert r["operaciones"] == [] and r["errores"] == []
