@@ -44,6 +44,7 @@ import market_regime
 import chart_lines
 import chartist
 import hoy
+import tesis
 import mem
 import levels_engine
 import auth
@@ -2434,6 +2435,20 @@ async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
     # No hay riesgo de servir precios viejos: la cotización se refresca aparte, y lo
     # pesado —indicadores y niveles— se calcula sobre velas diarias, que no cambian de
     # un minuto a otro.
+    # Tesis DETERMINISTA. Se redacta aquí, dentro del ensamblado, para que entre en la
+    # caché y no se rehaga en cada lectura. Es una capa de redacción sobre los campos que
+    # ya trae `result`: no llama a nadie, no toca el motor y no inventa aritmética.
+    #
+    # Va antes del `set` a propósito: así viaja EN la respuesta cacheada y la página tiene
+    # una explicación en frío, sin pulsar «Análisis completo IA» ni esperar.
+    try:
+        result["tesis"] = tesis.redactar(result)
+    except Exception:
+        # Que falle la redacción no puede tumbar el dashboard entero: sin tesis la página
+        # sigue teniendo todos sus datos, que es como está hoy.
+        logger.exception("dashboard[%s] redacción de la tesis falló", sym)
+        result["tesis"] = None
+
     _cache.set(cache_key, result, ttl=DASHBOARD_TTL, servible_hasta=_DASHBOARD_STALE_MAX)
     return result
 
