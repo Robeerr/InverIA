@@ -67,8 +67,12 @@ function AppInner() {
   useEffect(() => {
     localStorage.setItem("inveria-model-v3", model);
   }, [model]);
+  // Oscuro por defecto: es la identidad de InverIA, no una preferencia. Solo se
+  // arranca en claro si TÚ lo elegiste alguna vez — de ahí distinguir "no hay nada
+  // guardado" de "guardado como 0", que con el `=== "1"` anterior era lo mismo.
   const [darkMode, setDarkMode] = useState(() => {
-    return localStorage.getItem("inveria-dark") === "1";
+    const guardado = localStorage.getItem("inveria-dark");
+    return guardado === null ? true : guardado === "1";
   });
 
   useEffect(() => {

@@ -4297,6 +4297,24 @@ async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_PO
 
     importa = hoy.ordenar_y_recortar(tarjetas, limite)
 
+    # Calienta en SEGUNDO PLANO los finalistas que no estén en caché.
+    #
+    # El precalentado general solo corre de lunes a viernes entre las 12:00 y las 22:00
+    # UTC, que es cuando el mercado importa — pero no es cuando se revisa la cartera con
+    # calma. Un sábado por la tarde la caché está vacía y TODAS las tarjetas salen sin
+    # fuerza, sin razones y sin aviso de calidad de dato, que es justamente la mitad del
+    # valor de esta pantalla.
+    #
+    # No se calcula aquí: eso metería diez segundos en el camino de la portada y gastaría
+    # cuota de golpe. Se lanza detrás, con el mismo candado anti-estampida que usa el
+    # refresco del dashboard, y como mucho para los cinco que han salido. Esta carga sale
+    # con lo que haya; la siguiente ya sale completa.
+    for t in importa:
+        sym = t["symbol"]
+        clave = f"dashboard:{sym}:{_TIMEFRAME_PREWARM}"
+        if _cache.get_stale(clave, max_age=_DASHBOARD_STALE_MAX)[0] is None:
+            _refrescar_dashboard_en_segundo_plano(sym, _TIMEFRAME_PREWARM, clave)
+
     # Novedades del Cerebro desde la última visita.
     cerebro = {"desde": corte, "tickers_nuevos": [], "menciones_nuevas": 0}
     try:
