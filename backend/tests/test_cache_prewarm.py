@@ -114,3 +114,50 @@ def test_la_ventana_da_la_vuelta_sin_partirse():
 
 def test_sin_simbolos_no_revienta():
     assert server._tanda_a_precalentar(set(), vuelta=0) == []
+
+
+# ── Las dos ventanas de la portada ──────────────────────────────────────────
+def test_la_ventana_de_alertas_no_depende_de_la_ultima_visita():
+    """El fallo que hacía desaparecer las alertas al recargar.
+
+    El frontend sella la última visita en CADA carga con éxito. Si esa marca decidiera
+    también qué alertas cuentan, recargar la pantalla borraría las alertas del día — y
+    recargar es lo primero que uno hace cuando algo no cuadra.
+    """
+    from datetime import datetime, timedelta, timezone
+    ahora = datetime(2026, 8, 10, 18, 0, tzinfo=timezone.utc)
+    hace_un_minuto = (ahora - timedelta(minutes=1)).isoformat()
+
+    corte_alertas, corte_cerebro = server._ventanas_de_hoy(hace_un_minuto, ahora=ahora)
+
+    assert corte_alertas != hace_un_minuto, "las alertas no pueden mirar solo el último minuto"
+    assert corte_alertas == (ahora - timedelta(hours=24)).isoformat()
+    # Y una alerta de hace tres horas sigue entrando.
+    assert (ahora - timedelta(hours=3)).isoformat() >= corte_alertas
+
+
+def test_el_cerebro_si_usa_la_ultima_visita():
+    """Ahí la pregunta es otra: qué ha cambiado desde que no vengo."""
+    from datetime import datetime, timedelta, timezone
+    ahora = datetime(2026, 8, 10, 18, 0, tzinfo=timezone.utc)
+    hace_dos_dias = (ahora - timedelta(days=2)).isoformat()
+    _, corte_cerebro = server._ventanas_de_hoy(hace_dos_dias, ahora=ahora)
+    assert corte_cerebro == hace_dos_dias
+
+
+def test_sin_visita_previa_ambas_ventanas_son_de_24h():
+    from datetime import datetime, timezone
+    ahora = datetime(2026, 8, 10, 18, 0, tzinfo=timezone.utc)
+    corte_alertas, corte_cerebro = server._ventanas_de_hoy(None, ahora=ahora)
+    assert corte_alertas == corte_cerebro
+
+
+def test_una_visita_muy_antigua_no_alarga_la_ventana_de_alertas():
+    """Volver después de un mes no debe sacar alertas de hace tres semanas: siguen
+    siendo 24 h. Lo viejo es historia, no atención de hoy."""
+    from datetime import datetime, timedelta, timezone
+    ahora = datetime(2026, 8, 10, 18, 0, tzinfo=timezone.utc)
+    hace_un_mes = (ahora - timedelta(days=30)).isoformat()
+    corte_alertas, corte_cerebro = server._ventanas_de_hoy(hace_un_mes, ahora=ahora)
+    assert corte_alertas > hace_un_mes
+    assert corte_cerebro == hace_un_mes

@@ -162,6 +162,9 @@ PREWARM_MARGEN_CUOTA = int(os.environ.get("PREWARM_MARGEN_CUOTA", 10))
 # tiene que quedar por debajo de la cadencia del precalentado y muy por debajo de
 # DASHBOARD_STALE_MAX.
 DASHBOARD_TTL = int(os.environ.get("DASHBOARD_TTL", 900))  # 15 min
+# Cuánto tiempo una alerta disparada sigue mereciendo la portada. NO depende de la
+# última visita: mirar la pantalla no es haber actuado.
+VENTANA_ALERTAS_HORAS = int(os.environ.get("VENTANA_ALERTAS_HORAS", 24))
 
 
 def _umbral_prewarm() -> int:
@@ -4298,6 +4301,26 @@ def _mejor_zona(dash: dict, precio_objetivo):
     return mejor
 
 
+def _ventanas_de_hoy(desde: Optional[str], ahora=None) -> tuple:
+    """Devuelve (corte_alertas, corte_cerebro). DOS ventanas, porque son dos preguntas.
+
+      · Las ALERTAS preguntan "¿qué ha saltado y sigue sin resolverse?". Una alerta que
+        salta a las 9:00 sigue pendiente a las 9:05 aunque hayas mirado la pantalla en
+        medio: mirar no es actuar. Ventana FIJA de 24 h, independiente de las visitas.
+      · El CEREBRO pregunta "¿qué ha cambiado desde que no vengo?". Ahí sí, la última
+        visita es la referencia correcta.
+
+    Compartían una sola ventana, y eso hacía DESAPARECER las alertas al recargar: el
+    frontend sella la visita en cada carga con éxito, así que la petición siguiente
+    mandaba un `desde` de hacía minutos y las alertas del día quedaban fuera. La portada
+    enseñaba niveles cercanos en vez de las alertas que sí habían saltado, y no había
+    forma de recuperarlas recargando — porque recargar era justo lo que las borraba.
+    """
+    ahora = ahora or datetime.now(timezone.utc)
+    corte_alertas = (ahora - timedelta(hours=VENTANA_ALERTAS_HORAS)).isoformat()
+    return corte_alertas, (desde or corte_alertas)
+
+
 @api_router.get("/hoy")
 async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_POR_DEFECTO,
                         _user: str = Depends(auth.get_current_user)):
@@ -4312,15 +4335,13 @@ async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_PO
     de hacer esperar a la página.
     """
     limite = max(1, min(int(limite or hoy.LIMITE_POR_DEFECTO), 10))
-    if desde:
-        corte = desde
-    else:
-        corte = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+
+    corte_alertas, corte = _ventanas_de_hoy(desde)
 
     entradas, calientes, alertas, resumen, fuentes = await asyncio.gather(
         db.signal_entries.find({"active": True}, {"_id": 0}).to_list(200),
         hot_signals(limit=50, _user="hoy"),
-        db.alert_history.find({"fired_at": {"$gte": corte}}, {"_id": 0})
+        db.alert_history.find({"fired_at": {"$gte": corte_alertas}}, {"_id": 0})
                         .sort("fired_at", -1).limit(20).to_list(20),
         resumen_cartera(_user="hoy"),
         _fuentes_por_ticker(14),
