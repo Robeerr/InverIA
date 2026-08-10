@@ -78,6 +78,43 @@ def _ahora() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# Mercados que NO cotizan en dólares. Caer a "USD" sin mirar hacía que una compra de OHLA
+# (Madrid, en euros) se guardara como dólares y su coste saliera un 13,5% más barato: la
+# ganancia se inflaba sola. El ISIN es la señal más fiable —sus dos primeras letras son el
+# país de emisión— y el mercado de la ficha, la segunda.
+_DIVISA_POR_MERCADO = {
+    "MAD": "EUR", "BME": "EUR", "XMAD": "EUR", "MC": "EUR", "AMS": "EUR", "EPA": "EUR",
+    "PAR": "EUR", "ETR": "EUR", "FRA": "EUR", "XETRA": "EUR", "MIL": "EUR", "BIT": "EUR",
+    "LIS": "EUR", "BRU": "EUR", "VIE": "EUR", "HEL": "EUR", "DUB": "EUR",
+    "LON": "GBP", "LSE": "GBP", "SWX": "CHF", "SIX": "CHF",
+    "STO": "SEK", "CPH": "DKK", "OSL": "NOK", "TSX": "CAD", "TOR": "CAD",
+}
+_PAIS_ISIN_EUR = {"ES", "DE", "FR", "NL", "IT", "PT", "BE", "IE", "AT", "FI", "LU", "GR"}
+
+
+def _divisa_de(divisa, entry) -> str:
+    """Divisa de una operación. Nunca cae a USD a ciegas si hay pistas de lo contrario."""
+    d = (divisa or "").strip().upper()
+    if d:
+        return d
+    e = entry or {}
+    d = (e.get("divisa") or "").strip().upper()
+    if d:
+        return d
+    isin = (e.get("isin") or "").strip().upper()
+    if len(isin) >= 2:
+        if isin[:2] in _PAIS_ISIN_EUR:
+            return "EUR"
+        if isin[:2] == "GB":
+            return "GBP"
+        if isin[:2] == "CH":
+            return "CHF"
+    porm = _DIVISA_POR_MERCADO.get((e.get("mercado") or "").strip().upper())
+    if porm:
+        return porm
+    return "USD"
+
+
 async def _tasa(divisa: str, fecha: str):
     """Tipo de cambio de una fecha, sin bloquear el event loop (fx abre red)."""
     import asyncio
@@ -196,7 +233,7 @@ async def registrar_compra(db, symbol: str, acciones: float, precio: float,
     """Guarda una compra. Detecta sola en qué nivel de la Cartera se hizo."""
     symbol = (symbol or "").strip().upper()
     entry = await db.signal_entries.find_one({"symbol": symbol}, {"_id": 0})
-    divisa = (divisa or (entry or {}).get("divisa") or "USD").strip().upper() or "USD"
+    divisa = _divisa_de(divisa, entry)
 
     compra = lotes.nueva_compra(symbol, acciones, precio, fecha=fecha, comision=0.0,
                                 divisa=divisa, tasa=tasa, nivel=nivel, notas=notas)
@@ -320,7 +357,7 @@ async def registrar_venta(db, symbol: str, acciones: float, precio: float,
     """
     symbol = (symbol or "").strip().upper()
     entry = await db.signal_entries.find_one({"symbol": symbol}, {"_id": 0})
-    divisa = (divisa or (entry or {}).get("divisa") or "USD").strip().upper() or "USD"
+    divisa = _divisa_de(divisa, entry)
 
     venta = lotes.nueva_venta(symbol, acciones, precio, fecha=fecha, comision=0.0,
                               divisa=divisa, tasa=tasa, notas=notas)
@@ -530,7 +567,7 @@ def _totales(filas: list) -> dict:
     # antiguas no venían en el CSV se quedaron sin coste y el Realizado saltó de golpe.
     # Se estima cuánto sobra (ingreso de las acciones sin cubrir) para que la cifra grande
     # no se lea como buena mientras falten compras.
-    descuadre_acciones, descuadre_eur, descuadre_syms = 0.0, 0.0, {}
+    descuadre_acciones, descuadre_eur, descuadre_syms, sin_tasa = 0.0, 0.0, {}, 0
     for f in filas:
         sc = f.get("sin_cubrir") or 0
         if sc <= 0:
@@ -541,11 +578,17 @@ def _totales(filas: list) -> dict:
             tasa = float(f.get("tasa_venta") or 0)
         except (TypeError, ValueError):
             tasa = 0
-        descuadre_eur += (ingreso / tasa) if tasa > 0 else ingreso
+        # Sin tasa NO se suma: meter dólares en un total de euros exagera la cifra (decía
+        # 1.200 € donde eran 1.034 €). Se cuentan aparte para poder decir que faltan.
+        if tasa > 0:
+            descuadre_eur += ingreso / tasa
+        else:
+            sin_tasa += 1
         s = descuadre_syms.setdefault(f["symbol"], 0.0)
         descuadre_syms[f["symbol"]] = round(s + sc, 6)
     out["sin_cubrir_acciones"] = round(descuadre_acciones, 6)
     out["sin_cubrir_eur_aprox"] = round(descuadre_eur, 2)
+    out["sin_cubrir_sin_tasa"] = sin_tasa
     out["sin_cubrir_por_symbol"] = sorted(
         ({"symbol": k, "acciones": v} for k, v in descuadre_syms.items()),
         key=lambda x: x["acciones"], reverse=True)
@@ -630,10 +673,17 @@ async def resumen_cartera(db, precios: dict) -> dict:
         if estado["acciones_abiertas"] <= 1e-9:
             continue
         divisa = (libro["compras"] or libro["ventas"])[0].get("divisa", "USD")
+        # Un mismo valor con lotes en dos divisas suma dólares con euros en las cifras "en
+        # divisa" (el precio medio, el coste). Pasaba al teclear una compra que caía a USD y
+        # luego importar la misma acción en euros desde el CSV. Se avisa en vez de enseñar
+        # un número que no significa nada; las cifras en EUROS siguen bien, porque cada lote
+        # se convierte con su propia tasa.
+        divisas_lote = {(o.get("divisa") or divisa) for o in libro["compras"] + libro["ventas"]}
+        mezcla = sorted(divisas_lote) if len(divisas_lote) > 1 else None
         val = lotes.valorar_abierto(estado, precios.get(sym), tasas.get(divisa))
         pmp = lotes.media_ponderada(libro["compras"], libro["ventas"])
         posiciones.append({
-            "symbol": sym, "divisa": divisa,
+            "symbol": sym, "divisa": divisa, "divisas_mezcladas": mezcla,
             **val,
             # Para cuadrar con el bróker. Va aparte del precio_medio y etiquetado: son dos
             # medidas distintas y mezclarlas haría pensar que una de las dos está mal.
@@ -674,6 +724,13 @@ async def resumen_cartera(db, precios: dict) -> dict:
         "realizado_eur": round(realizado_eur, 2) if hay_realizado else None,
         "metodo_gestion": gestion.lower(),
         "posiciones_sin_valorar": sum(1 for p in posiciones if p.get("pnl_eur") is None),
+        # Separadas: decir "sin precio" cuando lo que falta es el tipo de cambio manda a
+        # buscar el problema donde no está. Son dos averías distintas y se arreglan distinto.
+        "posiciones_sin_precio": sum(
+            1 for p in posiciones if p.get("precio_actual") is None),
+        "posiciones_sin_tipo_de_cambio": sum(
+            1 for p in posiciones
+            if p.get("precio_actual") is not None and not tasas.get(p["divisa"])),
         "tasas": {d: (round(t, 4) if t else None) for d, t in tasas.items()},
     }
 
@@ -921,14 +978,36 @@ async def quitar_lotes_de_la_foto(db) -> dict:
 
     Solo se toca un símbolo si tiene apuntes con huella (es decir, si el CSV lo cubre): una
     posición que nunca vino en ningún fichero se queda exactamente como está.
+
+    Y solo si el CSV cubre AL MENOS las mismas acciones que la foto. La exportación de
+    DEGIRO se descarga por rango de fechas: un fichero de este año no trae las compras de
+    años anteriores. Bastaba una compra reciente para dar el símbolo por cubierto y borrar
+    la foto entera — 24 RDDT se quedaban en 4. Los símbolos a medias se informan en
+    `insuficientes` para poder subir el CSV completo antes de tocar nada.
     """
     compras = await db.compras.find({}, {"_id": 0}).to_list(5000)
     ventas = await db.ventas.find({}, {"_id": 0}).to_list(5000)
     con_csv = ({c["symbol"] for c in compras if c.get("huella")}
                | {v["symbol"] for v in ventas if v.get("huella")})
+
+    def _acciones(ops, con_huella):
+        t = {}
+        for o in ops:
+            if bool(o.get("huella")) is con_huella:
+                t[o["symbol"]] = round(t.get(o["symbol"], 0) + (o.get("acciones") or 0), 6)
+        return t
+
+    del_csv = _acciones(compras, True)
+    de_foto = {s: n for s, n in _acciones(compras, False).items() if s in con_csv}
+    insuficientes = [{"symbol": s, "en_el_csv": del_csv.get(s, 0), "en_la_foto": n}
+                     for s, n in sorted(de_foto.items())
+                     if del_csv.get(s, 0) + 1e-9 < n]
+    a_medias = {x["symbol"] for x in insuficientes}
+
     borrados, detalle = 0, {}
     for c in compras:
-        if (c["symbol"] in con_csv and not c.get("huella")
+        if (c["symbol"] in con_csv and c["symbol"] not in a_medias
+                and not c.get("huella")
                 and str(c.get("notas") or "").startswith("Importada de tu Cartera")):
             await db.compras.delete_one({"id": c["id"]})
             borrados += 1
@@ -939,6 +1018,7 @@ async def quitar_lotes_de_la_foto(db) -> dict:
     return {"borrados": borrados,
             "detalle": sorted(({"symbol": k, **v} for k, v in detalle.items()),
                               key=lambda x: x["symbol"]),
+            "insuficientes": insuficientes,
             "simbolos": sorted(detalle)}
 
 
@@ -1073,7 +1153,16 @@ async def importar_posiciones_existentes(db, reemplazar: bool = False) -> dict:
             if not reemplazar or await db.ventas.find_one({"symbol": sym}, {"_id": 0}):
                 saltados += 1
                 continue
-            for c in await db.compras.find({"symbol": sym}, {"_id": 0}).to_list(1000):
+            suyas = await db.compras.find({"symbol": sym}, {"_id": 0}).to_list(1000)
+            # NUNCA se borran compras que vinieron del CSV: son la versión buena (fechas,
+            # precios y tasas reales) y la foto que las sustituiría es de la primera
+            # importación y no se actualiza nunca. Rehacer sobre un símbolo ya importado
+            # convertía 12 acciones correctas en un único lote de 24 al precio medio de hace
+            # meses. Solo se rehace lo que la propia foto creó.
+            if any(c.get("huella") for c in suyas):
+                saltados += 1
+                continue
+            for c in suyas:
                 await db.compras.delete_one({"id": c["id"]})
         # Las campanitas apagadas dicen EN QUÉ NIVELES se compró, así que en vez de un
         # único lote al precio medio se reconstruyen los lotes de verdad. Ver

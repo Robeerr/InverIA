@@ -1436,3 +1436,76 @@ def test_el_resumen_no_repite_el_trabajo_del_historial():
     res = _correr(cartera_api.resumen_cartera(db, {"FN": 560.0}))
     hist = _correr(cartera_api.historial(db))
     assert res["realizado_eur"] == hist["resumen"][res["metodo_gestion"]]["ganancia_eur"]
+
+
+# ── Segunda tanda de la auditoría ────────────────────────────────────────────
+
+def test_una_compra_espanola_no_se_guarda_en_dolares():
+    """Caer a USD sin mirar hacía que OHLA (Madrid, en euros) costara un 13,5% menos de lo
+    que costó, y la ganancia se inflaba sola."""
+    db = _DB([{"symbol": "OHLA", "isin": "ES0142090317", "mercado": "MAD"}])
+    c = _correr(cartera_api.registrar_compra(db, "OHLA", 200, 0.35, fecha="2026-01-10"))
+    assert c["divisa"] == "EUR"
+    # Y por mercado, sin ISIN
+    db2 = _DB([{"symbol": "SAN", "mercado": "BME"}])
+    assert _correr(cartera_api.registrar_compra(
+        db2, "SAN", 10, 5.0, fecha="2026-01-10"))["divisa"] == "EUR"
+    # Lo americano sigue en dólares
+    db3 = _DB([{"symbol": "AAPL", "isin": "US0378331005"}])
+    assert _correr(cartera_api.registrar_compra(
+        db3, "AAPL", 1, 200.0, fecha="2026-01-10"))["divisa"] == "USD"
+
+
+def test_un_simbolo_con_dos_divisas_se_senala():
+    """Sus cifras EN DIVISA suman peras y manzanas; las de euros siguen bien porque cada
+    lote se convierte con su propia tasa."""
+    db = _DB()
+    _correr(cartera_api.registrar_compra(
+        db, "OHLA", 100, 0.40, fecha="2026-01-10", divisa="EUR", comision=0, tasa=1.0))
+    _correr(cartera_api.registrar_compra(
+        db, "OHLA", 100, 0.42, fecha="2026-02-10", divisa="USD", comision=0, tasa=1.10))
+    r = _correr(cartera_api.resumen_cartera(db, {"OHLA": 0.5}))
+    assert r["posiciones"][0]["divisas_mezcladas"] == ["EUR", "USD"]
+
+
+def test_quitar_duplicados_no_borra_si_el_csv_solo_cubre_parte():
+    """La exportación de DEGIRO va por rango: un CSV de este año no trae las compras
+    antiguas. Bastaba una compra reciente para borrar la foto entera — 24 RDDT en 4."""
+    db = _DB([{"symbol": "RDDT", "acciones": 20, "compra": 150.0, "divisa": "USD"}])
+    _correr(cartera_api.importar_posiciones_existentes(db))     # foto: 20 acciones
+    _correr(cartera_api.importar_degiro(                        # CSV: solo 4
+        db, [_op_csv("RDDT", "compra", 4, 150.0, "2026-01-05", "hq")],
+        {"US0000000001": "RDDT"}))
+    r = _correr(cartera_api.quitar_lotes_de_la_foto(db))
+    assert r["borrados"] == 0
+    assert r["insuficientes"] == [{"symbol": "RDDT", "en_el_csv": 4, "en_la_foto": 20}]
+    est = _correr(cartera_api.estado_simbolo(db, "RDDT"))
+    assert est["fifo"]["acciones_abiertas"] == 24    # intactas, ya se limpiará bien
+
+
+def test_rehacer_la_importacion_no_destruye_las_compras_del_csv():
+    """La foto es de la primera importación y no se actualiza nunca: rehacer sobre un
+    símbolo ya importado del CSV convertía 12 acciones correctas en un lote de 24."""
+    db = _DB([{"symbol": "RDDT", "acciones": 12, "compra": 150.0, "divisa": "USD"}])
+    _correr(cartera_api.importar_degiro(
+        db, [_op_csv("RDDT", "compra", 12, 147.52, "2026-01-05", "hr")],
+        {"US0000000001": "RDDT"}))
+    r = _correr(cartera_api.importar_posiciones_existentes(db, reemplazar=True))
+    assert r["creados"] == 0 and r["saltados"] == 1
+    assert all(c.get("huella") for c in db.compras.docs)
+    assert len(db.compras.docs) == 1
+
+
+def test_el_descuadre_en_euros_no_suma_dolares_sin_convertir():
+    """Meter dólares en un total de euros exageraba la cifra del aviso."""
+    db = _DB()
+    # Directo al libro: registrar_venta buscaría la tasa sola, y aquí hace falta una venta
+    # que de verdad no la tenga (importada de un fichero viejo, o de antes de guardarla).
+    _correr(db.ventas.insert_one(
+        {"id": "v-sin-tasa", "tipo": "venta", "symbol": "OHLA", "acciones": 100,
+         "precio": 1.0, "comision": 0, "divisa": "USD", "tasa": None,
+         "fecha": "2026-05-13", "created_at": "2026-05-13T00:00:00Z"}))
+    h = _correr(cartera_api.historial(db))
+    assert h["resumen"]["sin_cubrir_acciones"] == 100
+    assert h["resumen"]["sin_cubrir_eur_aprox"] == 0.0   # no convertible: no se suma
+    assert h["resumen"]["sin_cubrir_sin_tasa"] == 1

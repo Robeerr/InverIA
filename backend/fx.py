@@ -68,6 +68,14 @@ def tasa_en_fecha(divisa: str, fecha: str) -> Optional[float]:
         dia = datetime.fromisoformat(str(fecha)[:10]).date()
     except Exception:
         return None
+    # HOY (o una fecha futura por un dedazo) no es una fecha pasada: su cambio todavía se
+    # mueve. Cachearlo 24 h como si fuera histórico dejaba pegado el cierre de AYER —si la
+    # primera consulta del día llegaba antes de que Yahoo publicara la vela— y ese valor se
+    # escribía, permanentemente, en todas las operaciones registradas hasta el día
+    # siguiente. Encima la propia pantalla enseñaba en el pie otro número distinto, el de
+    # tasa_actual. Un solo "cambio de hoy" para todo.
+    if dia >= datetime.now(timezone.utc).date():
+        return tasa_actual(divisa)
     clave = (divisa.upper(), dia.isoformat())
     hit = _cache.get(clave)
     if hit and (datetime.now(timezone.utc).timestamp() - hit[1]) < _TTL_HISTORICO:

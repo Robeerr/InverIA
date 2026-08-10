@@ -1208,6 +1208,15 @@ export default function VentasView() {
   const quitarDup = useMutation({
     mutationFn: api.cartera.quitarDuplicados,
     onSuccess: (r) => {
+      // Un símbolo que el CSV solo cubre a medias NO se toca: borrar su foto dejaría la
+      // posición corta. Se dice cuál y con qué cifras para poder subir el CSV completo.
+      if (r.insuficientes?.length) {
+        toast.warning(
+          "No se ha tocado " + r.insuficientes.map((x) =>
+            `${x.symbol} (el CSV trae ${x.en_el_csv} acciones y la foto ${x.en_la_foto})`).join(", ")
+          + ". Vuelve a exportar el Transactions.csv con TODO el histórico y súbelo antes de "
+          + "quitar duplicados ahí.", { duration: 20000 });
+      }
       if (!r.borrados) {
         toast.info("No había lotes duplicados que quitar");
       } else {
@@ -1293,6 +1302,9 @@ export default function VentasView() {
                  ? `⚠ ${hist.resumen.sin_cubrir_acciones} acción(es) vendidas sin compra registrada`
                    + ` (${(hist.resumen.sin_cubrir_por_symbol || []).map((s) => s.symbol).join(", ")})`
                    + ` — hasta ${eur(hist.resumen.sin_cubrir_eur_aprox)} de esta cifra pueden sobrar`
+                   + (hist.resumen.sin_cubrir_sin_tasa
+                       ? `, y ${hist.resumen.sin_cubrir_sin_tasa} más sin tipo de cambio, sin contar`
+                       : "")
                  : null,
              ].filter(Boolean).join(" · ")}
              ayuda="Ganancia de las ventas ya hechas, con el tipo de cambio del día de cada compra y de cada venta. Es dinero que ya está en tu cuenta. Cambia según el método: mira la etiqueta de debajo." />
@@ -1306,8 +1318,13 @@ export default function VentasView() {
              sub={[
                resumen?.posiciones?.length
                  ? `${resumen.posiciones.length} posición(es) abiertas` : "sin posiciones",
-               resumen?.posiciones_sin_valorar
-                 ? `⚠ ${resumen.posiciones_sin_valorar} sin precio, fuera del total` : null,
+               // "sin precio" y "sin tipo de cambio" son averías DISTINTAS y se arreglan
+               // distinto: decir siempre "sin precio" mandaba a buscar el problema donde
+               // no estaba (el precio estaba; lo que faltaba era el cambio).
+               resumen?.posiciones_sin_precio
+                 ? `⚠ ${resumen.posiciones_sin_precio} sin precio, fuera del total` : null,
+               resumen?.posiciones_sin_tipo_de_cambio
+                 ? `⚠ ${resumen.posiciones_sin_tipo_de_cambio} sin tipo de cambio, fuera del total` : null,
                latenteBroker != null && Math.abs(latenteBroker - (latente ?? 0)) > 0.5
                  ? `en DEGIRO verás ${eur(latenteBroker)}` : null,
              ].filter(Boolean).join(" · ")}
@@ -1558,6 +1575,12 @@ export default function VentasView() {
                     <td className="px-4 py-2">
                       <span className="text-[#5c6b66] mr-1 text-[10px]">{abierta === p.symbol ? "▲" : "▼"}</span>
                       <span className="font-mono font-bold">{p.symbol}</span>
+                      {!!p.divisas_mezcladas && (
+                        <Chip tono="aviso"
+                              title={`Esta posición tiene lotes en ${p.divisas_mezcladas.join(" y ")}. El precio medio y el invertido EN DIVISA suman monedas distintas y no significan nada; las cifras en euros sí son correctas, porque cada lote se convierte con su propia tasa. Revisa la divisa de cada compra.`}>
+                          {p.divisas_mezcladas.join("+")}
+                        </Chip>
+                      )}
                       {!!p.niveles_comprados?.length && (
                         <span className="ml-2 inline-flex gap-1">
                           {p.niveles_comprados.map((n) => (

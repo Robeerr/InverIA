@@ -2511,7 +2511,13 @@ async def importar_posiciones(reemplazar: bool = False,
     Nunca toca un símbolo que ya tenga ventas: borrar sus compras dejaría esas ventas sin
     coste y su ganancia sería falsa.
     """
-    return await cartera_api.importar_posiciones_existentes(db, reemplazar=reemplazar)
+    r = await cartera_api.importar_posiciones_existentes(db, reemplazar=reemplazar)
+    # Era el único endpoint de escritura que no vaciaba la caché: justo después de importar,
+    # la Cartera seguía sirviendo lo de antes hasta 5 minutos y parecía que no había hecho
+    # nada.
+    for k in ("signals_list", "signals_hot"):
+        _cache._store.pop(k, None)
+    return r
 
 
 @api_router.post("/cartera/quitar-duplicados")
