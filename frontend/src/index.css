@@ -1,5 +1,12 @@
 /* Las fuentes se cargan vía <link> en public/index.html para descubrirlas antes
    y no bloquear el render con un @import dentro del CSS. */
+
+/* Capa de tokens semánticos. Va PRIMERO a propósito: define variables y clases
+   base, y al ir antes que `@tailwind utilities` cualquier utilidad de Tailwind
+   sigue pudiendo pisarlas. Se añade a lo que ya hay; el bloque `!important` de
+   más abajo sigue vivo hasta que cada pantalla se migre en su propia fase. */
+@import "./styles/tokens.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

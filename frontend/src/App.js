@@ -16,6 +16,9 @@ const VentasView       = React.lazy(() => import("./pages/VentasView"));
 const TelegramConnectView = React.lazy(() => import("./pages/TelegramConnectView"));
 const BrainView        = React.lazy(() => import("./pages/BrainView"));
 const DiagnosticoView  = React.lazy(() => import("./pages/DiagnosticoView"));
+// Página de estilos viva: la validación de la Fase 1. Va bajo /sistema/ porque es
+// una herramienta de desarrollo, no una sección del producto.
+const EstilosView      = React.lazy(() => import("./pages/EstilosView"));
 
 const PageLoader = () => (
   <div className="min-h-[60vh] flex items-center justify-center">
@@ -88,6 +91,9 @@ function AppInner() {
           <Route path="/telegram" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><TelegramConnectView /></div>} />
           <Route path="/cerebro" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><BrainView /></div>} />
           <Route path="/diagnostico" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><DiagnosticoView /></div>} />
+          {/* Sin wrapper: EstilosView trae su propio PageShell, que es justamente
+              el componente que sustituye a este div copiado ocho veces. */}
+          <Route path="/sistema/estilos" element={<EstilosView />} />
           <Route path="*" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><Dashboard symbol={symbol} setSymbol={setSymbol} model={model} setModel={setModel} /></div>} />
         </Routes>
       </Suspense>

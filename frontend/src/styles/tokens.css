@@ -1,0 +1,161 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   InverIA · Capa de tokens semánticos
+   ─────────────────────────────────────────────────────────────────────────────
+
+   POR QUÉ EXISTE ESTE FICHERO
+
+   Hasta ahora el modo oscuro eran ~50 reglas `!important` en index.css que
+   remapeaban hex uno a uno: `.dark .text-[#5c6b66] { color: #94a3b8 !important }`.
+   Eso tiene tres consecuencias que se pagan a diario:
+
+     1. El color de marca de InverIA NO EXISTE como color. El ámbar #f59e0b es lo
+        que sale cuando la regla `.dark .bg-[#1a3a32]` convierte el verde en ámbar.
+        La identidad de la app era un efecto secundario de un parche.
+     2. Un color nuevo es deuda automática: hay que acordarse de añadir su regla
+        de remapeo, y si no se hace, la pantalla se rompe solo en oscuro.
+     3. Los hex se repiten a mano por todo el JSX (#5c6b66 aparece 366 veces,
+        #1a3a32 197), así que cambiar un tono es imposible sin buscar y sustituir.
+
+   CÓMO CONVIVE CON LO QUE YA HAY
+
+   Esta capa se AÑADE, no sustituye. El bloque `!important` de index.css sigue en
+   pie y las pantallas actuales siguen exactamente igual. Cada pantalla borrará su
+   parte del parche cuando se migre, dentro de su propia fase. No hay ningún día
+   en que cambie todo a la vez.
+
+   FORMATO: TRIPLETES RGB, NO HEX
+
+   `--iv-sube: 95 208 138` en vez de `#5fd08a` para que Tailwind pueda componer
+   opacidades (`bg-sube/10`, `border-baja/30`), que es un patrón muy usado en este
+   código. En CSS a mano se escribe `rgb(var(--iv-sube))`, y con alfa
+   `rgb(var(--iv-sube) / 0.1)`.
+
+   CONTRASTE
+
+   Todos los roles de texto llegan a 4.5:1 sobre las tres superficies de su tema
+   (comprobado, no estimado: lo verifica tests/tokens.test.js). El peor caso es
+   5.30:1 en oscuro y 4.62:1 en claro. `--iv-linea-marcada` llega a 3:1 sobre su
+   superficie para cuando un límite tiene que percibirse de verdad; `--iv-linea`
+   es deliberadamente sutil, para separar sin dibujar rejas.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Tema claro ─────────────────────────────────────────────────────────────
+   Deriva del oscuro, pero se define ENTERO y por separado. Un token que solo
+   existe en un tema es justo el fallo que esta capa viene a corregir, así que
+   no hay ni un valor que se herede a medias. */
+:root {
+    /* Superficies */
+    --iv-fondo:          245 243 239;   /* #f5f3ef */
+    --iv-superficie:     255 255 255;   /* #ffffff */
+    --iv-superficie-2:   250 248 244;   /* #faf8f4 */
+
+    /* Líneas */
+    --iv-linea:          229 224 216;   /* #e5e0d8 · separación sutil */
+    --iv-linea-fuerte:   176 166 146;   /* #b0a692 · borde con presencia */
+    --iv-linea-marcada:  156 146 128;   /* #9c9280 · 3:1, límite que significa algo */
+
+    /* Tinta */
+    --iv-tinta:           14  31  26;   /* #0e1f1a · lectura principal */
+    --iv-tinta-2:         70  86  79;   /* #46564f · secundario */
+    --iv-tinta-3:         92 107 102;   /* #5c6b66 · etiquetas y apoyo */
+
+    /* Marca */
+    --iv-marca:           26  58  50;   /* #1a3a32 */
+    --iv-marca-tinta:    245 243 239;   /* #f5f3ef · texto sobre marca */
+
+    /* Semánticos financieros */
+    --iv-sube:            47 107  69;   /* #2f6b45 */
+    --iv-baja:           192  68  42;   /* #c0442a */
+    --iv-aviso:          138 101   8;   /* #8a6508 */
+    --iv-info:            26 106 148;   /* #1a6a94 */
+    --iv-neutro:          92 107 102;   /* #5c6b66 */
+
+    /* Foco visible — mismo token en los dos temas para que nunca falte */
+    --iv-foco:            26  58  50;
+
+    /* Radio y densidad */
+    --iv-radio:        6px;
+    --iv-radio-sm:     4px;
+    --iv-radio-lg:    10px;
+}
+
+/* ── Tema oscuro · la identidad de InverIA ──────────────────────────────────
+   Este es el tema de referencia: el que define la marca y sobre el que se
+   diseña primero. El ámbar deja de ser un accidente del parche y pasa a ser
+   `--iv-marca`, un color con nombre que se puede usar a propósito. */
+.dark {
+    --iv-fondo:           14  31  26;   /* #0e1f1a */
+    --iv-superficie:      22  48  42;   /* #16302a */
+    --iv-superficie-2:    26  56  48;   /* #1a3830 */
+
+    --iv-linea:           36  65  58;   /* #24413a */
+    --iv-linea-fuerte:    63 107  93;   /* #3f6b5d */
+    --iv-linea-marcada:   77 128 114;   /* #4d8072 · 3:1 */
+
+    --iv-tinta:          238 243 240;   /* #eef3f0 */
+    --iv-tinta-2:        179 197 189;   /* #b3c5bd */
+    --iv-tinta-3:        148 173 162;   /* #94ada2 */
+
+    --iv-marca:          245 158  11;   /* #f59e0b */
+    --iv-marca-tinta:     14  31  26;   /* #0e1f1a */
+
+    --iv-sube:            95 208 138;   /* #5fd08a */
+    --iv-baja:           250 140 124;   /* #fa8c7c */
+    --iv-aviso:          240 180  41;   /* #f0b429 */
+    --iv-info:           108 182 240;   /* #6cb6f0 */
+    --iv-neutro:         148 173 162;   /* #94ada2 */
+
+    --iv-foco:           245 158  11;
+}
+
+/* ── Foco visible ───────────────────────────────────────────────────────────
+   Global y desde el principio: un foco que solo se añade al final acaba
+   faltando en la mitad de los sitios. `:focus-visible` y no `:focus` para no
+   dibujar el anillo a quien navega con ratón. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid rgb(var(--iv-foco));
+    outline-offset: 2px;
+    border-radius: var(--iv-radio-sm);
+}
+
+/* ── Superficies base ───────────────────────────────────────────────────────
+   Tres densidades, no cinco anatomías de tarjeta. El Brief lo pide literalmente:
+   «no convertir todo en una card».
+
+   `.iv-panel`    → contenedor de sección: agrupa, no reclama atención.
+   `.iv-destacada` → decisión: lo que el usuario tiene que leer sí o sí.
+   `.iv-fila`     → fila compacta: densidad de tabla sin caja alrededor. */
+.iv-panel {
+    background: rgb(var(--iv-superficie));
+    border: 1px solid rgb(var(--iv-linea));
+    border-radius: var(--iv-radio);
+}
+
+.iv-destacada {
+    background: rgb(var(--iv-superficie));
+    border: 1px solid rgb(var(--iv-linea-fuerte));
+    border-left: 3px solid rgb(var(--iv-marca));
+    border-radius: var(--iv-radio);
+}
+
+.iv-fila {
+    background: transparent;
+    border-bottom: 1px solid rgb(var(--iv-linea));
+}
+
+/* Etiqueta de dato: el suelo de 11px es absoluto. Por debajo hay texto que
+   simplemente no se lee, y hoy la app tiene `text-[9px]` en sitios de lectura. */
+.iv-etiqueta {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgb(var(--iv-tinta-3));
+}
+
+/* Todo dato numérico va en cifras tabulares: sin esto las columnas de precios
+   bailan al actualizarse en vivo, que es justo cuando más se miran. */
+.iv-cifra {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+}
