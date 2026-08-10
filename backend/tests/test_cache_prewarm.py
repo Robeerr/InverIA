@@ -161,3 +161,106 @@ def test_una_visita_muy_antigua_no_alarga_la_ventana_de_alertas():
     corte_alertas, corte_cerebro = server._ventanas_de_hoy(hace_un_mes, ahora=ahora)
     assert corte_alertas > hace_un_mes
     assert corte_cerebro == hace_un_mes
+
+
+# ── P1 · El precalentado es trabajo de FONDO y hay que decirlo ───────────────
+def test_el_limitador_distingue_fondo_de_primer_plano():
+    """El techo NO es el mismo, y de ahí venía el 50/50: sin marcar el contexto, el
+    precalentado usaba `max_per_min` (50) en vez de `bg_cap` (25). Con 5 llamadas por
+    símbolo llenaba la ventana él solo, veía 50 > umbral y concluía "hay alguien
+    navegando" — siendo él quien navegaba."""
+    import market_data
+    lim = market_data.get_finnhub_limiter()
+    assert lim.bg_cap < lim.max_per_min
+    # El umbral de pausa tiene que quedar POR ENCIMA del techo de fondo, o el
+    # precalentado se pararía a sí mismo aun estando bien marcado.
+    assert server._umbral_prewarm() > lim.bg_cap
+
+
+def test_el_contexto_de_fondo_se_marca_y_se_restaura():
+    import market_data
+    assert market_data._finnhub_bg_ctx.get() is False
+    token = market_data.enter_finnhub_background()
+    try:
+        assert market_data._finnhub_bg_ctx.get() is True
+    finally:
+        market_data.reset_finnhub_background(token)
+    assert market_data._finnhub_bg_ctx.get() is False, "el contexto se ha quedado sucio"
+
+
+def test_el_bucle_de_precalentado_marca_el_contexto():
+    """Centinela sobre el código: la marca tiene que estar en el bucle, no en un sitio
+    cualquiera, y con su restauración."""
+    import inspect
+    src = inspect.getsource(server.lifespan)
+    assert "enter_finnhub_background()" in src
+    assert "reset_finnhub_background(" in src
+
+
+# ── P3 · La cola de calentado a petición ────────────────────────────────────
+@pytest.fixture(autouse=True)
+def _cola_limpia():
+    server._cola_calentado.clear()
+    server._hay_pendientes.clear()
+    yield
+    server._cola_calentado.clear()
+    server._hay_pendientes.clear()
+
+
+def test_encolar_deduplica():
+    assert server._encolar_calentado(["AAPL", "NVDA"]) == 2
+    assert server._encolar_calentado(["AAPL", "MSFT"]) == 1, "AAPL ya estaba"
+    assert set(server._cola_calentado) == {"AAPL", "NVDA", "MSFT"}
+
+
+def test_la_cola_esta_acotada():
+    """Si creciera sin límite, recargar la portada en bucle la haría crecer sin fin."""
+    server._encolar_calentado([f"S{i:03d}" for i in range(200)])
+    assert len(server._cola_calentado) == server._COLA_CALENTADO_MAX
+
+
+def test_se_atiende_por_orden_de_llegada():
+    server._encolar_calentado(["AAA", "BBB", "CCC"])
+    assert server._tomar_de_la_cola(2) == ["AAA", "BBB"]
+    assert list(server._cola_calentado) == ["CCC"]
+
+
+def test_tomar_de_la_cola_la_vacia():
+    server._encolar_calentado(["AAA"])
+    assert server._tomar_de_la_cola(10) == ["AAA"]
+    assert server._cola_calentado == {}
+
+
+def test_el_evento_despierta_al_bucle_y_se_apaga_al_vaciarse():
+    """Sin el evento, un símbolo pedido desde la portada esperaría hasta la cadencia
+    completa —20 minutos—, y encolar sería peor que el calentado directo que sustituye."""
+    assert not server._hay_pendientes.is_set()
+    server._encolar_calentado(["AAA"])
+    assert server._hay_pendientes.is_set()
+    server._tomar_de_la_cola(10)
+    assert not server._hay_pendientes.is_set()
+
+
+def test_encolar_normaliza_y_descarta_vacios():
+    server._encolar_calentado([" aapl ", "", None, "nvda"])
+    assert set(server._cola_calentado) == {"AAPL", "NVDA"}
+
+
+def test_la_portada_encola_y_no_calcula():
+    """El punto de P3: /hoy no puede lanzar _construir_dashboard. Lanzaba hasta cinco a
+    la vez —unas 25 llamadas de golpe— saltándose el umbral y en primer plano."""
+    import inspect
+    src = inspect.getsource(server.dashboard_hoy)
+    assert "_encolar_calentado(" in src
+    # Se miran las LLAMADAS del árbol de sintaxis, no el texto: el comentario que
+    # explica por qué se quitó menciona esas funciones, y un test sobre el texto
+    # obligaría a borrar la explicación para tenerlo en verde.
+    import ast
+    import textwrap
+    llamadas = {
+        n.func.id
+        for n in ast.walk(ast.parse(textwrap.dedent(src)))
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+    }
+    assert "_refrescar_dashboard_en_segundo_plano" not in llamadas
+    assert "_construir_dashboard" not in llamadas

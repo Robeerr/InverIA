@@ -445,16 +445,50 @@ async def lifespan(app: FastAPI):
             return
         await asyncio.sleep(45)  # tras el arranque, pero antes que los escaneos pesados
         vuelta = 0
+        # P1 · Este bucle es una tarea de FONDO y hay que decirlo, porque el limitador de
+        # Finnhub decide su techo por contexto: sin la marca usaba `max_per_min` (50) en
+        # vez de `bg_cap` (25). Con 5 llamadas por símbolo, llenaba la ventana él solo,
+        # veía 50 > 35 y concluía "hay alguien navegando" — siendo él quien navegaba.
+        #
+        # Va aquí y no dentro del `while` porque es un contextvar de ESTA tarea: se fija
+        # una vez y lo heredan los hilos de run_in_executor, que es por donde salen las
+        # llamadas. No contamina las peticiones de usuario, que corren en su propio
+        # contexto. Aun así se restaura al salir, para no dejar el contexto tocado si
+        # alguien reutiliza la tarea.
+        token_bg = market_data.enter_finnhub_background()
+        try:
+            await _vueltas_de_precalentado()
+        finally:
+            market_data.reset_finnhub_background(token_bg)
+
+    async def _vueltas_de_precalentado():
+        vuelta = 0
         while True:
             try:
                 now = datetime.now(timezone.utc)
                 # Se incluye la pre-apertura (12:00 UTC): la primera mirada del día suele
                 # ser antes de que abra, y es justo la que hoy paga la carga entera.
                 in_window = now.weekday() < 5 and 12 <= now.hour < 22
+
+                # La COLA se atiende SIEMPRE, dentro y fuera de la ventana. La ventana
+                # existe para no gastar cuota adelantando trabajo por si acaso; un símbolo
+                # encolado no es especulación: alguien tiene la portada abierta ahora y le
+                # falta ese dato. Si solo se atendiera en horario, un sábado por la tarde
+                # la cola no se vaciaría nunca y volveríamos al problema que P3 arregla.
+                pendientes = _tomar_de_la_cola(DASHBOARD_PREWARM_MAX)
+                syms = set(pendientes)
+                tanda = list(pendientes)
                 if in_window:
                     syms = await _simbolos_que_te_importan()
-                    tanda = _tanda_a_precalentar(syms, vuelta)
+                    rotatoria = _tanda_a_precalentar(syms, vuelta)
                     vuelta += 1
+                    # La cola va primero y el resto del presupuesto lo llena la rotación,
+                    # sin repetir. El coste por vuelta no sube: sigue topado en el mismo
+                    # número de símbolos.
+                    tanda += [s for s in rotatoria if s not in pendientes]
+                    tanda = tanda[:DASHBOARD_PREWARM_MAX]
+
+                if tanda:
                     calentados = 0
                     for sym in tanda:
                         # CEDER EL PASO. Medido en producción: con la cuota en 49/50, una
@@ -517,7 +551,16 @@ async def lifespan(app: FastAPI):
                     mem.trim()  # el ensamblado crea DataFrames: devuélvelos al SO
             except Exception as e:
                 logger.warning("Bucle de precalentado de dashboards: %s", e)
-            await asyncio.sleep(DASHBOARD_PREWARM_CADENCIA)
+            # Espera la cadencia normal, PERO despierta antes si alguien encola algo.
+            # Con un `sleep` a secas, un símbolo pedido desde la portada podía quedarse
+            # hasta 20 minutos esperando, y encolar habría sido peor que el calentado
+            # directo que sustituye. Con el evento, la espera es de segundos y el gasto
+            # sigue cadenciado por el limitador.
+            try:
+                await asyncio.wait_for(_hay_pendientes.wait(),
+                                       timeout=DASHBOARD_PREWARM_CADENCIA)
+            except asyncio.TimeoutError:
+                pass
 
     _tarea_prewarm = asyncio.create_task(_prewarm_dashboards())
     _bg_tasks.add(_tarea_prewarm)
@@ -606,6 +649,54 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 
 # Referencias fuertes a tareas en segundo plano (si no, el GC puede cancelarlas).
 _bg_tasks: set = set()
+
+
+# ── Cola de calentado a petición ─────────────────────────────────────────────
+# La portada encola los símbolos que necesita en vez de calentarlos ella misma.
+#
+# Antes lanzaba hasta 5 `_construir_dashboard` a la vez: unas 25 llamadas a Finnhub de
+# golpe, sin espaciar, sin pasar por el umbral de pausa y en PRIMER PLANO —heredaba el
+# contexto de la petición—. Es decir, el único camino que se saltaba entero el control
+# de cuota era el que yo había añadido.
+#
+# Ahora hay un solo mecanismo: el bucle de precalentado, con su marca de background, su
+# cadencia y su tope. La portada solo apunta qué le falta y sigue respondiendo.
+_COLA_CALENTADO_MAX = 20
+_cola_calentado: dict = {}          # dict = orden de llegada + deduplicado
+_hay_pendientes = asyncio.Event()
+
+
+def _encolar_calentado(simbolos) -> int:
+    """Apunta símbolos para que el precalentado los atienda en su próxima pasada.
+
+    Devuelve cuántos se han añadido de nuevo. Acotada a `_COLA_CALENTADO_MAX`: si se
+    llena, se descartan los nuevos en vez de crecer sin límite — quien llega tarde
+    entrará en la vuelta siguiente, que es preferible a una cola que no para de crecer
+    mientras alguien recarga la portada.
+    """
+    añadidos = 0
+    for sym in simbolos:
+        sym = (sym or "").upper().strip()
+        if not sym or sym in _cola_calentado:
+            continue
+        if len(_cola_calentado) >= _COLA_CALENTADO_MAX:
+            break
+        _cola_calentado[sym] = True
+        añadidos += 1
+    if _cola_calentado:
+        _hay_pendientes.set()
+    return añadidos
+
+
+def _tomar_de_la_cola(tope: int) -> list:
+    """Saca hasta `tope` símbolos pendientes, los más antiguos primero."""
+    salida = []
+    for sym in list(_cola_calentado)[:tope]:
+        _cola_calentado.pop(sym, None)
+        salida.append(sym)
+    if not _cola_calentado:
+        _hay_pendientes.clear()
+    return salida
 
 
 def _tanda_a_precalentar(simbolos, vuelta: int, tamano: int = None) -> list:
@@ -4441,23 +4532,22 @@ async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_PO
 
     importa = hoy.ordenar_y_recortar(tarjetas, limite)
 
-    # Calienta en SEGUNDO PLANO los finalistas que no estén en caché.
+    # ENCOLA los finalistas que no estén en caché. No los calcula.
     #
-    # El precalentado general solo corre de lunes a viernes entre las 12:00 y las 22:00
-    # UTC, que es cuando el mercado importa — pero no es cuando se revisa la cartera con
-    # calma. Un sábado por la tarde la caché está vacía y TODAS las tarjetas salen sin
-    # fuerza, sin razones y sin aviso de calidad de dato, que es justamente la mitad del
-    # valor de esta pantalla.
+    # La versión anterior lanzaba aquí mismo hasta cinco `_construir_dashboard`: unas 25
+    # llamadas a Finnhub de golpe, sin espaciar, sin pasar por el umbral de pausa y en
+    # primer plano, porque las tareas heredan el contexto de la petición. Era el único
+    # camino que se saltaba entero el control de cuota.
     #
-    # No se calcula aquí: eso metería diez segundos en el camino de la portada y gastaría
-    # cuota de golpe. Se lanza detrás, con el mismo candado anti-estampida que usa el
-    # refresco del dashboard, y como mucho para los cinco que han salido. Esta carga sale
-    # con lo que haya; la siguiente ya sale completa.
-    for t in importa:
-        sym = t["symbol"]
-        clave = f"dashboard:{sym}:{_TIMEFRAME_PREWARM}"
-        if _cache.get_stale(clave, max_age=_DASHBOARD_STALE_MAX)[0] is None:
-            _refrescar_dashboard_en_segundo_plano(sym, _TIMEFRAME_PREWARM, clave)
+    # Ahora hay un solo mecanismo. El bucle de precalentado atiende la cola con su marca
+    # de background y su tope, y despierta en segundos en vez de esperar la cadencia.
+    # Esta carga sale con lo que haya; la siguiente ya sale completa — igual que antes,
+    # pero sin la ráfaga.
+    faltan = [t["symbol"] for t in importa
+              if _cache.get_stale(f"dashboard:{t['symbol']}:{_TIMEFRAME_PREWARM}",
+                                  max_age=_DASHBOARD_STALE_MAX)[0] is None]
+    if faltan:
+        _encolar_calentado(faltan)
 
     # Novedades del Cerebro desde la última visita.
     cerebro = {"desde": corte, "tickers_nuevos": [], "menciones_nuevas": 0}
