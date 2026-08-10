@@ -99,8 +99,34 @@ def test_un_nivel_con_respaldo_del_motor_pesa_mas_que_uno_escrito_a_mano():
     sin = hoy.tarjeta_nivel(caliente("Y"), None)
     assert con["urgencia"] > sin["urgencia"]
     assert "fuerza 85/100" in con["por_que"]
-    # Y cuando no hay respaldo, se dice; no se finge que lo hay.
-    assert "no tiene todavía una zona calculada" in sin["por_que"]
+    assert con["datos"]["motor_niveles"] == "confirma"
+
+
+# ── Los dos motores, nombrados por separado ──────────────────────────────────
+def test_sin_datos_del_motor_no_se_insinua_rechazo():
+    """«El motor no tiene zona» se leía como «el motor lo descarta». Son cosas muy
+    distintas y una de ellas es una recomendación que nadie ha hecho."""
+    t = hoy.tarjeta_nivel(caliente("X"), None, motor_con_datos=False)
+    assert t["datos"]["motor_niveles"] == "sin_datos"
+    assert "Motor de niveles: sin datos todavía" in t["por_que"]
+    assert "No es un rechazo ni una confirmación" in t["por_que"]
+
+
+def test_se_distingue_sin_datos_de_sin_zona_en_este_precio():
+    """Que el motor no haya calculado NADA y que haya calculado pero sus zonas caigan
+    lejos son dos situaciones distintas; antes se leían igual."""
+    sin_datos = hoy.tarjeta_nivel(caliente("X"), None, motor_con_datos=False)
+    sin_zona = hoy.tarjeta_nivel(caliente("Y"), None, motor_con_datos=True)
+    assert sin_datos["datos"]["motor_niveles"] == "sin_datos"
+    assert sin_zona["datos"]["motor_niveles"] == "sin_zona"
+    assert "ninguna cae en este precio" in sin_zona["por_que"]
+    assert sin_datos["por_que"] != sin_zona["por_que"]
+
+
+def test_la_tarjeta_de_niveles_nombra_el_motor_entero():
+    """Nunca «el motor» a secas: hay dos y solo uno vive en la caché."""
+    t = hoy.tarjeta_nivel(caliente("X"), zona(strength=78))
+    assert "Motor de niveles" in t["por_que"]
 
 
 # ── Máximo cinco, mínimo honesto ─────────────────────────────────────────────
@@ -213,6 +239,70 @@ def test_el_acuerdo_sobre_algo_que_ya_tienes_no_sube():
     t2 = hoy.tarjeta_confluencia("AMD", "AMD", "choque", fuentes(),
                                  {"score": 25, "verdict": "🔴"}, tiene_posicion=True)
     assert t2 is not None
+
+
+# ── La alerta se explica como alerta ─────────────────────────────────────────
+def test_una_alerta_disparada_lo_dice_en_el_titular():
+    """El titular decía «ha tocado tu Nivel 3», que se lee igual que un nivel cercano.
+    Una alerta saltada es otra cosa: es una promesa que el usuario pidió que se
+    cumpliera, y eso es lo que exige una decisión."""
+    t = hoy.tarjeta_alerta({"symbol": "FORM", "action": "COMPRA", "level_label": "nivel3",
+                            "target": 115.0, "price": 115.0, "diff_pct": 0.0})
+    assert "se ha disparado tu alerta de compra" in t["que_pasa"]
+    assert "115.00" in t["que_pasa"]
+    # El nivel baja a contexto, no desaparece.
+    assert "Nivel 3" in t["por_que"]
+
+
+def test_la_alerta_de_venta_no_se_llama_compra():
+    t = hoy.tarjeta_alerta({"symbol": "X", "action": "VENTA", "level_label": "deseado",
+                            "target": 10.0, "price": 10.0, "diff_pct": 0.0})
+    assert "alerta de venta" in t["que_pasa"]
+
+
+def test_la_tarjeta_de_alerta_no_habla_del_motor():
+    """No tiene por qué: la alerta la puso el usuario y no depende de ningún motor.
+    Mezclarlos era parte de la confusión."""
+    t = hoy.tarjeta_alerta({"symbol": "X", "action": "COMPRA", "level_label": "nivel1",
+                            "target": 10.0, "price": 10.0, "diff_pct": 0.0})
+    texto = f"{t['que_pasa']} {t['por_que']} {t['que_vigilar']}"
+    assert "motor" not in texto.lower()
+
+
+# ── Sin degradación silenciosa de la convicción ──────────────────────────────
+def test_sin_datos_de_niveles_el_acuerdo_no_degrada_en_silencio():
+    """Antes devolvía «acuerdo» a secas: el usuario veía una convicción menor sin que
+    nada dijera que faltaba un dato para poder calcularla."""
+    estado = hoy.confluencia(fuentes(n=2), {"score": 70, "verdict": "🟢"},
+                             motor_niveles_con_datos=False)
+    assert estado == "acuerdo_sin_niveles"
+
+    t = hoy.tarjeta_confluencia("X", "X", estado, fuentes(n=2), {"score": 70})
+    assert "sin datos todavía" in t["por_que"]
+    assert "no se puede evaluar" in t["que_vigilar"]
+    assert t["datos"]["motor_niveles"] == "sin_datos"
+
+
+def test_con_datos_de_niveles_pero_lejos_si_es_un_acuerdo_normal():
+    """Aquí sí se sabe: hay datos y el precio no acompaña. No es lo mismo que no saber."""
+    estado = hoy.confluencia(fuentes(n=2), {"score": 70, "verdict": "🟢"},
+                             distancia_nivel=-20, fuerza_nivel=70,
+                             motor_niveles_con_datos=True)
+    assert estado == "acuerdo"
+
+
+def test_el_acuerdo_alto_sigue_necesitando_todo():
+    estado = hoy.confluencia(fuentes(n=2), {"score": 70, "verdict": "🟢"},
+                             distancia_nivel=-2, fuerza_nivel=70,
+                             motor_niveles_con_datos=True)
+    assert estado == "acuerdo_alto"
+
+
+def test_la_coincidencia_nombra_el_motor_de_oportunidades():
+    """Esta coincidencia sale de un score persistido en Mongo, no de la caché: no es
+    una suposición y conviene que el nombre lo deje claro."""
+    t = hoy.tarjeta_confluencia("X", "X", "acuerdo", fuentes(), {"score": 70})
+    assert "motor de oportunidades" in t["por_que"]
 
 
 # ── Línea de saludo ──────────────────────────────────────────────────────────

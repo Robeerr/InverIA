@@ -37,6 +37,30 @@ const TIPOS = {
   resultados: { tono: "neutro", etiqueta: "Resultados" },
 };
 
+/* Estado del MOTOR DE NIVELES, explícito y separado del de oportunidades.
+   Son dos cosas distintas que se llamaban igual:
+     · niveles       → buy_levels con fuerza y métodos. Vive en la caché del proceso,
+                       así que puede no estar. Que falte NO es un rechazo.
+     · oportunidades → el score que cruza con tus fuentes. Persistido en Mongo.
+   Sin esta distinción, «el motor no tiene zona» se leía como «el motor lo descarta». */
+function EstadoMotorNiveles({ estado }) {
+  if (!estado || estado === "confirma" || estado === "ok") return null;
+  const texto = estado === "sin_datos"
+    ? "Motor de niveles: sin datos todavía"
+    : "Motor de niveles: sin zona en este precio";
+  return (
+    <Chip
+      tono="neutro"
+      variante="contorno"
+      title={estado === "sin_datos"
+        ? "Aún no se ha calculado para este símbolo. No es un rechazo ni una confirmación."
+        : "Ha calculado zonas para este símbolo, pero ninguna cae en este precio."}
+    >
+      {texto}
+    </Chip>
+  );
+}
+
 function BarraFuerza({ valor }) {
   if (!valor) return null;
   return (
@@ -124,8 +148,10 @@ export default function TarjetaAtencion({ tarjeta, orden }) {
       {/* Razones, fuentes y «también» comparten fila cuando caben. La fila de
           «precio X · objetivo Y» se ha quitado: repetía literalmente lo que ya dice
           la línea de Vigila («Precio 98.38 contra 97.80»). */}
-      {(razonesYFuentes.length > 0 || tarjeta.tambien?.length > 0) && (
+      {(razonesYFuentes.length > 0 || tarjeta.tambien?.length > 0
+        || (d.motor_niveles && d.motor_niveles !== "confirma" && d.motor_niveles !== "ok")) && (
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5">
+          <EstadoMotorNiveles estado={d.motor_niveles} />
           {razonesYFuentes.map((r) => (
             <Chip key={r} tono="neutro" variante="contorno">{r}</Chip>
           ))}

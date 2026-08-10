@@ -1,16 +1,28 @@
-"""Qué está recibiendo /hoy de verdad, y por qué cada tarjeta acabó donde acabó.
+"""Por qué cada tarjeta de /hoy acabó donde acabó.
 
     cd backend && python scripts/diagnostico_hoy.py [SYM SYM ...]
 
-Se ejecuta contra la base de datos y las cachés REALES, no contra fixtures. Existe
-porque los tests con datos inventados pasaban mientras la integración real estaba
-incompleta: probaban la decisión, no lo que llega.
+⚠️  LO QUE ESTE SCRIPT NO PUEDE RESPONDER
 
-Responde a tres preguntas concretas:
+No puede decirte si la caché del motor de niveles del SERVICIO WEB está caliente.
 
-  1. ¿La caché del motor está vacía, o /hoy lee mal algún campo?
-  2. Si hay zonas calculadas, ¿por qué no se emparejan con el nivel que dispara?
-  3. ¿Por qué las cinco tarjetas son del mismo tipo? ¿Qué NO ha disparado?
+La caché vive en la memoria del proceso (`_cache` en server.py). Ejecutar esto en la
+Shell de Render arranca un proceso NUEVO, con su caché vacía, así que preguntarle por
+la caché siempre respondería «vacía» — aunque el servicio web las tuviera todas.
+
+La primera versión de este script sí lo preguntaba, e imprimía «SIN CACHÉ» para todos
+los símbolos. Era un artefacto de la herramienta, y mandó a investigar donde no había
+nada. Esa sección se ha eliminado en vez de arreglarla: no tiene arreglo desde aquí.
+
+    Para saber qué está caliente, mira los logs del servicio web en Render:
+        Dashboards precalentados (vuelta N): X de Y · SYM, SYM, SYM
+
+Lo que sí responde, porque sale de Mongo —estado compartido entre procesos—:
+
+  1. Qué regla ha disparado y cuál no, con sus conteos.
+  2. Qué tarjetas salen, con su tipo y su urgencia.
+  3. Si tus menciones tienen guardado el veredicto del motor de OPORTUNIDADES, que es
+     otra cosa distinta de la caché de niveles y sí es persistente.
 
 No imprime ninguna credencial ni ningún dato personal más allá de tus propios
 tickers y precios, que es exactamente lo que la pantalla ya te enseña.
@@ -33,42 +45,17 @@ def titulo(t):
 async def main(simbolos):
     corte = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
 
-    # ── 1 · Estado de la caché del motor, símbolo a símbolo ───────────────────
-    titulo("1 · CACHÉ DEL MOTOR (dashboard:{sym}:1D)")
-    print("Si no hay entrada, el precalentado aún no ha pasado por ese símbolo.")
-    print("El precalentado solo corre L-V de 12:00 a 22:00 UTC.")
-    print(f"Ahora son las {datetime.now(timezone.utc).strftime('%H:%M')} UTC "
-          f"({'DENTRO' if datetime.now(timezone.utc).weekday() < 5 and 12 <= datetime.now(timezone.utc).hour < 22 else 'FUERA'} de la ventana)\n")
+    # La sección que preguntaba por la caché del motor se ha eliminado a propósito:
+    # desde este proceso siempre habría respondido "vacía". Ver la cabecera del fichero.
+    titulo("1 · ESTADO DE LA CACHÉ DEL MOTOR DE NIVELES")
+    print("  No se puede medir desde aquí: la caché vive en la memoria del servicio web")
+    print("  y este script es otro proceso. Míralo en los logs de Render, buscando:")
+    print("      Dashboards precalentados (vuelta N): X de Y · SYM, SYM, ...")
+    print()
+    print("  Lo que sí se ve aquí es si /hoy dice tener datos del motor por tarjeta,")
+    print("  en la sección 3: campo motor_niveles (confirma / sin_zona / sin_datos).")
 
     calientes = await server.hot_signals(limit=50, _user="diag")
-    objetivo_por_sym = {c["symbol"]: c for c in calientes}
-
-    for sym in simbolos:
-        dash = server._dashboard_cacheado(sym)
-        if not dash:
-            print(f"  {sym:<6} SIN CACHÉ — la tarjeta no puede traer fuerza ni razones")
-            continue
-
-        niveles = server._niveles_del_motor(dash)
-        salud = dash.get("data_health") or {}
-        print(f"  {sym:<6} en caché · generado {dash.get('generado_en', '?')[:16]} · "
-              f"{len(niveles)} zonas del motor · degradado: {bool(salud.get('degraded'))}")
-
-        c = objetivo_por_sym.get(sym)
-        objetivo = c.get("target") if c else None
-        if objetivo:
-            print(f"         tu nivel que dispara: {objetivo}  ({c.get('level_label')})")
-        for z in niveles[:6]:
-            precio = z.get("price")
-            dist = (abs(precio - objetivo) / objetivo * 100) if (precio and objetivo) else None
-            marca = ""
-            if dist is not None:
-                # _mejor_zona solo empareja si la zona está a menos del 3% del nivel.
-                marca = "  <-- SE EMPAREJA" if dist <= 3 else f"  (a {dist:.1f}% de tu nivel: NO se empareja)"
-            print(f"           zona {precio}  fuerza {z.get('strength')}  "
-                  f"{', '.join((z.get('reasons') or [])[:3])}{marca}")
-        if not niveles:
-            print("           el motor no devolvió ninguna zona para este símbolo")
 
     # ── 2 · Qué NO ha disparado ──────────────────────────────────────────────
     titulo("2 · POR QUÉ TODAS LAS TARJETAS SON DEL MISMO TIPO")
@@ -81,17 +68,15 @@ async def main(simbolos):
     fuentes = await server._fuentes_por_ticker(14)
     con_veredicto = {t: f for t, f in fuentes.items() if f.get("inveria")}
 
-    rupturas = []
-    for sym in abiertas:
-        ind = (server._dashboard_cacheado(sym).get("indicators") or {})
-        if ((ind.get("salida_10w") or {}).get("recien_perdida")):
-            rupturas.append(sym)
-
     cerca = [c for c in calientes
              if (c.get("pct_away") or 99) <= hoy_mod.UMBRAL_NIVEL_PCT]
 
-    print(f"  Regla 1 · rupturas (posición abierta que pierde la media 10s) : {len(rupturas)}"
-          + (f" -> {rupturas}" if rupturas else "  (por eso no hay tarjeta de este tipo)"))
+    # La ruptura sale de `salida_10w`, que viaja dentro del dashboard cacheado. Desde
+    # este proceso la caché está vacía, así que contarlas aquí daría SIEMPRE 0 y sería
+    # otra respuesta falsa con aspecto de dato. Se dice, y punto.
+    print( "  Regla 1 · rupturas (posición abierta que pierde la media 10s) : NO MEDIBLE aquí")
+    print( "            depende del dashboard cacheado; míralo en la sección 3, que sí")
+    print( "            recalcula, o en la propia portada")
     print(f"  Regla 2 · alertas disparadas desde hace 24 h                  : {len(alertas)}"
           + ("" if alertas else "  (por eso no hay tarjeta de este tipo)"))
     print(f"  Regla 3 · niveles a menos del {hoy_mod.UMBRAL_NIVEL_PCT}%                          : {len(cerca)}"
@@ -107,7 +92,8 @@ async def main(simbolos):
     titulo("3 · LAS TARJETAS QUE SALEN, CON SU REGLA Y SU URGENCIA")
     datos = await server.dashboard_hoy(_user="diag")
     for i, t in enumerate(datos["importa_hoy"], 1):
-        print(f"  {i}. {t['symbol']:<6} tipo={t['tipo']:<12} urgencia={t['urgencia']}")
+        motor = (t.get("datos") or {}).get("motor_niveles", "-")
+        print(f"  {i}. {t['symbol']:<6} tipo={t['tipo']:<12} urgencia={t['urgencia']:<5} motor_niveles={motor}")
         print(f"       {t['que_pasa']}")
         print(f"       porqué : {t['por_que'][:110]}")
         if t.get("tambien"):

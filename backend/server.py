@@ -62,6 +62,12 @@ class _TTLCache:
         self._store = {}
         self._maxsize = maxsize
 
+    @staticmethod
+    def _protegida(entry, ahora) -> bool:
+        """¿Sigue esta entrada dentro de su ventana de 'caducado pero servible'?"""
+        ventana = entry.get("servible_hasta", 0)
+        return bool(ventana) and (ahora - entry["ts"]) < ventana
+
     def get(self, key):
         entry = self._store.get(key)
         if entry and (_time.time() - entry["ts"]) < entry["ttl"]:
@@ -85,17 +91,38 @@ class _TTLCache:
         self._store.pop(key, None)
         return None, False
 
-    def set(self, key, val, ttl=30):
+    def set(self, key, val, ttl=30, servible_hasta=0):
+        """`servible_hasta`: segundos durante los que la entrada sigue valiendo aunque
+        haya pasado su ttl, porque quien la lee usa `get_stale`.
+
+        Sin esto, la purga de aquí abajo borraba entradas que `get_stale` habría
+        servido perfectamente. El dashboard se guardaba con ttl de 5 minutos pero se
+        sirve caducado hasta 30; a los 6 minutos ya contaba como "expirada" y la
+        primera escritura con la caché llena se lo llevaba por delante. El síntoma no
+        era un error: era una pantalla sin fuerza, sin razones y sin aviso de calidad
+        de dato, es decir sin la mitad de lo que la hace útil.
+        """
         now = _time.time()
         # Opportunistic purge of expired entries.
         if len(self._store) >= self._maxsize:
-            expired = [k for k, e in self._store.items() if (now - e["ts"]) >= e["ttl"]]
+            expired = [k for k, e in self._store.items()
+                       if (now - e["ts"]) >= max(e["ttl"], e.get("servible_hasta", 0))]
             for k in expired:
                 self._store.pop(k, None)
-            # Still over budget -> evict oldest by insertion order.
+            # Sigue sobrando -> se desaloja por antigüedad, pero SALTÁNDOSE lo que aún
+            # es servible. Sin esto la corrección de arriba no sirve de nada: el
+            # dashboard es de lo más antiguo que hay (se calienta y no se vuelve a
+            # tocar), así que el desalojo FIFO se lo llevaba igualmente por la puerta
+            # de al lado. Solo se toca lo protegido si TODO lo es, para que la caché
+            # siga sin poder crecer sin límite.
             while len(self._store) >= self._maxsize:
-                self._store.pop(next(iter(self._store)), None)
-        self._store[key] = {"val": val, "ts": now, "ttl": ttl}
+                candidato = next(
+                    (k for k, e in self._store.items() if not self._protegida(e, now)),
+                    None,
+                )
+                self._store.pop(candidato or next(iter(self._store)), None)
+        self._store[key] = {"val": val, "ts": now, "ttl": ttl,
+                            "servible_hasta": servible_hasta}
 
     def clear(self):
         self._store.clear()
@@ -131,6 +158,10 @@ DASHBOARD_PREWARM_PAUSA = float(os.environ.get("DASHBOARD_PREWARM_PAUSA", 4.0))
 # Estando por encima, superarlo implica por fuerza llamadas de PRIMER plano —el fondo no
 # puede pasar de bg_cap—, que es justo la señal que se quiere detectar.
 PREWARM_MARGEN_CUOTA = int(os.environ.get("PREWARM_MARGEN_CUOTA", 10))
+# Cuánto se considera FRESCO un dashboard. Ver el comentario largo donde se guarda:
+# tiene que quedar por debajo de la cadencia del precalentado y muy por debajo de
+# DASHBOARD_STALE_MAX.
+DASHBOARD_TTL = int(os.environ.get("DASHBOARD_TTL", 900))  # 15 min
 
 
 def _umbral_prewarm() -> int:
@@ -398,10 +429,19 @@ async def lifespan(app: FastAPI):
     # DASHBOARD_PREWARM_PAUSA segundos para no vaciar de golpe la reserva de fondo del
     # limitador de Finnhub y dejar sin cuota a quien esté navegando en ese momento.
     async def _prewarm_dashboards():
+        """Precalienta los dashboards por tandas ROTATORIAS.
+
+        Antes hacía `list(syms)[:20]` sobre un CONJUNTO. El orden de iteración de un
+        conjunto es arbitrario pero estable dentro del proceso, así que con más de 20
+        símbolos se calentaban siempre los mismos veinte y el resto NUNCA — no era una
+        rotación lenta, era un punto ciego fijo hasta reiniciar. Y los que caían fuera
+        eran siempre los mismos sin que nada lo dijera.
+        """
         if not DASHBOARD_PREWARM:
             logger.info("Precalentado de dashboards desactivado (DASHBOARD_PREWARM=0)")
             return
         await asyncio.sleep(45)  # tras el arranque, pero antes que los escaneos pesados
+        vuelta = 0
         while True:
             try:
                 now = datetime.now(timezone.utc)
@@ -410,8 +450,10 @@ async def lifespan(app: FastAPI):
                 in_window = now.weekday() < 5 and 12 <= now.hour < 22
                 if in_window:
                     syms = await _simbolos_que_te_importan()
+                    tanda = _tanda_a_precalentar(syms, vuelta)
+                    vuelta += 1
                     calentados = 0
-                    for sym in list(syms)[:DASHBOARD_PREWARM_MAX]:
+                    for sym in tanda:
                         # CEDER EL PASO. Medido en producción: con la cuota en 49/50, una
                         # carga que normalmente son ~500 ms se fue a 5.043 ms, porque cada
                         # llamada de Finnhub esperaba al limitador y un dashboard hace
@@ -461,8 +503,14 @@ async def lifespan(app: FastAPI):
                         await _newsletters_recientes(30, 300)
                     except Exception:
                         pass
+                    # Se registran los símbolos, no solo cuántos. Es lo que permite
+                    # comprobar desde los logos de Render QUÉ hay caliente sin necesidad
+                    # de un endpoint nuevo: la caché vive en la memoria de este proceso y
+                    # un script en la Shell arranca otro proceso con la caché vacía, así
+                    # que preguntarle a él no dice nada de lo que tiene el servicio web.
                     if calentados:
-                        logger.info("Dashboards precalentados: %d", calentados)
+                        logger.info("Dashboards precalentados (vuelta %d): %d de %d · %s",
+                                    vuelta, calentados, len(syms), ", ".join(tanda))
                     mem.trim()  # el ensamblado crea DataFrames: devuélvelos al SO
             except Exception as e:
                 logger.warning("Bucle de precalentado de dashboards: %s", e)
@@ -555,6 +603,27 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 
 # Referencias fuertes a tareas en segundo plano (si no, el GC puede cancelarlas).
 _bg_tasks: set = set()
+
+
+def _tanda_a_precalentar(simbolos, vuelta: int, tamano: int = None) -> list:
+    """Los símbolos que toca calentar en esta vuelta.
+
+    Orden alfabético (determinista: el mismo conjunto da siempre la misma secuencia) y
+    ventana deslizante que avanza `tamano` posiciones por vuelta, dando la vuelta al
+    final. Con 50 símbolos y tandas de 20, todos quedan cubiertos en 3 vueltas — una
+    hora — en vez de no cubrirse nunca.
+
+    El coste por vuelta no cambia: se sigue calentando como mucho `tamano`.
+    """
+    tamano = tamano or DASHBOARD_PREWARM_MAX
+    ordenados = sorted(simbolos)
+    if not ordenados:
+        return []
+    if len(ordenados) <= tamano:
+        return ordenados
+    inicio = (vuelta * tamano) % len(ordenados)
+    # Se duplica la lista para poder cortar una ventana que cruza el final sin partirla.
+    return (ordenados + ordenados)[inicio:inicio + tamano]
 
 
 async def _simbolos_que_te_importan() -> set:
@@ -2148,7 +2217,19 @@ async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
         # refresca aparte pero esta marca no cambia: así queda claro de cuándo es el resto.
         "generado_en": datetime.now(timezone.utc).isoformat(),
     }
-    _cache.set(cache_key, result, ttl=300)
+    # ttl 900 < cadencia del precalentado 1200 < ventana de servible 1800.
+    #
+    # Con el ttl anterior de 300 la entrada estaba "caducada" 15 de cada 20 minutos y
+    # solo sobrevivía gracias a `get_stale`, que es justo lo que la purga anulaba. Se
+    # sube a 900 para que la exposición baje a 5 de cada 20, y se deja POR DEBAJO de la
+    # cadencia para que el precalentado siempre la encuentre no-fresca y la renueve: con
+    # ttl igual a la cadencia, cualquier desfase la dejaría fresca y el `if fresco:
+    # continue` se saltaría la vuelta entera.
+    #
+    # No hay riesgo de servir precios viejos: la cotización se refresca aparte, y lo
+    # pesado —indicadores y niveles— se calcula sobre velas diarias, que no cambian de
+    # un minuto a otro.
+    _cache.set(cache_key, result, ttl=DASHBOARD_TTL, servible_hasta=_DASHBOARD_STALE_MAX)
     return result
 
 
@@ -4284,7 +4365,10 @@ async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_PO
         zona = _mejor_zona(dash, c.get("target"))
         aviso = _aviso_de_datos(dash)
         tiene = (posiciones.get(sym, {}).get("acciones") or 0) > 0
-        tarjetas.append(hoy.tarjeta_nivel(c, zona, aviso=aviso, tiene_posicion=tiene))
+        # `bool(dash)` distingue "el motor no ha calculado este símbolo" de "ha
+        # calculado pero sus zonas caen lejos de este precio". Se leían igual y no lo son.
+        tarjetas.append(hoy.tarjeta_nivel(c, zona, aviso=aviso, tiene_posicion=tiene,
+                                          motor_con_datos=bool(dash)))
 
     # 4 y 5 · Choque y coincidencia entre motor y fuentes.
     for tk, f in fuentes.items():
@@ -4297,6 +4381,7 @@ async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_PO
             f, f.get("inveria"),
             distancia_nivel=(zona or {}).get("distance_pct"),
             fuerza_nivel=(zona or {}).get("strength"),
+            motor_niveles_con_datos=bool(dash),
         )
         tiene = (posiciones.get(tk, {}).get("acciones") or 0) > 0
         tarjetas.append(hoy.tarjeta_confluencia(

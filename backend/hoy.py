@@ -173,10 +173,15 @@ def tarjeta_alerta(alerta, entrada=None):
         por_que = "Saltó la alerta de pánico: una caída fuerte sin más contexto."
         vigilar = "Antes de tocar nada, mira si hay un motivo real detrás de la caída."
     else:
-        que_pasa = f"{symbol} ha tocado {etiqueta}"
+        # El titular dice que la ALERTA se ha disparado, no que el precio "está cerca".
+        # Son cosas distintas y la primera es la que exige una decisión: una alerta
+        # saltada es una promesa que tú pediste que se cumpliera. El nivel pasa a
+        # contexto, que es su papel.
+        verbo = "compra" if accion == "COMPRA" else ("venta" if accion == "VENTA" else "precio")
+        que_pasa = (f"{symbol}: se ha disparado tu alerta de {verbo} en "
+                    f"{_fmt_precio(alerta.get('target'))}")
         por_que = (
-            f"Saltó tu alerta de {accion.lower() or 'precio'} en "
-            f"{_fmt_precio(alerta.get('target'))}, con el precio en "
+            f"Es {etiqueta} de tu tabla y el precio la ha tocado: cotiza a "
             f"{_fmt_precio(alerta.get('price'))}."
         )
         vigilar = "Tú pediste que te avisara aquí. Toca decidir si actúas o mueves el nivel."
@@ -194,7 +199,8 @@ def tarjeta_alerta(alerta, entrada=None):
     )
 
 
-def tarjeta_nivel(caliente, nivel_motor=None, aviso=None, tiene_posicion=False):
+def tarjeta_nivel(caliente, nivel_motor=None, aviso=None, tiene_posicion=False,
+                  motor_con_datos=False):
     """3 · Un nivel está muy cerca. Con el porqué del motor, si lo hay.
 
     `caliente` viene de /signals/hot, que ya calcula y ordena la distancia al nivel
@@ -220,18 +226,32 @@ def tarjeta_nivel(caliente, nivel_motor=None, aviso=None, tiene_posicion=False):
     if tiene_posicion:
         urgencia += 15
 
+    # Hay DOS motores y hasta ahora se llamaban igual, que es lo que hacía leer
+    # "el motor no tiene zona" como "el motor lo rechaza":
+    #
+    #   · Motor de NIVELES        → buy_levels con fuerza y métodos. Vive solo en la
+    #                               caché en memoria; si el proceso reinicia, no está.
+    #   · Motor de OPORTUNIDADES  → el score que cruza con tus fuentes. Persistido en
+    #                               Mongo. Es el de las tarjetas de coincidencia.
+    #
+    # Aquí solo se habla del primero, y se nombra entero para no confundirlos.
     if fuerza and razones:
-        por_que = (
-            f"El motor marca ahí una zona de fuerza {fuerza}/100: "
-            + " + ".join(razones[:3]) + "."
-        )
+        estado_motor = "confirma"
+        por_que = (f"Motor de niveles: zona de fuerza {fuerza}/100 · "
+                   + " + ".join(razones[:3]) + ".")
     elif fuerza:
-        por_que = f"El motor marca ahí una zona de fuerza {fuerza}/100."
+        estado_motor = "confirma"
+        por_que = f"Motor de niveles: zona de fuerza {fuerza}/100."
+    elif motor_con_datos:
+        # Ha calculado, pero sus zonas caen lejos de ESTE precio. No es lo mismo que
+        # no haber calculado, y desde luego no es un rechazo.
+        estado_motor = "sin_zona"
+        por_que = ("Es un nivel de tu tabla. El motor de niveles ha calculado zonas para "
+                   "este símbolo, pero ninguna cae en este precio.")
     else:
-        por_que = (
-            "Es un nivel de tu tabla. El motor no tiene todavía una zona calculada "
-            "para este precio."
-        )
+        estado_motor = "sin_datos"
+        por_que = ("Es un nivel de tu tabla. Motor de niveles: sin datos todavía — aún no "
+                   "se ha calculado para este símbolo. No es un rechazo ni una confirmación.")
 
     accion = (caliente.get("action") or "").lower()
     return _tarjeta(
@@ -252,12 +272,14 @@ def tarjeta_nivel(caliente, nivel_motor=None, aviso=None, tiene_posicion=False):
             "fuerza": fuerza,
             "razones": razones[:3],
             "tiene_posicion": tiene_posicion,
+            "motor_niveles": estado_motor,
         },
         aviso=aviso,
     )
 
 
-def confluencia(fuentes, veredicto_motor, distancia_nivel=None, fuerza_nivel=None):
+def confluencia(fuentes, veredicto_motor, distancia_nivel=None, fuerza_nivel=None,
+                motor_niveles_con_datos=None):
     """Estado del cruce entre lo que dicen tus fuentes y lo que mide tu motor.
 
     Devuelve uno de: acuerdo_alto · acuerdo · choque · solo_fuentes · solo_motor · None.
@@ -288,6 +310,10 @@ def confluencia(fuentes, veredicto_motor, distancia_nivel=None, fuerza_nivel=Non
 
     fuentes_positivas = positivos > negativos
     fuentes_negativas = negativos > positivos
+    # Si no se dice, se deduce: que llegue alguno de los dos datos significa que el
+    # motor de niveles había calculado algo para este símbolo.
+    if motor_niveles_con_datos is None:
+        motor_niveles_con_datos = distancia_nivel is not None or fuerza_nivel is not None
 
     # Choque: unos empujan y el otro frena. En cualquiera de los dos sentidos.
     if (fuentes_positivas and motor_evita) or (fuentes_negativas and score >= 65):
@@ -298,6 +324,11 @@ def confluencia(fuentes, veredicto_motor, distancia_nivel=None, fuerza_nivel=Non
         fuerte = (fuerza_nivel or 0) >= UMBRAL_FUERZA
         if n_fuentes >= 2 and cerca and fuerte:
             return "acuerdo_alto"
+        # Sin datos del motor de niveles NO se puede saber si esto era acuerdo_alto.
+        # Devolver "acuerdo" a secas sería degradar en silencio: el usuario vería una
+        # convicción menor sin que nada dijera que falta un dato para calcularla.
+        if n_fuentes >= 2 and not motor_niveles_con_datos:
+            return "acuerdo_sin_niveles"
         return "acuerdo"
     if fuentes_positivas and score >= 45:
         return "acuerdo"
@@ -307,7 +338,7 @@ def confluencia(fuentes, veredicto_motor, distancia_nivel=None, fuerza_nivel=Non
 def tarjeta_confluencia(symbol, nombre, estado, fuentes, veredicto_motor,
                         distancia_nivel=None, fuerza_nivel=None, tiene_posicion=False):
     """4 y 5 · Choque o acuerdo entre motor y fuentes."""
-    if estado not in ("choque", "acuerdo_alto", "acuerdo"):
+    if estado not in ("choque", "acuerdo_alto", "acuerdo", "acuerdo_sin_niveles"):
         return None
 
     fuentes = fuentes or {}
@@ -351,29 +382,45 @@ def tarjeta_confluencia(symbol, nombre, estado, fuentes, veredicto_motor,
         return None
     urgencia = BASE["confluencia"] + min(80, menciones * 6)
     alto = estado == "acuerdo_alto"
+    sin_niveles = estado == "acuerdo_sin_niveles"
     if alto:
         urgencia += 60
+
+    # «Tu motor» a secas era ambiguo: aquí siempre es el motor de OPORTUNIDADES, el
+    # score persistido en Mongo. No depende de la caché de niveles, así que esta
+    # coincidencia nunca es una suposición.
+    base_por_que = (
+        f"{positivos} menciones positivas en {len(lista)} "
+        f"{'fuente' if len(lista) == 1 else 'fuentes'} ({quienes}), y el motor de "
+        f"oportunidades le da {score}/100."
+    )
+    if alto:
+        base_por_que += (f" Además el motor de niveles marca una zona de fuerza "
+                         f"{fuerza_nivel}/100 a {_fmt_pct(distancia_nivel)}.")
+    elif sin_niveles:
+        base_por_que += (" Motor de niveles: sin datos todavía, así que no se puede "
+                         "comprobar si el precio está en zona.")
 
     return _tarjeta(
         "confluencia", symbol, nombre, urgencia,
         que_pasa=(
-            f"{symbol}: tus fuentes y tu motor coinciden"
+            f"{symbol}: tus fuentes y el motor de oportunidades coinciden"
             + (" y el precio está en zona" if alto else "")
         ),
-        por_que=(
-            f"{positivos} menciones positivas en {len(lista)} "
-            f"{'fuente' if len(lista) == 1 else 'fuentes'} ({quienes}), "
-            f"y tu motor le da {score}/100."
-            + (f" Además hay una zona de fuerza {fuerza_nivel}/100 a "
-               f"{_fmt_pct(distancia_nivel)}." if alto else "")
-        ),
+        por_que=base_por_que,
         que_vigilar=(
             "No la tienes en cartera. Es la coincidencia con más convicción que hay hoy."
-            if alto else "No la tienes en cartera. Coinciden, pero el precio aún no acompaña."
+            if alto else
+            # Sin el dato de niveles NO se afirma que la convicción sea menor: se dice
+            # que no se ha podido calcular, que es lo único cierto.
+            ("No la tienes en cartera. La convicción alta no se puede evaluar hasta que "
+             "el motor de niveles calcule este símbolo." if sin_niveles else
+             "No la tienes en cartera. Coinciden, pero el precio aún no acompaña.")
         ),
         datos={"menciones": menciones, "positivos": positivos, "negativos": negativos,
                "fuentes": lista, "score_motor": score, "estado": estado,
-               "distancia_nivel": distancia_nivel, "fuerza_nivel": fuerza_nivel},
+               "distancia_nivel": distancia_nivel, "fuerza_nivel": fuerza_nivel,
+               "motor_niveles": "sin_datos" if sin_niveles else ("confirma" if alto else "ok")},
     )
 
 
