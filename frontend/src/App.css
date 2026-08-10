@@ -1,7 +1,14 @@
 /* App-level styles */
 .App {
     min-height: 100vh;
-    background-color: #f5f3ef;
+    /* Token, no hex. Con `#f5f3ef` fijo, el contenedor de TODA la app se quedaba
+       claro en modo oscuro: el parche `!important` de index.css solo remapea clases
+       de utilidad (`.dark .bg-[#f5f3ef]`), y esta es una clase propia. El resultado
+       era una franja clara del ancho de la pantalla con el texto claro encima —
+       invisible—, entre una cabecera oscura y un body oscuro.
+       No se veía mientras la app arrancaba en claro; al pasar el oscuro a ser el
+       tema por defecto, pasó a ser lo primero que se ve. */
+    background-color: rgb(var(--iv-fondo));
 }
 
 .card-flat {

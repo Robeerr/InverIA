@@ -2,7 +2,6 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import Chip from "./Chip";
-import { fmtPrice } from "@/lib/format";
 
 /* TarjetaAtencion · la unidad de «Lo que importa hoy»
    ─────────────────────────────────────────────────────────────────────────────
@@ -50,14 +49,30 @@ function BarraFuerza({ valor }) {
   );
 }
 
+/** «INTC está a un 0.6% de tu Nivel 1» → «está a un 0.6% de tu Nivel 1».
+ *
+ *  El titular lo redacta el servidor empezando por el ticker, porque fuera de esta
+ *  tarjeta (una notificación, un correo) tiene que sostenerse solo. Aquí el ticker
+ *  ya está al lado, así que repetirlo obligaba a poner el titular en otra fila. */
+function sinPrefijoDelTicker(texto, symbol) {
+  if (!texto || !symbol) return texto;
+  return texto.startsWith(symbol + " ")
+    ? texto.slice(symbol.length + 1)
+    : texto;
+}
+
 export default function TarjetaAtencion({ tarjeta, orden }) {
   const meta = TIPOS[tarjeta.tipo] || { tono: "neutro", etiqueta: tarjeta.tipo };
   const d = tarjeta.datos || {};
+  const razonesYFuentes = [
+    ...(Array.isArray(d.razones) ? d.razones : []),
+    ...(Array.isArray(d.fuentes) ? d.fuentes : []),
+  ];
 
   return (
     <article
       className={cn(
-        "iv-panel p-4 sm:p-5 relative",
+        "iv-panel px-4 py-3 relative",
         // El borde izquierdo es del color del tipo: deja leer la naturaleza del aviso
         // antes de leer el texto, que es lo que permite barrer cinco tarjetas de un vistazo.
         "border-l-[3px]",
@@ -70,71 +85,56 @@ export default function TarjetaAtencion({ tarjeta, orden }) {
       )}
       data-testid={`tarjeta-hoy-${tarjeta.symbol}`}
     >
-      <div className="flex items-start justify-between gap-3 mb-2">
-        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+      {/* Cabecera y titular en la MISMA línea siempre que quepan: el titular ya
+          empieza por el ticker, así que repetirlo arriba en su propia fila gastaba
+          una línea entera por tarjeta sin añadir nada. */}
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="flex items-baseline gap-2 min-w-0">
           {orden != null && (
-            <span className="iv-cifra text-etiqueta text-tinta-3 tabular-nums">{orden}</span>
+            <span className="iv-cifra text-etiqueta text-tinta-3 tabular-nums shrink-0">{orden}</span>
           )}
           <Link
             to={tarjeta.ruta}
-            className="iv-cifra font-bold text-cuerpo text-tinta hover:text-marca transition-colors"
+            className="iv-cifra font-bold text-cuerpo text-tinta hover:text-marca transition-colors shrink-0"
           >
             {tarjeta.symbol}
           </Link>
-          <Chip tono={meta.tono}>{meta.etiqueta}</Chip>
-          {d.tiene_posicion && <Chip tono="neutro" variante="contorno">en cartera</Chip>}
+          {/* 1 · ¿Qué está pasando? Sin el prefijo del ticker, que ya está al lado. */}
+          <p className="text-cuerpo text-tinta font-medium leading-snug truncate">
+            {sinPrefijoDelTicker(tarjeta.que_pasa, tarjeta.symbol)}
+          </p>
         </div>
-        {d.fuerza != null && <BarraFuerza valor={d.fuerza} />}
+        <div className="flex items-center gap-2 shrink-0">
+          {d.fuerza != null && <BarraFuerza valor={d.fuerza} />}
+          <Chip tono={meta.tono}>{meta.etiqueta}</Chip>
+          {d.tiene_posicion && <Chip tono="neutro" variante="contorno">cartera</Chip>}
+        </div>
       </div>
 
-      {/* 1 · ¿Qué está pasando? */}
-      <p className="text-cuerpo text-tinta font-medium leading-snug">{tarjeta.que_pasa}</p>
-
       {/* 2 · ¿Por qué? */}
-      <p className="text-apoyo text-tinta-2 mt-1.5">{tarjeta.por_que}</p>
+      <p className="text-apoyo text-tinta-2 mt-1">{tarjeta.por_que}</p>
 
-      {/* 3 · ¿Qué debería vigilar? */}
-      <p className="text-apoyo text-tinta mt-2 pt-2 border-t border-linea">
+      {/* 3 · ¿Qué debería vigilar? Sin separador ni relleno: la etiqueta ya marca
+          dónde empieza, y una línea de 1px por tarjeta son cinco líneas de nada. */}
+      <p className="text-apoyo text-tinta mt-1">
         <span className="iv-etiqueta mr-2">Vigila</span>
         {tarjeta.que_vigilar}
       </p>
 
-      {/* Los métodos que coinciden en el nivel. Es el «porqué» del porqué, y hoy solo
-          se ve dentro de la ficha de la acción. */}
-      {Array.isArray(d.razones) && d.razones.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-2">
-          {d.razones.map((r) => (
+      {/* Razones, fuentes y «también» comparten fila cuando caben. La fila de
+          «precio X · objetivo Y» se ha quitado: repetía literalmente lo que ya dice
+          la línea de Vigila («Precio 98.38 contra 97.80»). */}
+      {(razonesYFuentes.length > 0 || tarjeta.tambien?.length > 0) && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5">
+          {razonesYFuentes.map((r) => (
             <Chip key={r} tono="neutro" variante="contorno">{r}</Chip>
           ))}
-        </div>
-      )}
-
-      {Array.isArray(d.fuentes) && d.fuentes.length > 0 && (
-        <p className="text-etiqueta text-tinta-3 mt-2 truncate" title={d.fuentes.join(" · ")}>
-          {d.fuentes.join(" · ")}
-        </p>
-      )}
-
-      {(d.price != null || d.target != null) && (
-        <div className="flex items-baseline gap-4 mt-2 iv-cifra text-apoyo">
-          {d.price != null && (
-            <span className="text-tinta-3">
-              precio <span className="text-tinta font-semibold">{fmtPrice(d.price)}</span>
-            </span>
-          )}
-          {d.target != null && (
-            <span className="text-tinta-3">
-              objetivo <span className="text-tinta font-semibold">{fmtPrice(d.target)}</span>
+          {Array.isArray(tarjeta.tambien) && tarjeta.tambien.length > 0 && (
+            <span className="text-etiqueta text-tinta-3">
+              también: {tarjeta.tambien.map((t) => t.que_pasa).join(" · ")}
             </span>
           )}
         </div>
-      )}
-
-      {/* Lo que este ticker también dispara. No merece tarjeta propia, pero sí saberse. */}
-      {Array.isArray(tarjeta.tambien) && tarjeta.tambien.length > 0 && (
-        <p className="text-etiqueta text-tinta-3 mt-2">
-          También: {tarjeta.tambien.map((t) => t.que_pasa).join(" · ")}
-        </p>
       )}
 
       {/* El aviso del motor sobre la calidad del dato va PEGADO a lo que sostiene:

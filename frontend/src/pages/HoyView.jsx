@@ -2,6 +2,7 @@ import React, { useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import PageShell from "@/components/base/PageShell";
 import TarjetaAtencion from "@/components/base/TarjetaAtencion";
 import Metrica from "@/components/base/Metrica";
@@ -204,20 +205,37 @@ export default function HoyView() {
           )}
         </div>
 
+        {/* Los nombres de campo son los que devuelve market_regime.get_market_regime():
+            light / label / advice / dist_sma200_pct. La primera versión leía
+            estado/emoji/detalle, que no existen, y por eso salía un «—» pelado: el
+            dato estaba ahí y la pantalla no sabía dónde mirar. */}
         <div className="iv-panel p-4">
           <h2 className="iv-etiqueta mb-3">Mercado</h2>
-          {mercado ? (
+          {mercado?.label && mercado.light !== "desconocido" ? (
             <>
               <p className="text-cuerpo text-tinta font-medium">
-                {mercado.emoji ? `${mercado.emoji} ` : ""}
-                {mercado.estado || mercado.regime || "—"}
+                <span className={cn("inline-block w-2 h-2 rounded-full mr-2 align-middle",
+                  mercado.light === "verde" && "bg-sube",
+                  mercado.light === "amarillo" && "bg-aviso",
+                  mercado.light === "rojo" && "bg-baja")} />
+                {mercado.label}
               </p>
-              {mercado.detalle && (
-                <p className="text-apoyo text-tinta-2 mt-1">{mercado.detalle}</p>
+              {mercado.dist_sma200_pct != null && (
+                <p className="iv-cifra text-apoyo text-tinta-2 mt-1">
+                  SPY a {fmtPct(mercado.dist_sma200_pct)} de su media de 200 sesiones
+                </p>
+              )}
+              {mercado.advice && (
+                <p className="text-apoyo text-tinta-3 mt-1.5">{mercado.advice}</p>
               )}
             </>
           ) : (
-            <p className="text-apoyo text-tinta-3">Sin datos de régimen ahora mismo.</p>
+            /* Estado explicativo, no un guion: un «—» no distingue «no se ha podido
+               calcular» de «no hay nada que decir», y son cosas distintas. */
+            <p className="text-apoyo text-tinta-3">
+              No se ha podido evaluar el régimen de mercado ahora mismo. Suele ser que el
+              histórico de SPY no está disponible; se reintenta solo en la próxima carga.
+            </p>
           )}
         </div>
       </div>
