@@ -2,6 +2,7 @@
 import math
 import json
 import re
+import hmac
 from fastapi import FastAPI, APIRouter, HTTPException, Request, UploadFile, File, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.middleware.gzip import GZipMiddleware
@@ -703,7 +704,7 @@ async def me(current_user: str = Depends(auth.get_current_user)):
 
 
 @api_router.get("/models")
-async def available_models():
+async def available_models(_user: str = Depends(auth.get_current_user)):
     return {
         "models": [
             {"value": "gemini-2.5-flash", "label": "Gemini 2.5 Flash (Gratis · Recomendado)", "free": True, "available": True},
@@ -736,7 +737,7 @@ def _cached_vp(sym: str, dias: int = 365):
 
 # ---------- Quote ----------
 @api_router.get("/quote/{symbol}")
-async def get_quote(symbol: str):
+async def get_quote(symbol: str, _user: str = Depends(auth.get_current_user)):
     sym = symbol.upper()
     cached = _cache.get(f"quote:{sym}")
     if cached:
@@ -768,7 +769,7 @@ def _compute_chart_lines(candles):
 
 
 @api_router.get("/chart/{symbol}")
-async def get_chart(symbol: str, timeframe: str = "1Y"):
+async def get_chart(symbol: str, timeframe: str = "1Y", _user: str = Depends(auth.get_current_user)):
     sym = symbol.upper()
     cached = _cache.get(f"chart:{sym}:{timeframe}")
     if cached:
@@ -963,7 +964,7 @@ async def chartist_verdict(symbol: str, refresh: bool = False, cached_only: bool
 
 
 @api_router.get("/indicators/{symbol}")
-async def get_indicators(symbol: str):
+async def get_indicators(symbol: str, _user: str = Depends(auth.get_current_user)):
     sym = symbol.upper()
     cached = _cache.get(f"indicators:{sym}")
     if cached:
@@ -980,7 +981,7 @@ async def get_indicators(symbol: str):
 
 # ---------- News ----------
 @api_router.get("/news/{symbol}")
-async def get_news(symbol: str):
+async def get_news(symbol: str, _user: str = Depends(auth.get_current_user)):
     sym = symbol.upper()
     cached = _cache.get(f"news:{sym}")
     if cached:
@@ -2685,14 +2686,14 @@ async def diagnostico_carga(symbol: str, _user: str = Depends(auth.get_current_u
 
 
 @api_router.get("/market-regime")
-async def market_regime_endpoint():
+async def market_regime_endpoint(_user: str = Depends(auth.get_current_user)):
     """Semáforo de mercado (S&P vs SMA200 + tendencia) — condiciona la fiabilidad de las
     señales de compra. 🟢 sano · 🟡 transición · 🔴 riesgo."""
     return market_regime.get_market_regime()
 
 
 @api_router.get("/market/sentiment")
-async def market_sentiment_endpoint():
+async def market_sentiment_endpoint(_user: str = Depends(auth.get_current_user)):
     """Termómetro Miedo/Codicia del mercado (0-100) a partir del VIX y el momento del S&P.
     Cacheado 15 min internamente."""
     return await asyncio.to_thread(market_regime.get_fear_greed)
@@ -2760,7 +2761,7 @@ _SECTOR_ETFS = [
 
 
 @api_router.get("/market/heatmap")
-async def market_heatmap():
+async def market_heatmap(_user: str = Depends(auth.get_current_user)):
     """Mapa de calor de sectores: variación del día de cada sector del S&P (vía sus ETFs).
     Contexto de mercado de un vistazo. Cotizaciones ligeras (Finnhub), cacheado 5 min."""
     cached = _cache.get("market_heatmap")
@@ -2899,7 +2900,7 @@ async def fuentes_de_accion(symbol: str, days: int = 30,
 
 # ---------- Radar: inteligencia acumulada de todas las newsletters ----------
 @api_router.get("/radar")
-async def radar(days: int = 14):
+async def radar(days: int = 14, _user: str = Depends(auth.get_current_user)):
     """Recopila TODA la información de las newsletters recibidas en los últimos `days` días
     y la divide en dos: (1) ACCIONES agregadas (cada ticker, cuántas fuentes lo mencionan,
     con qué ángulo y el veredicto del motor), y (2) INFORMACIÓN (feed de resúmenes)."""
@@ -3046,7 +3047,7 @@ async def ingest_text_ep(request: Request, _user: str = Depends(auth.get_current
 
 
 @api_router.get("/brain")
-async def brain_overview():
+async def brain_overview(_user: str = Depends(auth.get_current_user)):
     """Estado del CEREBRO para la web: qué ha capturado (feed de actividad), de qué
     fuentes, cuántos principios tiene y el conocimiento acumulado por categoría."""
     cached = _cache.get("brain_overview")
@@ -3059,7 +3060,7 @@ async def brain_overview():
 
 
 @api_router.get("/track-record")
-async def track_record(days: int = 180, refresh: bool = False):
+async def track_record(days: int = 180, refresh: bool = False, _user: str = Depends(auth.get_current_user)):
     """Auto-examen del sistema: ¿funcionaron las señales de COMPRA del motor? Mira qué
     hizo el precio tras cada análisis (tocó antes TP1 = acierto, o stop = fallo).
     `refresh=true` salta la caché (para ver al instante una señal recién generada)."""
@@ -3075,7 +3076,7 @@ async def track_record(days: int = 180, refresh: bool = False):
 
 # ---------- Watchlist ----------
 @api_router.get("/watchlist")
-async def list_watchlist():
+async def list_watchlist(_user: str = Depends(auth.get_current_user)):
     cached = _cache.get("watchlist_with_quotes")
     if cached is not None:
         return cached
@@ -3104,7 +3105,7 @@ async def list_watchlist():
 
 
 @api_router.get("/watchlist/symbols")
-async def list_watchlist_symbols():
+async def list_watchlist_symbols(_user: str = Depends(auth.get_current_user)):
     """Solo los tickers de la watchlist (sin cotizaciones). Ligero: para que el botón de
     corazón sepa al instante si la acción actual ya está guardada."""
     items = await db.watchlist.find({}, {"_id": 0, "symbol": 1}).to_list(500)
@@ -3112,7 +3113,7 @@ async def list_watchlist_symbols():
 
 
 @api_router.post("/watchlist")
-async def add_watchlist(item: WatchlistCreate):
+async def add_watchlist(item: WatchlistCreate, _user: str = Depends(auth.get_current_user)):
     symbol = item.symbol.upper().strip()
     existing = await db.watchlist.find_one({"symbol": symbol})
     if existing:
@@ -3131,7 +3132,7 @@ async def add_watchlist(item: WatchlistCreate):
 
 
 @api_router.delete("/watchlist/{symbol}")
-async def remove_watchlist(symbol: str):
+async def remove_watchlist(symbol: str, _user: str = Depends(auth.get_current_user)):
     res = await db.watchlist.delete_one({"symbol": symbol.upper()})
     if res.deleted_count == 0:
         raise HTTPException(404, "No encontrado")
@@ -3204,13 +3205,13 @@ async def portfolio_correlation(_user: str = Depends(auth.get_current_user)):
 
 # ---------- Price Alerts ----------
 @api_router.get("/alerts")
-async def list_alerts():
+async def list_alerts(_user: str = Depends(auth.get_current_user)):
     items = await db.alerts.find({}, {"_id": 0}).to_list(500)
     return items
 
 
 @api_router.post("/alerts")
-async def add_alert(item: PriceAlertCreate):
+async def add_alert(item: PriceAlertCreate, _user: str = Depends(auth.get_current_user)):
     if item.direction not in ("above", "below"):
         raise HTTPException(400, "direction debe ser 'above' o 'below'")
     symbol = item.symbol.upper().strip()
@@ -3230,7 +3231,7 @@ async def add_alert(item: PriceAlertCreate):
 
 
 @api_router.delete("/alerts/{alert_id}")
-async def remove_alert(alert_id: str):
+async def remove_alert(alert_id: str, _user: str = Depends(auth.get_current_user)):
     res = await db.alerts.delete_one({"id": alert_id})
     if res.deleted_count == 0:
         raise HTTPException(404, "Alerta no encontrada")
@@ -3239,7 +3240,7 @@ async def remove_alert(alert_id: str):
 
 # ---------- Market overview (popular tickers) ----------
 @api_router.get("/market/popular")
-async def popular_stocks():
+async def popular_stocks(_user: str = Depends(auth.get_current_user)):
     cached = _cache.get("popular")
     if cached:
         return cached
@@ -3256,7 +3257,7 @@ async def popular_stocks():
 
 # ---------- Analyst consensus & sentiment ----------
 @api_router.get("/analyst/{symbol}")
-async def analyst_data(symbol: str):
+async def analyst_data(symbol: str, _user: str = Depends(auth.get_current_user)):
     sym = symbol.upper()
     cached = _cache.get(f"analyst:{sym}")
     if cached:
@@ -3275,7 +3276,7 @@ async def analyst_data(symbol: str):
 
 
 @api_router.get("/sentiment/{symbol}")
-async def sentiment_news(symbol: str):
+async def sentiment_news(symbol: str, _user: str = Depends(auth.get_current_user)):
     sym = symbol.upper()
     cached = _cache.get(f"sentiment:{sym}")
     if cached:
@@ -3303,7 +3304,7 @@ async def sentiment_news(symbol: str):
 
 # ---------- Earnings Calendar ----------
 @api_router.get("/calendar/earnings")
-async def earnings_calendar(days: int = 14, symbols: Optional[str] = None, refresh: bool = False):
+async def earnings_calendar(days: int = 14, symbols: Optional[str] = None, refresh: bool = False, _user: str = Depends(auth.get_current_user)):
     """Upcoming earnings from Finnhub. Always fetches 60 days and caches by symbols only;
     the day range is then filtered in-memory so every day-filter combo shares the same cache.
     `refresh=true` salta la caché (para forzar datos frescos)."""
@@ -3342,7 +3343,7 @@ async def earnings_calendar(days: int = 14, symbols: Optional[str] = None, refre
 
 # ---------- Analysis History ----------
 @api_router.get("/history/{symbol}")
-async def history_by_symbol(symbol: str, limit: int = 20):
+async def history_by_symbol(symbol: str, limit: int = 20, _user: str = Depends(auth.get_current_user)):
     sym = symbol.upper()
     try:
         cursor = (
@@ -3358,7 +3359,7 @@ async def history_by_symbol(symbol: str, limit: int = 20):
 
 
 @api_router.get("/history")
-async def history_all(limit: int = 30):
+async def history_all(limit: int = 30, _user: str = Depends(auth.get_current_user)):
     try:
         cursor = (
             db.analyses.find({}, {"_id": 0})
@@ -3553,7 +3554,7 @@ async def alternativa_sectorial(symbol: str, _user: str = Depends(auth.get_curre
 
 # ---------- Analista Institucional ----------
 @api_router.get("/analyst/ideas")
-async def analyst_ideas(limit: int = 30):
+async def analyst_ideas(limit: int = 30, _user: str = Depends(auth.get_current_user)):
     """Histórico de ideas que el Analista Institucional ha detectado (más recientes primero)."""
     items = await db.analyst_ideas.find({}, {"_id": 0}).sort("detected_at", -1).limit(limit).to_list(limit)
     return {"ideas": items}
@@ -3581,8 +3582,17 @@ def _newsletter_body_from(payload: dict) -> tuple:
 
 # ---------- Lector de Telegram (alimenta el cerebro con tu grupo de pago) ----------
 def _check_inbound_token(token: str):
+    """Valida el secreto compartido de la ingesta máquina-a-máquina.
+
+    `compare_digest` en vez de `!=`: comparar cadenas con el operador normal sale antes
+    cuanto antes difieran, y ese tiempo es medible. Aquí el secreto no caduca ni se rota
+    solo, así que un atacante tiene todos los intentos que quiera para adivinarlo carácter
+    a carácter. La comparación de tiempo constante quita esa pista y no cuesta nada.
+
+    Sigue siendo a prueba de fallos: sin la variable de entorno, deniega.
+    """
     secret = os.environ.get("INBOUND_SECRET")
-    if not secret or token != secret:
+    if not secret or not hmac.compare_digest(token or "", secret):
         raise HTTPException(401, "Token de entrada inválido.")
 
 
@@ -3637,7 +3647,7 @@ async def inbound_newsletter(request: Request, token: str = ""):
     if not secret:
         raise HTTPException(503, "INBOUND_SECRET no configurado en el servidor.")
     provided = token or request.headers.get("x-inbound-token") or ""
-    if provided != secret:
+    if not hmac.compare_digest(provided, secret):
         raise HTTPException(401, "Token de entrada inválido.")
 
     ctype = request.headers.get("content-type", "")
@@ -3670,9 +3680,7 @@ async def inbound_newsletter_backfill(token: str = "", limit: int = 200):
     """Reprocesa los correos ya guardados para poblar el cerebro (investing_knowledge)
     con el método/sabiduría que enseñan. Protegido con INBOUND_SECRET. Acepta GET para
     poder lanzarlo tocando un enlace desde el móvil."""
-    secret = os.environ.get("INBOUND_SECRET")
-    if not secret or token != secret:
-        raise HTTPException(401, "Token de entrada inválido.")
+    _check_inbound_token(token)
 
     # Reprocesar N correos con una llamada al LLM cada uno tarda minutos: si se hace de
     # forma síncrona, el navegador/Render cortan ("server stopped responding"). Se lanza
@@ -3696,9 +3704,7 @@ async def inbound_newsletter_backfill(token: str = "", limit: int = 200):
 async def inbound_newsletter_dedupe(token: str = ""):
     """Fusiona principios casi idénticos del cerebro (dedup semántico) y reconstruye el
     cache. Protegido con INBOUND_SECRET. Acepta GET para lanzarlo desde el móvil."""
-    secret = os.environ.get("INBOUND_SECRET")
-    if not secret or token != secret:
-        raise HTTPException(401, "Token de entrada inválido.")
+    _check_inbound_token(token)
     import knowledge_base
     result = await knowledge_base.dedupe_semantic(db)
     return {"ok": True, **result}
@@ -3709,9 +3715,7 @@ async def inbound_newsletter_dedupe_llm(token: str = ""):
     """Dedup SEMÁNTICO con LLM (entiende paráfrasis) del cerebro. Tarda (varias llamadas
     al modelo), así que va en segundo plano; mira el resultado en /knowledge (baja el nº
     de principios). Protegido con INBOUND_SECRET."""
-    secret = os.environ.get("INBOUND_SECRET")
-    if not secret or token != secret:
-        raise HTTPException(401, "Token de entrada inválido.")
+    _check_inbound_token(token)
     import knowledge_base
 
     async def _bg():
@@ -3734,9 +3738,7 @@ async def inbound_newsletter_fix_encoding(token: str = ""):
     """Repara el mojibake (acentos corruptos: 'selecciÃ³n' → 'selección') de los
     principios ya guardados en el cerebro y reconstruye el cache. Acepta GET para
     lanzarlo desde el móvil."""
-    secret = os.environ.get("INBOUND_SECRET")
-    if not secret or token != secret:
-        raise HTTPException(401, "Token de entrada inválido.")
+    _check_inbound_token(token)
     import knowledge_base
     result = await knowledge_base.fix_existing_encoding(db)
     return {"ok": True, **result}
@@ -3745,9 +3747,7 @@ async def inbound_newsletter_fix_encoding(token: str = ""):
 @api_router.get("/inbound/newsletter/knowledge")
 async def inbound_newsletter_knowledge(token: str = ""):
     """Estado del cerebro: cuántos principios ha aprendido y el digest actual."""
-    secret = os.environ.get("INBOUND_SECRET")
-    if not secret or token != secret:
-        raise HTTPException(401, "Token de entrada inválido.")
+    _check_inbound_token(token)
     import knowledge_base
     total = await db.investing_knowledge.count_documents({})
     top = await db.investing_knowledge.find({}, {"_id": 0}).sort(
@@ -3769,9 +3769,7 @@ async def inbound_newsletter_debug(token: str = ""):
     """Diagnóstico: devuelve el resultado de los últimos procesados de newsletter
     (extracción / envío de email) para depurar sin acceso a los logs de Render.
     Protegido con el mismo INBOUND_SECRET."""
-    secret = os.environ.get("INBOUND_SECRET")
-    if not secret or token != secret:
-        raise HTTPException(401, "Token de entrada inválido.")
+    _check_inbound_token(token)
     return {
         "resend_configurado": bool(os.environ.get("RESEND_API_KEY")),
         "destino": (os.environ.get("ANALYST_RECIPIENT_EMAIL")
@@ -3820,7 +3818,7 @@ _universe_bt_lock = asyncio.Lock()
 
 
 @api_router.get("/backtest")
-async def backtest_universe_endpoint(window: int = 60, limit: int = 30):
+async def backtest_universe_endpoint(window: int = 60, limit: int = 30, _user: str = Depends(auth.get_current_user)):
     """Aggregate walk-forward backtest across the opportunities universe. Pools
     hundreds of point-in-time touches so the hold-rate-by-strength is statistically
     meaningful (single symbols give too few samples). Heavy: cached 24h."""
@@ -3852,7 +3850,7 @@ async def backtest_universe_endpoint(window: int = 60, limit: int = 30):
 
 
 @api_router.get("/market/futures")
-async def market_futures():
+async def market_futures(_user: str = Depends(auth.get_current_user)):
     """Index futures (S&P 500, Nasdaq 100, Dow) — trade ~24h, so they show where the
     market is heading before the equity pre-market opens."""
     cached = _cache.get("market_futures")
