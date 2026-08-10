@@ -19,6 +19,7 @@ en las rondas anteriores. Los cubre tests/test_ws_auth.py.
 
 Ejecutar:  cd backend && pytest tests/ -v
 """
+import os
 import re
 
 import pytest
@@ -179,6 +180,56 @@ def test_el_token_se_compara_en_tiempo_constante():
         src = fh.read()
     assert "hmac.compare_digest" in src
     assert "if provided != secret" not in src, "el webhook de newsletter compara a mano"
+
+
+def _rutas_en_subproceso(render: bool):
+    """Importa server.py en un proceso aparte con/sin RENDER y devuelve sus rutas.
+
+    En subproceso y no con importlib.reload porque recargar el módulo en el mismo
+    intérprete rearranca el lifespan y las tareas de fondo: el test acabaría midiendo
+    los efectos secundarios de su propia recarga.
+    """
+    import json
+    import subprocess
+    import sys
+
+    entorno = dict(os.environ)
+    entorno.update({
+        "MONGO_URL": "mongodb://localhost:27017/inveria_test",
+        "DB_NAME": "inveria_test",
+        # Largo y propio: el guardarraíl de producción rechaza el secreto por defecto.
+        "JWT_SECRET": "secreto-de-test-suficientemente-largo-para-produccion",
+    })
+    if render:
+        entorno["RENDER"] = "true"
+    else:
+        entorno.pop("RENDER", None)
+
+    salida = subprocess.run(
+        [sys.executable, "-c",
+         "import server, json;"
+         "print(json.dumps([getattr(r,'path','') for r in server.app.routes]))"],
+        cwd=os.path.join(os.path.dirname(__file__), ".."),
+        env=entorno, capture_output=True, text=True, timeout=120,
+    )
+    assert salida.returncode == 0, salida.stderr[-2000:]
+    return set(json.loads(salida.stdout.strip().splitlines()[-1]))
+
+
+def test_en_produccion_no_se_publica_la_documentacion():
+    """No filtra datos, pero publica el mapa completo de la API: cada ruta, cada
+    parámetro y cada modelo. Es exactamente el trabajo que hay que hacer para sondear
+    un servicio, servido gratis."""
+    rutas = _rutas_en_subproceso(render=True)
+    for expuesta in ("/docs", "/redoc", "/openapi.json"):
+        assert expuesta not in rutas, f"{expuesta} sigue publicada en producción"
+
+
+def test_fuera_de_produccion_la_documentacion_sigue_disponible():
+    """Desactivarla en local no protegería nada y quitaría una herramienta útil."""
+    rutas = _rutas_en_subproceso(render=False)
+    assert "/docs" in rutas
+    assert "/openapi.json" in rutas
 
 
 def test_el_endpoint_de_sesion_actual_exige_sesion():

@@ -533,7 +533,20 @@ async def lifespan(app: FastAPI):
     client.close()
 
 
-app = FastAPI(title="InverIA API", default_response_class=SafeJSONResponse, lifespan=lifespan)
+# La documentación interactiva se sirve solo FUERA de producción. No filtra datos,
+# pero publica el mapa completo de la API —cada ruta, cada parámetro, cada modelo—,
+# que es justo lo que ahorra trabajo a quien quiera sondearla. En local sigue
+# disponible en /docs porque ahí sí resuelve un problema real al desarrollar.
+_EN_PRODUCCION = bool(os.environ.get("RENDER"))
+
+app = FastAPI(
+    title="InverIA API",
+    default_response_class=SafeJSONResponse,
+    lifespan=lifespan,
+    docs_url=None if _EN_PRODUCCION else "/docs",
+    redoc_url=None if _EN_PRODUCCION else "/redoc",
+    openapi_url=None if _EN_PRODUCCION else "/openapi.json",
+)
 api_router = APIRouter(prefix="/api")
 
 logger = logging.getLogger("inveria")

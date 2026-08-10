@@ -84,13 +84,20 @@
    diseña primero. El ámbar deja de ser un accidente del parche y pasa a ser
    `--iv-marca`, un color con nombre que se puede usar a propósito. */
 .dark {
-    --iv-fondo:           14  31  26;   /* #0e1f1a */
-    --iv-superficie:      22  48  42;   /* #16302a */
-    --iv-superficie-2:    26  56  48;   /* #1a3830 */
+    /* El verde vive en el FONDO, no en las superficies.
+       El fondo conserva el #0e1f1a de la paleta (H162 S38%) y es lo que da la
+       identidad. Las superficies —donde vive el contenido y donde está la mayor
+       parte de los píxeles— bajan a S19%: leen como tarjetas oscuras neutras con
+       un matiz verde en vez de como una interfaz verde. Con la saturación alta
+       original, el color competía con los datos, que es justo lo que no puede
+       pasar en una pantalla que existe para que se lean números. */
+    --iv-fondo:           14  31  26;   /* #0e1f1a · H162 S38% */
+    --iv-superficie:      30  44  40;   /* #1e2c28 · H163 S19% */
+    --iv-superficie-2:    39  56  51;   /* #273833 */
 
-    --iv-linea:           36  65  58;   /* #24413a */
-    --iv-linea-fuerte:    63 107  93;   /* #3f6b5d */
-    --iv-linea-marcada:   77 128 114;   /* #4d8072 · 3:1 */
+    --iv-linea:           44  58  53;   /* #2c3a35 */
+    --iv-linea-fuerte:    68  85  79;   /* #44554f */
+    --iv-linea-marcada:  101 122 115;   /* #657a73 · 3,17:1 */
 
     --iv-tinta:          238 243 240;   /* #eef3f0 */
     --iv-tinta-2:        179 197 189;   /* #b3c5bd */
