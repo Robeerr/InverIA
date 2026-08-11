@@ -38,18 +38,6 @@ function leerUltimaVisita() {
   }
 }
 
-function Seccion({ titulo, children, accion }) {
-  return (
-    <section className="mt-8">
-      <div className="flex items-baseline justify-between gap-3 mb-3">
-        <h2 className="font-heading text-titulo font-bold text-tinta">{titulo}</h2>
-        {accion}
-      </div>
-      {children}
-    </section>
-  );
-}
-
 export default function HoyView() {
   // Se lee UNA vez al montar y se congela: si se leyera en cada render, al guardar
   // la visita nueva el bloque "desde tu última visita" se vaciaría solo delante del

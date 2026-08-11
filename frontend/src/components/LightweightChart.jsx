@@ -41,15 +41,16 @@ function esOscuro() {
 //
 // Se carga en diferido desde el Dashboard (React.lazy), así que la librería viaja en su
 // propio fragmento y no retrasa el primer pintado de la página.
-export default function LightweightChart({ candles, indicators, buyLevels, lines, timeframe, setTimeframe }) {
+export default function LightweightChart({ candles, buyLevels, lines, timeframe, setTimeframe }) {
   const boxRef = useRef(null);
   const chartRef = useRef(null);
   const seriesRef = useRef([]);   // series de datos, para poder quitarlas sin tirar el gráfico
 
   // ── El gráfico se crea UNA vez ─────────────────────────────────────────────
-  // Antes se creaba y destruía en cada cambio de velas, niveles, líneas… e `indicators`,
-  // que ni siquiera se usaba aquí dentro: cada análisis de IA reconstruía el gráfico entero
-  // para nada. Recrearlo cuesta un reflow y pierde el zoom y el desplazamiento que el
+  // Antes se creaba y destruía en cada cambio de velas, niveles, líneas… y también de los
+  // indicadores, que ni siquiera se usaban aquí dentro: cada análisis de IA reconstruía el
+  // gráfico entero para nada. Esa prop ya no se recibe. Recrearlo cuesta un reflow y pierde
+  // el zoom y el desplazamiento que el
   // usuario tuviera puestos.
   useEffect(() => {
     const el = boxRef.current;
@@ -84,9 +85,9 @@ export default function LightweightChart({ candles, indicators, buyLevels, lines
     const chart = chartRef.current;
     if (!chart) return;
 
-    // Quita las series de la pasada anterior. `indicators` NO está en las dependencias: no
-    // se usa en este efecto, y tenerlo ahí repintaba el gráfico cada vez que el análisis de
-    // IA devolvía indicadores nuevos.
+    // Quita las series de la pasada anterior. Los indicadores NO entran aquí: no se usan en
+    // este efecto, y tenerlos como dependencia repintaba el gráfico cada vez que el análisis
+    // de IA devolvía indicadores nuevos. Por eso el componente ya ni los recibe.
     //
     // La limpieza va ANTES de comprobar si hay velas, y no después: al cambiar de acción
     // llegan velas vacías durante un instante, y saliendo antes de limpiar se quedaba en
@@ -143,11 +144,19 @@ export default function LightweightChart({ candles, indicators, buyLevels, lines
       });
     });
 
-    // Soporte y resistencia más relevantes (1 de cada), etiqueta corta.
+    // RESISTENCIA. Se queda, y es la única línea que sobrevive de `lines.levels`.
+    //
+    // El soporte que se dibujaba aquí al lado SÍ sobraba: competía con las zonas C1..C3
+    // de arriba, que salen del motor de confluencia y llevan fuerza y razones detrás. Dos
+    // opiniones sobre el mismo soporte, pintadas juntas y sin decir cuál manda, valen
+    // menos que una buena.
+    //
+    // La resistencia no tiene ese problema porque no tiene competencia: `levels_engine`
+    // solo calcula zonas de COMPRA —cero menciones a resistencias en todo el módulo—, así
+    // que quitarla dejaría el gráfico sin techo. Es una asimetría real del producto:
+    // InverIA sabe mucho mejor dónde comprar que dónde vender.
     const res = (lines?.levels || []).find((l) => l?.role === "resistencia" && l.price != null);
-    const sop = (lines?.levels || []).find((l) => l?.role === "soporte" && l.price != null);
     if (res) candleSeries.createPriceLine({ price: res.price, color: "#d85c41", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: "Res" });
-    if (sop) candleSeries.createPriceLine({ price: sop.price, color: "#4a7c59", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: "Sop" });
 
     // DIRECTRICES (Fase 2): líneas diagonales que unen los swings, como las dibuja un trader.
     // El backend las da en coordenadas de índice de vela; las mapeamos a la escala temporal

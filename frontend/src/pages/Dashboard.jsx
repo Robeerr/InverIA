@@ -421,7 +421,6 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       <Suspense fallback={<HuecoGrafico />}>
         <LightweightChart
           candles={candles}
-          indicators={indicators}
           buyLevels={buyLevels}
           lines={chartLines}
           timeframe={timeframe}
