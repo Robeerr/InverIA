@@ -150,7 +150,6 @@ function ScreenerCard({ row, onPick, top }) {
             >
               {ps} pts
             </span>
-            <span className="block text-[9px] text-[#5c6b66] mt-0.5 text-right">potencial</span>
           </Score>
         )}
       </div>

@@ -96,7 +96,6 @@ describe("cerrado se ve exactamente como antes", () => {
   test("el chip original sigue en la vista, con su color y su texto", () => {
     expect(VISTA).toContain("{ps} pts");
     expect(VISTA).toContain("background: `${psColor}18`");
-    expect(VISTA).toContain("potencial");
   });
 
   test("el componente solo lo envuelve", () => {
@@ -114,6 +113,32 @@ describe("cerrado se ve exactamente como antes", () => {
   test("el clic no navega a la acción al abrir el desglose", () => {
     // La tarjeta entera navega al pulsarla: sin esto, abrir el detalle cambiaría de acción.
     expect(SCORE_COD).toContain("e.stopPropagation()");
+  });
+});
+
+describe("se ve que se puede pulsar", () => {
+  // El chip parecia una etiqueta mas: nada decia que hubiera algo debajo. Un desglose
+  // que nadie descubre es lo mismo que no tenerlo.
+  test("hay un rótulo que lo dice", () => {
+    expect(SCORE).toContain("ver desglose");
+  });
+
+  test("y cambia cuando está abierto, para saber que se puede cerrar", () => {
+    expect(SCORE_COD).toContain('abierto ? "ocultar');
+  });
+
+  test("el rótulo vive en el componente, que es quien sabe si está abierto", () => {
+    expect(VISTA).not.toContain("ver desglose");
+  });
+
+  test("el cursor y el hover acompañan", () => {
+    expect(SCORE_COD).toContain("cursor-pointer");
+    expect(SCORE_COD).toContain("group-hover:text-marca");
+  });
+
+  test("el lector de pantalla también se entera", () => {
+    expect(SCORE_COD).toContain("aria-expanded={abierto}");
+    expect(SCORE_COD).toContain("aria-label");
   });
 });
 

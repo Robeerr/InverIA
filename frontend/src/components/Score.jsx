@@ -82,10 +82,20 @@ export default function Score({ symbol, children }) {
         onClick={alternar}
         data-testid={`score-${symbol}`}
         aria-expanded={abierto}
-        title="Ver de dónde salen estos puntos"
-        className="text-left"
+        title={abierto ? "Ocultar el desglose" : "Ver de dónde salen estos puntos"}
+        aria-label={abierto
+          ? `Ocultar el desglose de la puntuación de ${symbol}`
+          : `Ver el desglose de la puntuación de ${symbol}`}
+        className="text-left cursor-pointer group"
       >
         {children}
+        {/* El chip no parecía pulsable: se veía como una etiqueta más. Este rótulo lo
+            dice, y cambia con el estado para que se sepa que se puede volver a cerrar.
+            Va aquí y no en la tarjeta porque depende de `abierto`. */}
+        <span className="block text-[9px] text-tinta-3 mt-0.5 text-right
+                         group-hover:text-marca transition-colors">
+          {abierto ? "ocultar ▴" : "ver desglose ▾"}
+        </span>
       </button>
 
       {abierto && (
