@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, Suspense } from "react";
 import "./App.css";
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams,
+         useLocation, useNavigationType } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Header from "./components/Header";
@@ -38,6 +39,31 @@ const PageLoader = () => (
 
    Este componente sincroniza el parámetro de la URL con el estado de la app, para
    que ambos sentidos funcionen: escribir /accion/NVDA a mano y pulsar un ticker. */
+/* Al cambiar de pantalla, la vista vuelve al principio.
+   React Router NO lo hace solo: cambia la ruta y deja el scroll donde estaba. En una
+   ficha de acción, que es larga, eso significaba pulsar una alternativa desde el fondo
+   de la página y quedarte mirando el fondo de la página siguiente — la cabecera con el
+   ticker nuevo estaba dos pantallas más arriba y parecía que no hubiera pasado nada.
+
+   NO se aplica al ir ATRÁS. Ahí el navegador restaura la posición que tenías, y saltar
+   al principio destruiría justo lo que esperas: volver donde estabas. Por eso se mira el
+   tipo de navegación y se ignora `POP`.
+
+   Salto instantáneo y no suave: un desplazamiento animado de dos pantallas mientras la
+   siguiente se monta se ve como un tirón, y encima retrasa la lectura. */
+function IrAlPrincipio() {
+  const { pathname } = useLocation();
+  const tipo = useNavigationType();
+
+  useEffect(() => {
+    if (tipo === "POP") return;
+    window.scrollTo(0, 0);
+  }, [pathname, tipo]);
+
+  return null;
+}
+
+
 function PaginaAccion({ symbol, setSymbol, sincronizar, model, setModel }) {
   const { symbol: symbolUrl } = useParams();
 
@@ -135,6 +161,7 @@ function AppInner() {
         darkMode={darkMode}
         setDarkMode={setDarkMode}
       />
+      <IrAlPrincipio />
       <ErrorBoundary>
       <Suspense fallback={<PageLoader />}>
         <Routes>

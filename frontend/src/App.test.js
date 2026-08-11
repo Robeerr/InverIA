@@ -79,6 +79,37 @@ describe("solo hay un sitio que navegue", () => {
   });
 });
 
+describe("al cambiar de pantalla se vuelve al principio", () => {
+  const IR = cuerpoDe("IrAlPrincipio");
+
+  test("existe y está montado dentro del Router", () => {
+    // Fuera del Router, `useLocation` reventaría; y montado en `App` en vez de en
+    // `AppInner` quedaría fuera del BrowserRouter.
+    expect(IR).toContain("window.scrollTo(0, 0)");
+    expect(APP_COD).toContain("<IrAlPrincipio />");
+    expect(cuerpoDe("AppInner")).toContain("<IrAlPrincipio />");
+  });
+
+  test("reacciona al cambio de ruta", () => {
+    // `pathname` cambia también entre dos acciones: /accion/INTC → /accion/AVGO.
+    expect(IR).toContain("const { pathname } = useLocation()");
+    expect(IR).toMatch(/\}, \[pathname, tipo\]\)/);
+  });
+
+  test("NO salta al ir atrás", () => {
+    // El navegador restaura la posición en un POP. Saltar al principio destruiría justo
+    // lo que se espera del botón atrás: volver donde estabas.
+    expect(IR).toContain('if (tipo === "POP") return;');
+  });
+
+  test("el salto es instantáneo, no suave", () => {
+    // Animar dos pantallas mientras la siguiente se monta se ve como un tirón y retrasa
+    // la lectura.
+    expect(IR).not.toContain("smooth");
+    expect(IR).not.toContain("behavior");
+  });
+});
+
 describe("las pantallas siguen recibiendo lo que esperan", () => {
   test("la página de acción recibe el que navega para los clics", () => {
     // Watchlist y alternativa sectorial lo reciben por debajo como `setSymbol`/`onPick`.
