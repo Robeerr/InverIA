@@ -1,8 +1,19 @@
 import React, { useEffect, useState } from "react";
 import { ArrowFatRight } from "@phosphor-icons/react";
 import { api } from "../lib/api";
+import Score from "./Score";
 
 // Alternativa sectorial: otra acción del mismo sector con mejor potencial. Solo si hay datos.
+//
+// El desglose sale de /opportunities/score/{symbol}, que lee la MISMA caché del escaneo
+// de la que sale esta lista: los símbolos de `alternativas` son un subconjunto de
+// `results`, así que están garantizados en `desgloses`. Es lectura pura, bajo demanda y
+// sin coste externo.
+//
+// CARRERA CONOCIDA, no resuelta a propósito: si el escaneo se refresca entre cargar esta
+// lista y abrir un desglose, el chip enseñaría el score anterior y el desglose el nuevo.
+// La ventana es de horas, pasa igual en Oportunidades, y el desglose lleva el sello del
+// escaneo del que sale.
 
 export function AlternativePanel({ symbol, onPick }) {
   const [d, setD] = useState(null);
@@ -25,18 +36,28 @@ export function AlternativePanel({ symbol, onPick }) {
           : `Del mismo sector con mejor potencial que ${d.symbol}:`}
       </p>
       <div className="space-y-2">
+        {/* La fila NO es un botón: dentro hay dos zonas pulsables hermanas —navegar y
+            desplegar el desglose— y un botón dentro de otro es HTML inválido. El hover
+            del borde se conserva; en un div funciona igual. */}
         {d.alternativas.map((a) => (
-          <button key={a.symbol} onClick={() => onPick?.(a.symbol)}
-            className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-linea hover:border-aviso text-left transition-colors">
-            <div className="min-w-0">
-              <p className="font-mono font-bold text-sm text-tinta">{a.symbol}</p>
-              <p className="text-[10px] text-tinta-3 truncate max-w-[160px]">{a.name}</p>
-            </div>
-            <div className="text-right shrink-0">
+          <div key={a.symbol}
+            className="flex items-start justify-between gap-2 px-3 py-2 rounded-md border border-linea hover:border-aviso transition-colors">
+            <button onClick={() => onPick?.(a.symbol)}
+              className="min-w-0 text-left group"
+              title={`Ver el análisis de ${a.symbol}`}>
+              <span className="block font-mono font-bold text-sm text-tinta group-hover:text-marca transition-colors">{a.symbol}</span>
+              <span className="block text-[10px] text-tinta-3 truncate max-w-[160px]">{a.name}</span>
+            </button>
+            {/* Mismo componente que en Oportunidades, así que el rótulo «ver desglose ▾»
+                y el desglose salen idénticos. El verde es fijo aquí a propósito: una
+                alternativa se enseña PORQUE supera a la que estás mirando. */}
+            <Score symbol={a.symbol}>
               <span className="text-sm font-mono font-bold text-sube">{a.potential_score} pts</span>
-              {typeof a.revenue_growth === "number" && <p className="text-[10px] text-tinta-3">ventas +{Math.round(a.revenue_growth)}%</p>}
-            </div>
-          </button>
+              {typeof a.revenue_growth === "number" && (
+                <span className="block text-[10px] text-tinta-3 text-right">ventas +{Math.round(a.revenue_growth)}%</span>
+              )}
+            </Score>
+          </div>
         ))}
       </div>
     </section>
