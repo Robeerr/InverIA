@@ -14,11 +14,17 @@ IA y del motor de niveles; si esta capa opinara, acabaría contradiciéndolos co
 lógica escrita en otro sitio.
 
 TRAZABILIDAD REAL
-Cada afirmación numérica queda registrada con la RUTA del campo del que sale
-—`quote.price`, `indicators.regime.adx`, `buy_levels[0].price`— y su valor. Eso
-permite auditarla de verdad: un test resuelve cada ruta contra el dashboard de origen
-y comprueba que el valor coincide. Buscar números sueltos en el texto no serviría: un
-«2» de «media de 200 sesiones» pasaría por dato verificado sin serlo.
+Cada afirmación queda registrada con la RUTA del campo del que sale —`quote.price`,
+`indicators.regime.adx`, `buy_levels[0].price`— y su valor. Eso permite auditarla de
+verdad: un test resuelve cada ruta contra el dashboard de origen y comprueba que el
+valor coincide. Buscar números sueltos en el texto no serviría: un «2» de «media de
+200 sesiones» pasaría por dato verificado sin serlo.
+
+`campos_usados` se DERIVA de esas afirmaciones y señales, nunca de lo que se haya
+leído por el camino. La diferencia importa: el RSI y el máximo anual se consultan
+siempre, pero solo hablan en su caso extremo, y declararlos «usados» cuando no han
+dicho nada convertiría la lista en un inventario de lecturas en vez de en el respaldo
+de lo que se afirma — que es justo lo que esta lista promete ser.
 
 LA REGLA QUE LO SOSTIENE
 Si un campo falta, la frase NO se escribe. No hay valores por defecto, ni «en torno
@@ -65,26 +71,23 @@ def _leer(dato, ruta: str):
 
 
 class _Fuente:
-    """Lee el dashboard y va apuntando de dónde sale cada cosa.
+    """Lee el dashboard y deja constancia de lo que se afirma con lo leído.
 
-    Todo pasa por aquí a propósito: es lo que hace imposible colar una cifra sin
-    dejar constancia de su origen. `dato()` devuelve None cuando falta, y quien lo
-    llama tiene que decidir no escribir la frase — no rellenar el hueco.
+    `dato()` solo LEE: devuelve None cuando falta, y quien lo llama tiene que decidir
+    no escribir la frase — no rellenar el hueco. Leer no deja rastro a propósito,
+    porque consultar un campo no es usarlo; el rastro lo deja `afirmar()`, que es
+    quien sabe que esa lectura ha acabado convertida en texto.
     """
 
     def __init__(self, dashboard: dict):
         self.d = dashboard or {}
-        self.usados: list = []
         self.afirmaciones: list = []
 
     def dato(self, ruta: str):
-        v = _leer(self.d, ruta)
-        if v is not None and ruta not in self.usados:
-            self.usados.append(ruta)
-        return v
+        return _leer(self.d, ruta)
 
     def afirmar(self, texto: str, ruta: str, valor) -> str:
-        """Registra una afirmación numérica y devuelve su texto, para poder encadenar."""
+        """Registra una afirmación y devuelve su texto, para poder encadenar."""
         self.afirmaciones.append({"texto": texto, "valor": valor, "campo_origen": ruta})
         return texto
 
@@ -161,12 +164,23 @@ def _tendencia(f: _Fuente) -> Optional[str]:
         base = None
 
     if base:
+        # El régimen es una afirmación como cualquier otra y se registra con su ruta:
+        # de otro modo la frase existiría en el texto sin respaldo auditable.
+        f.afirmar(base, "indicators.regime.regime", regimen)
+
         # El ADX solo se CITA si existe. `regime` se deriva de él, pero eso no autoriza
         # a inventarse la cifra: un dato ausente no puede producir una afirmación sobre
         # sí mismo aunque se intuya desde otro campo.
-        if adx is not None and regimen in ("tendencia_alcista", "tendencia_bajista"):
-            fuerza = "con fuerza" if float(adx) >= ADX_CON_FUERZA else "sin mucha fuerza"
-            base += f" {f.afirmar(f'{fuerza} (ADX {adx:.0f})', 'indicators.regime.adx', adx)}"
+        if adx is not None:
+            if regimen in ("tendencia_alcista", "tendencia_bajista"):
+                fuerza = "con fuerza" if float(adx) >= ADX_CON_FUERZA else "sin mucha fuerza"
+                base += f" {f.afirmar(f'{fuerza} (ADX {adx:.0f})', 'indicators.regime.adx', adx)}"
+            elif regimen == "transicion":
+                # En transición el ADX es el dato MÁS informativo —dice cuánto le falta
+                # para ser tendencia— pero no admite el adjetivo de las tendencias:
+                # «en transición con fuerza» no significa nada. Se cita desnudo, sin
+                # convertirlo en una conclusión sobre la dirección.
+                base += f" ({f.afirmar(f'ADX {adx:.0f}', 'indicators.regime.adx', adx)})"
         frases.append(base)
 
     atr = f.dato("indicators.atr_pct")
@@ -179,7 +193,7 @@ def _tendencia(f: _Fuente) -> Optional[str]:
         texto = {"subiendo": "entra dinero: el volumen acompaña",
                  "bajando": "sale dinero: el volumen no acompaña"}.get(str(obv).lower())
         if texto:
-            frases.append(texto)
+            frases.append(f.afirmar(texto, "indicators.obv_trend", obv))
 
     return ("; ".join(frases) + ".") if frases else None
 
@@ -204,7 +218,10 @@ def _niveles(f: _Fuente) -> Optional[str]:
     if fuerza is not None:
         cola = f.afirmar(f"fuerza {fuerza}/100", f"buy_levels[{i}].strength", fuerza)
         if razones:
-            cola += ", donde coinciden " + " + ".join(list(razones)[:3])
+            # Las razones son la parte más citable de la frase, así que llevan su propia
+            # ruta: sin ella, «donde coinciden SMA200 + Fibonacci» iría sin respaldo.
+            cola += ", donde coinciden " + f.afirmar(
+                " + ".join(list(razones)[:3]), f"buy_levels[{i}].reasons", razones)
         partes.append(cola)
 
     return partes[0] + (", " + ", ".join(partes[1:]) if len(partes) > 1 else "") + "."
@@ -233,7 +250,6 @@ def _senales(f: _Fuente):
             en_contra.append({"texto": "Acaba de perder la media de 10 semanas",
                               "campo_origen": "indicators.salida_10w.recien_perdida",
                               "valor": True})
-            f.dato("indicators.salida_10w.recien_perdida")
         elif salida.get("por_encima") is not None:
             encima = bool(salida["por_encima"])
             apunta(encima,
@@ -279,8 +295,9 @@ def _limita_confianza(f: _Fuente) -> Optional[dict]:
     salud = f.d.get("data_health") or {}
     if salud.get("degraded"):
         nota = salud.get("note") or "fuente degradada"
-        f.dato("data_health.degraded")
-        return {"texto": f"Datos de respaldo o con retraso ({nota}). Trátalo con cautela.",
+        # Describe el estado del dato y para ahí. «Trátalo con cautela» era un consejo
+        # sobre cómo actuar, que es precisamente lo que esta capa no hace.
+        return {"texto": f"Datos de respaldo o con retraso ({nota}).",
                 "campo_origen": "data_health.degraded", "valor": True}
 
     if _leer(f.d, "indicators.sma.200") is None:
@@ -300,11 +317,28 @@ def _limita_confianza(f: _Fuente) -> Optional[dict]:
     luz = _leer(f.d, "market_regime.light")
     if luz in ("rojo", "amarillo"):
         etiqueta = _leer(f.d, "market_regime.label") or "mercado en riesgo"
-        f.dato("market_regime.light")
         return {"texto": f"Contexto de mercado: {etiqueta}. Las señales de compra fallan "
                          f"más en este entorno.",
                 "campo_origen": "market_regime.light", "valor": luz}
     return None
+
+
+def _campos_usados(dashboard: dict, *bloques) -> list:
+    """Las rutas que SOSTIENEN algo de lo que se dice, no las que se han consultado.
+
+    Se derivan de las afirmaciones y señales ya registradas. El filtro final contra el
+    dashboard existe por un caso concreto: una limitación puede apuntar a un campo
+    AUSENTE —`indicators.sma.200` cuando no hay media de 200 sesiones—, y ese campo no
+    está aportando un valor, sino su propia falta. Declararlo «usado» sería el mismo
+    error de sobre-declaración, solo que del revés.
+    """
+    rutas = []
+    for bloque in bloques:
+        for item in bloque:
+            ruta = (item or {}).get("campo_origen")
+            if ruta and ruta not in rutas and _leer(dashboard, ruta) is not None:
+                rutas.append(ruta)
+    return sorted(rutas)
 
 
 # ── Punto de entrada ─────────────────────────────────────────────────────────
@@ -333,12 +367,15 @@ def redactar(dashboard: dict) -> Optional[dict]:
         # Solo el precio: eso no es una tesis, es un dato que ya está en la cabecera.
         return None
 
+    limita = _limita_confianza(f)
+
     return {
         "titular": titular,
         "parrafos": parrafos,
         "a_favor": a_favor,
         "en_contra": en_contra,
-        "limita_confianza": _limita_confianza(f),
+        "limita_confianza": limita,
         "afirmaciones": f.afirmaciones,
-        "campos_usados": sorted(f.usados),
+        "campos_usados": _campos_usados(dashboard, f.afirmaciones, a_favor, en_contra,
+                                        [limita] if limita else []),
     }

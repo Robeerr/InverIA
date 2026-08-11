@@ -102,6 +102,62 @@ def test_campos_usados_existen_todos_en_el_dashboard():
         assert tesis._leer(d, ruta) is not None, f"{ruta} declarado y no existe"
 
 
+def _origenes(t):
+    """Todas las rutas que la tesis dice estar usando para sostener algo."""
+    rutas = {a["campo_origen"] for a in t["afirmaciones"]}
+    rutas |= {s["campo_origen"] for s in t["a_favor"] + t["en_contra"]}
+    if t["limita_confianza"]:
+        rutas.add(t["limita_confianza"]["campo_origen"])
+    return rutas
+
+
+def test_campos_usados_solo_lista_rutas_que_sostienen_algo():
+    """`campos_usados` no es el registro de lo que se ha leído, sino el respaldo de lo
+    que se afirma. Un campo consultado y descartado no puede aparecer aquí: quien
+    audite la tesis leería la lista como «esto es lo que sustenta el texto»."""
+    t = tesis.redactar(dash())
+    sobrantes = set(t["campos_usados"]) - _origenes(t)
+    assert not sobrantes, f"declarados sin sostener nada: {sorted(sobrantes)}"
+
+
+def test_campos_usados_no_se_deja_ninguna_ruta_que_sostenga_texto():
+    """El control en la otra dirección. Si una frase se escribe sin registrar su ruta,
+    la lista queda corta y la auditoría deja de ser completa."""
+    d = dash()
+    t = tesis.redactar(d)
+    presentes = {r for r in _origenes(t) if tesis._leer(d, r) is not None}
+    assert presentes - set(t["campos_usados"]) == set()
+
+
+@pytest.mark.parametrize("ruta,valor", [
+    ("indicators.rsi", 55.0),         # neutro: se lee siempre y no dice nada
+    ("indicators.high_52w", 900.0),   # lejísimos del máximo: no genera frase
+])
+def test_un_campo_leido_pero_no_citado_no_se_declara_usado(ruta, valor):
+    """Los dos casos reales que inflaban la lista: ambos se consultan en toda tesis y
+    solo hablan en su caso extremo."""
+    t = tesis.redactar(dash(**{ruta: valor}))
+    assert ruta not in t["campos_usados"]
+    assert ruta not in _origenes(t)
+
+
+@pytest.mark.parametrize("ruta", [
+    "indicators.regime.regime",   # «Tendencia alcista»
+    "indicators.obv_trend",       # «entra dinero: el volumen acompaña»
+    "buy_levels[0].reasons",      # «donde coinciden SMA200 + …»
+])
+def test_las_frases_no_numericas_tambien_registran_su_ruta(ruta):
+    """Tres frases que se escriben sin citar cifra. Sin ruta registrada saldrían en el
+    texto sin respaldo auditable y desaparecerían de `campos_usados`."""
+    d = dash()
+    t = tesis.redactar(d)
+    assert ruta in _origenes(t)
+    assert ruta in t["campos_usados"]
+    for a in t["afirmaciones"]:
+        if a["campo_origen"] == ruta:
+            assert tesis._leer(d, a["campo_origen"]) == a["valor"]
+
+
 def test_el_indice_del_nivel_citado_es_el_correcto():
     """Se cita `buy_levels[i]`, no «el mejor nivel». Si el índice estuviera mal, la
     auditoría compararía contra otra zona y la tesis mentiría sin que se notara."""
@@ -229,6 +285,36 @@ def test_transicion():
     assert "transición" in texto_completo(t)
 
 
+def test_transicion_cita_el_adx_cuando_existe():
+    """En transición el ADX es el dato más informativo —dice cuánto le falta para ser
+    tendencia— y antes se callaba porque la plantilla solo contemplaba tendencias."""
+    d = dash(**{"indicators.regime.regime": "transicion",
+                "indicators.regime.adx": 21.0})
+    t = tesis.redactar(d)
+    assert "está en transición: ni tendencia clara ni rango definido (adx 21)" in \
+        texto_completo(t)
+    assert any(a["campo_origen"] == "indicators.regime.adx" for a in t["afirmaciones"])
+    assert "indicators.regime.adx" in t["campos_usados"]
+
+
+def test_en_transicion_el_adx_no_se_convierte_en_conclusion_de_tendencia():
+    """Se cita desnudo. «En transición con fuerza» sería una conclusión sobre la
+    dirección que el régimen precisamente dice no tener."""
+    t = tesis.redactar(dash(**{"indicators.regime.regime": "transicion",
+                               "indicators.regime.adx": 31.0}))
+    texto = texto_completo(t)
+    assert "con fuerza" not in texto and "sin mucha fuerza" not in texto
+
+
+def test_en_transicion_sin_adx_no_se_menciona_el_adx():
+    """La regla de siempre: un dato ausente no produce una afirmación sobre sí mismo."""
+    t = tesis.redactar(dash(**{"indicators.regime.regime": "transicion",
+                               "indicators.regime.adx": None}))
+    assert "adx" not in texto_completo(t)
+    assert "indicators.regime.adx" not in t["campos_usados"]
+    assert "transición" in texto_completo(t)
+
+
 def test_acaba_de_perder_la_media_de_10_semanas_va_siempre_en_contra():
     """Es la señal de salida del método, no un matiz."""
     t = tesis.redactar(dash(**{"indicators.salida_10w.recien_perdida": True}))
@@ -260,11 +346,65 @@ def test_la_zona_citada_es_la_mas_fuerte_no_la_primera():
     assert any(a["campo_origen"] == "buy_levels[1].price" for a in t["afirmaciones"])
 
 
+def test_todas_las_rutas_del_nivel_usan_el_indice_realmente_elegido():
+    """Tres zonas y la más sólida es la ÚLTIMA. Si alguna ruta se quedara en [0], la
+    auditoría compararía la fuerza de una zona contra el precio de otra y cuadraría
+    sin ser cierta: cada campo existiría, pero no todos serían del mismo nivel."""
+    d = dash(**{"buy_levels": [
+        {"price": 205.0, "strength": 20, "distance_pct": -4.0, "reasons": ["Mínimo previo"]},
+        {"price": 195.0, "strength": 55, "distance_pct": -8.7, "reasons": ["SMA50"]},
+        {"price": 178.40, "strength": 91, "distance_pct": -16.5,
+         "reasons": ["SMA200", "Fibonacci 38,2%", "VWAP anclado"]},
+    ]})
+    t = tesis.redactar(d)
+
+    rutas = [a["campo_origen"] for a in t["afirmaciones"]
+             if a["campo_origen"].startswith("buy_levels")]
+    assert rutas, "la tesis debería citar la zona más sólida"
+    assert all(r.startswith("buy_levels[2]") for r in rutas), rutas
+
+    # Y cada valor citado es el de ESA zona, no el de otra que también existiera.
+    for a in t["afirmaciones"]:
+        if a["campo_origen"].startswith("buy_levels"):
+            assert tesis._leer(d, a["campo_origen"]) == a["valor"]
+
+    parrafos = " ".join(t["parrafos"])
+    assert "178.40" in parrafos and "fuerza 91/100" in parrafos
+    assert "205.00" not in parrafos and "195.00" not in parrafos
+
+
 # ── Qué limita la confianza ─────────────────────────────────────────────────
 def test_datos_degradados_es_lo_primero_que_limita():
     t = tesis.redactar(dash(**{"data_health": {"degraded": True, "note": "fuente de respaldo"}}))
     assert "respaldo" in t["limita_confianza"]["texto"]
     assert t["limita_confianza"]["campo_origen"] == "data_health.degraded"
+
+
+def test_los_datos_degradados_se_describen_sin_aconsejar():
+    """Decía «Trátalo con cautela», que es un consejo sobre cómo actuar y no una
+    descripción del dato. El estado se cuenta; qué hacer con él, no."""
+    t = tesis.redactar(dash(**{"data_health": {"degraded": True, "note": "fuente de respaldo"}}))
+    texto = t["limita_confianza"]["texto"].lower()
+    assert "respaldo" in texto and "retraso" in texto
+    for consejo in ("cautela", "trátalo", "cuidado", "precaución", "ten en cuenta"):
+        assert consejo not in texto, f"sigue aconsejando: '{consejo}'"
+
+
+@pytest.mark.parametrize("escenario", [
+    {"data_health": {"degraded": True, "note": "fuente de respaldo"}},
+    {"market_regime": {"light": "rojo", "label": "Mercado en riesgo"}},
+    {"indicators.sma.200": None},
+    {"buy_levels": []},
+    {"indicators.regime.regime": "indeterminado"},
+])
+def test_ninguna_limitacion_da_un_consejo(escenario):
+    """La regla de «describe, no recomienda» también rige aquí: es el bloque donde más
+    tienta rematar con una instrucción."""
+    t = tesis.redactar(dash(**escenario))
+    texto = t["limita_confianza"]["texto"].lower()
+    for consejo in ("deberías", "debes ", "conviene", "recomend", "cautela",
+                    "trátalo", "evita ", "no compres"):
+        assert consejo not in texto, f"{escenario}: '{consejo}' es un consejo"
 
 
 def test_sin_sma200_lo_dice_como_limite():
