@@ -204,8 +204,23 @@ def _niveles(f: _Fuente) -> Optional[str]:
         return None
 
     precio_zona = f.dato(f"buy_levels[{i}].price")
-    partes = [f.afirmar(f"La zona de compra más sólida está en {_precio(precio_zona)}",
-                        f"buy_levels[{i}].price", precio_zona)]
+
+    # El nombre del peldaño va DELANTE del precio. Un precio suelto no se puede cruzar con
+    # el panel de niveles, y eso hizo que «la zona más sólida está en 95.55» y «entrada
+    # 109.36» parecieran dos recomendaciones en conflicto cuando eran el escalón 3 y el
+    # borde del escalón 1 del mismo plan. Con el nombre, la frase apunta a algo que se ve.
+    etiqueta = f.dato(f"buy_levels[{i}].label")
+    if etiqueta:
+        cabeza = f.afirmar(
+            f"La zona de compra más sólida es el {etiqueta}, en {_precio(precio_zona)}",
+            f"buy_levels[{i}].label", etiqueta)
+        f.afirmar(f"{_precio(precio_zona)}", f"buy_levels[{i}].price", precio_zona)
+    else:
+        # Sin etiqueta no se inventa un número de peldaño: se cae a la redacción de
+        # siempre. Un dato ausente no produce una afirmación sobre sí mismo.
+        cabeza = f.afirmar(f"La zona de compra más sólida está en {_precio(precio_zona)}",
+                           f"buy_levels[{i}].price", precio_zona)
+    partes = [cabeza]
 
     dist = f.dato(f"buy_levels[{i}].distance_pct")
     if dist is not None:

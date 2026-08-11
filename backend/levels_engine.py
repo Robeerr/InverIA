@@ -469,3 +469,92 @@ def compute_buy_levels(
         z.setdefault("tactical", False)
         z.pop("_used", None)
     return combined
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# QUÉ ZONAS ENTRAN EN EL PLAN ESCALONADO
+#
+# Vive aquí, y no en server.py, por dos razones:
+#
+#   1. Es UNA sola implementación. `_deterministic_levels` la usa para construir el
+#      plan y el ensamblado del dashboard la usa para marcar `en_plan`. Si estuvieran
+#      separadas, la pantalla podría agrupar de una forma y el plan operar de otra —
+#      exactamente el desajuste que este campo viene a cerrar.
+#   2. Este módulo es puro (solo math y typing), así que los tests pueden importarlo
+#      sin arrastrar FastAPI ni Mongo. La versión anterior de estos tests tenía que
+#      REPLICAR el filtro para poder probarlo, y una réplica siempre acaba divergiendo.
+#
+# El umbral llega como parámetro a propósito: `MAX_PLAN_DEPTH` es configurable por
+# entorno y su sitio es server.py. Escribirlo aquí sería la misma duplicación con otro
+# disfraz.
+# ─────────────────────────────────────────────────────────────────────────────
+
+MAX_ESCALONES = 3      # el plan reparte la compra en 3 tramos como mucho
+VENTANA = 6            # solo se miran las 6 zonas más cercanas al precio
+
+
+def _precio(z) -> Optional[float]:
+    try:
+        v = float((z or {}).get("price"))
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return v
+
+
+def indices_del_plan(current_price, buy_levels, max_depth: float) -> List[int]:
+    """Índices de `buy_levels` que forman el plan escalonado, de cerca a lejos.
+
+    La regla, tal cual la aplicaba `_deterministic_levels`:
+
+      - se miran las `VENTANA` primeras zonas (la lista viene ordenada de cerca a lejos);
+      - se descarta la que esté por debajo del suelo, `precio × (1 − max_depth)`. El stop
+        va por debajo de TODAS las entradas del plan, así que meter una zona a −46%
+        arrastraba el stop hasta ahí y eso no es un stop, es perder media posición;
+      - se cogen las `MAX_ESCALONES` primeras que sobrevivan.
+
+    El límite es INCLUSIVO: una zona exactamente en el suelo entra.
+
+    Respaldo: si no sobrevive ninguna —la acción ha subido tanto que no hay soporte
+    cerca— se devuelve la menos profunda de toda la lista. Es preferible a quedarse sin
+    plan, porque sin plan los números los inventa la IA.
+    """
+    zonas = buy_levels or []
+    try:
+        precio = float(current_price)
+    except (TypeError, ValueError):
+        return []
+    if precio <= 0:
+        return []
+
+    suelo = precio * (1 - max_depth)
+
+    elegidos: List[int] = []
+    for i, z in enumerate(zonas[:VENTANA]):
+        if len(elegidos) >= MAX_ESCALONES:
+            break
+        p = _precio(z)
+        if p is None or p < suelo:
+            continue
+        elegidos.append(i)
+
+    if elegidos:
+        return elegidos
+
+    for i, z in enumerate(zonas):
+        if _precio(z) is not None:
+            return [i]
+    return []
+
+
+def marcar_en_plan(buy_levels, current_price, max_depth: float):
+    """Añade `en_plan` a cada zona. ADITIVO: no toca ningún otro campo ni el orden.
+
+    Se llama en los dos sitios donde se producen zonas —el ensamblado del dashboard y
+    `/analyze`— para que la respuesta que parchea la IA no llegue sin el campo y la
+    pantalla pierda la agrupación justo al pulsar el botón.
+    """
+    dentro = set(indices_del_plan(current_price, buy_levels, max_depth))
+    for i, z in enumerate(buy_levels or []):
+        if isinstance(z, dict):
+            z["en_plan"] = i in dentro
+    return buy_levels

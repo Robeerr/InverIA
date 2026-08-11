@@ -40,77 +40,160 @@ function ConfluenceBadge({ match }) {
   );
 }
 
-// Color of the strength meter by score.
-function strengthTone(s) {
-  if (s >= 75) return { bar: "bg-[#4a7c59]", text: "text-[#4a7c59]", label: "Muy fuerte" };
-  if (s >= 50) return { bar: "bg-[#c9a14a]", text: "text-[#8a6508]", label: "Fuerte" };
-  return { bar: "bg-[#9aa39f]", text: "text-[#5c6b66]", label: "Moderado" };
+// ── Niveles de compra por confluencia ───────────────────────────────────────
+//
+// EL PROBLEMA QUE RESUELVE ESTA VERSIÓN
+//
+// El panel manejaba CUATRO dimensiones independientes con dos canales visuales, y las
+// mezclaba. Con FORM a $112.47 el resultado apuntaba al revés que la operativa:
+//
+//   NIVEL 1 · a −1,4%  · fuerza 83  → barra a media asta   (por aquí se entra)
+//   NIVEL 6 · a −50,7% · fuerza 100 → barra llena, verde   (otro ciclo de distancia)
+//
+// La barra medía FIABILIDAD y se leía como CONVENIENCIA. Y en verde, que en esta app
+// significa «sube»: un soporte fiable a la mitad de precio no es una buena noticia.
+//
+// EL REPARTO NUEVO — un canal por dimensión, sin igualarlas:
+//
+//   cercanía   → posición. La lista ya venía ordenada por precio; el raíl la convierte
+//                en un eje visible. −50,7% deja de ser una cifra y pasa a ser distancia.
+//   confluencia→ texto. «Coinciden 6 métodos» discrimina mejor que «100/100», donde
+//                tres niveles empatan. El número sigue en el InfoDot.
+//   plan       → agrupación, el canal más fuerte, que estaba sin usar. Sale de `en_plan`,
+//                que calcula el backend con la MISMA función que construye el plan.
+//   origen     → el chip «Táctico», que ya estaba bien.
+//
+// Ningún dato nuevo y ninguna métrica inventada: se recolocan los que ya llegaban.
+
+function Nivel({ z, estructural }) {
+  const dist = z.distance_pct;
+  const metodos = Array.isArray(z.reasons) ? z.reasons.length : 0;
+
+  return (
+    <div
+      data-testid={`nivel-${z.label ? z.label.replace(/\s+/g, "-").toLowerCase() : "sin-etiqueta"}`}
+      className="grid grid-cols-[64px_1fr] items-start border-b border-[#e5e0d8] last:border-b-0"
+    >
+      {/* Raíl de distancia: la posición ES el eje de precios. */}
+      <div className={`relative text-right pr-3 border-r-2 border-[#d6cfc2] font-mono tabular-nums
+        ${estructural ? "py-1.5 text-[11px] text-[#5c6b66]" : "py-2.5 text-[12px] text-[#0e1f1a] font-semibold"}`}>
+        {dist != null ? `${dist >= 0 ? "+" : ""}${dist.toFixed(1)}%` : "—"}
+        <span
+          aria-hidden="true"
+          className={`absolute rounded-full ${estructural ? "w-1.5 h-1.5 bg-[#d6cfc2]" : "w-2 h-2 bg-[#1a3a32]"}`}
+          style={{ right: estructural ? -4 : -5, top: "50%", transform: "translateY(-50%)" }}
+        />
+      </div>
+
+      <div className={`pl-4 min-w-0 ${estructural ? "py-1.5" : "py-2.5"}`}>
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <span className="font-mono text-[10px] font-semibold text-[#5c6b66] uppercase tracking-wider">{z.label}</span>
+          <span className={`font-mono font-bold text-[#0e1f1a] ${estructural ? "text-[13px]" : "text-[17px]"}`}>
+            ${fmtPrice(z.price)}
+          </span>
+          {!estructural && z.zone_low != null && z.zone_high != null && z.zone_low !== z.zone_high && (
+            <span className="font-mono text-[10px] text-[#5c6b66]">(${fmtPrice(z.zone_low)}–${fmtPrice(z.zone_high)})</span>
+          )}
+          {z.tactical && (
+            <span className="inline-flex items-center gap-0.5">
+              <span className="inline-flex items-center bg-[#b8860b]/15 text-[#8a6508] rounded px-1.5 py-0.5 text-[9px] font-mono font-semibold uppercase tracking-wider">Táctico</span>
+              <InfoDot term="Tactico" />
+            </span>
+          )}
+          {z.rol && (
+            <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-mono font-semibold uppercase tracking-wider ${
+              z.rol === "cercano"
+                ? "bg-[#1a3a32] text-[#f5f3ef]"
+                : "bg-[#b8860b]/15 text-[#8a6508] border border-[#b8860b]/35"}`}>
+              {z.rol === "cercano" ? "El más cercano" : "El más sólido"}
+            </span>
+          )}
+        </div>
+
+        {/* Confluencia contada, no medida con una barra. El número sigue accesible. */}
+        {metodos > 0 && (
+          <p className={`text-[#5c6b66] leading-snug ${estructural ? "text-[10.5px] mt-0.5" : "text-[11.5px] mt-1"}`}>
+            <span className="font-semibold text-[#0e1f1a]">
+              {metodos === 1 ? "1 método" : `Coinciden ${metodos} métodos`}
+            </span>
+            <span
+              className="ml-1"
+              title={`Fuerza ponderada ${z.strength}/100`}
+            >
+              {estructural ? "" : `: ${z.reasons.join(" · ")}`}
+            </span>
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
 
-// Confluence-engine buy zones: deterministic levels ranked by how many independent
-// methods (Volume Profile + Fibonacci + pivots + SMAs) agree, each with a 0-100 score.
-function SmartBuyLevels({ levels, current }) {
+function SmartBuyLevels({ levels }) {
   if (!levels || !levels.length) return null;
+
+  // `en_plan` lo marca el backend. Si faltara —una respuesta vieja en caché— no se
+  // adivina el corte replicando el umbral aquí: se cae a una sola lista sin agrupar.
+  const hayPlan = levels.some((z) => typeof z.en_plan === "boolean");
+  const plan = hayPlan ? levels.filter((z) => z.en_plan) : levels;
+  const estructurales = hayPlan ? levels.filter((z) => !z.en_plan) : [];
+
+  // Dos roles con nombre, y solo dos: son las dos preguntas que uno se hace, y el puente
+  // con la tesis, que cita «la zona más sólida» por su NIVEL.
+  const masSolido = levels.reduce(
+    (mejor, z) => (mejor == null || (z.strength ?? 0) > (mejor.strength ?? 0) ? z : mejor), null);
+  const marcar = (z) => ({
+    ...z,
+    rol: z === plan[0] ? "cercano" : z === masSolido ? "solido" : null,
+  });
+  const profundo = plan.length ? plan[plan.length - 1] : null;
+
   return (
     <div data-testid="smart-buy-levels" className="mb-5 p-4 bg-[#4a7c59]/[0.04] border border-[#4a7c59]/25 rounded-md">
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex items-center gap-2 mb-1">
         <Crosshair size={14} weight="bold" className="text-[#4a7c59]" />
         <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#4a7c59]">
           Niveles de compra por confluencia · calculados sobre estructura real
         </p>
         <InfoDot term="Confluencia" />
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {levels.map((z, i) => {
-          const tone = strengthTone(z.strength);
-          const dist = z.distance_pct != null ? z.distance_pct
-            : current && z.price ? ((z.price - current) / current) * 100 : null;
-          return (
-            <div key={i} data-testid={`smart-level-${i}`} className={`bg-white border rounded-md p-3 ${z.tactical ? "border-dashed border-[#b8860b]/50" : "border-[#e5e0d8]"}`}>
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-baseline gap-2">
-                  <span className="font-mono text-[10px] font-semibold text-[#1a3a32] uppercase tracking-wider">{z.label}</span>
-                  {z.tactical && (
-                    <span className="inline-flex items-center gap-0.5">
-                      <span className="inline-flex items-center bg-[#b8860b]/15 text-[#8a6508] rounded px-1.5 py-0.5 text-[9px] font-mono font-semibold uppercase tracking-wider">Táctico</span>
-                      <InfoDot term="Tactico" />
-                    </span>
-                  )}
-                  <span className="font-mono font-bold text-lg text-[#0e1f1a]">${fmtPrice(z.price)}</span>
-                  {z.zone_low != null && z.zone_high != null && z.zone_low !== z.zone_high && (
-                    <span className="font-mono text-[10px] text-[#5c6b66]">(${fmtPrice(z.zone_low)}–${fmtPrice(z.zone_high)})</span>
-                  )}
-                </div>
-                {dist != null && (
-                  <span className="font-mono text-[11px] text-[#5c6b66]">{dist >= 0 ? "+" : ""}{dist.toFixed(1)}%</span>
-                )}
-              </div>
 
-              {/* Strength meter */}
-              <div className="flex items-center gap-2 mt-2">
-                <div className="flex-1 h-1.5 bg-[#e5e0d8] rounded-full overflow-hidden">
-                  <div className={`h-full ${tone.bar} transition-all`} style={{ width: `${Math.max(0, Math.min(100, z.strength))}%` }} />
-                </div>
-                <span className={`font-mono text-[11px] font-semibold ${tone.text}`}>{z.strength}/100</span>
-              </div>
-
-              {/* Confluence reasons */}
-              {Array.isArray(z.reasons) && z.reasons.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {z.reasons.map((r, j) => (
-                    <span key={j} className="inline-flex items-center text-[9px] font-medium px-1.5 py-0.5 rounded bg-[#1a3a32]/[0.06] text-[#3a4a44]">
-                      {r}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
+      <div className="mt-3">
+        {hayPlan && (
+          <div className="flex items-baseline gap-2 flex-wrap pb-1.5 mb-1 border-b border-[#4a7c59]/30">
+            <span className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-[#4a7c59]">
+              El plan · {plan.length} {plan.length === 1 ? "escalón" : "escalones"}
+            </span>
+            <span className="text-[11px] text-[#5c6b66] ml-auto">donde la compra se reparte</span>
+          </div>
+        )}
+        {plan.map((z, i) => <Nivel key={z.label || i} z={marcar(z)} estructural={false} />)}
+        {profundo?.zone_low != null && (
+          <p className="text-[10.5px] text-[#5c6b66] mt-2">
+            El stop del plan irá por debajo de ${fmtPrice(profundo.zone_low)}, la zona más profunda
+            a la que se invita a comprar.
+          </p>
+        )}
       </div>
+
+      {estructurales.length > 0 && (
+        <div className="mt-4">
+          <div className="flex items-baseline gap-2 flex-wrap pb-1.5 mb-1 border-b border-[#e5e0d8]">
+            <span className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-[#5c6b66]">
+              Soportes estructurales · fuera del plan
+            </span>
+            <span className="text-[11px] text-[#5c6b66] ml-auto">
+              demasiado lejos: arrastrarían el stop hasta ahí
+            </span>
+          </div>
+          {estructurales.map((z, i) => <Nivel key={z.label || i} z={marcar(z)} estructural />)}
+        </div>
+      )}
+
       <p className="text-[10px] text-[#5c6b66] mt-3 leading-relaxed">
-        La fuerza mide cuántos métodos independientes coinciden en la misma zona (volumen real, Fibonacci, soportes históricos, medias).
-        Cuantos más coinciden, más fiable es el nivel.
+        «Coinciden N métodos» es cuántas fuentes independientes señalan la misma zona (volumen real,
+        Fibonacci, soportes históricos, medias). Cuantas más, más fiable es el nivel — pero la fiabilidad
+        no dice nada de lo cerca que está: eso lo marca la distancia de la izquierda.
       </p>
     </div>
   );
@@ -217,7 +300,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
       </div>
 
       {/* Smart buy levels — confluence engine, ranked by strength */}
-      <SmartBuyLevels levels={buyLevels} current={current} />
+      <SmartBuyLevels levels={buyLevels} />
 
       {/* Volume Profile bar — the real high-volume price levels */}
       {hasVp && (

@@ -41,9 +41,13 @@ def dash(**cambios):
                            "senal": "mantener", "recien_perdida": False},
         },
         "buy_levels": [
+            # `label` lo escribe SIEMPRE el motor (levels_engine numera de cerca a lejos).
+            # Estaba ausente en esta fixture y por eso no se notaba que la tesis lo ignoraba.
             {"price": 178.40, "zone_low": 177.0, "zone_high": 179.5, "strength": 78,
-             "distance_pct": -16.5, "reasons": ["SMA200", "Fibonacci 38,2%", "VWAP anclado"]},
-            {"price": 165.0, "strength": 45, "distance_pct": -22.8, "reasons": ["Mínimo previo"]},
+             "distance_pct": -16.5, "label": "NIVEL 1",
+             "reasons": ["SMA200", "Fibonacci 38,2%", "VWAP anclado"]},
+            {"price": 165.0, "strength": 45, "distance_pct": -22.8, "label": "NIVEL 2",
+             "reasons": ["Mínimo previo"]},
         ],
         "relative_strength": {"6m": {"accion_pct": 22.1, "indice_pct": 9.7,
                                      "diferencia_pp": 12.4, "supera": True}},
@@ -489,3 +493,39 @@ def test_el_lector_de_rutas_resuelve_bien(ruta, esperado):
 ])
 def test_el_lector_de_rutas_devuelve_none_sin_reventar(ruta):
     assert tesis._leer(dash(), ruta) is None
+
+
+# ── El nivel se nombra, no solo se cotiza ────────────────────────────────────
+def test_la_zona_mas_solida_se_cita_por_su_nombre():
+    """Un precio suelto no se puede cruzar con el panel de niveles. Con FORM eso hizo que
+    «la zona más sólida está en 95.55» y «entrada 109.36» parecieran dos recomendaciones
+    en conflicto, cuando eran el escalón 3 y el borde del escalón 1 del MISMO plan."""
+    t = tesis.redactar(dash())
+    parrafos = " ".join(t["parrafos"])
+    assert "es el NIVEL 1, en 178.40" in parrafos, parrafos
+    assert any(a["campo_origen"] == "buy_levels[0].label" for a in t["afirmaciones"])
+    assert "buy_levels[0].label" in t["campos_usados"]
+
+
+def test_el_nombre_es_el_del_nivel_realmente_elegido():
+    """Si la más sólida no es la primera, el nombre citado tiene que ser el suyo."""
+    d = dash(**{"buy_levels": [
+        {"price": 200.0, "strength": 30, "distance_pct": -5.0, "label": "NIVEL 1"},
+        {"price": 180.0, "strength": 85, "distance_pct": -15.0, "label": "NIVEL 2",
+         "reasons": ["SMA200"]},
+    ]})
+    t = tesis.redactar(d)
+    assert "es el NIVEL 2, en 180.00" in " ".join(t["parrafos"])
+    assert not any(a["campo_origen"] == "buy_levels[0].label" for a in t["afirmaciones"])
+
+
+def test_sin_etiqueta_no_se_inventa_el_numero_de_peldano():
+    """La regla de siempre: un dato ausente no produce una afirmación sobre sí mismo."""
+    d = dash(**{"buy_levels": [
+        {"price": 178.40, "strength": 78, "distance_pct": -16.5, "reasons": ["SMA200"]},
+    ]})
+    t = tesis.redactar(d)
+    parrafos = " ".join(t["parrafos"])
+    assert "está en 178.40" in parrafos
+    assert "NIVEL" not in parrafos
+    assert "buy_levels[0].label" not in t["campos_usados"]

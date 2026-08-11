@@ -1527,7 +1527,8 @@ def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_targe
     definitivos (solo los narra) y se sobrescriben al final. Devuelve None si no hay zonas de
     confluencia (entonces se usa el flujo clásico con guardianes).
 
-    - entradas: del motor de confluencia (levels_engine, ya rankeado por fuerza)
+    - entradas: del motor de confluencia (levels_engine, ordenado por PRECIO de cerca a
+      lejos — NO por fuerza: la mas solida puede ser el escalon 3)
     - stops: ATR reales bajo el soporte MÁS PROFUNDO del plan (monótonos), uno para la posición
       completa — así el stop nunca queda por encima de los niveles 2 y 3
     - objetivos: resistencia cercana + extensiones Fibonacci + objetivo de analistas (cap 15% s/ máx 52s)
@@ -1570,14 +1571,12 @@ def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_targe
                 "min": round(min(lo, hi), 2), "max": round(max(lo, hi), 2),
                 "comment": f"Fuerza {z.get('strength')}/100 · {motivo}"}
 
+    # La seleccion vive en levels_engine para que sea UNA sola: la misma que marca
+    # `en_plan` en cada zona. Antes este bucle era la unica implementacion y la pantalla
+    # no tenia forma de saber que zonas usaba el plan sin replicar el umbral.
     ez = []
-    for z in buy_levels[:6]:
-        if len(ez) >= 3:
-            break
-        p = _f(z.get("price"))
-        if p is None or p < suelo:
-            continue
-        zona = _zona(z, len(ez) + 1)
+    for n, i in enumerate(levels_engine.indices_del_plan(price, buy_levels, MAX_PLAN_DEPTH), 1):
+        zona = _zona(buy_levels[i], n)
         if zona:
             ez.append(zona)
     if not ez:
@@ -1882,6 +1881,10 @@ async def analyze(req: AnalyzeRequest, _user: str = Depends(auth.get_current_use
         )
     except Exception:
         logger.exception("compute_buy_levels failed")
+
+    # Se marca tambien aqui: el frontend sustituye `buyLevels` por los de esta respuesta al
+    # pulsar «Ampliar con IA», y sin `en_plan` el panel perderia la agrupacion en ese momento.
+    levels_engine.marcar_en_plan(buy_levels, quote.get("price"), MAX_PLAN_DEPTH)
 
     # Perfil de empresa (FMP): descripción del negocio/productos para el "qué hace".
     company_profile = None
@@ -2378,6 +2381,12 @@ async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
             )
         except Exception:
             logger.exception("dashboard[%s] compute_buy_levels failed", sym)
+
+    # `en_plan`: que zonas usa el plan escalonado. Se marca aqui, con la MISMA funcion que
+    # usa `_deterministic_levels` para construirlo, para que la pantalla pueda agrupar sin
+    # replicar el umbral del 30% en el cliente. Es aditivo: no toca precio, fuerza,
+    # distancia, razones ni el orden.
+    levels_engine.marcar_en_plan(buy_levels, quote.get("price"), MAX_PLAN_DEPTH)
 
     # Actualizar cachés individuales para que los endpoints separados también sean rápidos
     _cache.set(f"quote:{sym}", quote, ttl=60)

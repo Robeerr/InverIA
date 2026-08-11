@@ -105,3 +105,62 @@ describe("no quedan exports huérfanos en lo que hemos tocado", () => {
     }
   });
 });
+
+/**
+ * El panel de niveles: cuatro dimensiones, cuatro canales.
+ *
+ * Con FORM a $112.47 el panel apuntaba al revés que la operativa: NIVEL 1 (por donde se
+ * entra, a −1,4%) lucía barra a media asta con fuerza 83, y NIVEL 6 (a −50,7%) lucía
+ * barra llena y verde con fuerza 100. La barra medía fiabilidad y se leía como
+ * conveniencia. Estos tests fijan el reparto nuevo.
+ */
+describe("panel de niveles · un canal por dimensión", () => {
+  const TL = sinComentarios(leer("components/TradingLevels.jsx"));
+
+  test("la pertenencia al plan viene del backend, no se recalcula aquí", () => {
+    // Replicar el 30% en React haría que la pantalla mintiera en silencio el día que
+    // MAX_PLAN_DEPTH cambiara por variable de entorno.
+    expect(TL).toContain("z.en_plan");
+    expect(TL).not.toContain("0.30");
+    expect(TL).not.toContain("MAX_PLAN_DEPTH");
+  });
+
+  test("sin en_plan no se adivina el corte: se cae a una lista sin agrupar", () => {
+    expect(TL).toContain("const hayPlan = levels.some((z) => typeof z.en_plan === \"boolean\")");
+  });
+
+  test("la confluencia se cuenta en métodos, no se mide con una barra", () => {
+    expect(TL).toContain("Coinciden ${metodos} métodos");
+    // La barra de porcentaje desaparece; la fuerza ponderada queda en el title.
+    expect(TL).not.toContain("width: `${Math.max(0, Math.min(100, z.strength))}%`");
+    expect(TL).toContain("Fuerza ponderada ${z.strength}/100");
+  });
+
+  test("la cercanía se codifica con posición: hay raíl de distancia", () => {
+    expect(TL).toContain("z.distance_pct");
+    expect(TL).toContain("border-r-2");
+  });
+
+  test("los dos roles con nombre están, y son solo dos", () => {
+    expect(TL).toContain("El más cercano");
+    expect(TL).toContain("El más sólido");
+    expect(TL).toContain('rol: z === plan[0] ? "cercano"');
+  });
+
+  test("los estructurales bajan de peso pero siguen visibles con su distancia", () => {
+    expect(TL).toContain("Soportes estructurales");
+    expect(TL).toContain("estructural");
+    // Siguen recibiendo la distancia: no se esconden, se subordinan.
+    expect(TL).toContain("estructurales.map");
+  });
+
+  test("no se inventa ninguna métrica nueva", () => {
+    // Acotado al bloque del panel: más abajo, el plan de la IA pinta zonas con otra
+    // forma (min/max/comment, que salen de `_deterministic_levels`) y no son buy_levels.
+    const bloque = TL.slice(TL.indexOf("function Nivel("), TL.indexOf("function RecBig("));
+    const campos = [...bloque.matchAll(/z\.([a-z_]+)/g)].map((m) => m[1]);
+    const permitidos = new Set(["price", "zone_low", "zone_high", "strength",
+      "distance_pct", "reasons", "label", "tactical", "en_plan", "rol"]);
+    for (const c of new Set(campos)) expect(permitidos.has(c)).toBe(true);
+  });
+});
