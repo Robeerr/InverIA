@@ -70,6 +70,10 @@ export const api = {
     client.get(symbol ? `/history/${symbol}` : `/history`).then((r) => r.data),
   opportunities: (refresh = false) =>
     client.get(`/opportunities/daily`, { params: refresh ? { refresh: true } : {} }).then((r) => r.data),
+  // El desglose del score: se pide SOLO cuando alguien lo despliega. Sale de la cache
+  // del escaneo, asi que no cuesta ni una llamada externa.
+  desgloseScore: (symbol) =>
+    client.get(`/opportunities/score/${symbol}`).then((r) => r.data),
   opportunitiesScreener: (refresh = false) =>
     client.get(`/opportunities/screener`, { params: refresh ? { refresh: true } : {} }).then((r) => r.data),
   marketMovers: () => client.get(`/market/movers`).then((r) => r.data),

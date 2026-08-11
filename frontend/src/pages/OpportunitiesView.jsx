@@ -2,6 +2,7 @@ import React from "react";
 import { Lightning, TrendDown, TrendUp, Sparkle, Pulse, Sun, ArrowRight, ArrowClockwise, Funnel, Fire, Target } from "@phosphor-icons/react";
 import { Button } from "../components/ui/button";
 import { api } from "../lib/api";
+import Score from "../components/Score";
 import { fmtPrice, fmtPct, fmtNum } from "../lib/format";
 import MiniChart from "../components/MiniChart";
 import RadarView from "./RadarView";
@@ -139,7 +140,9 @@ function ScreenerCard({ row, onPick, top }) {
           </div>
         </div>
         {ps != null && (
-          <div className="flex flex-col items-end shrink-0">
+          /* El chip es el mismo de siempre; `Score` solo lo hace desplegable. Cerrado se
+             ve igual y no pide nada: la peticion ocurre en el primer clic. */
+          <Score symbol={row.symbol}>
             <span
               className="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold"
               style={{ background: `${psColor}18`, color: psColor, border: `1px solid ${psColor}40` }}
@@ -147,8 +150,8 @@ function ScreenerCard({ row, onPick, top }) {
             >
               {ps} pts
             </span>
-            <span className="text-[9px] text-[#5c6b66] mt-0.5">potencial</span>
-          </div>
+            <span className="block text-[9px] text-[#5c6b66] mt-0.5 text-right">potencial</span>
+          </Score>
         )}
       </div>
 
