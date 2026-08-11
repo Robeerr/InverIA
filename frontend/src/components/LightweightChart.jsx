@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from "react";
+import { leerToken } from "../lib/tokens";
 import { createChart, ColorType, LineStyle } from "lightweight-charts";
 
 const TIMEFRAMES = ["15M", "1H", "4H", "1D", "1W", "1M"];
@@ -16,25 +17,24 @@ function sma(data, period) {
 
 // Opciones de aspecto según el modo. Fuera del componente para poder aplicarlas tanto al
 // crear el gráfico como al cambiar de modo, sin duplicar la paleta en dos sitios.
-function opcionesTema(dark) {
+function opcionesTema() {
   return {
     layout: {
-      background: { type: ColorType.Solid, color: dark ? "#0e1f1a" : "#ffffff" },
-      textColor: dark ? "#8fa39b" : "#5c6b66",
+      // La superficie del panel que envuelve al grafico, para que no se vea un recorte
+      // de otro color dentro de la tarjeta.
+      background: { type: ColorType.Solid, color: leerToken("--iv-superficie") },
+      textColor: leerToken("--iv-tinta-3"),
       fontFamily: "ui-monospace, monospace",
     },
     grid: {
-      vertLines: { color: dark ? "#1a3a32" : "#f0ece3" },
-      horzLines: { color: dark ? "#1a3a32" : "#f0ece3" },
+      vertLines: { color: leerToken("--iv-linea") },
+      horzLines: { color: leerToken("--iv-linea") },
     },
-    rightPriceScale: { borderColor: dark ? "#1a3a32" : "#e5e0d8" },
-    timeScale: { borderColor: dark ? "#1a3a32" : "#e5e0d8", timeVisible: true, secondsVisible: false },
+    rightPriceScale: { borderColor: leerToken("--iv-linea") },
+    timeScale: { borderColor: leerToken("--iv-linea"), timeVisible: true, secondsVisible: false },
   };
 }
 
-function esOscuro() {
-  return typeof document !== "undefined" && document.documentElement.classList.contains("dark");
-}
 
 // Gráfico PRO con TradingView Lightweight Charts (gratis): velas limpias + SMA + zonas de
 // compra y niveles dibujados con líneas de precio.
@@ -58,7 +58,7 @@ export default function LightweightChart({ candles, buyLevels, lines, timeframe,
     let chart;
     try {
       chart = createChart(el, { height: 460, crosshair: { mode: 1 }, autoSize: true,
-                                ...opcionesTema(esOscuro()) });
+                                ...opcionesTema() });
     } catch (e) {
       return;
     }
@@ -74,7 +74,7 @@ export default function LightweightChart({ candles, buyLevels, lines, timeframe,
   // crearlo, así que al cambiar de modo el gráfico se quedaba con la paleta anterior hasta
   // que llegaran datos nuevos; ahora que ya no se recrea, haría falta esperar indefinidamente.
   useEffect(() => {
-    const aplicar = () => { try { chartRef.current?.applyOptions(opcionesTema(esOscuro())); } catch (e) {} };
+    const aplicar = () => { try { chartRef.current?.applyOptions(opcionesTema()); } catch (e) {} };
     const obs = new MutationObserver(aplicar);
     obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
     return () => obs.disconnect();
@@ -113,19 +113,19 @@ export default function LightweightChart({ candles, buyLevels, lines, timeframe,
       .filter((c) => Number.isFinite(c.time));
 
     const candleSeries = registrar(chart.addCandlestickSeries({
-      upColor: "#22c55e", downColor: "#ef4444",
-      borderUpColor: "#22c55e", borderDownColor: "#ef4444",
-      wickUpColor: "#22c55e", wickDownColor: "#ef4444",
+      upColor: leerToken("--iv-sube"), downColor: leerToken("--iv-baja"),
+      borderUpColor: leerToken("--iv-sube"), borderDownColor: leerToken("--iv-baja"),
+      wickUpColor: leerToken("--iv-sube"), wickDownColor: leerToken("--iv-baja"),
     }));
     candleSeries.setData(data);
 
     // Medias móviles
     if (data.length >= 60) {
-      const s50 = registrar(chart.addLineSeries({ color: "#2563eb", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }));
+      const s50 = registrar(chart.addLineSeries({ color: leerToken("--iv-info"), lineWidth: 1, priceLineVisible: false, lastValueVisible: false }));
       s50.setData(sma(data, 50));
     }
     if (data.length >= 200) {
-      const s200 = registrar(chart.addLineSeries({ color: "#b8860b", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }));
+      const s200 = registrar(chart.addLineSeries({ color: leerToken("--iv-aviso"), lineWidth: 1, priceLineVisible: false, lastValueVisible: false }));
       s200.setData(sma(data, 200));
     }
 
@@ -138,7 +138,7 @@ export default function LightweightChart({ candles, buyLevels, lines, timeframe,
       .slice(0, 3);
     cercanas.forEach((z, i) => {
       candleSeries.createPriceLine({
-        price: z.price, color: z.tactical ? "#b8860b" : "#2563eb",
+        price: z.price, color: z.tactical ? leerToken("--iv-aviso") : leerToken("--iv-info"),
         lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true,
         title: `C${i + 1}`,
       });
@@ -156,7 +156,7 @@ export default function LightweightChart({ candles, buyLevels, lines, timeframe,
     // que quitarla dejaría el gráfico sin techo. Es una asimetría real del producto:
     // InverIA sabe mucho mejor dónde comprar que dónde vender.
     const res = (lines?.levels || []).find((l) => l?.role === "resistencia" && l.price != null);
-    if (res) candleSeries.createPriceLine({ price: res.price, color: "#d85c41", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: "Res" });
+    if (res) candleSeries.createPriceLine({ price: res.price, color: leerToken("--iv-baja"), lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: "Res" });
 
     // DIRECTRICES (Fase 2): líneas diagonales que unen los swings, como las dibuja un trader.
     // El backend las da en coordenadas de índice de vela; las mapeamos a la escala temporal
@@ -178,7 +178,7 @@ export default function LightweightChart({ candles, buyLevels, lines, timeframe,
         const tA = idxTime(a.index);
         const tB = idxTime(lastIdx);
         if (tA == null || tB == null || tB <= tA) return;
-        const col = tl.kind === "resistencia" ? "#d85c41" : "#4a7c59";
+        const col = tl.kind === "resistencia" ? leerToken("--iv-baja") : leerToken("--iv-sube");
         const seg = registrar(chart.addLineSeries({ color: col, lineWidth: 2, lineStyle: LineStyle.Solid, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }));
         seg.setData([
           { time: tA, value: +a.price.toFixed(2) },
@@ -194,14 +194,18 @@ export default function LightweightChart({ candles, buyLevels, lines, timeframe,
       // Color por tipo de línea (con fallback al sentido del patrón).
       const colorFor = (tipo) => {
         const t = (tipo || "").toLowerCase();
-        if (t.includes("objetivo")) return "#2563eb";
-        if (t.includes("invalid") || t.includes("stop")) return "#c0392b";
-        if (t.includes("cuello") || t.includes("neck")) return "#d9a441";
-        if (t.includes("resist") || t.includes("buy")) return "#d85c41";
-        if (t.includes("sop")) return "#4a7c59";
-        if (t.includes("base")) return "#8a958f";
+        if (t.includes("objetivo")) return leerToken("--iv-info");
+        if (t.includes("invalid") || t.includes("stop")) return leerToken("--iv-baja");
+        if (t.includes("cuello") || t.includes("neck")) return leerToken("--iv-aviso");
+        if (t.includes("resist") || t.includes("buy")) return leerToken("--iv-baja");
+        if (t.includes("sop")) return leerToken("--iv-sube");
+        if (t.includes("base")) return leerToken("--iv-tinta-3");
+        // Sin token: la paleta no tiene morado. El arco de la taza necesita un color
+        // que no choque con objetivo (info), invalidacion (baja) ni soporte (sube), y
+        // añadir un token nuevo es una decision de diseño, no una migracion de color.
         if (t.includes("arco") || t.includes("taza")) return "#7c5cbf";
-        return pd.sentido === "bajista" ? "#c0392b" : pd.sentido === "alcista" ? "#1e7a3a" : "#5c6b66";
+        return pd.sentido === "bajista" ? leerToken("--iv-baja")
+          : pd.sentido === "alcista" ? leerToken("--iv-sube") : leerToken("--iv-tinta-3");
       };
       const dashed = (tipo) => {
         const t = (tipo || "").toLowerCase();
@@ -231,7 +235,7 @@ export default function LightweightChart({ candles, buyLevels, lines, timeframe,
       if (mk.length) {
         candleSeries.setMarkers(mk.map((m) => ({
           time: m.t, position: "aboveBar", shape: "circle",
-          color: m.sentido === "bajista" ? "#c0392b" : "#1e7a3a", text: m.label,
+          color: m.sentido === "bajista" ? leerToken("--iv-baja") : leerToken("--iv-sube"), text: m.label,
         })));
       }
     }
@@ -244,26 +248,26 @@ export default function LightweightChart({ candles, buyLevels, lines, timeframe,
       <div className="flex items-center gap-1 mb-2 flex-wrap">
         {TIMEFRAMES.map((tf) => (
           <button key={tf} onClick={() => setTimeframe?.(tf)}
-            className={`px-2 py-1 rounded text-[11px] font-mono font-semibold ${timeframe === tf ? "bg-[#1a3a32] text-white" : "bg-[#f0ece3] text-[#5c6b66]"}`}>
+            className={`px-2 py-1 rounded text-[11px] font-mono font-semibold ${timeframe === tf ? "bg-marca text-white" : "bg-fondo text-tinta-3"}`}>
             {tf}
           </button>
         ))}
-        <span className="text-[10px] text-[#8a958f] ml-auto">TradingView Lightweight</span>
+        <span className="text-[10px] text-tinta-3 ml-auto">TradingView Lightweight</span>
       </div>
       <div ref={boxRef} style={{ width: "100%", height: 460 }} />
       {lines?.pattern && (
         <div className="mt-2 space-y-1">
           <div className="flex items-start gap-2 text-[11px]">
-            <span className={`px-1.5 py-0.5 rounded font-mono font-semibold ${lines.pattern.sentido === "alcista" ? "bg-[#e6f4ea] text-[#1e7a3a]" : lines.pattern.sentido === "bajista" ? "bg-[#fbe9e6] text-[#c0392b]" : "bg-[#f0ece3] text-[#5c6b66]"}`}>
+            <span className={`px-1.5 py-0.5 rounded font-mono font-semibold ${lines.pattern.sentido === "alcista" ? "bg-sube/10 text-sube" : lines.pattern.sentido === "bajista" ? "bg-baja/10 text-baja" : "bg-fondo text-tinta-3"}`}>
               {lines.pattern.nombre}
             </span>
-            <span className="px-1.5 py-0.5 rounded bg-[#f0ece3] text-[#8a958f] text-[9px] font-mono uppercase tracking-wide shrink-0">auto</span>
-            <span className="text-[#5c6b66] flex-1">{lines.pattern.descripcion}</span>
+            <span className="px-1.5 py-0.5 rounded bg-fondo text-tinta-3 text-[9px] font-mono uppercase tracking-wide shrink-0">auto</span>
+            <span className="text-tinta-3 flex-1">{lines.pattern.descripcion}</span>
           </div>
-          <p className="text-[10px] text-[#8a958f] italic">Detección automática por geometría (puede fallar). El veredicto fiable lo da el 🎯 Chartista IA de abajo.</p>
+          <p className="text-[10px] text-tinta-3 italic">Detección automática por geometría (puede fallar). El veredicto fiable lo da el 🎯 Chartista IA de abajo.</p>
         </div>
       )}
-      <p className="text-[10px] text-[#8a958f] mt-2">Diagonales: directrices · Azul: zonas de compra · Verde/rojo punteado: soporte/resistencia · SMA 50 (azul) / 200 (dorado).</p>
+      <p className="text-[10px] text-tinta-3 mt-2">Diagonales: directrices · Azul: zonas de compra · Verde/rojo punteado: soporte/resistencia · SMA 50 (azul) / 200 (dorado).</p>
     </div>
   );
 }
