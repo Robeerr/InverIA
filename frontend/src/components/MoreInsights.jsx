@@ -14,12 +14,12 @@ export function AlternativePanel({ symbol, onPick }) {
   }, [symbol]);
   if (!d || !(d.alternativas || []).length) return null;
   return (
-    <section className="card-flat p-5 animate-fade-up">
+    <section className="iv-panel p-5 animate-fade-up">
       <div className="flex items-center gap-2 mb-1">
-        <ArrowFatRight size={18} weight="fill" className="text-[#b8860b]" />
-        <h3 className="font-heading font-semibold text-base text-[#0e1f1a]">Alternativa en {d.grupo || d.sector}</h3>
+        <ArrowFatRight size={18} weight="fill" className="text-aviso" />
+        <h3 className="font-heading font-semibold text-base text-tinta">Alternativa en {d.grupo || d.sector}</h3>
       </div>
-      <p className="text-[11px] text-[#5c6b66] mb-3">
+      <p className="text-[11px] text-tinta-3 mb-3">
         {d.industry && d.grupo === d.industry
           ? `Del mismo sector (${d.industry}) con mejor potencial que ${d.symbol}:`
           : `Del mismo sector con mejor potencial que ${d.symbol}:`}
@@ -27,14 +27,14 @@ export function AlternativePanel({ symbol, onPick }) {
       <div className="space-y-2">
         {d.alternativas.map((a) => (
           <button key={a.symbol} onClick={() => onPick?.(a.symbol)}
-            className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-[#e5e0d8] hover:border-[#b8860b] text-left transition-colors">
+            className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-linea hover:border-aviso text-left transition-colors">
             <div className="min-w-0">
-              <p className="font-mono font-bold text-sm text-[#0e1f1a]">{a.symbol}</p>
-              <p className="text-[10px] text-[#5c6b66] truncate max-w-[160px]">{a.name}</p>
+              <p className="font-mono font-bold text-sm text-tinta">{a.symbol}</p>
+              <p className="text-[10px] text-tinta-3 truncate max-w-[160px]">{a.name}</p>
             </div>
             <div className="text-right shrink-0">
-              <span className="text-sm font-mono font-bold text-[#4a7c59]">{a.potential_score} pts</span>
-              {typeof a.revenue_growth === "number" && <p className="text-[10px] text-[#5c6b66]">ventas +{Math.round(a.revenue_growth)}%</p>}
+              <span className="text-sm font-mono font-bold text-sube">{a.potential_score} pts</span>
+              {typeof a.revenue_growth === "number" && <p className="text-[10px] text-tinta-3">ventas +{Math.round(a.revenue_growth)}%</p>}
             </div>
           </button>
         ))}

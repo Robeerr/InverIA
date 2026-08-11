@@ -5,10 +5,10 @@ import { fmtPrice } from "../lib/format";
 import InfoDot from "./InfoDot";
 
 function rsiTone(v) {
-  if (v == null) return "text-[#5c6b66]";
-  if (v >= 70) return "text-[#d85c41]";
-  if (v <= 30) return "text-[#4a7c59]";
-  return "text-[#0e1f1a]";
+  if (v == null) return "text-tinta-3";
+  if (v >= 70) return "text-baja";
+  if (v <= 30) return "text-sube";
+  return "text-tinta";
 }
 function rsiLabel(v) {
   if (v == null) return "—";
@@ -18,8 +18,8 @@ function rsiLabel(v) {
 }
 
 function macdTone(v) {
-  if (v == null) return "text-[#5c6b66]";
-  return v > 0 ? "text-[#4a7c59]" : "text-[#d85c41]";
+  if (v == null) return "text-tinta-3";
+  return v > 0 ? "text-sube" : "text-baja";
 }
 
 // Fuerza Relativa frente al S&P 500. Va FUERA de las pestañas y siempre visible porque no es
@@ -31,21 +31,21 @@ function macdTone(v) {
 export function FuerzaRelativa({ rs }) {
   if (!rs?.ventanas) return null;
   // Los colores van por CLASE, no por style en línea: el remapeo de modo oscuro de index.css
-  // funciona con selectores de clase (.dark .text-[#4a7c59]), así que un color en línea se lo
+  // funciona con selectores de clase (.dark .text-sube), así que un color en línea se lo
   // salta y se queda en 3,6:1 sobre el fondo oscuro — por debajo del mínimo legible.
   const tono = {
-    "LÍDER":       { c: "text-[#4a7c59]", bg: "bg-[#4a7c59]/10", i: "🏆" },
-    "POR DELANTE": { c: "text-[#4a7c59]", bg: "bg-[#4a7c59]/5",  i: "↗" },
-    "POR DETRÁS":  { c: "text-[#c9a14a]", bg: "bg-[#c9a14a]/10", i: "↘" },
-    "REZAGADA":    { c: "text-[#d85c41]", bg: "bg-[#d85c41]/10", i: "⚠️" },
-  }[rs.veredicto] || { c: "text-[#5c6b66]", bg: "", i: "" };
+    "LÍDER":       { c: "text-sube", bg: "bg-sube/10", i: "🏆" },
+    "POR DELANTE": { c: "text-sube", bg: "bg-sube/5",  i: "↗" },
+    "POR DETRÁS":  { c: "text-aviso", bg: "bg-aviso/10", i: "↘" },
+    "REZAGADA":    { c: "text-baja", bg: "bg-baja/10", i: "⚠️" },
+  }[rs.veredicto] || { c: "text-tinta-3", bg: "", i: "" };
   const orden = ["1m", "3m", "6m"];
   return (
     <div data-testid="fuerza-relativa" className={`mb-4 rounded-lg px-3 py-2.5 ${tono.bg}`}>
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <span className="text-sm leading-none">{tono.i}</span>
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#5c6b66]">
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-tinta-3">
             Fuerza relativa vs S&amp;P 500
           </span>
           <span className={`font-mono text-xs font-bold ${tono.c}`}>{rs.veredicto}</span>
@@ -53,10 +53,10 @@ export function FuerzaRelativa({ rs }) {
         <div className="flex items-center gap-3">
           {orden.filter((k) => rs.ventanas[k]).map((k) => {
             const v = rs.ventanas[k];
-            const col = v.diferencia_pp >= 0 ? "text-[#4a7c59]" : "text-[#d85c41]";
+            const col = v.diferencia_pp >= 0 ? "text-sube" : "text-baja";
             return (
               <div key={k} className="text-right">
-                <div className="font-mono text-[9px] uppercase text-[#5c6b66]">{k}</div>
+                <div className="font-mono text-[9px] uppercase text-tinta-3">{k}</div>
                 <div className={`font-mono text-xs font-semibold ${col}`}>
                   {v.diferencia_pp >= 0 ? "+" : ""}{v.diferencia_pp} pp
                 </div>
@@ -65,7 +65,7 @@ export function FuerzaRelativa({ rs }) {
           })}
         </div>
       </div>
-      <p className="text-[11px] text-[#5c6b66] mt-1.5 leading-snug">
+      <p className="text-[11px] text-tinta-3 mt-1.5 leading-snug">
         Diferencia de rentabilidad frente al índice. Positivo = la acción va por delante del
         mercado. Es una medida de calidad de la candidata, no una señal de entrada.
       </p>
@@ -78,19 +78,19 @@ export default function IndicatorsPanel({ indicators, analysis }) {
   const { rsi, macd, bollinger, sma, ema, fibonacci, support_resistance, patterns } = indicators;
 
   return (
-    <section data-testid="indicators-panel" className="card-flat p-6 animate-fade-up">
+    <section data-testid="indicators-panel" className="iv-panel p-6 animate-fade-up">
       <div className="flex items-center gap-2 mb-4">
-        <div className="w-8 h-8 rounded-md bg-[#1a3a32] text-[#f5f3ef] flex items-center justify-center">
+        <div className="w-8 h-8 rounded-md bg-marca text-marca-tinta flex items-center justify-center">
           <ChartBar size={18} weight="bold" />
         </div>
-        <h3 className="font-heading font-semibold text-lg text-[#0e1f1a]">
+        <h3 className="font-heading font-semibold text-lg text-tinta">
           Indicadores Técnicos
         </h3>
       </div>
 
 
       <Tabs defaultValue="momentum">
-        <TabsList className="bg-[#f5f3ef] border border-[#e5e0d8] grid grid-cols-4 mb-4">
+        <TabsList className="bg-fondo border border-linea grid grid-cols-4 mb-4">
           <TabsTrigger value="momentum" data-testid="tab-momentum">Momentum</TabsTrigger>
           <TabsTrigger value="trend" data-testid="tab-trend">Tendencia</TabsTrigger>
           <TabsTrigger value="levels" data-testid="tab-levels">Niveles</TabsTrigger>
@@ -119,26 +119,26 @@ export default function IndicatorsPanel({ indicators, analysis }) {
           <Row label="EMA 12" info="EMA" value={<span className="font-mono">${fmtPrice(ema?.["12"])}</span>} />
           <Row label="EMA 26" value={<span className="font-mono">${fmtPrice(ema?.["26"])}</span>} />
           <div className="divider-soft my-2" />
-          <Row icon={<ArrowsHorizontal size={14} weight="bold" />} label="Bollinger Sup." info="Bollinger" value={<span className="font-mono text-[#d85c41]">${fmtPrice(bollinger?.upper)}</span>} />
+          <Row icon={<ArrowsHorizontal size={14} weight="bold" />} label="Bollinger Sup." info="Bollinger" value={<span className="font-mono text-baja">${fmtPrice(bollinger?.upper)}</span>} />
           <Row label="Bollinger Med." value={<span className="font-mono">${fmtPrice(bollinger?.middle)}</span>} />
-          <Row label="Bollinger Inf." value={<span className="font-mono text-[#4a7c59]">${fmtPrice(bollinger?.lower)}</span>} />
+          <Row label="Bollinger Inf." value={<span className="font-mono text-sube">${fmtPrice(bollinger?.lower)}</span>} />
         </TabsContent>
 
         <TabsContent value="levels" className="space-y-3">
           <h4 className="label-small flex items-center gap-1.5">Soportes <InfoDot term="Soporte" /></h4>
           {(support_resistance?.supports || []).map((s, i) => (
-            <Row key={`s-${i}`} label={`S${i + 1}`} value={<span className="font-mono text-[#4a7c59]">${fmtPrice(s)}</span>} />
+            <Row key={`s-${i}`} label={`S${i + 1}`} value={<span className="font-mono text-sube">${fmtPrice(s)}</span>} />
           ))}
           {(support_resistance?.supports || []).length === 0 && (
-            <p className="text-xs text-[#5c6b66]">Sin soportes detectados.</p>
+            <p className="text-xs text-tinta-3">Sin soportes detectados.</p>
           )}
           <div className="divider-soft my-2" />
           <h4 className="label-small flex items-center gap-1.5">Resistencias <InfoDot term="Resistencia" /></h4>
           {(support_resistance?.resistances || []).map((s, i) => (
-            <Row key={`r-${i}`} label={`R${i + 1}`} value={<span className="font-mono text-[#d85c41]">${fmtPrice(s)}</span>} />
+            <Row key={`r-${i}`} label={`R${i + 1}`} value={<span className="font-mono text-baja">${fmtPrice(s)}</span>} />
           ))}
           {(support_resistance?.resistances || []).length === 0 && (
-            <p className="text-xs text-[#5c6b66]">Sin resistencias detectadas.</p>
+            <p className="text-xs text-tinta-3">Sin resistencias detectadas.</p>
           )}
           <div className="divider-soft my-2" />
           <h4 className="label-small flex items-center gap-1.5">Fibonacci (52sem) <InfoDot term="Fibonacci" /></h4>
@@ -150,18 +150,18 @@ export default function IndicatorsPanel({ indicators, analysis }) {
         <TabsContent value="patterns" className="space-y-2">
           {(patterns || []).length > 0 ? (
             (patterns || []).map((p, i) => (
-              <div key={i} data-testid={`pattern-${i}`} className="flex items-center gap-2 px-3 py-2 bg-[#f5f3ef] border border-[#e5e0d8] rounded-md">
-                <Triangle size={14} weight="bold" className="text-[#1a3a32]" />
-                <span className="text-sm text-[#0e1f1a]">{p}</span>
+              <div key={i} data-testid={`pattern-${i}`} className="flex items-center gap-2 px-3 py-2 bg-fondo border border-linea rounded-md">
+                <Triangle size={14} weight="bold" className="text-marca" />
+                <span className="text-sm text-tinta">{p}</span>
               </div>
             ))
           ) : (
-            <p className="text-xs text-[#5c6b66]">Sin patrones detectados actualmente.</p>
+            <p className="text-xs text-tinta-3">Sin patrones detectados actualmente.</p>
           )}
           {analysis?.pattern_analysis && (
-            <div className="mt-3 p-3 bg-[#f5f3ef] border border-[#e5e0d8] rounded-md">
+            <div className="mt-3 p-3 bg-fondo border border-linea rounded-md">
               <p className="label-small mb-1">Visión IA</p>
-              <p className="text-xs text-[#0e1f1a] leading-relaxed">{analysis.pattern_analysis}</p>
+              <p className="text-xs text-tinta leading-relaxed">{analysis.pattern_analysis}</p>
             </div>
           )}
         </TabsContent>
@@ -172,8 +172,8 @@ export default function IndicatorsPanel({ indicators, analysis }) {
 
 function Row({ icon, label, value, testId, info }) {
   return (
-    <div data-testid={testId} className="flex items-center justify-between py-1.5 border-b border-[#f0ebe1] last:border-0">
-      <span className="text-xs text-[#5c6b66] flex items-center gap-1.5">
+    <div data-testid={testId} className="flex items-center justify-between py-1.5 border-b border-linea last:border-0">
+      <span className="text-xs text-tinta-3 flex items-center gap-1.5">
         {icon}
         {label}
         {info && <InfoDot term={info} />}
