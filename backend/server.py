@@ -3873,6 +3873,29 @@ async def growth_screener(refresh: bool = False,
     return data
 
 
+@api_router.get("/opportunities/score/{symbol}")
+async def desglose_del_score(symbol: str, _user: str = Depends(auth.get_current_user)):
+    """El desglose de los puntos que componen el score de potencial.
+
+    SOLO LECTURA DE CACHE. El escaneo del screener ya calcula este desglose por dentro;
+    aqui se sirve el que quedo guardado. No se recalcula: recalcular exigiria
+    fundamentales, cotizacion y consenso —o sea Finnhub— por cada vez que alguien abre un
+    detalle, y eso es justo lo que este diseño evita.
+
+    Va aparte y no dentro de /opportunities/screener porque ese endpoint devuelve la lista
+    ENTERA desde cache: meter siete componentes en cada resultado son unos 70 KB en cada
+    carga, para algo que se despliega en dos o tres acciones.
+    """
+    d = opportunities.desglose_de(symbol)
+    if d is None:
+        raise HTTPException(
+            404,
+            f"El desglose de '{symbol.upper()}' no esta disponible en la cache actual del "
+            f"screener. Se recalculara en el proximo escaneo.",
+        )
+    return d
+
+
 @api_router.get("/alternativa/{symbol}")
 async def alternativa_sectorial(symbol: str, _user: str = Depends(auth.get_current_user)):
     """Sugiere otra acción del MISMO sector con mejores métricas (mayor potential_score)

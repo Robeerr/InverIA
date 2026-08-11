@@ -22,16 +22,17 @@ def set_db(db):
     _db = db
 
 
-async def _save_snapshot(kind: str, data: dict):
-    """Persist the latest scan to Mongo (best-effort; never blocks the scan)."""
+async def _save_snapshot(kind: str, data: dict, extra: dict = None):
+    """Persist the latest scan to Mongo (best-effort; never blocks the scan).
+
+    `extra` viaja como hermano de `data` y no dentro: `data` es lo que el endpoint
+    devuelve entero, y todo lo que se meta ahi engorda esa respuesta."""
     if _db is None:
         return
     try:
-        await _db.scan_snapshots.replace_one(
-            {"_id": kind},
-            {"_id": kind, "data": data, "saved_at": datetime.now(timezone.utc)},
-            upsert=True,
-        )
+        doc = {"_id": kind, "data": data, "saved_at": datetime.now(timezone.utc)}
+        doc.update(extra or {})
+        await _db.scan_snapshots.replace_one({"_id": kind}, doc, upsert=True)
     except Exception as e:
         _log.warning("snapshot save failed (%s): %s", kind, e)
 
@@ -53,6 +54,10 @@ async def load_snapshots_into_cache():
                 if saved is not None and saved.tzinfo is None:
                     saved = saved.replace(tzinfo=timezone.utc)
                 cache["ts"] = saved
+                # Sin esto, cada despliegue dejaria el desglose no disponible hasta el
+                # siguiente escaneo: hasta 2 h de 404 con los datos ahi al lado.
+                if kind == "screener" and doc.get("desgloses"):
+                    cache["desgloses"] = doc["desgloses"]
                 _log.info("Loaded %s snapshot from Mongo (saved %s)", kind, saved)
         except Exception as e:
             _log.warning("snapshot load failed (%s): %s", kind, e)
@@ -262,6 +267,34 @@ def _potential_score(rev_g, eps_g, pe, dist_52w, cons_score=None,
     return d["score"], d["val_label"], d["momentum_label"]
 
 
+def desglose_de(symbol: str):
+    """El desglose YA CALCULADO de un simbolo, o None si no esta en el escaneo actual.
+
+    Solo lee memoria. No recalcula NADA: recalcular exigiria fundamentales, cotizacion y
+    consenso, o sea llamadas a Finnhub por cada consulta de un detalle que se abre dos o
+    tres veces. Si el simbolo no esta, se dice — y se recalculara en el proximo escaneo.
+    """
+    sym = (symbol or "").strip().upper()
+    if not sym:
+        return None
+    d = (_screener_cache.get("desgloses") or {}).get(sym)
+    if not d:
+        return None
+    # El score se toma de `results`, no se recalcula: asi lo que se explica y lo que se
+    # ve en la lista son literalmente el mismo numero.
+    fila = next((r for r in ((_screener_cache.get("data") or {}).get("results") or [])
+                 if (r.get("symbol") or "").upper() == sym), None)
+    if fila is None:
+        return None
+    return {
+        "symbol": sym,
+        "score": fila.get("potential_score"),
+        # Un desglose puede tener hasta 2 h. Sin sello, el lector no sabe de cuando es.
+        "generado_en": (_screener_cache.get("data") or {}).get("generated_at"),
+        "desglose": d,
+    }
+
+
 def _build_screener_reason(rev_g, dist_52w, change_pct, market_cap):
     """Generate a short human-readable explanation for a screener result."""
     parts = []
@@ -345,7 +378,7 @@ SCREENER_FILTERS = [
     "Ventas YoY > 12%",
 ]
 
-_screener_cache = {"data": None, "ts": None}
+_screener_cache = {"data": None, "ts": None, "desgloses": {}}
 _SCREENER_TTL = timedelta(hours=2)
 _screener_lock = asyncio.Lock()
 
@@ -470,6 +503,7 @@ async def _run_screener_scan():
             enriched = await asyncio.gather(*[_enrich(s, q) for s, q in finalists])
 
             results = []
+            desgloses = {}
             for s, q, m, cons in enriched:
                 rev_g = m.get("revenue_growth")
                 # Revenue-growth filter is best-effort: exclude only when the metric IS
@@ -494,10 +528,23 @@ async def _run_screener_scan():
                 rel_str = m.get("rel_strength_52w")
                 # Score de potencial: crecimiento + valoración + entrada + consenso + momentum
                 # + calidad, con guardián de tendencia contra value traps / sectores muertos.
-                pot_score, val_label, mom_label = _potential_score(
+                _det = _potential_score_detalle(
                     rev_g, eps_g, pe, dist, cons_score, ret_26w, ret_52w, rel_str,
                     net_margin=m.get("net_margin"), roe=m.get("roe"),
                     debt_to_equity=m.get("debt_to_equity"))
+                pot_score = _det["score"]
+                val_label, mom_label = _det["val_label"], _det["momentum_label"]
+                # El desglose NO entra en `results`: se guarda aparte y lo sirve
+                # /opportunities/score/{symbol} bajo demanda. `valuation` y `momentum` ya
+                # viajan en el resultado, asi que aqui no se repiten — duplicar es como
+                # empiezan a divergir.
+                desgloses[s] = {
+                    "bruto": _det["bruto"],
+                    "multiplicador": _det["multiplicador"],
+                    "motivo_multiplicador": _det["motivo_multiplicador"],
+                    "recortado": _det["recortado"],
+                    "componentes": _det["componentes"],
+                }
                 reason = _build_screener_reason(rev_r, dist_r, cp, mc)
                 results.append({
                     "symbol": s,
@@ -563,7 +610,8 @@ async def _run_screener_scan():
                 "market_regime": regime,
             }
             _screener_cache["ts"] = datetime.now(timezone.utc)
-            await _save_snapshot("screener", _screener_cache["data"])
+            _screener_cache["desgloses"] = desgloses
+            await _save_snapshot("screener", _screener_cache["data"], extra={"desgloses": desgloses})
         except Exception:
             pass
         finally:
