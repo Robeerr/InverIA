@@ -115,6 +115,48 @@
     --iv-foco:           245 158  11;
 }
 
+/* ── Superficie SIEMPRE oscura ───────────────────────────────────────────────
+   Hay elementos que son oscuros en los dos temas: la barra de señal fija es
+   `#0e1f1a` tanto en claro como en oscuro. Ningún token les sirve tal cual,
+   porque cada token resuelve según el TEMA y no según la superficie sobre la
+   que cae: `text-sube` valdría #2f6b45 en claro, verde oscuro sobre casi negro.
+
+   La solución es un ÁMBITO, no un color nuevo. Esta clase redeclara la paleta
+   oscura para su subárbol, así que dentro de ella `text-sube`, `text-tinta-3` o
+   `border-linea` funcionan igual que en cualquier otro sitio y resuelven a los
+   valores oscuros. Los componentes no tienen que saber nada.
+
+   NO es un parche como el bloque `!important` de index.css: aquel está indexado
+   por VALOR HEX («cuando veas #5c6b66, píntalo así») y este por PAPEL («dentro
+   de esta superficie, la paleta es esta»).
+
+   Los valores están repetidos de `.dark` a propósito. La indirección natural
+   —`--iv-sube: var(--iv-d-sube)`— se descartó por una razón concreta: el test de
+   contraste parsea tripletas literales y descarta lo que no lo sea, así que con
+   `var()` el bloque oscuro DESAPARECERÍA del test sin avisar. La duplicación se
+   vigila con un test que compara los dos bloques.
+   ────────────────────────────────────────────────────────────────────────── */
+.iv-oscuro {
+    --iv-fondo: 14  31  26;
+    --iv-superficie: 30  44  40;
+    --iv-superficie-2: 39  56  51;
+    --iv-linea: 44  58  53;
+    --iv-linea-fuerte: 68  85  79;
+    --iv-linea-marcada: 101 122 115;
+    --iv-tinta: 238 243 240;
+    --iv-tinta-2: 179 197 189;
+    --iv-tinta-3: 148 173 162;
+    --iv-marca: 245 158  11;
+    --iv-marca-tinta: 14  31  26;
+    --iv-sube: 95 208 138;
+    --iv-baja: 250 140 124;
+    --iv-aviso: 240 180  41;
+    --iv-info: 108 182 240;
+    --iv-neutro: 148 173 162;
+    --iv-foco: 245 158  11;
+}
+
+
 /* ── Foco visible ───────────────────────────────────────────────────────────
    Global y desde el principio: un foco que solo se añade al final acaba
    faltando en la mitad de los sitios. `:focus-visible` y no `:focus` para no

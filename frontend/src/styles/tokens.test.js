@@ -91,3 +91,41 @@ test("los tokens son tripletes RGB, no hex", () => {
   const hex = CSS.match(/--iv-[\w-]+\s*:\s*#[0-9a-fA-F]{3,8}\s*;/g);
   expect(hex).toBeNull();
 });
+
+// ── La superficie SIEMPRE oscura ────────────────────────────────────────────
+// `.iv-oscuro` redeclara la paleta oscura para su subárbol, y eso solo funciona
+// mientras las dos digan exactamente lo mismo. Los valores están repetidos a
+// propósito —la indirección con `var()` sacaría a `.dark` de este mismo test,
+// porque `tokensDe` descarta lo que no sea una tripleta literal—, así que la
+// duplicación se vigila aquí en vez de evitarse allí.
+describe("superficie siempre oscura", () => {
+  const OSCURO = tokensDe("\\.dark");
+  const AMBITO = tokensDe("\\.iv-oscuro");
+
+  test("declara exactamente los mismos tokens que el tema oscuro", () => {
+    expect(Object.keys(AMBITO).sort()).toEqual(Object.keys(OSCURO).sort());
+  });
+
+  test("y con exactamente los mismos valores", () => {
+    // Si alguien retoca un color del tema oscuro y olvida este bloque, la barra
+    // inferior se quedaría con la paleta anterior y nadie lo vería hasta usarla.
+    expect(AMBITO).toEqual(OSCURO);
+  });
+
+  test("el texto sigue siendo legible dentro del ámbito", () => {
+    // Es la misma comprobación que ya pasa el tema oscuro, hecha explícita aquí:
+    // lo que protege el ámbito es justo que no haya que confiar en que coinciden.
+    for (const rol of ["--iv-tinta", "--iv-tinta-2", "--iv-tinta-3"]) {
+      for (const fondo of ["--iv-fondo", "--iv-superficie", "--iv-superficie-2"]) {
+        expect(ratio(AMBITO[rol], AMBITO[fondo])).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
+  test("sube, baja e info se leen sobre el fondo de la barra", () => {
+    // La barra usa `--iv-fondo` como superficie, no `--iv-superficie`.
+    for (const rol of ["--iv-sube", "--iv-baja", "--iv-info"]) {
+      expect(ratio(AMBITO[rol], AMBITO["--iv-fondo"])).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});
