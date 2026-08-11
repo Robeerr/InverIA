@@ -43,6 +43,13 @@ def accion(ticker, sent=None, score=None, verdict=None, motivo=None, nombre=None
     return a
 
 
+def _r(**kw):
+    base = {"menciones": 1, "n_fuentes": 1, "positivos": 0, "negativos": 0,
+            "neutros": 0, "score": None}
+    base.update(kw)
+    return base
+
+
 MEDIO = {"nombre": "medio", "min_fuentes": 2, "score_alto": 65, "score_bajo": 45}
 
 
@@ -98,89 +105,35 @@ def test_no_revienta_con_documentos_rotos():
         assert insp.resumir_por_ticker(basura, FUENTE) == {}
 
 
-# ── 2 · El tono de las fuentes ───────────────────────────────────────────────
-@pytest.mark.parametrize("pos,neg,esperado", [
-    (3, 0, "FAVORABLE"),
-    (0, 2, "DESFAVORABLE"),
-    (2, 1, "MIXTO"),
-    (0, 0, "SIN_SENTIDO"),
-])
-def test_tono_de_fuentes(pos, neg, esperado):
-    r = {"positivos": pos, "negativos": neg, "neutros": 0}
-    assert insp.tono_de_fuentes(r) == esperado
+# ── 2 · La clasificacion vive en `confluencia`, aqui solo se delega ─────────
+# Las reglas —umbrales, fronteras, MIXTO, SIN_FUENTES— se prueban en test_confluencia.py.
+# Duplicarlas aqui daria dos sitios donde afirmarlas y una forma silenciosa de que
+# diverjan. Lo que se comprueba en este fichero es que el script DELEGA de verdad.
+
+def test_el_tono_delega_en_produccion():
+    import confluencia
+    r = {"positivos": 2, "negativos": 1, "neutros": 0}
+    assert insp.tono_de_fuentes(r) == confluencia.tono_de_fuentes(2, 1) == "MIXTO"
 
 
-def test_mixto_no_se_promedia_a_neutro():
-    """Que unas fuentes lo vean bien y otras mal ES informacion. Un promedio la borraria."""
-    assert insp.tono_de_fuentes({"positivos": 5, "negativos": 1, "neutros": 0}) == "MIXTO"
+def test_la_clasificacion_delega_en_produccion():
+    import confluencia
+    r = _r(n_fuentes=2, positivos=2, score=70)
+    assert insp.clasificar(r, None) == confluencia.clasificar(2, 2, 0, 70)
 
 
-# ── 3 · La clasificacion ────────────────────────────────────────────────────
-def _r(**kw):
-    base = {"menciones": 1, "n_fuentes": 1, "positivos": 0, "negativos": 0,
-            "neutros": 0, "score": None}
-    base.update(kw)
-    return base
-
-
-def test_sin_menciones_nunca_hay_confluencia():
-    """LA REGLA DURA. Un ticker que el motor puntua alto y del que nadie ha hablado no es
-    un acuerdo: es una idea propia. Llamarlo confluencia seria fabricar una coincidencia."""
-    r = _r(menciones=0, n_fuentes=0, score=95)
-    assert insp.clasificar(r, MEDIO) == "SIN_FUENTES"
-
-
-def test_sin_veredicto_del_motor_es_insuficiente_no_neutral():
-    """Falta una de las dos opiniones: no se puede cruzar nada. Decir «neutral» sugeriria
-    que se han comparado y empatan."""
-    r = _r(menciones=3, n_fuentes=3, positivos=3, score=None)
-    assert insp.clasificar(r, MEDIO) == "INSUFICIENTE"
-
-
-def test_acuerdo_pide_las_tres_condiciones():
-    assert insp.clasificar(_r(n_fuentes=2, positivos=2, score=70), MEDIO) == "ACUERDO"
-    # Con una sola fuente no hay consenso, aunque el motor acompañe.
-    assert insp.clasificar(_r(n_fuentes=1, positivos=1, score=70), MEDIO) != "ACUERDO"
-    # Con el motor tibio tampoco.
-    assert insp.clasificar(_r(n_fuentes=3, positivos=3, score=50), MEDIO) != "ACUERDO"
-
-
-def test_choque_en_las_dos_direcciones():
-    """Las fuentes lo empujan y el motor lo evita — o al reves. Es el caso mas informativo
-    de todos, porque es el unico donde la app puede evitarte una decision mala."""
-    assert insp.clasificar(_r(n_fuentes=3, positivos=3, score=20), MEDIO) == "CHOQUE"
-    assert insp.clasificar(_r(n_fuentes=3, negativos=3, score=80), MEDIO) == "CHOQUE"
-
-
-def test_el_choque_no_exige_minimo_de_fuentes():
-    """Una sola fuente empujando algo que el motor evita ya merece decirse."""
-    assert insp.clasificar(_r(n_fuentes=1, positivos=1, score=20), MEDIO) == "CHOQUE"
-
-
-def test_mixto_nunca_es_acuerdo_ni_choque():
-    """Si las fuentes no se ponen de acuerdo entre ellas, no hay con que cruzar."""
-    for score in (10, 50, 90):
-        assert insp.clasificar(_r(n_fuentes=3, positivos=2, negativos=2, score=score),
-                               MEDIO) == "NEUTRAL"
-
-
-def test_los_estados_son_exactamente_los_cinco_acordados():
-    posibles = set()
-    for menciones in (0, 3):
-        for nf in (1, 3):
-            for pos, neg in ((0, 0), (3, 0), (0, 3), (2, 2)):
-                for score in (None, 20, 50, 80):
-                    posibles.add(insp.clasificar(
-                        _r(menciones=menciones, n_fuentes=nf, positivos=pos,
-                           negativos=neg, score=score), MEDIO))
-    assert posibles <= {"ACUERDO", "CHOQUE", "NEUTRAL", "INSUFICIENTE", "SIN_FUENTES"}
+def test_sin_corte_sale_lo_que_haria_la_app_hoy():
+    """Con `corte=None` el script clasifica exactamente como produccion: es lo que
+    permite leer el informe como «asi quedaria de verdad»."""
+    assert insp.clasificar(_r(n_fuentes=2, positivos=2, score=70), None) == "ACUERDO"
+    assert insp.clasificar(_r(n_fuentes=1, positivos=1, score=70), None) == "NEUTRAL"
 
 
 def test_un_corte_mas_estricto_nunca_da_mas_acuerdos():
-    """Monotonia: subir el liston no puede fabricar acuerdos. Si pasara, el corte estaria
-    mal escrito y la tabla del informe no significaria nada."""
-    resumenes = {f"T{i}": _r(n_fuentes=(i % 4) + 1, positivos=i % 3,
-                             negativos=(i + 1) % 2, menciones=3, score=(i * 7) % 100)
+    """Monotonia: subir el liston no puede fabricar acuerdos. Si pasara, la tabla del
+    informe no significaria nada."""
+    resumenes = {f"T{i}": _r(n_fuentes=(i % 4) + 1, positivos=(i % 3) + 1,
+                             negativos=0, menciones=3, score=(i * 7) % 100)
                  for i in range(40)}
     acuerdos = [insp.reparto(resumenes, c).get("ACUERDO", 0) for c in insp.CORTES]
     assert acuerdos == sorted(acuerdos, reverse=True), acuerdos

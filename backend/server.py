@@ -45,6 +45,7 @@ import chart_lines
 import chartist
 import hoy
 import tesis
+import confluencia as confluencia_mod
 import mem
 import levels_engine
 import auth
@@ -3243,8 +3244,18 @@ async def fuentes_de_accion(symbol: str, days: int = 30,
                 "niveles": a.get("niveles"), "motivo": a.get("motivo"),
                 "fecha": d.get("received_at"), "inveria": a.get("inveria"),
             })
+    # Fuentes DISTINTAS, no menciones: cuarenta correos del mismo boletin son una sola
+    # opinion repetida, y el consenso mide cuanta gente distinta lo dice.
+    fuentes_distintas = {m["fuente"] for m in menciones if m.get("fuente")}
+    # El veredicto del motor tal como quedo guardado en la mencion. No se recalcula aqui:
+    # eso costaria una llamada a Finnhub por cada apertura de accion.
+    score = next((((m.get("inveria") or {}).get("score")) for m in menciones
+                  if (m.get("inveria") or {}).get("score") is not None), None)
+
     return {"symbol": sym, "n": len(menciones), "positivos": pos, "negativos": neg,
-            "menciones": menciones[:20]}
+            "menciones": menciones[:20],
+            # Aditivo: nada de lo de arriba cambia.
+            "confluencia": confluencia_mod.evaluar(len(fuentes_distintas), pos, neg, score)}
 
 
 # ---------- Radar: inteligencia acumulada de todas las newsletters ----------
@@ -3316,6 +3327,9 @@ async def radar(days: int = 14, _user: str = Depends(auth.get_current_user)):
             "negativos": s["negativos"],
             "inveria": s.get("inveria"),
             "ultima": s["ultima"],
+            "confluencia": confluencia_mod.evaluar(
+                len(s["fuentes"]), s["positivos"], s["negativos"],
+                (s.get("inveria") or {}).get("score")),
         })
     # Ordena por nº de fuentes distintas (consenso) y menciones.
     acciones.sort(key=lambda x: (x["n_fuentes"], x["menciones"]), reverse=True)
@@ -3332,6 +3346,13 @@ async def radar(days: int = 14, _user: str = Depends(auth.get_current_user)):
         if fresh is not None:
             item["inveria"] = fresh
             item["inveria_actualizado"] = True
+            # La confluencia se calculo con el veredicto guardado, que puede ser de hace
+            # semanas. Si aqui llega uno fresco hay que rehacerla, o la respuesta saldria
+            # con un `inveria.score` y un `confluencia.score_motor` distintos — y encima
+            # el estado podria no corresponder a ninguno de los dos.
+            item["confluencia"] = confluencia_mod.evaluar(
+                item["n_fuentes"], item["positivos"], item["negativos"],
+                (fresh or {}).get("score"))
         else:
             faltan.append(item["ticker"])
 

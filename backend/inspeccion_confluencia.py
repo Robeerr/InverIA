@@ -45,6 +45,7 @@ from datetime import datetime, timedelta, timezone
 # descarta los patrocinadores que se cuelan como si fueran ideas de inversión. Duplicar
 # cualquiera de las dos aquí seria empezar a tener dos verdades.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import confluencia  # noqa: E402
 import newsletter_ingest  # noqa: E402
 
 
@@ -118,58 +119,27 @@ def resumir_por_ticker(docs, limpiar_fuente):
 
 
 def tono_de_fuentes(r):
-    """FAVORABLE / DESFAVORABLE / MIXTO / SIN_SENTIDO, mirando solo las menciones.
-
-    MIXTO no es lo mismo que neutro: significa que unas fuentes lo ven bien y otras mal,
-    y esa discrepancia es información. Machacarla en un promedio la perdería.
-    """
-    pos, neg = r["positivos"], r["negativos"]
-    if pos and neg:
-        return "MIXTO"
-    if pos:
-        return "FAVORABLE"
-    if neg:
-        return "DESFAVORABLE"
-    return "SIN_SENTIDO"
+    """Delega en el modulo de produccion. El script MIDE, no decide: si tuviera aqui su
+    propia copia de la clasificacion, la distribucion que informa podria dejar de
+    corresponder con lo que la app hace de verdad."""
+    return confluencia.tono_de_fuentes(r["positivos"], r["negativos"])
 
 
 def clasificar(r, corte):
-    """Estado de confluencia de un ticker BAJO UN CORTE CONCRETO.
+    """Estado bajo un corte CONCRETO, con la logica de produccion.
 
-    `corte` llega como parámetro a propósito: este fichero no decide ningún umbral, solo
-    permite comparar candidatos. Los estados son los cuatro acordados.
-
-    LA REGLA QUE NO SE NEGOCIA: sin menciones no hay confluencia. Un ticker que tu motor
-    puntúa alto y del que nadie ha hablado NO es un acuerdo, es una idea propia — y
-    llamarlo confluencia sería fabricar una coincidencia que no existe.
+    `corte` se pasa como `umbrales` para poder barrer candidatos. Con corte a None sale
+    exactamente lo que la app clasificaria hoy.
     """
-    if r["menciones"] == 0:
-        return "SIN_FUENTES"
-
-    tono = tono_de_fuentes(r)
-    score = r["score"]
-
-    # Sin veredicto del motor no se puede cruzar nada: falta una de las dos opiniones.
-    if score is None:
-        return "INSUFICIENTE"
-
-    fuentes_bastantes = r["n_fuentes"] >= corte["min_fuentes"]
-    motor_a_favor = score >= corte["score_alto"]
-    motor_en_contra = score < corte["score_bajo"]
-
-    if tono == "FAVORABLE" and fuentes_bastantes and motor_a_favor:
-        return "ACUERDO"
-    if tono == "FAVORABLE" and motor_en_contra:
-        return "CHOQUE"
-    if tono == "DESFAVORABLE" and motor_a_favor:
-        return "CHOQUE"
-    return "NEUTRAL"
+    return confluencia.clasificar(r["n_fuentes"], r["positivos"], r["negativos"],
+                                  r["score"], corte)
 
 
-# Cortes candidatos. No son propuestas: son sondas para ver cómo se mueve el reparto.
+# Cortes candidatos. El marcado con ★ es el que quedo elegido y vive en
+# `confluencia.py`; los demas siguen aqui para poder volver a comparar.
 CORTES = [
     {"nombre": "laxo",      "min_fuentes": 1, "score_alto": 55, "score_bajo": 40},
-    {"nombre": "medio",     "min_fuentes": 2, "score_alto": 65, "score_bajo": 45},
+    {"nombre": "medio ★",   "min_fuentes": 2, "score_alto": 65, "score_bajo": 45},
     {"nombre": "estricto",  "min_fuentes": 3, "score_alto": 70, "score_bajo": 50},
     {"nombre": "muy estricto", "min_fuentes": 3, "score_alto": 75, "score_bajo": 55},
 ]
