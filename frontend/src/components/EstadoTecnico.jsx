@@ -35,11 +35,11 @@ const ADX_CON_FUERZA = 25;   // el mismo umbral que usa indicators.market_regime
 function Dato({ etiqueta, children, tono, testId, info }) {
   return (
     <div className="flex flex-col gap-0.5 min-w-0" data-testid={testId}>
-      <span className="text-[9.5px] uppercase tracking-[0.14em] text-[#5c6b66] font-mono flex items-center gap-1">
+      <span className="text-[9.5px] uppercase tracking-[0.14em] text-tinta-3 font-mono flex items-center gap-1">
         {etiqueta}
         {info && <InfoDot term={info} />}
       </span>
-      <span className={`text-[13px] font-medium leading-tight ${tono || "text-[#0e1f1a]"}`}>
+      <span className={`text-[13px] font-medium leading-tight ${tono || "text-tinta"}`}>
         {children}
       </span>
     </div>
@@ -72,7 +72,7 @@ export default function EstadoTecnico({ indicators, quote, marketRegime }) {
   if (!hayAlgo) return null;
 
   return (
-    <section className="card-flat px-4 py-3" data-testid="estado-tecnico">
+    <section className="iv-panel px-4 py-3" data-testid="estado-tecnico">
       <div className="flex flex-wrap gap-x-6 gap-y-3">
         {etiquetaRegimen && (
           <Dato etiqueta="Régimen" testId="et-regimen" info={adx != null ? "ADX" : undefined}>
@@ -91,7 +91,7 @@ export default function EstadoTecnico({ indicators, quote, marketRegime }) {
             etiqueta="Volumen"
             testId="et-obv"
             info="OBV"
-            tono={String(obv).toLowerCase() === "subiendo" ? "text-[#4a7c59]" : "text-[#d85c41]"}
+            tono={String(obv).toLowerCase() === "subiendo" ? "text-sube" : "text-baja"}
           >
             {String(obv).toLowerCase() === "subiendo" ? "Entra dinero" : "Sale dinero"}
           </Dato>
@@ -101,7 +101,7 @@ export default function EstadoTecnico({ indicators, quote, marketRegime }) {
           <Dato
             etiqueta="VWAP anclado"
             testId="et-vwap"
-            tono={sobreVwap ? "text-[#4a7c59]" : sobreVwap === false ? "text-[#d85c41]" : undefined}
+            tono={sobreVwap ? "text-sube" : sobreVwap === false ? "text-baja" : undefined}
           >
             {sobreVwap == null ? `$${fmtPrice(vwap)}` : `${sobreVwap ? "Por encima" : "Por debajo"} · $${fmtPrice(vwap)}`}
           </Dato>
@@ -111,7 +111,7 @@ export default function EstadoTecnico({ indicators, quote, marketRegime }) {
           <Dato
             etiqueta="Media 10 semanas"
             testId="et-salida10w"
-            tono={salida.por_encima ? "text-[#4a7c59]" : "text-[#d85c41]"}
+            tono={salida.por_encima ? "text-sube" : "text-baja"}
           >
             {salida.por_encima ? "Por encima" : "Por debajo"}
             {salida.sma != null ? ` · $${fmtPrice(salida.sma)}` : ""}
@@ -125,8 +125,8 @@ export default function EstadoTecnico({ indicators, quote, marketRegime }) {
                 className="w-2 h-2 rounded-full inline-block shrink-0"
                 style={{
                   background:
-                    marketRegime.light === "rojo" ? "#d85c41"
-                    : marketRegime.light === "amarillo" ? "#c9a14a" : "#4a7c59",
+                    marketRegime.light === "rojo" ? "rgb(var(--iv-baja))"
+                    : marketRegime.light === "amarillo" ? "rgb(var(--iv-aviso))" : "rgb(var(--iv-sube))",
                 }}
               />
               {marketRegime.label}
@@ -139,7 +139,7 @@ export default function EstadoTecnico({ indicators, quote, marketRegime }) {
           de esta franja que pide una decisión hoy, y hasta ahora no existía en pantalla. */}
       {salida?.recien_perdida && (
         <p
-          className="mt-3 pt-3 border-t border-[#e5e0d8] text-[12.5px] text-[#d85c41] font-medium flex gap-1.5"
+          className="mt-3 pt-3 border-t border-linea text-[12.5px] text-baja font-medium flex gap-1.5"
           data-testid="et-recien-perdida"
         >
           <span aria-hidden="true">⚠️</span>

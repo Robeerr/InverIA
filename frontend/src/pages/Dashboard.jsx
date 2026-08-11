@@ -28,9 +28,9 @@ import { useSignals } from "../hooks/useSignals";
 function DataHealthBar({ health }) {
   if (!health || !health.degraded) return null;
   return (
-    <div className="card-flat px-4 py-2 flex items-center gap-2 border border-[#c9a14a]/40 bg-[#c9a14a]/[0.06]">
+    <div className="iv-panel px-4 py-2 flex items-center gap-2 border border-aviso/40 bg-aviso/[0.06]">
       <span className="text-sm">⚠️</span>
-      <span className="text-[11px] text-[#8a6508] leading-snug">
+      <span className="text-[11px] text-aviso leading-snug">
         <b>Datos de respaldo o con retraso</b>{health.note ? ` · ${health.note}` : ""}.
       </span>
     </div>
@@ -53,8 +53,8 @@ const LightweightChart = React.lazy(() => import("../components/LightweightChart
 // esto, al aparecer empujaría hacia abajo todo lo que hubiera debajo.
 function HuecoGrafico() {
   return (
-    <div className="card-flat p-3" style={{ height: 516 }} aria-busy="true">
-      <div className="h-full w-full rounded bg-[#f0ece3] dark:bg-[#132a24] animate-pulse" />
+    <div className="iv-panel p-3" style={{ height: 516 }} aria-busy="true">
+      <div className="h-full w-full rounded bg-superficie-alt animate-pulse" />
     </div>
   );
 }
@@ -378,7 +378,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
           Lo único de la página que cambia en tiempo real. Por eso va arriba y va solo:
           todo lo que hay debajo es una foto del momento en que se ensambló el dashboard. */}
       {loadingQuote && !quote ? (
-        <div className="card-flat p-8 text-center text-[#5c6b66]">Cargando datos...</div>
+        <div className="iv-panel p-8 text-center text-tinta-3">Cargando datos...</div>
       ) : quote ? (
         <QuoteHeader quote={quote} />
       ) : null}

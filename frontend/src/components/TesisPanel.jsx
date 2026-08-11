@@ -2,6 +2,18 @@ import React from "react";
 import { fmtHace } from "../lib/format";
 import { titularVivo } from "../lib/tesisVivo";
 
+/* ── Superficie ──────────────────────────────────────────────────────────────
+   Estos bloques usan `iv-panel` y no `card-flat`. En CLARO son idénticos —
+   #ffffff, borde #e5e0d8, radio 6px—, así que el cambio no se nota. La
+   diferencia está en OSCURO: `card-flat` se remapea con `!important` a #131a23,
+   un pizarra azulado, mientras el token es #1e2c28, el verde de la identidad.
+
+   Mezclar los dos dentro de un mismo componente deja texto de una paleta sobre
+   una superficie de la otra, así que la migración va componente entero o no va.
+   Las 50 reglas `!important` siguen en pie: están indexadas por valor hex y esos
+   hex viven todavía en ocho pantallas más. Se borrarán cuando no quede ninguna.
+   ────────────────────────────────────────────────────────────────────────── */
+
 /**
  * La tesis determinista, en frío.
  *
@@ -34,14 +46,14 @@ export default function TesisPanel({
   const titular = titularVivo(tesis, quote);
 
   return (
-    <section className="card-flat p-5 animate-fade-up" data-testid="tesis">
+    <section className="iv-panel p-5 animate-fade-up" data-testid="tesis">
       <div className="flex items-baseline gap-3 flex-wrap mb-2">
-        <span className="text-[10px] uppercase tracking-[0.2em] text-[#5c6b66] font-mono">
+        <span className="text-[10px] uppercase tracking-[0.2em] text-tinta-3 font-mono">
           Qué está pasando
         </span>
         {generadoEn && (
           <span
-            className="text-[10px] text-[#5c6b66] font-mono ml-auto"
+            className="text-[10px] text-tinta-3 font-mono ml-auto"
             title="Cuándo se calculó el análisis. La cotización de arriba va en vivo; esto es una foto de ese momento."
             data-testid="tesis-antiguedad"
           >
@@ -50,12 +62,12 @@ export default function TesisPanel({
         )}
       </div>
 
-      <p className="text-[15px] leading-snug text-[#0e1f1a] font-medium" data-testid="tesis-titular">
+      <p className="text-[15px] leading-snug text-tinta font-medium" data-testid="tesis-titular">
         {titular}
       </p>
 
       {(tesis.parrafos || []).map((p, i) => (
-        <p key={i} className="text-[13.5px] text-[#5c6b66] leading-relaxed mt-2">
+        <p key={i} className="text-[13.5px] text-tinta-3 leading-relaxed mt-2">
           {p}
         </p>
       ))}
@@ -65,16 +77,16 @@ export default function TesisPanel({
         <div className="grid sm:grid-cols-2 gap-x-5 gap-y-1.5 mt-4">
           <div>
             {(tesis.a_favor || []).map((s, i) => (
-              <p key={i} className="text-[12.5px] text-[#0e1f1a] leading-snug flex gap-1.5">
-                <span className="text-[#4a7c59] font-bold shrink-0" aria-hidden="true">+</span>
+              <p key={i} className="text-[12.5px] text-tinta leading-snug flex gap-1.5">
+                <span className="text-sube font-bold shrink-0" aria-hidden="true">+</span>
                 <span>{s.texto}</span>
               </p>
             ))}
           </div>
           <div>
             {(tesis.en_contra || []).map((s, i) => (
-              <p key={i} className="text-[12.5px] text-[#0e1f1a] leading-snug flex gap-1.5">
-                <span className="text-[#d85c41] font-bold shrink-0" aria-hidden="true">−</span>
+              <p key={i} className="text-[12.5px] text-tinta leading-snug flex gap-1.5">
+                <span className="text-baja font-bold shrink-0" aria-hidden="true">−</span>
                 <span>{s.texto}</span>
               </p>
             ))}
@@ -87,7 +99,7 @@ export default function TesisPanel({
           antes era una barra aparte diciendo lo mismo con otras palabras. */}
       {limita && (
         <p
-          className="text-[12.5px] text-[#8a6508] leading-snug mt-3 pt-3 border-t border-[#e5e0d8] flex gap-1.5"
+          className="text-[12.5px] text-aviso leading-snug mt-3 pt-3 border-t border-linea flex gap-1.5"
           data-testid="tesis-limita-confianza"
         >
           <span className="shrink-0" aria-hidden="true">⚠️</span>
@@ -97,12 +109,12 @@ export default function TesisPanel({
 
       {/* Acción secundaria: la IA amplía lo de arriba, no lo sustituye. */}
       {onAnalizar && (
-        <div className="mt-4 pt-3 border-t border-[#e5e0d8] flex items-center gap-3 flex-wrap">
+        <div className="mt-4 pt-3 border-t border-linea flex items-center gap-3 flex-wrap">
           <button
             onClick={onAnalizar}
             disabled={loadingAnalysis}
             data-testid="btn-analisis-ia"
-            className="text-[12px] font-mono font-semibold text-[#1a3a32] hover:text-[#0e1f1a] disabled:opacity-50 underline underline-offset-4 decoration-[#1a3a32]/30"
+            className="text-[12px] font-mono font-semibold text-marca hover:text-tinta disabled:opacity-50 underline underline-offset-4 decoration-marca/30"
           >
             {loadingAnalysis
               ? "Analizando…"
@@ -110,7 +122,7 @@ export default function TesisPanel({
                 ? "🧠 Rehacer análisis IA"
                 : "🧠 Ampliar con IA"}
           </button>
-          <span className="text-[11px] text-[#5c6b66]">
+          <span className="text-[11px] text-tinta-3">
             Añade juicio, causa del movimiento, chartista y riesgos. Lo de arriba ya está calculado.
           </span>
         </div>
