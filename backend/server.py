@@ -1559,7 +1559,6 @@ def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_targe
     # stop, es perder media posición. El propio SYSTEM_PROMPT ya pedía que el NIVEL 3 fuera
     # de -15% a -30%; el motor lo ignoraba.
     # Los soportes profundos NO se pierden: siguen saliendo en key_levels/"Soportes (compra)".
-    suelo = price * (1 - MAX_PLAN_DEPTH)
     def _zona(z, n):
         p = _f(z.get("price"))
         if p is None:
@@ -1591,14 +1590,22 @@ def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_targe
     # Si el filtro ha dejado fuera zonas que sí salen en la lista de confluencia de arriba,
     # dilo. Ver "NIVEL 3" en el panel superior y solo dos zonas en el plan, sin explicación,
     # parece un fallo.
-    descartadas = sum(1 for z in buy_levels
-                      if (_f(z.get("price")) or 0) < suelo and _f(z.get("price")) is not None)
+    # El total son las zonas CON PRECIO, no `len(ez) + descartadas`. Aquella cuenta solo
+    # sumaba las que caen por profundidad e ignoraba las que quedan fuera por el tope de
+    # escalones: con FORM a $112.47 decia «3 de las 5» habiendo SEIS, porque el NIVEL 4
+    # —a -19,5%, dentro del 30%— no lo contaba nadie.
+    #
+    # La frase tambien atribuia a la profundidad TODAS las exclusiones. Ahora nombra los
+    # dos motivos, que es lo que de verdad pasa.
+    con_precio = [z for z in buy_levels if _f(z.get("price")) is not None]
+    fuera = len(con_precio) - len(ez)
     plan_nota = None
-    if descartadas:
+    if fuera > 0:
         plan_nota = (
-            f"El plan usa {len(ez)} de las {len(ez) + descartadas} zonas de confluencia: "
-            f"las demás están a más de un {MAX_PLAN_DEPTH:.0%} bajo el precio y arrastrarían "
-            f"el stop hasta ahí. Siguen listadas como soportes."
+            f"El plan usa {len(ez)} de las {len(con_precio)} zonas de confluencia: se reparte "
+            f"en {levels_engine.MAX_ESCALONES} escalones como mucho y deja fuera las que están "
+            f"a más de un {MAX_PLAN_DEPTH:.0%} bajo el precio, que arrastrarían el stop hasta "
+            f"ahí. Todas siguen listadas como soportes."
         )
     entry_hi = ez[0]["max"]
     entry_lo = ez[0]["min"]

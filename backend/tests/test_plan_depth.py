@@ -81,3 +81,74 @@ def test_hay_respaldo_si_ninguna_zona_pasa_el_filtro():
         "Se ha perdido el respaldo: sin él, una acción disparada cae al flujo clásico, "
         "donde los números los inventa la IA."
     )
+
+
+# ── La cuenta de la nota del plan ────────────────────────────────────────────
+# Decia «el plan usa 3 de las 5 zonas» habiendo SEIS. Sumaba `len(ez) + descartadas`,
+# donde `descartadas` son solo las que caen por PROFUNDIDAD, e ignoraba las que quedan
+# fuera por el tope de tres escalones. Con FORM a $112.47, el NIVEL 4 —a -19,5%, dentro
+# del 30%— no lo contaba nadie.
+#
+# Ademas la frase atribuia a la profundidad todas las exclusiones, cuando hay dos motivos.
+
+FORM_PRECIO = 112.47
+FORM_NIVELES = [110.84, 102.74, 95.55, 90.55, 70.24, 55.40]
+
+
+def _sin_comentarios(src):
+    """El codigo sin sus comentarios. Hace falta porque el comentario que explica POR QUE
+    la cuenta vieja estaba mal la menciona, y buscarla sobre el fichero entero la daria
+    por vigente. Lo que se protege es lo que se ejecuta."""
+    return "\n".join(l.split("#")[0] for l in src.splitlines())
+
+
+def _cuerpo_plan_nota():
+    src = _fuente()
+    ini = src.index("con_precio = [z for z in buy_levels")
+    return src[ini:src.index("entry_hi", ini)]
+
+
+def test_el_total_de_la_nota_son_todas_las_zonas_con_precio():
+    """No `len(ez) + descartadas`: ese numero se dejaba fuera las excluidas por el tope."""
+    cuerpo = _cuerpo_plan_nota()
+    assert "len(con_precio)" in cuerpo
+    assert "len(ez) + descartadas" not in _sin_comentarios(_fuente())
+
+
+def test_form_la_nota_diria_tres_de_seis():
+    """El caso real, calculado con la misma regla que usa el plan."""
+    import levels_engine
+    zonas = [{"price": p} for p in FORM_NIVELES]
+    en_plan = len(levels_engine.indices_del_plan(FORM_PRECIO, zonas, 0.30))
+    con_precio = len([z for z in zonas if z.get("price") is not None])
+    assert (en_plan, con_precio) == (3, 6), f"la nota diria «{en_plan} de {con_precio}»"
+
+
+def test_la_nota_nombra_los_DOS_motivos_de_exclusion():
+    """Una zona puede quedar fuera por profundidad o por el tope de escalones. Decir solo
+    lo primero es falso para NIVEL 4, que esta a -19,5% y aun asi no entra."""
+    cuerpo = _cuerpo_plan_nota()
+    assert "escalones como mucho" in cuerpo
+    assert "bajo el precio" in cuerpo
+
+
+def test_la_nota_aparece_tambien_si_solo_sobran_por_el_tope():
+    """Antes el disparador era `if descartadas:`, asi que con seis zonas TODAS dentro del
+    30% la nota no salia: se veian seis niveles, el plan usaba tres y nada lo explicaba."""
+    cuerpo = _cuerpo_plan_nota()
+    assert "if fuera > 0:" in cuerpo
+
+
+@pytest.mark.parametrize("precio,niveles,esperado", [
+    # Todas dentro del 30%: sobran por el tope. El caso que antes se quedaba mudo.
+    (100.0, [95.0, 90.0, 85.0, 80.0], (3, 4)),
+    # Mezcla: dos fuera por profundidad, una por el tope.
+    (100.0, [95.0, 90.0, 85.0, 80.0, 60.0, 50.0], (3, 6)),
+    # Menos de tres zonas: no sobra ninguna y la nota no debe salir.
+    (100.0, [95.0, 90.0], (2, 2)),
+])
+def test_la_cuenta_cuadra_en_los_tres_repartos(precio, niveles, esperado):
+    import levels_engine
+    zonas = [{"price": p} for p in niveles]
+    en_plan = len(levels_engine.indices_del_plan(precio, zonas, 0.30))
+    assert (en_plan, len(zonas)) == esperado
