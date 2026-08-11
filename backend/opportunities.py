@@ -86,6 +86,160 @@ UNIVERSE = [
 ]
 
 
+def _potential_score_detalle(rev_g, eps_g, pe, dist_52w, cons_score=None,
+                             ret_26w=None, ret_52w=None, rel_strength=None,
+                             net_margin=None, roe=None, debt_to_equity=None):
+    """El score de potencial CON su desglose. Misma aritmética, mismos umbrales.
+
+    Existe porque un score de 0 a 100 sin denominador no se puede discutir: la
+    descomposición ya se hacía dentro de esta función y se tiraba al devolver solo la
+    suma. Aquí se anota cada paso mientras se calcula, sin tocar un punto.
+
+    EL SCORE NO ES UNA SUMA, Y EL DESGLOSE LO DICE
+
+    Son tres etapas: se suman siete componentes, se multiplica por el guardián de
+    tendencia (1,0 / 0,75 / 0,55) y se recorta a [0, 100]. Presentar el guardián como
+    puntos negativos dentro de la suma sería mentir sobre la mecánica — y encima
+    esconder justo lo que explica que una empresa con buenos fundamentales puntúe bajo.
+
+    Los máximos suman 110, no 100. Es a propósito y por eso existe el recorte: se puede
+    llegar al tope sin ser perfecto en todo. Normalizar a 100 para que «cuadre» haría
+    que los números del desglose no correspondieran con los del cálculo.
+    """
+    score = 0.0
+    componentes = []
+
+    def _apunta(clave, etiqueta, puntos, maximo, detalle=None):
+        componentes.append({"clave": clave, "etiqueta": etiqueta,
+                            "puntos": round(puntos, 2), "maximo": maximo,
+                            "detalle": detalle})
+        return puntos
+
+    # 1) Crecimiento de ventas — el motor del medio plazo. Hasta 30 pts (saturado a 60%).
+    p = min(rev_g, 60) / 60 * 30 if (rev_g is not None and rev_g > 0) else 0.0
+    score += _apunta("crecimiento_ventas", "Crecimiento de ventas", p, 30,
+                     f"ingresos {rev_g:+.0f}% anual" if rev_g is not None else "sin dato")
+
+    # 2) Crecimiento de EPS — que el crecimiento llegue al beneficio. Hasta 12 pts.
+    p = min(eps_g, 50) / 50 * 12 if (eps_g is not None and eps_g > 0) else 0.0
+    score += _apunta("crecimiento_eps", "Crecimiento del beneficio por acción", p, 12,
+                     f"EPS {eps_g:+.0f}%" if eps_g is not None else "sin dato")
+
+    # 3) Valoración vía PEG (PER / crecimiento). El "santo grial": barata PARA lo que crece.
+    val_label = "sin datos"
+    p, det = 0.0, "sin PER utilizable"
+    if pe is not None and pe > 0 and rev_g and rev_g > 0:
+        peg = pe / rev_g
+        det = f"PEG {peg:.2f} (PER {pe:.0f} / crecimiento {rev_g:.0f}%)"
+        if peg < 1:
+            p = 22; val_label = "infravalorada (PEG<1)"
+        elif peg < 1.5:
+            p = 16; val_label = "precio atractivo (PEG<1.5)"
+        elif peg < 2.5:
+            p = 10; val_label = "valoración razonable"
+        elif peg < 4:
+            p = 4; val_label = "algo cara"
+        else:
+            val_label = "cara (PEG>4)"
+    elif pe is not None and pe <= 0:
+        val_label = "sin beneficios (PER negativo)"
+        det = "PER negativo"
+    score += _apunta("valoracion_peg", "Valoración (PEG)", p, 22, det)
+
+    # 4) Punto de entrada según distancia a máximos de 52s. Hasta 14 pts.
+    p, det = 0.0, "sin dato"
+    if dist_52w is not None:
+        if -20 <= dist_52w <= -8:
+            p, det = 14, f"retroceso sano ({dist_52w:.0f}% del máximo)"
+        elif -8 < dist_52w <= 0:
+            p, det = 8, f"cerca de máximos ({dist_52w:.0f}%)"
+        elif -35 <= dist_52w < -20:
+            p, det = 9, f"corrección profunda ({dist_52w:.0f}%)"
+        else:
+            p, det = 3, f"muy lejos de máximos ({dist_52w:.0f}%)"
+    score += _apunta("punto_de_entrada", "Punto de entrada", p, 14, det)
+
+    # 5) Consenso de analistas (Wall Street). Hasta 14 pts. 100=strong buy, 50=hold.
+    # Reescala 50→0 y 100→14 (por debajo de "mantener" no suma nada).
+    p = max(0, (cons_score - 50) / 50) * 14 if cons_score is not None else 0.0
+    score += _apunta("consenso_analistas", "Consenso de analistas", p, 14,
+                     f"{cons_score:.0f}/100" if cons_score is not None else "sin dato")
+
+    # 5b) CALIDAD (factor con prima demostrada: rentables y poco endeudadas baten +2-3%
+    # anual). Hasta ~8 pts: margen neto, ROE y control de deuda. Distingue "crece Y gana
+    # dinero de calidad" de "crece pero quema caja y está muy endeudada".
+    p_margen = min(net_margin, 25) / 25 * 3 if (net_margin is not None and net_margin > 0) else 0.0
+    p_roe = min(roe, 30) / 30 * 3 if (roe is not None and roe > 0) else 0.0
+    p_deuda = 0.0
+    if debt_to_equity is not None and debt_to_equity >= 0:
+        if debt_to_equity < 0.5:
+            p_deuda = 2
+        elif debt_to_equity < 1.5:
+            p_deuda = 1
+    partes = []
+    if net_margin is not None:
+        partes.append(f"margen {net_margin:.0f}%")
+    if roe is not None:
+        partes.append(f"ROE {roe:.0f}%")
+    if debt_to_equity is not None:
+        partes.append(f"deuda/patrimonio {debt_to_equity:.1f}")
+    score += _apunta("calidad", "Calidad del negocio", p_margen + p_roe + p_deuda, 8,
+                     " · ".join(partes) or "sin datos")
+    # El subdetalle va aparte: tres filas de 3, 3 y 2 puntos serían ruido en pantalla,
+    # pero quien quiera abrirlo tiene la cuenta entera.
+    componentes[-1]["sub"] = [
+        {"clave": "margen_neto", "etiqueta": "Margen neto", "puntos": round(p_margen, 2), "maximo": 3},
+        {"clave": "roe", "etiqueta": "Rentabilidad (ROE)", "puntos": round(p_roe, 2), "maximo": 3},
+        {"clave": "deuda", "etiqueta": "Control de deuda", "puntos": round(p_deuda, 2), "maximo": 2},
+    ]
+
+    # 6) Momentum reciente (6 meses). Hasta 10 pts: premia que la acción YA suba.
+    p, det = 0.0, "sin dato"
+    if ret_26w is not None:
+        det = f"{ret_26w:+.0f}% en 6 meses"
+        if ret_26w >= 15:
+            p = 10
+        elif ret_26w >= 5:
+            p = 6
+        elif ret_26w >= -5:
+            p = 3
+    score += _apunta("momentum_reciente", "Momentum (6 meses)", p, 10, det)
+
+    bruto = score
+
+    # 7) GUARDIÁN DE TENDENCIA — penaliza value traps / sectores muertos.
+    momentum_label = "neutra"
+    multiplicador = 1.0
+    motivo_mult = None
+    down_year = ret_52w is not None and ret_52w < -10
+    lagging = rel_strength is not None and rel_strength < -5
+    if down_year and lagging:
+        multiplicador = 0.55   # cae en el año Y va peor que el mercado: sector muerto
+        momentum_label = "⚠ tendencia bajista y peor que el mercado"
+        motivo_mult = "cae en el año y rinde peor que el mercado: sector rezagado"
+    elif down_year:
+        multiplicador = 0.75   # cae en el año: cuchillo cayendo → castigo moderado
+        momentum_label = "⚠ en tendencia bajista (1 año)"
+        motivo_mult = "cae en el año: cuchillo cayendo"
+    elif ret_52w is not None and ret_52w >= 15 and (rel_strength is None or rel_strength >= 0):
+        momentum_label = "tendencia alcista sólida"
+    score *= multiplicador
+
+    final = round(min(max(score, 0), 100), 1)
+    return {
+        "score": final,
+        "val_label": val_label,
+        "momentum_label": momentum_label,
+        "componentes": componentes,
+        "bruto": round(bruto, 2),
+        "multiplicador": multiplicador,
+        "motivo_multiplicador": motivo_mult,
+        # Se dice cuando el recorte ha actuado: sin esto, un 100 podria ser un 100 justo
+        # o un 118 recortado, y no son lo mismo.
+        "recortado": bruto * multiplicador > 100,
+    }
+
+
 def _potential_score(rev_g, eps_g, pe, dist_52w, cons_score=None,
                      ret_26w=None, ret_52w=None, rel_strength=None,
                      net_margin=None, roe=None, debt_to_equity=None):
@@ -95,86 +249,17 @@ def _potential_score(rev_g, eps_g, pe, dist_52w, cons_score=None,
     Aplica un GUARDIÁN DE TENDENCIA: una empresa que crece pero cuya acción lleva meses
     cayendo y rinde peor que el mercado (sector rezagado / value trap) se penaliza fuerte,
     porque a corto/medio plazo no suele subir por muy buenos que sean sus fundamentales.
-    Devuelve (score, etiqueta_valoracion, etiqueta_momentum)."""
-    score = 0.0
+    Devuelve (score, etiqueta_valoracion, etiqueta_momentum).
 
-    # 1) Crecimiento de ventas — el motor del medio plazo. Hasta 30 pts (saturado a 60%).
-    if rev_g is not None and rev_g > 0:
-        score += min(rev_g, 60) / 60 * 30
-
-    # 2) Crecimiento de EPS — que el crecimiento llegue al beneficio. Hasta 12 pts.
-    if eps_g is not None and eps_g > 0:
-        score += min(eps_g, 50) / 50 * 12
-
-    # 3) Valoración vía PEG (PER / crecimiento). El "santo grial": barata PARA lo que crece.
-    val_label = "sin datos"
-    if pe is not None and pe > 0 and rev_g and rev_g > 0:
-        peg = pe / rev_g
-        if peg < 1:
-            score += 22; val_label = "infravalorada (PEG<1)"
-        elif peg < 1.5:
-            score += 16; val_label = "precio atractivo (PEG<1.5)"
-        elif peg < 2.5:
-            score += 10; val_label = "valoración razonable"
-        elif peg < 4:
-            score += 4; val_label = "algo cara"
-        else:
-            val_label = "cara (PEG>4)"
-    elif pe is not None and pe <= 0:
-        val_label = "sin beneficios (PER negativo)"
-
-    # 4) Punto de entrada según distancia a máximos de 52s. Hasta 14 pts.
-    if dist_52w is not None:
-        if -20 <= dist_52w <= -8:
-            score += 14   # retroceso sano
-        elif -8 < dist_52w <= 0:
-            score += 8     # cerca de máximos
-        elif -35 <= dist_52w < -20:
-            score += 9     # corrección profunda
-        else:
-            score += 3     # muy lejos de máximos
-
-    # 5) Consenso de analistas (Wall Street). Hasta 14 pts. 100=strong buy, 50=hold.
-    if cons_score is not None:
-        # Reescala 50→0 y 100→14 (por debajo de "mantener" no suma nada).
-        score += max(0, (cons_score - 50) / 50) * 14
-
-    # 5b) CALIDAD (factor con prima demostrada: rentables y poco endeudadas baten +2-3%
-    # anual). Hasta ~8 pts: margen neto, ROE y control de deuda. Distingue "crece Y gana
-    # dinero de calidad" de "crece pero quema caja y está muy endeudada".
-    if net_margin is not None and net_margin > 0:
-        score += min(net_margin, 25) / 25 * 3       # margen neto sano
-    if roe is not None and roe > 0:
-        score += min(roe, 30) / 30 * 3              # rentabilidad sobre recursos propios
-    if debt_to_equity is not None and debt_to_equity >= 0:
-        if debt_to_equity < 0.5:
-            score += 2                              # poca deuda
-        elif debt_to_equity < 1.5:
-            score += 1
-
-    # 6) Momentum reciente (6 meses). Hasta 10 pts: premia que la acción YA suba.
-    if ret_26w is not None:
-        if ret_26w >= 15:
-            score += 10
-        elif ret_26w >= 5:
-            score += 6
-        elif ret_26w >= -5:
-            score += 3
-
-    # 7) GUARDIÁN DE TENDENCIA — penaliza value traps / sectores muertos.
-    momentum_label = "neutra"
-    down_year = ret_52w is not None and ret_52w < -10
-    lagging = rel_strength is not None and rel_strength < -5
-    if down_year and lagging:
-        score *= 0.55   # cae en el año Y va peor que el mercado: sector muerto → castigo duro
-        momentum_label = "⚠ tendencia bajista y peor que el mercado"
-    elif down_year:
-        score *= 0.75   # cae en el año: cuchillo cayendo → castigo moderado
-        momentum_label = "⚠ en tendencia bajista (1 año)"
-    elif ret_52w is not None and ret_52w >= 15 and (rel_strength is None or rel_strength >= 0):
-        momentum_label = "tendencia alcista sólida"
-
-    return round(min(max(score, 0), 100), 1), val_label, momentum_label
+    CONTRATO INTACTO: el calculo vive ahora en `_potential_score_detalle`, que ademas
+    devuelve el desglose. Esta funcion es su envoltorio y da exactamente lo mismo que
+    antes, para no tocar a ninguno de sus cuatro consumidores.
+    """
+    d = _potential_score_detalle(rev_g, eps_g, pe, dist_52w, cons_score=cons_score,
+                                 ret_26w=ret_26w, ret_52w=ret_52w,
+                                 rel_strength=rel_strength, net_margin=net_margin,
+                                 roe=roe, debt_to_equity=debt_to_equity)
+    return d["score"], d["val_label"], d["momentum_label"]
 
 
 def _build_screener_reason(rev_g, dist_52w, change_pct, market_cap):
