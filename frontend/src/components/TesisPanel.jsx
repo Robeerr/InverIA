@@ -1,5 +1,6 @@
 import React from "react";
 import { fmtHace } from "../lib/format";
+import { titularVivo } from "../lib/tesisVivo";
 
 /**
  * La tesis determinista, en frío.
@@ -19,6 +20,7 @@ import { fmtHace } from "../lib/format";
  */
 export default function TesisPanel({
   tesis,
+  quote,
   generadoEn,
   onAnalizar,
   loadingAnalysis,
@@ -27,6 +29,9 @@ export default function TesisPanel({
   if (!tesis) return null;
 
   const limita = tesis.limita_confianza;
+  // El precio del titular sale del MISMO quote que la cabecera, no del que venia dentro
+  // de la frase: el dashboard se sirve cacheado y ese precio puede tener media hora.
+  const titular = titularVivo(tesis, quote);
 
   return (
     <section className="card-flat p-5 animate-fade-up" data-testid="tesis">
@@ -46,7 +51,7 @@ export default function TesisPanel({
       </div>
 
       <p className="text-[15px] leading-snug text-[#0e1f1a] font-medium" data-testid="tesis-titular">
-        {tesis.titular}
+        {titular}
       </p>
 
       {(tesis.parrafos || []).map((p, i) => (

@@ -22,10 +22,16 @@ def _fuente(nombre: str) -> str:
 
 
 def _cuerpo(nombre_funcion: str) -> str:
+    """El cuerpo de UNA funcion, hasta la siguiente de primer nivel.
+
+    Cortar en el proximo `@api_router` no vale para las funciones sin decorar: se comia
+    las de al lado y un `get_quote` de la funcion siguiente se contaba como si fuera de
+    esta.
+    """
     src = _fuente("server.py")
     ini = src.index(f"async def {nombre_funcion}")
-    fin = src.index("\n@api_router", ini)
-    return src[ini:fin]
+    m = re.search(r"^(?:async def |def |@)", src[ini + 10:], re.M)
+    return src[ini:ini + 10 + m.start()] if m else src[ini:]
 
 
 # ── Insider y sorpresas de resultados: solo por la via de la IA ──────────────
@@ -126,3 +132,30 @@ def test_la_tesis_viaja_en_la_respuesta_del_dashboard():
     cuerpo = _cuerpo("_construir_dashboard")
     assert 'result["tesis"] = tesis.redactar(result)' in cuerpo
     assert '"generado_en"' in cuerpo
+
+
+# ── Un solo precio en pantalla ───────────────────────────────────────────────
+def test_al_refrescar_la_cotizacion_se_reescribe_la_tesis():
+    """El bug de AMD tenia DOS vias, no solo el WebSocket.
+
+    `_refrescar_cotizacion` corre al servir el dashboard caducado: actualiza `quote` y
+    dejaba `tesis` como estaba. Como la tesis lleva el precio DENTRO de la frase, la
+    cabecera salia al dia y debajo se leia «AMD cotiza a 468.34». Sin WebSocket ninguno.
+
+    Reescribirla es gratis: `redactar` es pura y trabaja sobre datos ya en memoria.
+    """
+    cuerpo = _cuerpo("_refrescar_cotizacion")
+    assert 'nuevo["quote"] = fusion' in cuerpo
+    assert 'nuevo["tesis"] = tesis.redactar(nuevo)' in cuerpo, (
+        "al refrescar la cotizacion hay que reescribir la tesis o vuelven los dos precios")
+    # Y despues de fusionar, no antes: si no, se redactaria con el precio viejo.
+    assert cuerpo.index('nuevo["quote"] = fusion') < cuerpo.index('nuevo["tesis"]')
+
+
+def test_refrescar_la_cotizacion_no_abre_red_por_la_tesis():
+    """La reescritura no puede convertir un refresco barato en uno caro."""
+    cuerpo = _cuerpo("_refrescar_cotizacion")
+    despues = cuerpo[cuerpo.index('nuevo["quote"] = fusion'):]
+    for caro in ("get_quote", "compute_all", "compute_buy_levels", "external_data",
+                 "await asyncio.to_thread"):
+        assert caro not in despues, f"'{caro}' en el refresco: eso ya no es gratis"

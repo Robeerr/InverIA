@@ -2171,6 +2171,17 @@ async def _refrescar_cotizacion(payload: dict, sym: str) -> dict:
         if v is not None:
             fusion[k] = v
     nuevo["quote"] = fusion
+
+    # La tesis lleva el precio DENTRO de la frase, asi que refrescar la cotizacion y dejarla
+    # como estaba producia dos precios distintos de la misma accion en la misma pantalla: la
+    # cabecera al dia y «AMD cotiza a 468.34» debajo. Se reescribe sobre el payload ya
+    # fusionado. Es gratis: `redactar` es una funcion pura sobre datos en memoria.
+    try:
+        nuevo["tesis"] = tesis.redactar(nuevo)
+    except Exception:
+        logger.exception("refresco de cotizacion: la redaccion de la tesis fallo")
+        # Se conserva la anterior: una tesis con el precio de hace un rato es peor que una
+        # al dia, pero mucho mejor que ninguna.
     return nuevo
 
 

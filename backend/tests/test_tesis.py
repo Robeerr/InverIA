@@ -529,3 +529,55 @@ def test_sin_etiqueta_no_se_inventa_el_numero_de_peldano():
     assert "está en 178.40" in parrafos
     assert "NIVEL" not in parrafos
     assert "buy_levels[0].label" not in t["campos_usados"]
+
+
+# ── El precio vivo: un solo precio en pantalla ──────────────────────────────
+def test_el_titular_viaja_tambien_como_plantilla_con_huecos():
+    """El precio y la variación son los únicos datos de la tesis que cambian tick a tick.
+    Van como huecos para que la pantalla los rellene con la cotización viva sin rehacer
+    la frase — el resto de la redacción sigue siendo del servidor."""
+    t = tesis.redactar(dash())
+    assert t["titular_plantilla"], "el titular debería viajar también como plantilla"
+    assert set(t["titular_huecos"]) == {"p0", "p1"}
+    assert t["titular_huecos"]["p0"]["campo_origen"] == "quote.price"
+    assert t["titular_huecos"]["p1"]["campo_origen"] == "quote.change_percent"
+
+
+def test_la_plantilla_rellenada_con_sus_propios_valores_da_el_titular():
+    """La garantía de que plantilla y texto no divergen: rellenarla con los valores que
+    ella misma declara tiene que devolver la frase original, carácter a carácter."""
+    t = tesis.redactar(dash())
+    render = t["titular_plantilla"]
+    for clave, hueco in t["titular_huecos"].items():
+        v = hueco["valor"]
+        if hueco["formato"] == "precio":
+            texto = f"{float(v):,.2f}"
+        else:
+            texto = f"{'+' if float(v) >= 0 else '-'}{abs(float(v)):.2f}%"
+        render = render.replace("{" + clave + "}", texto)
+    assert render == t["titular"]
+
+
+def test_sin_variacion_del_dia_solo_hay_un_hueco():
+    t = tesis.redactar(dash(**{"quote.change_percent": None}))
+    assert set(t["titular_huecos"]) == {"p0"}
+    assert "{p1}" not in t["titular_plantilla"]
+
+
+def test_los_juicios_derivados_del_precio_no_son_huecos():
+    """«por encima de su media de 200 sesiones» se queda fijo a propósito: es un juicio,
+    no el precio. Recalcularlo en el navegador sería mover lógica de negocio al cliente."""
+    t = tesis.redactar(dash())
+    assert "media de 200 sesiones" in t["titular_plantilla"]
+    rutas = {h["campo_origen"] for h in t["titular_huecos"].values()}
+    assert "indicators.sma.200" not in rutas
+    assert "indicators.high_52w" not in rutas
+
+
+def test_la_plantilla_no_cambia_las_afirmaciones_ni_los_campos_usados():
+    """El añadido es aditivo: la trazabilidad sigue exactamente igual."""
+    t = tesis.redactar(dash())
+    origenes = [a["campo_origen"] for a in t["afirmaciones"]]
+    assert origenes[0] == "quote.price"
+    assert origenes[1] == "quote.change_percent"
+    assert "quote.price" in t["campos_usados"]

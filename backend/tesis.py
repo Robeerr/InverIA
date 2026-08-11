@@ -117,34 +117,71 @@ def _mejor_zona(dashboard: dict):
 
 # ── Bloques ──────────────────────────────────────────────────────────────────
 
-def _titular(f: _Fuente) -> Optional[str]:
+def _titular(f: _Fuente):
+    """Devuelve (texto, plantilla, huecos).
+
+    POR QUE HAY PLANTILLA
+
+    El precio y la variacion del dia son los dos unicos datos de la tesis que cambian
+    TICK A TICK, y hasta ahora se coccian dentro de la frase. Como el dashboard se cachea
+    15 min y se sirve caducado hasta 30, la cabecera acababa enseñando $468.96 en vivo
+    mientras la tesis seguia diciendo «AMD cotiza a 468.34». Dos precios de la misma
+    accion en la misma pantalla, que es justo lo que la regla de fuente unica prohibe.
+
+    La frase entera —el orden, las palabras, las comas— se sigue escribiendo AQUI. Lo
+    unico que viaja aparte son los huecos de esos dos valores, para que la pantalla pueda
+    rellenarlos con la cotizacion viva sin rehacer ninguna frase ni recalcular nada.
+
+    Lo que NO se actualiza con el tick, a proposito: «por encima de su media de 200
+    sesiones» y «a X% de su maximo anual» son JUICIOS derivados del precio, no el precio.
+    Recalcularlos en el navegador seria mover logica de negocio al cliente. Se quedan
+    congelados, y el sello de antiguedad del bloque explica de cuando son.
+    """
     precio = f.dato("quote.price")
     if precio is None:
-        return None
+        return None, None, None
     simbolo = f.dato("symbol") or "La acción"
-    partes = [f.afirmar(f"{simbolo} cotiza a {_precio(precio)}", "quote.price", precio)]
+
+    huecos = {}
+    partes = []       # la frase tal cual se lee
+    plantilla = []    # la misma, con {p0}/{p1} donde hay un valor vivo
+
+    def _volatil(clave, texto, molde, ruta, valor, formato):
+        huecos[clave] = {"campo_origen": ruta, "formato": formato, "valor": valor}
+        f.afirmar(texto, ruta, valor)
+        partes.append(texto)
+        plantilla.append(molde)
+
+    def _estable(texto, ruta, valor):
+        f.afirmar(texto, ruta, valor)
+        partes.append(texto)
+        plantilla.append(texto)
+
+    _volatil("p0", f"{simbolo} cotiza a {_precio(precio)}",
+             f"{simbolo} cotiza a {{p0}}", "quote.price", precio, "precio")
 
     cambio = f.dato("quote.change_percent")
     if cambio is not None:
         signo = "+" if float(cambio) >= 0 else "-"
-        partes.append(f.afirmar(f"({signo}{_pct(cambio, 2)} hoy)",
-                                "quote.change_percent", cambio))
+        _volatil("p1", f"({signo}{_pct(cambio, 2)} hoy)", "({p1} hoy)",
+                 "quote.change_percent", cambio, "pct_signo")
 
     sma200 = f.dato("indicators.sma.200")
     if sma200 is not None:
         encima = float(precio) > float(sma200)
-        partes.append(f.afirmar(
-            f"{'por encima' if encima else 'por debajo'} de su media de 200 sesiones",
-            "indicators.sma.200", sma200))
+        _estable(f"{'por encima' if encima else 'por debajo'} de su media de 200 sesiones",
+                 "indicators.sma.200", sma200)
 
     maximo = f.dato("indicators.high_52w")
     if maximo is not None and float(maximo) > 0:
         dist = (float(precio) - float(maximo)) / float(maximo) * 100
         if abs(dist) <= CERCA_DEL_MAXIMO_PCT:
-            partes.append(f.afirmar(f"a {_pct(dist)} de su máximo anual",
-                                    "indicators.high_52w", maximo))
+            _estable(f"a {_pct(dist)} de su máximo anual", "indicators.high_52w", maximo)
 
-    return " ".join(partes[:1]) + (" " + ", ".join(partes[1:]) if len(partes) > 1 else "") + "."
+    def _unir(xs):
+        return xs[0] + (" " + ", ".join(xs[1:]) if len(xs) > 1 else "") + "."
+
+    return _unir(partes), _unir(plantilla), huecos
 
 
 def _tendencia(f: _Fuente) -> Optional[str]:
@@ -369,7 +406,7 @@ def redactar(dashboard: dict) -> Optional[dict]:
         return None
 
     f = _Fuente(dashboard)
-    titular = _titular(f)
+    titular, titular_plantilla, titular_huecos = _titular(f)
     if not titular:
         # Sin precio no hay nada que describir. Preferible a una frase vacía con
         # aspecto de análisis.
@@ -386,6 +423,10 @@ def redactar(dashboard: dict) -> Optional[dict]:
 
     return {
         "titular": titular,
+        # La misma frase con los huecos de los valores vivos, para que la pantalla los
+        # rellene con la cotizacion del momento sin rehacer la redaccion.
+        "titular_plantilla": titular_plantilla,
+        "titular_huecos": titular_huecos,
         "parrafos": parrafos,
         "a_favor": a_favor,
         "en_contra": en_contra,
