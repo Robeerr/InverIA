@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { Target, ArrowClockwise, ArrowRight, CaretDown } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
+import Confluencia from "../components/Confluencia";
 
 // Color del veredicto del motor sobre cada acción.
 function verdictStyle(inv) {
@@ -35,6 +36,10 @@ function StockCard({ row, onPick }) {
           </span>
         )}
       </div>
+
+      {/* El cruce motor ↔ fuentes. Va antes del recuento porque es la conclusión de
+          juntar las dos cosas que la tarjeta ya enseña por separado. */}
+      <Confluencia confluencia={row.confluencia} compacto className="mb-1.5" />
 
       {/* Cuántas fuentes lo mencionan = fuerza del consenso */}
       <div className="flex items-center gap-1.5 mb-1">

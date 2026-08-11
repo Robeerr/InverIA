@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Users } from "@phosphor-icons/react";
 import { api } from "../lib/api";
+import Confluencia from "./Confluencia";
 
 // "Tus fuentes": qué han dicho tus jefes/newsletters de esta acción. Solo se muestra
 // si hay menciones, para no ensuciar. Lee /fuentes/{symbol}.
@@ -29,6 +30,10 @@ export default function SourcesPanel({ symbol }) {
         <Users size={18} weight="fill" className="text-marca" />
         <h3 className="font-heading font-semibold text-base text-tinta">Tus fuentes sobre {data.symbol}</h3>
       </div>
+      {/* El cruce con el motor, antes que las menciones sueltas: es lo que convierte
+          «cuatro fuentes hablan de esto» en algo sobre lo que decidir. */}
+      <Confluencia confluencia={data.confluencia} className="mb-3" />
+
       <div className="flex items-center gap-3 mb-3 text-[11px] font-semibold">
         <span className="text-tinta-3">{data.n} mención{data.n === 1 ? "" : "es"}</span>
         {data.positivos > 0 && <span className="text-sube">👍 {data.positivos}</span>}
