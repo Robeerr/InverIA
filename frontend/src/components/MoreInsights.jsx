@@ -42,8 +42,12 @@ export function AlternativePanel({ symbol, onPick }) {
         {d.alternativas.map((a) => (
           <div key={a.symbol}
             className="flex items-start justify-between gap-2 px-3 py-2 rounded-md border border-linea hover:border-aviso transition-colors">
+            {/* `flex-1` y `self-stretch` no son adorno: sin ellos el boton se dimensiona
+                a su contenido —el ticker y el nombre— y el resto de la fila queda muerto.
+                Antes toda la fila era el boton, asi que pulsar en el hueco central
+                navegaba; sin esto, deja de hacerlo y parece que no funciona. */}
             <button onClick={() => onPick?.(a.symbol)}
-              className="min-w-0 text-left group"
+              className="flex-1 min-w-0 self-stretch text-left group cursor-pointer"
               title={`Ver el análisis de ${a.symbol}`}>
               <span className="block font-mono font-bold text-sm text-tinta group-hover:text-marca transition-colors">{a.symbol}</span>
               <span className="block text-[10px] text-tinta-3 truncate max-w-[160px]">{a.name}</span>

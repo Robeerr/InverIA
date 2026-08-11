@@ -49,6 +49,20 @@ describe("navegar sigue funcionando", () => {
     expect(FILA).toContain("onClick={() => onPick?.(a.symbol)}");
   });
 
+  test("el botón ocupa toda la fila menos el score", () => {
+    // La regresion que se colo en produccion: sin `flex-1` el boton se dimensiona a su
+    // contenido y el hueco central de la fila deja de navegar. Antes toda la fila era el
+    // boton, asi que pulsar ahi funcionaba — y dejo de hacerlo sin que nada lo dijera.
+    const boton = FILA.slice(FILA.indexOf("<button"), FILA.indexOf("</button>"));
+    expect(boton).toContain("flex-1");
+    expect(boton).toContain("self-stretch");
+  });
+
+  test("y se ve que es pulsable", () => {
+    const boton = FILA.slice(FILA.indexOf("<button"), FILA.indexOf("</button>"));
+    expect(boton).toContain("cursor-pointer");
+  });
+
   test("el símbolo y el nombre siguen ahí", () => {
     expect(FILA).toContain("{a.symbol}");
     expect(FILA).toContain("{a.name}");
