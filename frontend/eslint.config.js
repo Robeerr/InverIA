@@ -35,6 +35,16 @@ const GLOBALES_NAVEGADOR = {
   structuredClone: "readonly", queueMicrotask: "readonly", performance: "readonly",
 };
 
+// Globales que inyecta Jest en los ficheros de test. Sin esto, `no-undef` marcaba
+// `describe`, `test` y `expect` como identificadores inexistentes: 199 errores falsos que
+// enterraban los de verdad y dejaban `npx eslint src` inservible como red de seguridad —
+// que es justo lo que compensa no tener tests de render en este proyecto.
+const GLOBALES_JEST = {
+  describe: "readonly", test: "readonly", it: "readonly", expect: "readonly",
+  beforeAll: "readonly", afterAll: "readonly", beforeEach: "readonly", afterEach: "readonly",
+  jest: "readonly",
+};
+
 module.exports = [
   {
     ignores: ["build/**", "node_modules/**", "public/**", "*.config.js"],
@@ -70,5 +80,10 @@ module.exports = [
       "react/jsx-uses-vars": "error",
       "react/jsx-uses-react": "error",
     },
+  },
+  {
+    // Solo se anaden los globales; las reglas de arriba siguen aplicandose igual.
+    files: ["src/**/*.test.{js,jsx}"],
+    languageOptions: { globals: GLOBALES_JEST },
   },
 ];
