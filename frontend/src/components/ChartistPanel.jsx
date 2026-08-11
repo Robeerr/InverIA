@@ -4,14 +4,14 @@ import { toast } from "sonner";
 import { api } from "../lib/api";
 
 const SENT_COLOR = {
-  alcista: "text-[#1e7a3a] bg-[#e6f4ea]",
-  bajista: "text-[#c0392b] bg-[#fbe9e6]",
-  neutro: "text-[#5c6b66] bg-[#f0ece3]",
+  alcista: "text-sube bg-sube/10",
+  bajista: "text-baja bg-baja/10",
+  neutro: "text-tinta-3 bg-fondo",
 };
 const ACCION_COLOR = {
-  COMPRAR: "bg-[#1e7a3a] text-white",
-  ESPERAR: "bg-[#d9a441] text-[#0e1f1a]",
-  EVITAR: "bg-[#c0392b] text-white",
+  COMPRAR: "bg-sube text-white",
+  ESPERAR: "bg-aviso text-tinta",
+  EVITAR: "bg-baja text-white",
 };
 
 // Chartista IA: veredicto técnico multi-timeframe con plan accionable y explicación
@@ -99,9 +99,9 @@ export default function ChartistPanel({ symbol, runSignal }) {
   const plan = data?.plan;
 
   return (
-    <div className="card-flat p-3">
+    <div className="iv-panel p-3">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-sm font-semibold text-[#0e1f1a]">🎯 Chartista IA</span>
+        <span className="text-sm font-semibold text-tinta">🎯 Chartista IA</span>
         {data?.sentido && (
           <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold ${SENT_COLOR[data.sentido] || SENT_COLOR.neutro}`}>
             {data.sentido.toUpperCase()}
@@ -109,31 +109,31 @@ export default function ChartistPanel({ symbol, runSignal }) {
         )}
         {data?._ai_tier && <TierBadge tier={data._ai_tier} model={data._ai_model} />}
         {data?._precomputed && (
-          <span title="Pre-calculado en segundo plano para tu watchlist" className="text-[9px] font-mono text-[#b8860b]">⚡ listo</span>
+          <span title="Pre-calculado en segundo plano para tu watchlist" className="text-[9px] font-mono text-aviso">⚡ listo</span>
         )}
         <button
           onClick={() => run(!!data)}
           disabled={loading}
-          className="ml-auto px-2.5 py-1 rounded text-[11px] font-mono font-semibold bg-[#1a3a32] text-white disabled:opacity-50"
+          className="ml-auto px-2.5 py-1 rounded text-[11px] font-mono font-semibold bg-marca text-white disabled:opacity-50"
         >
           {loading ? "Analizando…" : data ? "Recalcular" : "Analizar"}
         </button>
       </div>
 
       {!data && !loading && !err && (
-        <p className="text-[11px] text-[#5c6b66]">
+        <p className="text-[11px] text-tinta-3">
           Lee los timeframes 15M → 1S, identifica el patrón y te da un veredicto con plan de
           entrada, invalidación y el porqué — para que aprendas a leerlo tú.
         </p>
       )}
-      {loading && <p className="text-[11px] text-[#5c6b66]">Leyendo velas de todos los timeframes y consultando al cerebro… (~20-40s)</p>}
-      {err && <p className="text-[11px] text-[#c0392b]">{err}</p>}
+      {loading && <p className="text-[11px] text-tinta-3">Leyendo velas de todos los timeframes y consultando al cerebro… (~20-40s)</p>}
+      {err && <p className="text-[11px] text-baja">{err}</p>}
 
       {data && (
         <div className="space-y-3">
           {/* Patrón principal */}
           {data.patron_principal && (
-            <div className="text-[12px] text-[#0e1f1a]">
+            <div className="text-[12px] text-tinta">
               <b>Patrón que manda:</b> {data.patron_principal}
             </div>
           )}
@@ -143,8 +143,8 @@ export default function ChartistPanel({ symbol, runSignal }) {
             <div className="space-y-1">
               {data.por_timeframe.map((t, i) => (
                 <div key={i} className="flex gap-2 text-[11px]">
-                  <span className="font-mono font-semibold text-[#1a3a32] w-10 shrink-0">{t.tf}</span>
-                  <span className="text-[#5c6b66]">{t.lectura}</span>
+                  <span className="font-mono font-semibold text-marca w-10 shrink-0">{t.tf}</span>
+                  <span className="text-tinta-3">{t.lectura}</span>
                 </div>
               ))}
             </div>
@@ -152,19 +152,19 @@ export default function ChartistPanel({ symbol, runSignal }) {
 
           {/* Veredicto */}
           {data.veredicto && (
-            <div className="text-[12px] border border-[#e5e0d8] rounded p-2 leading-snug">
+            <div className="text-[12px] border border-linea rounded p-2 leading-snug">
               {data.veredicto}
             </div>
           )}
 
           {/* Plan accionable */}
           {plan && (
-            <div className="border border-[#e5e0d8] rounded p-2.5 space-y-2">
+            <div className="border border-linea rounded p-2.5 space-y-2">
               <div className="flex items-center gap-2">
                 <span className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold ${ACCION_COLOR[plan.accion] || ACCION_COLOR.ESPERAR}`}>
                   {plan.accion || "ESPERAR"}
                 </span>
-                {plan.gatillo && <span className="text-[11px] text-[#0e1f1a] font-medium">{plan.gatillo}</span>}
+                {plan.gatillo && <span className="text-[11px] text-tinta font-medium">{plan.gatillo}</span>}
                 {Array.isArray(plan.niveles_entrada) && plan.niveles_entrada.some((n) => n.precio != null) && (
                   <button
                     onClick={addToCartera}
@@ -172,8 +172,8 @@ export default function ChartistPanel({ symbol, runSignal }) {
                     title="Añadir esta acción a tu Cartera con estos niveles de compra"
                     className={`ml-auto shrink-0 flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono font-semibold transition-colors ${
                       addedCartera
-                        ? "bg-[#e6f4ea] text-[#1e7a3a]"
-                        : "bg-[#1a3a32] text-white hover:bg-[#0e1f1a] disabled:opacity-50"
+                        ? "bg-sube/10 text-sube"
+                        : "bg-marca text-white hover:bg-tinta disabled:opacity-50"
                     }`}
                   >
                     {addedCartera ? <><Check size={12} /> En Cartera</> : <><FolderSimplePlus size={12} /> Añadir a Cartera</>}
@@ -184,20 +184,20 @@ export default function ChartistPanel({ symbol, runSignal }) {
               {/* Compra ESCALONADA por niveles (anclados a estructura real) */}
               {Array.isArray(plan.niveles_entrada) && plan.niveles_entrada.length > 0 && (
                 <div className="space-y-1">
-                  <div className="text-[9px] uppercase tracking-wide text-[#8a958f]">Compra escalonada</div>
+                  <div className="text-[9px] uppercase tracking-wide text-tinta-3">Compra escalonada</div>
                   {plan.niveles_entrada.map((nv, i) => (
                     <div key={i} className="flex items-center gap-2 text-[11px]">
-                      <span className="w-5 h-5 shrink-0 rounded-full bg-[#e6f4ea] text-[#1e7a3a] font-mono font-bold text-[10px] flex items-center justify-center">{i + 1}</span>
-                      <span className="font-mono font-bold text-[#1e7a3a]">{nv.precio != null ? `$${Number(nv.precio).toFixed(2)}` : "—"}</span>
-                      {nv.porcentaje != null && <span className="font-mono text-[#0e1f1a] font-semibold">· {Number(nv.porcentaje)}%</span>}
-                      {nv.motivo && <span className="text-[#5c6b66] truncate">· {nv.motivo}</span>}
+                      <span className="w-5 h-5 shrink-0 rounded-full bg-sube/10 text-sube font-mono font-bold text-[10px] flex items-center justify-center">{i + 1}</span>
+                      <span className="font-mono font-bold text-sube">{nv.precio != null ? `$${Number(nv.precio).toFixed(2)}` : "—"}</span>
+                      {nv.porcentaje != null && <span className="font-mono text-tinta font-semibold">· {Number(nv.porcentaje)}%</span>}
+                      {nv.motivo && <span className="text-tinta-3 truncate">· {nv.motivo}</span>}
                     </div>
                   ))}
                 </div>
               )}
               <div className="grid grid-cols-2 gap-2 text-center">
-                <Lvl label="Invalidación" val={plan.invalidacion} color="#c0392b" />
-                <Lvl label="Objetivo" val={plan.objetivo} color="#2563eb" />
+                <Lvl label="Invalidación" val={plan.invalidacion} color="rgb(var(--iv-baja))" />
+                <Lvl label="Objetivo" val={plan.objetivo} color="rgb(var(--iv-info))" />
               </div>
 
               {/* #12 Calculadora de posición: reparte tu capital por los niveles */}
@@ -205,7 +205,7 @@ export default function ChartistPanel({ symbol, runSignal }) {
                 <div>
                   <button
                     onClick={() => setCalcOpen((o) => !o)}
-                    className="flex items-center gap-1.5 text-[10px] font-mono text-[#1a3a32] hover:underline"
+                    className="flex items-center gap-1.5 text-[10px] font-mono text-marca hover:underline"
                   >
                     <Calculator size={12} /> {calcOpen ? "Ocultar calculadora" : "Calcular posición"}
                   </button>
@@ -221,16 +221,16 @@ export default function ChartistPanel({ symbol, runSignal }) {
                 </div>
               )}
               {plan.por_que && (
-                <p className="text-[11px] text-[#5c6b66] leading-snug"><b className="text-[#0e1f1a]">Por qué:</b> {plan.por_que}</p>
+                <p className="text-[11px] text-tinta-3 leading-snug"><b className="text-tinta">Por qué:</b> {plan.por_que}</p>
               )}
             </div>
           )}
 
           {/* Enseñanza */}
           {data.para_aprender && (
-            <div className="text-[11px] text-[#5c6b66] flex gap-1.5">
+            <div className="text-[11px] text-tinta-3 flex gap-1.5">
               <span>🎓</span>
-              <span><b className="text-[#0e1f1a]">Para aprender:</b> {data.para_aprender}</span>
+              <span><b className="text-tinta">Para aprender:</b> {data.para_aprender}</span>
             </div>
           )}
         </div>
@@ -243,9 +243,9 @@ export default function ChartistPanel({ symbol, runSignal }) {
 export function TierBadge({ tier, model }) {
   if (!tier) return null;
   const meta = {
-    free: { label: "FREE", cls: "bg-[#e6f4ea] text-[#1e7a3a]", title: "Servido por la clave Gemini GRATIS" },
-    paid: { label: "PAY", cls: "bg-[#fbe9e6] text-[#c0392b]", title: "Servido por la clave Gemini de PAGO (consume tu crédito)" },
-    groq: { label: "ALT", cls: "bg-[#eef0f3] text-[#5c6b66]", title: "Gemini estaba saturado: servido por el modelo de respaldo (Groq, gratis)" },
+    free: { label: "FREE", cls: "bg-sube/10 text-sube", title: "Servido por la clave Gemini GRATIS" },
+    paid: { label: "PAY", cls: "bg-baja/10 text-baja", title: "Servido por la clave Gemini de PAGO (consume tu crédito)" },
+    groq: { label: "ALT", cls: "bg-fondo text-tinta-3", title: "Gemini estaba saturado: servido por el modelo de respaldo (Groq, gratis)" },
   }[tier] || null;
   if (!meta) return null;
   return (
@@ -256,7 +256,7 @@ export function TierBadge({ tier, model }) {
       >
         {meta.label}
       </span>
-      {model && <span className="text-[9px] font-mono text-[#8a958f]">{model}</span>}
+      {model && <span className="text-[9px] font-mono text-tinta-3">{model}</span>}
     </span>
   );
 }
@@ -286,18 +286,18 @@ function PositionCalc({ niveles, invalidacion, objetivo, capital, setCapital }) 
   const fmt = (x) => x == null ? "—" : x.toLocaleString("es-ES", { maximumFractionDigits: 0 });
 
   return (
-    <div className="mt-2 p-2 rounded bg-[#f7f5f0] border border-[#e5e0d8] space-y-2">
+    <div className="mt-2 p-2 rounded bg-fondo border border-linea space-y-2">
       <div className="flex items-center gap-2">
-        <span className="text-[10px] text-[#5c6b66]">Capital a invertir</span>
+        <span className="text-[10px] text-tinta-3">Capital a invertir</span>
         <div className="flex items-center gap-1">
-          <span className="text-[11px] text-[#5c6b66]">$</span>
+          <span className="text-[11px] text-tinta-3">$</span>
           <input
             type="number"
             inputMode="decimal"
             value={capital}
             onChange={(e) => setCapital(e.target.value)}
             placeholder="1000"
-            className="w-24 bg-white border border-[#e5e0d8] rounded px-2 py-1 font-mono text-[12px] focus:outline-none focus:border-[#1a3a32]"
+            className="w-24 bg-white border border-linea rounded px-2 py-1 font-mono text-[12px] focus:outline-none focus:border-marca"
           />
         </div>
       </div>
@@ -306,22 +306,22 @@ function PositionCalc({ niveles, invalidacion, objetivo, capital, setCapital }) 
           <div className="space-y-0.5">
             {rows.map((r, i) => (
               <div key={i} className="flex items-center gap-2 text-[10px] font-mono">
-                <span className="w-4 h-4 shrink-0 rounded-full bg-[#e6f4ea] text-[#1e7a3a] font-bold text-[9px] flex items-center justify-center">{i + 1}</span>
-                <span className="text-[#5c6b66]">${r.precio.toFixed(2)}</span>
-                <span className="text-[#0e1f1a]">→ ${fmt(r.euros)}</span>
-                <span className="ml-auto font-bold text-[#1e7a3a]">{r.acciones.toFixed(r.acciones < 10 ? 2 : 1)} acc.</span>
+                <span className="w-4 h-4 shrink-0 rounded-full bg-sube/10 text-sube font-bold text-[9px] flex items-center justify-center">{i + 1}</span>
+                <span className="text-tinta-3">${r.precio.toFixed(2)}</span>
+                <span className="text-tinta">→ ${fmt(r.euros)}</span>
+                <span className="ml-auto font-bold text-sube">{r.acciones.toFixed(r.acciones < 10 ? 2 : 1)} acc.</span>
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1 pt-1 border-t border-[#e5e0d8] text-[10px] font-mono">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1 pt-1 border-t border-linea text-[10px] font-mono">
             <Row label="Acciones totales" val={`${totalAcc.toFixed(totalAcc < 10 ? 2 : 1)}`} />
             <Row label="Precio medio" val={`$${medio.toFixed(2)}`} />
-            <Row label="Riesgo (a invalidación)" val={riesgo != null ? `-$${fmt(riesgo)}${riesgoPct != null ? ` · ${riesgoPct.toFixed(1)}%` : ""}` : "—"} color="#c0392b" />
-            <Row label="Beneficio (a objetivo)" val={benef != null ? `+$${fmt(benef)}${benefPct != null ? ` · ${benefPct.toFixed(1)}%` : ""}` : "—"} color="#1e7a3a" />
+            <Row label="Riesgo (a invalidación)" val={riesgo != null ? `-$${fmt(riesgo)}${riesgoPct != null ? ` · ${riesgoPct.toFixed(1)}%` : ""}` : "—"} color="rgb(var(--iv-baja))" />
+            <Row label="Beneficio (a objetivo)" val={benef != null ? `+$${fmt(benef)}${benefPct != null ? ` · ${benefPct.toFixed(1)}%` : ""}` : "—"} color="rgb(var(--iv-sube))" />
           </div>
           {riesgo != null && benef != null && riesgo > 0 && (
-            <p className="text-[10px] text-[#5c6b66]">
-              Ratio riesgo/beneficio: <b className="text-[#0e1f1a]">1:{(benef / riesgo).toFixed(1)}</b>
+            <p className="text-[10px] text-tinta-3">
+              Ratio riesgo/beneficio: <b className="text-tinta">1:{(benef / riesgo).toFixed(1)}</b>
             </p>
           )}
         </>
@@ -333,8 +333,8 @@ function PositionCalc({ niveles, invalidacion, objetivo, capital, setCapital }) 
 function Row({ label, val, color }) {
   return (
     <div>
-      <div className="text-[#8a958f]">{label}</div>
-      <div className="font-bold" style={{ color: color || "#0e1f1a" }}>{val}</div>
+      <div className="text-tinta-3">{label}</div>
+      <div className="font-bold" style={{ color: color || "rgb(var(--iv-tinta))" }}>{val}</div>
     </div>
   );
 }
@@ -342,8 +342,8 @@ function Row({ label, val, color }) {
 function Lvl({ label, val, color }) {
   return (
     <div>
-      <div className="text-[9px] uppercase tracking-wide text-[#8a958f]">{label}</div>
-      <div className="text-[13px] font-mono font-bold" style={{ color: val != null ? color : "#b8b8b8" }}>
+      <div className="text-[9px] uppercase tracking-wide text-tinta-3">{label}</div>
+      <div className="text-[13px] font-mono font-bold" style={{ color: val != null ? color : "rgb(var(--iv-tinta-3))" }}>
         {val != null ? `$${Number(val).toFixed(2)}` : "—"}
       </div>
     </div>

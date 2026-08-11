@@ -26,7 +26,7 @@ function ModelSelector({ model, setModel, disabled }) {
         value={model}
         onChange={(e) => setModel(e.target.value)}
         disabled={disabled}
-        className="w-full bg-[#f5f3ef] border border-[#e5e0d8] rounded-md px-3 py-2 font-mono text-sm text-[#0e1f1a] focus:outline-none focus:border-[#1a3a32] disabled:opacity-50"
+        className="w-full bg-fondo border border-linea rounded-md px-3 py-2 font-mono text-sm text-tinta focus:outline-none focus:border-marca disabled:opacity-50"
       >
         {FREE_MODELS.map((m) => (
           <option key={m.id} value={m.id}>{m.label}</option>
@@ -39,20 +39,20 @@ function ModelSelector({ model, setModel, disabled }) {
 function RecPill({ rec }) {
   if (rec === "COMPRAR") {
     return (
-      <span data-testid="recommendation-pill" className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#4a7c59] text-[#f5f3ef] font-mono text-xs font-bold uppercase tracking-wider">
+      <span data-testid="recommendation-pill" className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-sube text-marca-tinta font-mono text-xs font-bold uppercase tracking-wider">
         <ArrowUpRight size={14} weight="bold" /> COMPRAR
       </span>
     );
   }
   if (rec === "VENDER") {
     return (
-      <span data-testid="recommendation-pill" className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#d85c41] text-[#f5f3ef] font-mono text-xs font-bold uppercase tracking-wider">
+      <span data-testid="recommendation-pill" className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-baja text-marca-tinta font-mono text-xs font-bold uppercase tracking-wider">
         <ArrowDownRight size={14} weight="bold" /> VENDER
       </span>
     );
   }
   return (
-    <span data-testid="recommendation-pill" className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#5c6b66] text-[#f5f3ef] font-mono text-xs font-bold uppercase tracking-wider">
+    <span data-testid="recommendation-pill" className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-tinta-3 text-marca-tinta font-mono text-xs font-bold uppercase tracking-wider">
       <Minus size={14} weight="bold" /> MANTENER
     </span>
   );
@@ -60,14 +60,14 @@ function RecPill({ rec }) {
 
 function ConfidenceBar({ value }) {
   const v = Math.max(0, Math.min(100, value || 0));
-  const color = v >= 70 ? "bg-[#4a7c59]" : v >= 40 ? "bg-[#c9a14a]" : "bg-[#d85c41]";
+  const color = v >= 70 ? "bg-sube" : v >= 40 ? "bg-aviso" : "bg-baja";
   return (
     <div className="w-full">
       <div className="flex items-center justify-between mb-1">
         <span className="label-small">Confianza</span>
-        <span data-testid="confidence-value" className="font-mono text-sm font-semibold text-[#0e1f1a]">{v}%</span>
+        <span data-testid="confidence-value" className="font-mono text-sm font-semibold text-tinta">{v}%</span>
       </div>
-      <div className="h-1.5 bg-[#e5e0d8] rounded-full overflow-hidden">
+      <div className="h-1.5 bg-linea rounded-full overflow-hidden">
         <div className={`h-full ${color} transition-all`} style={{ width: `${v}%` }} />
       </div>
     </div>
@@ -77,23 +77,23 @@ function ConfidenceBar({ value }) {
 export default function RecommendationPanel({ analysis, isLoading, onAnalyze, model, setModel }) {
   if (!analysis && !isLoading) {
     return (
-      <section data-testid="recommendation-panel-empty" className="card-flat p-6">
+      <section data-testid="recommendation-panel-empty" className="iv-panel p-6">
         <div className="flex items-center gap-2 mb-3">
-          <div className="w-8 h-8 rounded-md bg-[#1a3a32] text-[#f5f3ef] flex items-center justify-center">
+          <div className="w-8 h-8 rounded-md bg-marca text-marca-tinta flex items-center justify-center">
             <Brain size={18} weight="bold" />
           </div>
-          <h3 className="font-heading font-semibold text-lg text-[#0e1f1a]">
+          <h3 className="font-heading font-semibold text-lg text-tinta">
             Análisis con IA
           </h3>
         </div>
-        <p className="text-sm text-[#5c6b66] mb-4">
+        <p className="text-sm text-tinta-3 mb-4">
           Genera una recomendación de compra/venta con niveles precisos basada en los datos en vivo y análisis técnico.
         </p>
         <ModelSelector model={model} setModel={setModel} />
         <Button
           data-testid="run-analysis-btn"
           onClick={onAnalyze}
-          className="w-full bg-[#1a3a32] hover:bg-[#0e1f1a] text-[#f5f3ef] font-mono"
+          className="w-full bg-marca hover:bg-tinta text-marca-tinta font-mono"
         >
           <Lightning size={16} weight="bold" className="mr-2" />
           Generar análisis
@@ -104,22 +104,22 @@ export default function RecommendationPanel({ analysis, isLoading, onAnalyze, mo
 
   if (isLoading) {
     return (
-      <section data-testid="recommendation-loading" className="card-flat p-6">
+      <section data-testid="recommendation-loading" className="iv-panel p-6">
         <div className="flex items-center gap-2 mb-4">
-          <div className="w-8 h-8 rounded-md bg-[#1a3a32] text-[#f5f3ef] flex items-center justify-center animate-pulse">
+          <div className="w-8 h-8 rounded-md bg-marca text-marca-tinta flex items-center justify-center animate-pulse">
             <Brain size={18} weight="bold" />
           </div>
-          <h3 className="font-heading font-semibold text-lg text-[#0e1f1a]">
+          <h3 className="font-heading font-semibold text-lg text-tinta">
             Generando análisis...
           </h3>
         </div>
         <div className="space-y-3">
-          <div className="h-4 bg-[#e5e0d8] rounded animate-pulse" />
-          <div className="h-4 bg-[#e5e0d8] rounded animate-pulse w-3/4" />
-          <div className="h-20 bg-[#e5e0d8] rounded animate-pulse" />
-          <div className="h-4 bg-[#e5e0d8] rounded animate-pulse" />
+          <div className="h-4 bg-linea rounded animate-pulse" />
+          <div className="h-4 bg-linea rounded animate-pulse w-3/4" />
+          <div className="h-20 bg-linea rounded animate-pulse" />
+          <div className="h-4 bg-linea rounded animate-pulse" />
         </div>
-        <p className="text-xs text-[#5c6b66] mt-4 text-center">
+        <p className="text-xs text-tinta-3 mt-4 text-center">
           {modelLabel(model)} está analizando datos técnicos y fundamentales...
         </p>
       </section>
@@ -127,13 +127,13 @@ export default function RecommendationPanel({ analysis, isLoading, onAnalyze, mo
   }
 
   return (
-    <section data-testid="recommendation-panel" className="card-flat p-6 animate-fade-up">
+    <section data-testid="recommendation-panel" className="iv-panel p-6 animate-fade-up">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-md bg-[#1a3a32] text-[#f5f3ef] flex items-center justify-center">
+          <div className="w-8 h-8 rounded-md bg-marca text-marca-tinta flex items-center justify-center">
             <Brain size={18} weight="bold" />
           </div>
-          <h3 className="font-heading font-semibold text-lg text-[#0e1f1a]">
+          <h3 className="font-heading font-semibold text-lg text-tinta">
             Recomendación IA
           </h3>
           {analysis._ai_tier && <TierBadge tier={analysis._ai_tier} model={analysis._ai_model} />}
@@ -144,23 +144,23 @@ export default function RecommendationPanel({ analysis, isLoading, onAnalyze, mo
       <ConfidenceBar value={analysis.confidence} />
 
       <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-        <div className="bg-[#f5f3ef] border border-[#e5e0d8] rounded-md px-2 py-2">
+        <div className="bg-fondo border border-linea rounded-md px-2 py-2">
           <p className="label-small">Tendencia</p>
-          <p data-testid="trend" className="font-mono text-xs font-semibold mt-1 text-[#0e1f1a]">{analysis.trend}</p>
+          <p data-testid="trend" className="font-mono text-xs font-semibold mt-1 text-tinta">{analysis.trend}</p>
         </div>
-        <div className="bg-[#f5f3ef] border border-[#e5e0d8] rounded-md px-2 py-2">
+        <div className="bg-fondo border border-linea rounded-md px-2 py-2">
           <p className="label-small">Horizonte</p>
-          <p className="font-mono text-xs font-semibold mt-1 text-[#0e1f1a]">{analysis.timeframe?.replace("_", " ")}</p>
+          <p className="font-mono text-xs font-semibold mt-1 text-tinta">{analysis.timeframe?.replace("_", " ")}</p>
         </div>
-        <div className="bg-[#f5f3ef] border border-[#e5e0d8] rounded-md px-2 py-2">
+        <div className="bg-fondo border border-linea rounded-md px-2 py-2">
           <p className="label-small">R/R</p>
-          <p data-testid="risk-reward" className="font-mono text-xs font-semibold mt-1 text-[#0e1f1a]">
+          <p data-testid="risk-reward" className="font-mono text-xs font-semibold mt-1 text-tinta">
             {analysis.risk_reward_ratio ? `1:${analysis.risk_reward_ratio}` : "—"}
           </p>
         </div>
       </div>
 
-      <p data-testid="analysis-summary" className="text-sm text-[#0e1f1a] mt-4 leading-relaxed">
+      <p data-testid="analysis-summary" className="text-sm text-tinta mt-4 leading-relaxed">
         {analysis.summary}
       </p>
 
@@ -212,7 +212,7 @@ export default function RecommendationPanel({ analysis, isLoading, onAnalyze, mo
           data-testid="rerun-analysis-btn"
           onClick={onAnalyze}
           variant="outline"
-          className="w-full border-[#e5e0d8] hover:bg-[#e5e0d8] font-mono text-xs"
+          className="w-full border-linea hover:bg-linea font-mono text-xs"
         >
           Re-analizar con {modelLabel(model)}
         </Button>
@@ -223,12 +223,12 @@ export default function RecommendationPanel({ analysis, isLoading, onAnalyze, mo
 
 function LevelRow({ icon, label, value, tone, testId }) {
   const colors = {
-    buy: "text-[#4a7c59]",
-    sell: "text-[#d85c41]",
-    neutral: "text-[#0e1f1a]",
+    buy: "text-sube",
+    sell: "text-baja",
+    neutral: "text-tinta",
   };
   return (
-    <div data-testid={testId} className="flex items-center justify-between py-2 px-3 bg-[#f5f3ef] border border-[#e5e0d8] rounded-md">
+    <div data-testid={testId} className="flex items-center justify-between py-2 px-3 bg-fondo border border-linea rounded-md">
       <span className={`flex items-center gap-2 text-xs ${colors[tone]} font-medium`}>
         {icon}
         {label}
