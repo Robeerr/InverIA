@@ -38,13 +38,24 @@ const PageLoader = () => (
 
    Este componente sincroniza el parámetro de la URL con el estado de la app, para
    que ambos sentidos funcionen: escribir /accion/NVDA a mano y pulsar un ticker. */
-function PaginaAccion({ symbol, setSymbol, model, setModel }) {
+function PaginaAccion({ symbol, setSymbol, sincronizar, model, setModel }) {
   const { symbol: symbolUrl } = useParams();
 
+  // Sincroniza el ESTADO desde la URL, y para eso usa el setter puro — no `setSymbol`,
+  // que aquí es `irAAccion` y además NAVEGA.
+  //
+  // El bug que esto arregla: al pulsar un ticker había un render en el que el estado ya
+  // era el nuevo y `symbolUrl` seguía siendo el viejo. Este efecto veía la discrepancia y
+  // «sincronizaba» llamando a algo que navega, así que empujaba la URL DE VUELTA a la
+  // acción anterior. Cada clic producía dos pushState —el tuyo y el rebote— y la ruta se
+  // quedaba donde estaba. Rompía la watchlist y la alternativa sectorial por igual.
+  //
+  // Un efecto de sincronización no puede navegar. Guardar y navegar son cosas distintas y
+  // aquí se habían quedado detrás del mismo nombre.
   useEffect(() => {
     const sym = (symbolUrl || "").toUpperCase();
-    if (sym && sym !== symbol) setSymbol(sym);
-  }, [symbolUrl, symbol, setSymbol]);
+    if (sym && sym !== symbol) sincronizar(sym);
+  }, [symbolUrl, symbol, sincronizar]);
 
   // Se pinta con el de la URL para que el primer render ya sea el correcto: usar el
   // del estado enseñaría la acción anterior durante un fotograma al navegar.
@@ -132,7 +143,8 @@ function AppInner() {
           <Route path="/" element={<HoyView />} />
 
           <Route path="/accion/:symbol" element={
-            <PaginaAccion symbol={symbol} setSymbol={irAAccion} model={model} setModel={setModel} />
+            <PaginaAccion symbol={symbol} setSymbol={irAAccion} sincronizar={setSymbol}
+              model={model} setModel={setModel} />
           } />
 
           <Route path="/oportunidades" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><OpportunitiesView setSymbol={irAAccion} /></div>} />
