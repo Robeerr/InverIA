@@ -46,7 +46,7 @@ export default function QuoteHeader({ quote }) {
 
   if (!quote) return null;
   const up = (quote.change ?? 0) >= 0;
-  const Color = up ? "text-[#4a7c59]" : "text-[#d85c41]";
+  const Color = up ? "text-sube" : "text-baja";
   const TrendIcon = up ? TrendUp : TrendDown;
 
   const createAlert = async (e) => {
@@ -67,10 +67,10 @@ export default function QuoteHeader({ quote }) {
   };
 
   return (
-    <section data-testid="quote-header" className="card-flat p-6 animate-fade-up">
+    <section data-testid="quote-header" className="iv-panel p-6 animate-fade-up">
       <div className="flex items-start justify-between gap-6 flex-wrap">
         <div className="flex items-start gap-4 min-w-0">
-          <div className="w-14 h-14 rounded-md bg-[#1a3a32] text-[#f5f3ef] flex items-center justify-center font-mono font-bold text-lg shrink-0">
+          <div className="w-14 h-14 rounded-md bg-marca text-marca-tinta flex items-center justify-center font-mono font-bold text-lg shrink-0">
             {/* `?.` a propósito: un quote sin symbol tumbaba la vista ENTERA con un
                 TypeError, y el usuario solo veía "algo se ha roto". Aunque el Dashboard ya
                 garantiza que el symbol viene del servidor, un dato raro debe degradar lo
@@ -79,13 +79,13 @@ export default function QuoteHeader({ quote }) {
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 data-testid="quote-symbol" className="font-heading font-bold text-2xl md:text-3xl text-[#0e1f1a]">
+              <h2 data-testid="quote-symbol" className="font-heading font-bold text-2xl md:text-3xl text-tinta">
                 {quote.symbol}
               </h2>
-              <span className="text-[10px] uppercase tracking-[0.2em] text-[#5c6b66] border border-[#e5e0d8] rounded-full px-2 py-0.5">
+              <span className="text-[10px] uppercase tracking-[0.2em] text-tinta-3 border border-linea rounded-full px-2 py-0.5">
                 {quote.exchange || "NASDAQ"}
               </span>
-              <span className="text-[10px] uppercase tracking-[0.2em] text-[#5c6b66]">
+              <span className="text-[10px] uppercase tracking-[0.2em] text-tinta-3">
                 {quote.currency}
               </span>
               <button
@@ -95,18 +95,18 @@ export default function QuoteHeader({ quote }) {
                 aria-label={inWatch ? "Quitar de la watchlist" : "Añadir a la watchlist"}
                 className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all disabled:opacity-50 ${
                   inWatch
-                    ? "border-[#d85c41] text-[#d85c41] bg-[#fbe9e6]"
-                    : "border-[#e5e0d8] text-[#8a958f] hover:border-[#d85c41] hover:text-[#d85c41]"
+                    ? "border-baja text-baja bg-baja/10"
+                    : "border-linea text-tinta-3 hover:border-baja hover:text-baja"
                 }`}
               >
                 <Heart size={15} weight={inWatch ? "fill" : "regular"} />
               </button>
             </div>
-            <p data-testid="quote-name" className="text-sm text-[#5c6b66] mt-1 truncate max-w-md">
+            <p data-testid="quote-name" className="text-sm text-tinta-3 mt-1 truncate max-w-md">
               {quote.name}
             </p>
             {quote.sector && (
-              <p className="text-xs text-[#5c6b66] mt-1 flex items-center gap-1">
+              <p className="text-xs text-tinta-3 mt-1 flex items-center gap-1">
                 <Buildings size={12} />
                 {quote.sector} · {quote.industry}
               </p>
@@ -115,7 +115,7 @@ export default function QuoteHeader({ quote }) {
         </div>
 
         <div className="text-right flex flex-col items-end gap-2">
-          <p data-testid="quote-price" className="font-mono font-semibold text-3xl md:text-4xl text-[#0e1f1a] leading-none">
+          <p data-testid="quote-price" className="font-mono font-semibold text-3xl md:text-4xl text-tinta leading-none">
             ${fmtPrice(quote.price)}
           </p>
           <div className={`font-mono text-sm flex items-center justify-end gap-1 ${Color}`}>
@@ -130,7 +130,7 @@ export default function QuoteHeader({ quote }) {
           {quote.precio_en_directo === false && (
             <span data-testid="quote-fuente"
                   title="Finnhub no respondió (cuota) y el precio viene de la fuente de respaldo, que puede ir con retraso. Se corrige solo en unos segundos."
-                  className="font-mono text-[10px] uppercase tracking-wider text-[#8a6508] bg-[#c9a14a]/15 rounded px-1.5 py-0.5">
+                  className="font-mono text-[10px] uppercase tracking-wider text-aviso bg-aviso/15 rounded px-1.5 py-0.5">
               ⚠ precio de respaldo
             </span>
           )}
@@ -142,8 +142,8 @@ export default function QuoteHeader({ quote }) {
             const extPct = quote.extended_change_percent;
             const extUp = (extPct ?? 0) >= 0;
             return (
-              <div className={`font-mono text-xs flex items-center justify-end gap-1.5 ${extUp ? "text-[#4a7c59]" : "text-[#d85c41]"}`}>
-                <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[#f0ece3] text-[#5c6b66]">
+              <div className={`font-mono text-xs flex items-center justify-end gap-1.5 ${extUp ? "text-sube" : "text-baja"}`}>
+                <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-fondo text-tinta-3">
                   {st === "PRE" ? "PRE-MARKET" : "AFTER-HOURS"}
                 </span>
                 <span>${fmtPrice(extPx)}{extPct != null ? ` (${fmtPct(extPct)})` : ""}</span>
@@ -155,8 +155,8 @@ export default function QuoteHeader({ quote }) {
             onClick={() => { setAlertOpen((o) => !o); setAlertPrice(fmtPrice(quote.price)); }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-mono border transition-all ${
               alertOpen
-                ? "bg-[#1a3a32] text-[#f5f3ef] border-[#1a3a32]"
-                : "border-[#e5e0d8] text-[#5c6b66] hover:border-[#1a3a32] hover:text-[#0e1f1a]"
+                ? "bg-marca text-marca-tinta border-marca"
+                : "border-linea text-tinta-3 hover:border-marca hover:text-tinta"
             }`}
           >
             <Bell size={12} weight={alertOpen ? "fill" : "regular"} />
@@ -167,9 +167,9 @@ export default function QuoteHeader({ quote }) {
 
       {/* Inline alert form */}
       {alertOpen && (
-        <form onSubmit={createAlert} className="mt-4 p-4 bg-[#f5f3ef] rounded-lg border border-[#e5e0d8] flex flex-wrap items-end gap-3">
+        <form onSubmit={createAlert} className="mt-4 p-4 bg-fondo rounded-lg border border-linea flex flex-wrap items-end gap-3">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.15em] text-[#5c6b66] font-mono mb-1.5">Dirección</p>
+            <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-1.5">Dirección</p>
             <div className="flex gap-1">
               {[{ v: "below", label: "≤ cae a" }, { v: "above", label: "≥ sube a" }].map(({ v, label }) => (
                 <button
@@ -178,8 +178,8 @@ export default function QuoteHeader({ quote }) {
                   onClick={() => setAlertDir(v)}
                   className={`px-3 py-1.5 text-xs font-mono rounded border transition-all ${
                     alertDir === v
-                      ? "bg-[#1a3a32] text-[#f5f3ef] border-[#1a3a32]"
-                      : "border-[#e5e0d8] text-[#5c6b66] hover:border-[#1a3a32]"
+                      ? "bg-marca text-marca-tinta border-marca"
+                      : "border-linea text-tinta-3 hover:border-marca"
                   }`}
                 >
                   {label}
@@ -188,14 +188,14 @@ export default function QuoteHeader({ quote }) {
             </div>
           </div>
           <div>
-            <p className="text-[10px] uppercase tracking-[0.15em] text-[#5c6b66] font-mono mb-1.5">Precio objetivo</p>
+            <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-1.5">Precio objetivo</p>
             <input
               type="number"
               step="0.01"
               min="0.01"
               value={alertPrice}
               onChange={(e) => setAlertPrice(e.target.value)}
-              className="w-32 bg-white border border-[#e5e0d8] rounded-md px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a32]"
+              className="w-32 bg-white border border-linea rounded-md px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-marca"
               placeholder="0.00"
             />
           </div>
@@ -203,7 +203,7 @@ export default function QuoteHeader({ quote }) {
             <button
               type="submit"
               disabled={saving}
-              className="flex items-center gap-1.5 px-4 py-1.5 bg-[#1a3a32] text-[#f5f3ef] rounded-md text-xs font-mono hover:bg-[#0e1f1a] transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-marca text-marca-tinta rounded-md text-xs font-mono hover:bg-tinta transition-colors disabled:opacity-50"
             >
               <Check size={12} />
               {saving ? "Guardando…" : "Crear alerta"}
@@ -211,7 +211,7 @@ export default function QuoteHeader({ quote }) {
             <button
               type="button"
               onClick={() => setAlertOpen(false)}
-              className="flex items-center gap-1 px-3 py-1.5 border border-[#e5e0d8] text-[#5c6b66] rounded-md text-xs font-mono hover:border-[#1a3a32] transition-colors"
+              className="flex items-center gap-1 px-3 py-1.5 border border-linea text-tinta-3 rounded-md text-xs font-mono hover:border-marca transition-colors"
             >
               <X size={12} />
               Cancelar
@@ -233,7 +233,7 @@ export default function QuoteHeader({ quote }) {
         ].map((s) => (
           <div key={s.label}>
             <p className="label-small">{s.label}</p>
-            <p data-testid={`stat-${s.label}`} className="font-mono text-base text-[#0e1f1a] mt-1">{s.value}</p>
+            <p data-testid={`stat-${s.label}`} className="font-mono text-base text-tinta mt-1">{s.value}</p>
           </div>
         ))}
       </div>
