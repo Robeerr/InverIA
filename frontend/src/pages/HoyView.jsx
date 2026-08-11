@@ -10,6 +10,7 @@ import Chip from "@/components/base/Chip";
 import Boton from "@/components/base/Boton";
 import { Cargando, Error as ErrorEstado } from "@/components/base/Estado";
 import { fmtEur, fmtHace, fmtPct, fmtEnDias } from "@/lib/format";
+import { MarketFuturesBar, FearGreedBar, SectorHeatmap } from "@/components/ContextoMercado";
 
 /* Dashboard «Hoy» · la portada
    ─────────────────────────────────────────────────────────────────────────────
@@ -77,6 +78,29 @@ export default function HoyView() {
   const cartera = data?.cartera || {};
   const cerebro = data?.cerebro || {};
   const mercado = data?.mercado;
+
+  // Contexto de mercado. Estaba en la página de UNA acción, aunque los tres son
+  // idénticos para las quinientas. Aquí sí corresponden: esta es la pantalla del
+  // mercado. Misma cadencia que tenían, así que el coste no cambia de tamaño, solo
+  // de sitio.
+  const { data: futures } = useQuery({
+    queryKey: ["market-futures"],
+    queryFn: api.marketFutures,
+    refetchInterval: 60_000,
+    staleTime: 60_000,
+  });
+  const { data: sentiment } = useQuery({
+    queryKey: ["market-sentiment"],
+    queryFn: api.marketSentiment,
+    refetchInterval: 15 * 60_000,
+    staleTime: 15 * 60_000,
+  });
+  const { data: heatmap } = useQuery({
+    queryKey: ["market-heatmap"],
+    queryFn: api.marketHeatmap,
+    refetchInterval: 5 * 60_000,
+    staleTime: 5 * 60_000,
+  });
 
   return (
     <PageShell
@@ -238,6 +262,15 @@ export default function HoyView() {
             </p>
           )}
         </div>
+      </div>
+
+      {/* Futuros, Miedo/Codicia y sectores, llegados desde la página de acción. Se
+          montan con el aspecto que ya tenían: armonizarlos con los tokens del sistema
+          es trabajo de la pasada de UX, no de esta reestructuración. */}
+      <div className="space-y-4 mt-4">
+        <MarketFuturesBar futures={futures} />
+        <FearGreedBar data={sentiment} />
+        <SectorHeatmap data={heatmap} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 mt-4">

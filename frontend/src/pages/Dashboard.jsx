@@ -8,118 +8,31 @@ import SourcesPanel from "../components/SourcesPanel";
 import { AlternativePanel } from "../components/MoreInsights";
 import WatchlistStrip from "../components/WatchlistStrip";
 import BottomSignalBar from "../components/BottomSignalBar";
-import IndicatorsPanel from "../components/IndicatorsPanel";
+import IndicatorsPanel, { FuerzaRelativa } from "../components/IndicatorsPanel";
+import TesisPanel from "../components/TesisPanel";
+import EstadoTecnico from "../components/EstadoTecnico";
+import TuPosicion from "../components/TuPosicion";
 import TradingLevels from "../components/TradingLevels";
 import WhyMovingCard from "../components/WhyMovingCard";
 import BacktestCard from "../components/BacktestCard";
 import AnalystConsensusCard from "../components/AnalystConsensus";
-import { NewsFeed, FundamentalsCard, RisksCatalystsCard, MarketSignalsCard, InvestmentThesisCard, PricePredictionCard } from "../components/InfoCards";
+import { NewsFeed, FundamentalsCard, RisksCatalystsCard, MarketSignalsCard, PricePredictionCard } from "../components/InfoCards";
 import { api } from "../lib/api";
 import { useSignals } from "../hooks/useSignals";
 
-function MarketFuturesBar({ futures }) {
-  if (!futures?.items?.length) return null;
-  return (
-    <div className="card-flat px-4 py-2.5 flex items-center gap-x-5 gap-y-1 flex-wrap">
-      <span className="text-[10px] uppercase tracking-[0.2em] text-[#5c6b66] font-mono">Futuros · apertura</span>
-      {futures.items.map((f) => {
-        const up = (f.change_percent ?? 0) >= 0;
-        return (
-          <div key={f.symbol} className="flex items-center gap-2">
-            <span className="text-xs text-[#0e1f1a] font-medium">{f.label}</span>
-            <span className={`font-mono text-xs font-semibold ${up ? "text-[#4a7c59]" : "text-[#d85c41]"}`}>
-              {f.change_percent != null ? `${up ? "+" : ""}${f.change_percent}%` : "—"}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function MarketRegimeBar({ regime }) {
-  if (!regime || regime.light === "desconocido") return null;
-  const styles = {
-    verde:    { dot: "#4a7c59", bg: "bg-[#4a7c59]/8",  border: "border-[#4a7c59]/30", text: "text-[#4a7c59]" },
-    amarillo: { dot: "#c9a14a", bg: "bg-[#c9a14a]/8",  border: "border-[#c9a14a]/30", text: "text-[#c9a14a]" },
-    rojo:     { dot: "#d85c41", bg: "bg-[#d85c41]/10", border: "border-[#d85c41]/40", text: "text-[#d85c41]" },
-  }[regime.light] || {};
-  return (
-    <div className={`card-flat px-4 py-2.5 flex items-center gap-3 flex-wrap ${regime.light === "rojo" ? "border " + styles.border : ""}`}>
-      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: styles.dot }} />
-      <span className="text-[10px] uppercase tracking-[0.2em] text-[#5c6b66] font-mono">Mercado</span>
-      <span className={`text-xs font-semibold ${styles.text}`}>{regime.label}</span>
-      {regime.spy_price != null && (
-        <span className="text-[11px] text-[#5c6b66] font-mono ml-auto">
-          S&P {regime.dist_sma200_pct >= 0 ? "+" : ""}{regime.dist_sma200_pct}% vs SMA200
-        </span>
-      )}
-    </div>
-  );
-}
-
-// Aviso de frescura/origen de datos (#7): fuente de respaldo (Stooq) o datos con retraso.
+// Aviso de origen de datos, SOLO como respaldo. Lo normal es que esto lo cuente
+// `tesis.limita_confianza` dentro del bloque de tesis, que resuelve la precedencia
+// (degradado > sin SMA200 > régimen > sin zonas > mercado en riesgo) y da un aviso y
+// no cinco. Esta barra solo aparece si no hay tesis —sin precio no se redacta— para
+// que un fallo de datos no se quede sin decir.
 function DataHealthBar({ health }) {
   if (!health || !health.degraded) return null;
   return (
     <div className="card-flat px-4 py-2 flex items-center gap-2 border border-[#c9a14a]/40 bg-[#c9a14a]/[0.06]">
       <span className="text-sm">⚠️</span>
       <span className="text-[11px] text-[#8a6508] leading-snug">
-        <b>Datos de respaldo o con retraso</b>{health.note ? ` · ${health.note}` : ""}. El análisis puede no reflejar el precio en vivo — trátalo con cautela.
+        <b>Datos de respaldo o con retraso</b>{health.note ? ` · ${health.note}` : ""}.
       </span>
-    </div>
-  );
-}
-
-// Termómetro Miedo/Codicia del mercado (#28): 0 = pánico, 100 = euforia.
-function FearGreedBar({ data }) {
-  if (!data || data.score == null) return null;
-  const s = data.score;
-  const color = s < 25 ? "#d85c41" : s < 45 ? "#e08a3c" : s <= 55 ? "#c9a14a" : "#4a7c59";
-  return (
-    <div className="card-flat px-4 py-2.5 flex items-center gap-3 flex-wrap">
-      <span className="text-[10px] uppercase tracking-[0.2em] text-[#5c6b66] font-mono shrink-0">Miedo / Codicia</span>
-      <div className="flex items-center gap-2 min-w-[140px] flex-1">
-        <div className="relative h-2 rounded-full flex-1 overflow-hidden" style={{ background: "linear-gradient(90deg,#d85c41,#c9a14a,#4a7c59)" }}>
-          <div className="absolute top-1/2 -translate-y-1/2 w-1 h-3.5 bg-[#0e1f1a] rounded-full" style={{ left: `calc(${s}% - 2px)` }} />
-        </div>
-        <span className="font-mono font-bold text-sm shrink-0" style={{ color }}>{s}</span>
-      </div>
-      <span className="text-xs font-semibold shrink-0" style={{ color }}>{data.label}</span>
-      {data.vix != null && <span className="text-[11px] text-[#5c6b66] font-mono shrink-0">VIX {data.vix}</span>}
-      {data.advice && <span className="text-[11px] text-[#5c6b66] w-full sm:w-auto sm:ml-auto sm:max-w-[380px] leading-snug">{data.advice}</span>}
-    </div>
-  );
-}
-
-// Heatmap de sectores (#27): variación del día por sector, para leer el mercado de un vistazo.
-function SectorHeatmap({ data, onPick }) {
-  const sectors = data?.sectors;
-  if (!Array.isArray(sectors) || !sectors.length) return null;
-  const tone = (chg) => {
-    const v = Math.max(-3, Math.min(3, chg)) / 3;  // normaliza a ±3%
-    if (v >= 0) return `rgba(74,124,89,${0.12 + v * 0.55})`;   // verde
-    return `rgba(216,92,65,${0.12 + Math.abs(v) * 0.55})`;      // rojo
-  };
-  return (
-    <div className="card-flat px-4 py-3">
-      <p className="text-[10px] uppercase tracking-[0.2em] text-[#5c6b66] font-mono mb-2">Sectores hoy</p>
-      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-1.5">
-        {sectors.map((s) => (
-          <button
-            key={s.symbol}
-            onClick={() => onPick && onPick(s.symbol)}
-            title={`${s.sector} (${s.symbol})`}
-            className="rounded-md px-2 py-1.5 text-left transition-transform hover:scale-[1.03]"
-            style={{ background: tone(s.change_percent) }}
-          >
-            <div className="text-[11px] font-semibold text-[#0e1f1a] truncate leading-tight">{s.sector}</div>
-            <div className="text-[12px] font-mono font-bold text-[#0e1f1a]">
-              {s.change_percent >= 0 ? "+" : ""}{s.change_percent.toFixed(2)}%
-            </div>
-          </button>
-        ))}
-      </div>
     </div>
   );
 }
@@ -148,10 +61,8 @@ function HuecoGrafico() {
 
 export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const [timeframe, setTimeframe] = useState(TIMEFRAME_BASE);
-  const [ctxOpen, setCtxOpen] = useState(false);  // contexto de mercado plegado en móvil
   const [runAllTrigger, setRunAllTrigger] = useState(0);  // #3 dispara los 3 análisis a la vez
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
-  const [signalEntry, setSignalEntry] = useState(null);
 
   // Datos que NO vienen del servidor sino que se superponen encima: los ticks del
   // WebSocket y lo que produce el análisis de IA. Van juntos en un solo objeto para poder
@@ -166,24 +77,13 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
 
   // Señales (caché compartido entre páginas) y futuros (refresco 60s) vía react-query.
   const { data: signals } = useSignals();
-  const { data: futures } = useQuery({
-    queryKey: ["market-futures"],
-    queryFn: api.marketFutures,
-    refetchInterval: 60_000,
-    staleTime: 60_000,
-  });
-  const { data: sentiment } = useQuery({
-    queryKey: ["market-sentiment"],
-    queryFn: api.marketSentiment,
-    refetchInterval: 15 * 60_000,
-    staleTime: 15 * 60_000,
-  });
-  const { data: heatmap } = useQuery({
-    queryKey: ["market-heatmap"],
-    queryFn: api.marketHeatmap,
-    refetchInterval: 5 * 60_000,
-    staleTime: 5 * 60_000,
-  });
+  // Futuros, Miedo/Codicia y mapa sectorial se han ido a «Hoy»: son idénticos para las
+  // quinientas acciones y abrían la página de UNA. Con ellos se van tres peticiones
+  // automáticas de esta pantalla, incluida la única con refresco de 60 s.
+  //
+  // El régimen de mercado SÍ se queda —viaja dentro del propio dashboard, sin petición
+  // propia— porque es el único que cambia cómo se lee esta acción: el motor de niveles
+  // ajusta sus pesos con él. Se pinta como una cláusula dentro de EstadoTecnico.
 
   // ── Datos del servidor, vía react-query ────────────────────────────────────
   // El motivo de estar aquí: antes cada cambio de acción disparaba una carga completa,
@@ -288,6 +188,11 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   // Se lee siempre del servidor, incluso a null: si la acción anterior tenía Fuerza
   // Relativa y esta no (histórico corto), conservarla mostraría el dato de la anterior.
   const relativeStrength = datos?.relative_strength || null;
+  // Igual que la fuerza relativa: SIEMPRE del servidor. La tesis es determinista y la
+  // calcula el backend dentro del dashboard, así que no hay parche que la pueda pisar
+  // ni sobrevivir a un cambio de ticker.
+  const tesis = datos?.tesis || null;
+  const generadoEn = datos?.generado_en || null;
   const analysis = p.analysis || null;
   const marketSignals = p.marketSignals || null;
   // `isPending` de una consulta desactivada (enabled:false) también es true en react-query
@@ -379,12 +284,6 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
     setRunAllTrigger((t) => t + 1);
   }, [symbol, runAnalysis]);
 
-  // Marca la entrada de señal del símbolo actual a partir del caché compartido.
-  useEffect(() => {
-    if (!symbol || !signals) { setSignalEntry(null); return; }
-    setSignalEntry(signals.find((e) => e.symbol === symbol.toUpperCase()) || null);
-  }, [symbol, signals]);
-
   // WebSocket for live tick-by-tick price updates (Finnhub trade stream).
   // Reconnects with exponential backoff (2s→4s→8s→16s→32s) before falling
   // back to 30s REST polling if all 5 attempts fail.
@@ -475,52 +374,40 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       {/* Móvil: watchlist como tira horizontal arriba. */}
       <WatchlistStrip symbol={symbol} setSymbol={setSymbol} className="lg:hidden" />
 
-      {/* Contexto de mercado — plegable en MÓVIL para llegar antes a la acción buscada.
-          En escritorio siempre visible. El botón muestra un resumen compacto (semáforo +
-          miedo/codicia) aunque esté plegado. */}
-      <button
-        onClick={() => setCtxOpen((o) => !o)}
-        className="lg:hidden card-flat px-4 py-2.5 flex items-center gap-2 w-full text-left"
-      >
-        <span className="text-[10px] uppercase tracking-[0.2em] text-[#5c6b66] font-mono">Mercado hoy</span>
-        {marketRegime?.light && marketRegime.light !== "desconocido" && (
-          <span className="w-2 h-2 rounded-full" style={{ background: marketRegime.light === "rojo" ? "#d85c41" : marketRegime.light === "amarillo" ? "#c9a14a" : "#4a7c59" }} />
-        )}
-        {sentiment?.score != null && (
-          <span className="text-[11px] font-mono text-[#5c6b66]">M/C {sentiment.score}</span>
-        )}
-        <span className="ml-auto text-[11px] text-[#5c6b66]">{ctxOpen ? "ocultar ▲" : "ver ▼"}</span>
-      </button>
-
-      <div className={`${ctxOpen ? "block" : "hidden"} lg:block space-y-4 sm:space-y-6`}>
-        <MarketFuturesBar futures={futures} />
-        <MarketRegimeBar regime={marketRegime} />
-        <FearGreedBar data={sentiment} />
-        <SectorHeatmap data={heatmap} onPick={setSymbol} />
-      </div>
-
+      {/* ══ 01 · Cabecera viva ══
+          Lo único de la página que cambia en tiempo real. Por eso va arriba y va solo:
+          todo lo que hay debajo es una foto del momento en que se ensambló el dashboard. */}
       {loadingQuote && !quote ? (
         <div className="card-flat p-8 text-center text-[#5c6b66]">Cargando datos...</div>
       ) : quote ? (
         <QuoteHeader quote={quote} />
       ) : null}
 
-      {quote && <DataHealthBar health={dataHealth} />}
+      {/* ══ 02 · Tesis ══
+          Interpretación determinista, disponible al abrir y sin pulsar nada. Lleva
+          dentro el aviso de fiabilidad y el botón de IA como acción secundaria. */}
+      <TesisPanel
+        tesis={tesis}
+        generadoEn={generadoEn}
+        onAnalizar={quote ? runAll : null}
+        loadingAnalysis={loadingAnalysis}
+        tieneAnalisis={!!analysis}
+      />
 
-      {/* #3 Análisis completo IA: lanza Recomendación + Chartista + ¿Por qué se mueve? de un toque */}
-      {quote && (
-        <button
-          onClick={runAll}
-          disabled={loadingAnalysis}
-          className="w-full card-flat px-4 py-3 flex items-center justify-center gap-2 bg-[#1a3a32] text-[#f5f3ef] hover:bg-[#0e1f1a] disabled:opacity-60 transition-colors font-mono text-sm font-semibold"
-        >
-          🧠 {loadingAnalysis ? "Analizando…" : "Análisis completo IA"}
-          <span className="hidden sm:inline text-[11px] font-normal opacity-70">· Recomendación + Chartista + ¿Por qué se mueve?</span>
-        </button>
-      )}
+      {/* Respaldo: si no hubo tesis que redactar, el aviso de datos no puede perderse. */}
+      {quote && !tesis && <DataHealthBar health={dataHealth} />}
 
-      {quote && <WhyMovingCard symbol={symbol} model={model} runSignal={runAllTrigger} />}
+      {/* ══ 03 · Estado técnico ══
+          Régimen, ADX, ATR%, OBV, VWAP anclado y media de 10 semanas. Todo ya viajaba
+          en la respuesta y no tenía una sola lectura en el frontend. */}
+      <EstadoTecnico indicators={indicators} quote={quote} marketRegime={marketRegime} />
 
+      {/* ══ 04 · Tu posición ══
+          Antes de los niveles: un nivel al 5% no significa lo mismo con dinero dentro.
+          Sale de /signals, que ya estaba cargado y no se cruzaba con el ticker abierto. */}
+      <TuPosicion signals={signals} symbol={symbol} quote={quote} />
+
+      {/* ══ 05 · Niveles ══ buy_levels es la autoridad única de zonas de compra. */}
       <TradingLevels
         quote={quote}
         analysis={analysis}
@@ -530,51 +417,39 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
         buyLevels={buyLevels}
       />
 
-      {quote && <BacktestCard symbol={symbol} />}
+      {/* ══ 06 · Gráfico ══ Pegado a Niveles porque dibuja lo mismo. */}
+      <Suspense fallback={<HuecoGrafico />}>
+        <LightweightChart
+          candles={candles}
+          indicators={indicators}
+          buyLevels={buyLevels}
+          lines={chartLines}
+          timeframe={timeframe}
+          setTimeframe={refreshTimeframe}
+        />
+      </Suspense>
 
-      {/* Móvil: flex-col con orden explícito → gráfico+Chartista, LUEGO la Recomendación IA
-          (columna derecha), y por último Consenso/Indicadores. Antes la columna derecha
-          quedaba enterrada al final y parecía no existir. Escritorio (xl): 2 columnas. */}
-      <div className="flex flex-col xl:grid xl:grid-cols-[1fr_360px] xl:grid-rows-[auto_auto] gap-6">
-        {/* A: gráfico + Chartista */}
-        <div className="min-w-0 order-1 xl:col-start-1 xl:row-start-1">
-          <Suspense fallback={<HuecoGrafico />}>
-            <LightweightChart
-              candles={candles}
-              indicators={indicators}
-              buyLevels={buyLevels}
-              lines={chartLines}
-              timeframe={timeframe}
-              setTimeframe={refreshTimeframe}
-            />
-          </Suspense>
-          <div className="mt-4">
-            <ChartistPanel symbol={symbol} runSignal={runAllTrigger} />
-          </div>
-        </div>
-        {/* B: columna derecha (Recomendación IA + Fuentes + Alternativa). En móvil va justo
-            debajo del gráfico; en escritorio ocupa la 2ª columna a lo alto. */}
-        <div className="space-y-4 order-2 xl:col-start-2 xl:row-start-1 xl:row-span-2">
-          <RecommendationPanel
-            analysis={analysis}
-            isLoading={loadingAnalysis}
-            onAnalyze={runAnalysis}
-            model={model}
-            setModel={setModel}
-          />
-          <SourcesPanel symbol={symbol} />
-          <AlternativePanel symbol={symbol} onPick={setSymbol} />
-        </div>
-        {/* C: Consenso + Indicadores. En escritorio bajo el gráfico (col 1); en móvil al final. */}
-        <div className="space-y-4 sm:space-y-6 order-3 xl:col-start-1 xl:row-start-2">
-          <AnalystConsensusCard data={analystData} />
-          <IndicatorsPanel indicators={indicators} analysis={analysis} relativeStrength={relativeStrength} />
-        </div>
-      </div>
+      {/* ══ 07 · Tus fuentes ══ Tu inteligencia propia, por encima de la de terceros. */}
+      <SourcesPanel symbol={symbol} />
+
+      {/* ══ 08 a 11 · Capa de IA ══
+          Solo existe si la pides. Lo que aporta y la tesis no puede: juicio, causa del
+          movimiento, síntesis multiescala y prospectiva. */}
+      <RecommendationPanel
+        analysis={analysis}
+        isLoading={loadingAnalysis}
+        onAnalyze={runAnalysis}
+        model={model}
+        setModel={setModel}
+      />
 
       {analysis && <PricePredictionCard analysis={analysis} quote={quote} />}
 
-      <FundamentalsCard quote={quote} analysis={analysis} />
+      {quote && <WhyMovingCard symbol={symbol} model={model} runSignal={runAllTrigger} />}
+
+      <ChartistPanel symbol={symbol} runSignal={runAllTrigger} />
+
+      {analysis && <RisksCatalystsCard analysis={analysis} />}
 
       {marketSignals && (
         <MarketSignalsCard
@@ -583,11 +458,19 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
         />
       )}
 
-      {analysis && <InvestmentThesisCard analysis={analysis} />}
+      {/* ══ 12 · Analistas y fundamentales ══ Opinión de terceros y marcha del negocio. */}
+      <FuerzaRelativa rs={relativeStrength} />
+      <AnalystConsensusCard data={analystData} />
+      <FundamentalsCard quote={quote} analysis={analysis} />
 
-      {analysis && <RisksCatalystsCard analysis={analysis} />}
-
+      {/* ══ 13 · Noticias ══ */}
       <NewsFeed news={news} />
+
+      {/* ══ 14 · Detalle ══
+          Lo comprobable, después de lo interpretado. No se borra nada: baja de sitio. */}
+      <IndicatorsPanel indicators={indicators} analysis={analysis} />
+      <AlternativePanel symbol={symbol} onPick={setSymbol} />
+      {quote && <BacktestCard symbol={symbol} />}
 
       {/* Espacio para que la barra de señal fija no tape el contenido */}
       {quote && <div className="h-16" />}

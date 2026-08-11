@@ -25,7 +25,10 @@ function macdTone(v) {
 // Fuerza Relativa frente al S&P 500. Va FUERA de las pestañas y siempre visible porque no es
 // un indicador más para consultar: es el filtro de "¿esta acción lidera o va a rastras del
 // mercado?", y esconderlo tras un clic lo convierte en algo que nadie mira.
-function FuerzaRelativa({ rs }) {
+// Se exporta porque la fuerza relativa NO es un indicador de detalle: compara la
+// acción con el índice y va en el bloque de analistas, arriba. El panel de detalle
+// dejó de pintarla para que no salga dos veces.
+export function FuerzaRelativa({ rs }) {
   if (!rs?.ventanas) return null;
   // Los colores van por CLASE, no por style en línea: el remapeo de modo oscuro de index.css
   // funciona con selectores de clase (.dark .text-[#4a7c59]), así que un color en línea se lo
@@ -70,7 +73,7 @@ function FuerzaRelativa({ rs }) {
   );
 }
 
-export default function IndicatorsPanel({ indicators, analysis, relativeStrength }) {
+export default function IndicatorsPanel({ indicators, analysis }) {
   if (!indicators) return null;
   const { rsi, macd, bollinger, sma, ema, fibonacci, support_resistance, patterns } = indicators;
 
@@ -85,7 +88,6 @@ export default function IndicatorsPanel({ indicators, analysis, relativeStrength
         </h3>
       </div>
 
-      <FuerzaRelativa rs={relativeStrength} />
 
       <Tabs defaultValue="momentum">
         <TabsList className="bg-[#f5f3ef] border border-[#e5e0d8] grid grid-cols-4 mb-4">
