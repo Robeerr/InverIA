@@ -28,20 +28,20 @@ export default class ErrorBoundary extends React.Component {
       return (
         <div className="max-w-md mx-auto mt-20 px-6 text-center">
           <p className="text-4xl mb-3">😵‍💫</p>
-          <h2 className="font-heading font-bold text-lg text-[#0e1f1a] mb-2">Algo se ha roto en esta vista</h2>
-          <p className="text-sm text-[#5c6b66] mb-5">
+          <h2 className="font-heading font-bold text-lg text-tinta mb-2">Algo se ha roto en esta vista</h2>
+          <p className="text-sm text-tinta-3 mb-5">
             No te preocupes, tus datos están a salvo. Prueba a recargar o volver a la pantalla principal.
           </p>
           <div className="flex gap-2 justify-center">
             <button
               onClick={() => window.location.reload()}
-              className="px-4 py-2 rounded-md bg-[#1a3a32] text-white text-sm font-mono hover:bg-[#0e1f1a] transition-colors"
+              className="px-4 py-2 rounded-md bg-marca text-marca-tinta text-sm font-mono hover:bg-marca/90 transition-colors"
             >
               Recargar
             </button>
             <button
               onClick={() => { this.handleReset(); window.location.href = "/"; }}
-              className="px-4 py-2 rounded-md border border-[#e5e0d8] text-[#5c6b66] text-sm font-mono hover:border-[#1a3a32] transition-colors"
+              className="px-4 py-2 rounded-md border border-linea text-tinta-3 text-sm font-mono hover:border-marca transition-colors"
             >
               Ir al inicio
             </button>
@@ -53,10 +53,10 @@ export default class ErrorBoundary extends React.Component {
               recargar, y seleccionable para poder copiarlo y pegarlo. */}
           {this.state.error && (
             <details className="mt-6 text-left">
-              <summary className="text-[11px] font-mono text-[#5c6b66] cursor-pointer select-none">
+              <summary className="text-[11px] font-mono text-tinta-3 cursor-pointer select-none">
                 Detalle técnico
               </summary>
-              <pre className="mt-2 p-3 rounded-md bg-[#f0ece3] text-[#0e1f1a] text-[10px] font-mono whitespace-pre-wrap break-words select-all max-h-48 overflow-auto">
+              <pre className="mt-2 p-3 rounded-md bg-superficie-alt text-tinta text-[10px] font-mono whitespace-pre-wrap break-words select-all max-h-48 overflow-auto">
                 {String(this.state.error?.message || this.state.error)}
               </pre>
             </details>

@@ -87,7 +87,7 @@ export default function WatchlistStrip({ symbol, setSymbol, vertical = false, cl
 
   return (
     <div className={wrapCls}>
-      {vertical && <p className="text-[10px] uppercase tracking-[0.15em] text-[#5c6b66] font-mono mb-1 px-1">Watchlist</p>}
+      {vertical && <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-1 px-1">Watchlist</p>}
       {entries.map((e) => {
         const s = (e.symbol || "").toUpperCase();
         const active = s === (symbol || "").toUpperCase();

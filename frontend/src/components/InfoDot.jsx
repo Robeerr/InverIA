@@ -42,13 +42,16 @@ export default function InfoDot({ term, text }) {
         type="button"
         onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
         aria-label={`Qué es ${term || "esto"}`}
-        className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-[#d9d3c7] text-[#8a958f] hover:border-[#1a3a32] hover:text-[#1a3a32] transition-colors"
+        className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-linea-fuerte text-tinta-3 hover:border-marca hover:text-marca transition-colors"
       >
         <Question size={10} weight="bold" />
       </button>
       {open && (
-        <span className="absolute z-30 left-0 top-5 w-60 p-2.5 rounded-lg bg-[#0e1f1a] text-[#f5f3ef] text-[11px] leading-snug shadow-lg">
-          {term && <b className="block mb-0.5 text-[#e6c98a]">{term}</b>}
+        // El globo es oscuro en los DOS temas, así que declara el ámbito `iv-oscuro`
+        // y dentro los tokens resuelven a la paleta oscura. Antes lo conseguía con
+        // hex fijos que ningún remapeo tocaba: salía bien de casualidad, no por regla.
+        <span className="iv-oscuro absolute z-30 left-0 top-5 w-60 p-2.5 rounded-lg bg-fondo text-tinta text-[11px] leading-snug shadow-lg">
+          {term && <b className="block mb-0.5 text-marca">{term}</b>}
           {body}
         </span>
       )}

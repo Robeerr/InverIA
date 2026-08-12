@@ -102,24 +102,24 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
   return (
     <header
       data-testid="app-header"
-      className="sticky top-0 z-50 bg-[#f5f3ef]/95 backdrop-blur border-b border-[#e5e0d8]"
+      className="sticky top-0 z-50 bg-fondo/95 backdrop-blur border-b border-linea"
     >
       {/* Main bar */}
       <div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-3 flex items-center gap-3 sm:gap-6">
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2 shrink-0">
-          <div className="w-9 h-9 rounded-md bg-[#1a3a32] flex items-center justify-center text-[#f5f3ef]">
+          <div className="w-9 h-9 rounded-md bg-marca flex items-center justify-center text-marca-tinta">
             <ChartLineUp size={20} weight="bold" />
           </div>
           <div className="hidden sm:block">
-            <h1 className="font-heading font-bold text-lg leading-none tracking-tight text-[#0e1f1a]">InverIA</h1>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-[#5c6b66] mt-0.5">Análisis bursátil en vivo</p>
+            <h1 className="font-heading font-bold text-lg leading-none tracking-tight text-tinta">InverIA</h1>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-tinta-3 mt-0.5">Análisis bursátil en vivo</p>
           </div>
-          <span className="sm:hidden font-heading font-bold text-lg text-[#0e1f1a]">InverIA</span>
+          <span className="sm:hidden font-heading font-bold text-lg text-tinta">InverIA</span>
         </Link>
 
         {/* Desktop nav */}
-        <nav className="hidden lg:flex items-center gap-1 bg-white border border-[#e5e0d8] rounded-md p-1">
+        <nav className="hidden lg:flex items-center gap-1 bg-superficie border border-linea rounded-md p-1">
           {NAV.map((n) => {
             const Icon = n.icon;
             const active = location.pathname === n.to;
@@ -129,7 +129,7 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
                 to={n.to}
                 data-testid={n.testId}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-mono transition-colors ${
-                  active ? "bg-[#1a3a32] text-[#f5f3ef]" : "text-[#5c6b66] hover:text-[#0e1f1a]"
+                  active ? "bg-marca text-marca-tinta" : "text-tinta-3 hover:text-tinta"
                 }`}
               >
                 <Icon size={14} weight="bold" />
@@ -143,28 +143,28 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
         {showSearch && (
           <div ref={searchRef} className="flex-1 relative min-w-0">
             <form onSubmit={submit} className="relative">
-              <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5c6b66]" />
+              <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-tinta-3" />
               <Input
                 data-testid="stock-search-input"
                 value={query}
                 onChange={(e) => setQuery(e.target.value.toUpperCase())}
                 onFocus={() => { if (suggestions.length) setShowSug(true); }}
                 placeholder="Ticker o nombre (ej: AAPL o Apple)"
-                className="pl-9 h-10 bg-white border-[#e5e0d8] font-mono text-sm placeholder:text-[#5c6b66] focus-visible:ring-[#1a3a32]"
+                className="pl-9 h-10 bg-superficie border-linea font-mono text-sm placeholder:text-tinta-3 focus-visible:ring-marca"
                 autoComplete="off"
               />
             </form>
             {showSug && suggestions.length > 0 && (
-              <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-[#e5e0d8] rounded-md shadow-lg overflow-hidden max-h-72 overflow-y-auto">
+              <div className="absolute z-50 left-0 right-0 mt-1 bg-superficie border border-linea rounded-md shadow-lg overflow-hidden max-h-72 overflow-y-auto">
                 {suggestions.map((s) => (
                   <button
                     key={s.symbol}
                     type="button"
                     onClick={() => pick(s.symbol)}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-[#f5f3ef] transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-fondo transition-colors"
                   >
-                    <span className="font-mono font-bold text-sm text-[#1a3a32] shrink-0 w-16">{s.symbol}</span>
-                    <span className="text-xs text-[#5c6b66] truncate">{s.name}</span>
+                    <span className="font-mono font-bold text-sm text-marca shrink-0 w-16">{s.symbol}</span>
+                    <span className="text-xs text-tinta-3 truncate">{s.name}</span>
                   </button>
                 ))}
               </div>
@@ -177,17 +177,17 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
           {/* Status indicator */}
           <div
             title={backendOk === null ? "Comprobando backend..." : backendOk ? "Backend activo ✓" : "Backend no responde"}
-            className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md border border-[#e5e0d8] bg-white text-xs font-mono"
+            className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md border border-linea bg-superficie text-xs font-mono"
           >
             <span className={`w-2 h-2 rounded-full ${backendOk === null ? "bg-yellow-400 animate-pulse" : backendOk ? "bg-green-500" : "bg-red-500 animate-pulse"}`} />
-            <span className="text-[#5c6b66] hidden lg:inline">{backendOk === null ? "..." : backendOk ? "Online" : "Offline"}</span>
+            <span className="text-tinta-3 hidden lg:inline">{backendOk === null ? "..." : backendOk ? "Online" : "Offline"}</span>
           </div>
           <Button
             data-testid="dark-mode-toggle"
             onClick={() => setDarkMode(!darkMode)}
             variant="outline"
             size="icon"
-            className="h-9 w-9 sm:h-10 sm:w-10 border-[#e5e0d8] hover:bg-[#e5e0d8]"
+            className="h-9 w-9 sm:h-10 sm:w-10 border-linea hover:bg-linea"
             title={darkMode ? "Modo claro" : "Modo oscuro"}
           >
             {darkMode ? <Sun size={15} /> : <Moon size={15} />}
@@ -197,13 +197,13 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
             onClick={testTelegram}
             variant="outline"
             size="icon"
-            className="hidden sm:flex h-9 w-9 sm:h-10 sm:w-10 border-[#e5e0d8] hover:bg-[#e5e0d8]"
+            className="hidden sm:flex h-9 w-9 sm:h-10 sm:w-10 border-linea hover:bg-linea"
             title="Probar Telegram"
           >
             <TelegramLogo size={15} />
           </Button>
           {/* User + logout */}
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-[#e5e0d8] bg-white text-xs font-mono text-[#5c6b66]">
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-linea bg-superficie text-xs font-mono text-tinta-3">
             <User size={13} />
             <span className="hidden md:inline">{user}</span>
             <button onClick={logout} title="Cerrar sesión" className="ml-1 hover:text-red-500 transition-colors">
@@ -215,7 +215,7 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
             onClick={() => setMenuOpen(!menuOpen)}
             variant="outline"
             size="icon"
-            className="lg:hidden h-9 w-9 border-[#e5e0d8] hover:bg-[#e5e0d8]"
+            className="lg:hidden h-9 w-9 border-linea hover:bg-linea"
           >
             {menuOpen ? <X size={16} /> : <List size={16} />}
           </Button>
@@ -224,7 +224,7 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
 
       {/* Mobile menu */}
       {menuOpen && (
-        <div className="lg:hidden border-t border-[#e5e0d8] bg-[#f5f3ef] px-4 py-3 space-y-1">
+        <div className="lg:hidden border-t border-linea bg-fondo px-4 py-3 space-y-1">
           {NAV.map((n) => {
             const Icon = n.icon;
             const active = location.pathname === n.to;
@@ -234,7 +234,7 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
                 to={n.to}
                 data-testid={n.testId}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-mono transition-colors ${
-                  active ? "bg-[#1a3a32] text-[#f5f3ef]" : "text-[#5c6b66] hover:bg-white hover:text-[#0e1f1a]"
+                  active ? "bg-marca text-marca-tinta" : "text-tinta-3 hover:bg-superficie hover:text-tinta"
                 }`}
               >
                 <Icon size={16} weight="bold" />
@@ -242,14 +242,14 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
               </Link>
             );
           })}
-          <div className="pt-2 border-t border-[#e5e0d8] flex items-center gap-2 flex-wrap">
-            <Button onClick={testTelegram} variant="outline" size="icon" className="h-9 w-9 border-[#e5e0d8]" title="Probar Telegram">
+          <div className="pt-2 border-t border-linea flex items-center gap-2 flex-wrap">
+            <Button onClick={testTelegram} variant="outline" size="icon" className="h-9 w-9 border-linea" title="Probar Telegram">
               <TelegramLogo size={15} />
             </Button>
             {/* Status mobile */}
-            <div className="flex items-center gap-1.5 px-2 h-9 rounded-md border border-[#e5e0d8] bg-white text-xs font-mono">
+            <div className="flex items-center gap-1.5 px-2 h-9 rounded-md border border-linea bg-superficie text-xs font-mono">
               <span className={`w-2 h-2 rounded-full ${backendOk === null ? "bg-yellow-400 animate-pulse" : backendOk ? "bg-green-500" : "bg-red-500 animate-pulse"}`} />
-              <span className="text-[#5c6b66]">{backendOk === null ? "Comprobando..." : backendOk ? "Backend online" : "Backend offline"}</span>
+              <span className="text-tinta-3">{backendOk === null ? "Comprobando..." : backendOk ? "Backend online" : "Backend offline"}</span>
             </div>
           </div>
         </div>
