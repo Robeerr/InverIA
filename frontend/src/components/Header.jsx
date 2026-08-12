@@ -164,10 +164,15 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
             campo y las acciones en cuanto sobraba sitio, y ese hueco se ve peor
             que un buscador holgado. Ahora el campo se queda con lo que sobre, y
             lo que sobra es poco porque la nav ya no lo acapara.
-            El suelo de 200px se mantiene: es lo que impide el fallo original,
-            cuando `min-w-0` lo dejaba colapsar hasta que solo se veía la lupa. */}
+            El suelo de 200px es lo que impide el fallo original, cuando `min-w-0`
+            dejaba colapsar el campo hasta que solo se veía la lupa. Pero SOLO a
+            partir de `lg`: en un móvil de 390px quedan ~358px útiles y el suelo,
+            sumado al logo y a las acciones, pedía ~423. El sobrante no recorta el
+            buscador —`min-width` no cede—, sino que desborda la barra y expulsa
+            la hamburguesa fuera de la pantalla, que es justo el único acceso al
+            menú que hay en móvil. Ahí el campo tiene que poder encogerse. */}
         {showSearch && (
-          <div ref={searchRef} className="flex-1 relative min-w-[200px]">
+          <div ref={searchRef} className="flex-1 relative min-w-0 lg:min-w-[200px]">
             <form onSubmit={submit} className="relative">
               <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-tinta-3" />
               <Input
