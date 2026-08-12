@@ -14,6 +14,30 @@ const fecha = (f) => (f ? f.split("-").reverse().join("/") : "—");
 
 const tono = (v) => (v == null ? "text-tinta-3" : v >= 0 ? "text-sube" : "text-baja");
 
+/* Las cifras de una posición abierta, calculadas UNA vez.
+   ─────────────────────────────────────────────────────────────────────────────
+   «Lo que tienes abierto» se pinta de dos formas: tabla de seis columnas en
+   escritorio y tarjetas apiladas en móvil, porque seis columnas no caben en 390px
+   y obligaban a arrastrar la pantalla de lado para leer la ganancia — justo el
+   dato por el que se abre esta sección.
+
+   Las dos vistas enseñan los MISMOS números, así que la regla del interruptor de
+   bróker vive aquí y no duplicada en cada una. Si un día cambia qué se considera
+   precio medio o de dónde sale la ganancia, cambia en un solo sitio; con la regla
+   copiada, la versión de móvil se quedaría atrás sin que nadie lo notara. */
+function datosPosicion(p, comoBroker) {
+  return {
+    // La ganancia ponderada solo manda si existe: no todas las posiciones la traen.
+    g: comoBroker && p.ponderada?.pnl_eur != null ? p.ponderada : p,
+    precioMedio: comoBroker ? (p.precio_medio_ponderado ?? p.precio_medio) : p.precio_medio,
+    invertido: comoBroker ? (p.ponderada?.coste_eur ?? p.coste_eur) : p.coste_eur,
+    // Solo se enseña el otro precio medio cuando difiere de verdad; por debajo de un
+    // céntimo, dos cifras iguales una encima de otra parecen un fallo de la pantalla.
+    hayOtroMedio: p.precio_medio_ponderado != null
+      && Math.abs(p.precio_medio_ponderado - (p.precio_medio ?? 0)) > 0.01,
+  };
+}
+
 const NIVEL_ETIQUETA = {
   deseado: "Deseado", nivel1: "Nivel 1", nivel2: "Nivel 2",
   nivel3: "Nivel 3", nivel4: "Nivel 4", nivel5: "Nivel 5",
@@ -1593,7 +1617,136 @@ export default function VentasView() {
               )}
             </div>
                   }>
-          <div className="overflow-x-auto">
+          {/* ── Móvil: una tarjeta por posición ──────────────────────────────────
+              Seis columnas no caben en 390px. Con la tabla había que arrastrar la
+              pantalla de lado para llegar a la ganancia, que es el dato por el que
+              se abre esta sección: quedaba justo en la columna más escondida.
+
+              Apilado en vez de tabla estrecha: encoger las columnas solo cambia el
+              arrastre por cifras cortadas. Cada dato lleva su rótulo al lado, que
+              es lo que en la tabla hace la cabecera y aquí no existe.
+
+              El interruptor de bróker, el método y el resto del comportamiento son
+              los mismos: esto es la MISMA fila, con otra disposición. */}
+          <ul className="md:hidden divide-y divide-linea">
+            {resumen.posiciones.map((p) => {
+              const { g, precioMedio, invertido, hayOtroMedio } = datosPosicion(p, comoBroker);
+              const abiertaEsta = abierta === p.symbol;
+              return (
+                <li key={p.symbol}>
+                  {/* La tarjeta entera es pulsable, como la fila de la tabla, pero el
+                      botón de verdad es el del símbolo: así se despliega también con
+                      teclado y un lector de pantalla dice qué hace y si está abierto.
+                      La tarjeta NO puede ser un <button> envolvente: «Valor hoy» trae
+                      un campo y un botón cuando falta cotización, y un control dentro
+                      de otro control es HTML inválido y deja de responder. */}
+                  <div onClick={() => setAbierta(abiertaEsta ? null : p.symbol)}
+                       className="px-4 py-3 cursor-pointer">
+                    {/* Primera línea: quién es y cuánto gana. Las dos cosas que se
+                        miran de un vistazo van juntas y arriba. */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                        <button type="button"
+                                onClick={(e) => { e.stopPropagation();
+                                                  setAbierta(abiertaEsta ? null : p.symbol); }}
+                                aria-expanded={abiertaEsta}
+                                aria-label={`${abiertaEsta ? "Ocultar" : "Ver"} las compras de ${p.symbol}`}
+                                className="inline-flex items-center gap-1.5 min-h-[44px] -my-2 pr-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 rounded">
+                          <span className="text-tinta-3 text-[10px]">{abiertaEsta ? "▲" : "▼"}</span>
+                          <span className="font-mono font-bold text-sm">{p.symbol}</span>
+                        </button>
+                        {!!p.divisas_mezcladas && (
+                          <Chip tono="aviso"
+                                title={`Esta posición tiene lotes en ${p.divisas_mezcladas.join(" y ")}. El precio medio y el invertido EN DIVISA suman monedas distintas y no significan nada; las cifras en euros sí son correctas, porque cada lote se convierte con su propia tasa. Revisa la divisa de cada compra.`}>
+                            {p.divisas_mezcladas.join("+")}
+                          </Chip>
+                        )}
+                        {p.niveles_comprados?.map((n) => (
+                          <Chip key={n} tono="nivel">{NIVEL_ETIQUETA[n] || n}</Chip>
+                        ))}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className={`font-mono font-semibold text-sm ${tono(g.pnl_eur)}`}>{eur(g.pnl_eur)}</div>
+                        <div className={`font-mono text-[10px] ${tono(g.pct_eur)}`}>{pct(g.pct_eur)}</div>
+                      </div>
+                    </div>
+
+                    {/* Los cuatro datos restantes, cada uno con su rótulo. Dos columnas
+                        y no una lista larga: así la tarjeta sigue cabiendo de un vistazo. */}
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-2.5 text-[11px]">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <dt className="text-tinta-3">Acciones</dt>
+                        <dd className="font-mono">{p.acciones}</dd>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <dt className="text-tinta-3">Invertido <span className="opacity-60">(€)</span></dt>
+                        <dd className="font-mono">{eur(invertido)}</dd>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <dt className="text-tinta-3">Precio medio <span className="opacity-60">({p.divisa === "EUR" ? "€" : p.divisa})</span></dt>
+                        <dd className="font-mono text-right">
+                          {usd(precioMedio, p.divisa)}
+                          {hayOtroMedio && (
+                            <div className="text-[10px] text-tinta-3">
+                              {comoBroker
+                                ? `${metodo.toUpperCase()} = ${usd(p.precio_medio, p.divisa)}`
+                                : `bróker ≈ ${usd(p.precio_medio_ponderado, p.divisa)}`}
+                            </div>
+                          )}
+                        </dd>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <dt className="text-tinta-3">Valor hoy <span className="opacity-60">(€)</span></dt>
+                        {/* El div frena la propagación por dentro: cuando falta cotización
+                            esta celda trae un campo y un botón, y al escribir en él no se
+                            puede plegar la tarjeta que lo contiene. */}
+                        <dd className="font-mono" onClick={(e) => e.stopPropagation()}>
+                          <CeldaValorHoy p={p} />
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                  {abiertaEsta && <LotesAbiertos symbol={p.symbol} metodo={metodo} />}
+                </li>
+              );
+            })}
+            {/* El total, con la misma forma de tarjeta para que se lea como una más. */}
+            <li className="px-4 py-3 border-t-2 border-linea">
+              <div className="flex items-start justify-between gap-3">
+                <span className="font-semibold text-sm">Total</span>
+                {(() => {
+                  const lat = comoBroker && latenteBroker != null ? latenteBroker : latente;
+                  const base = resumen.invertido_eur;
+                  return (
+                    <div className="text-right shrink-0">
+                      <div className={`font-mono font-semibold text-sm ${tono(lat)}`}>{eur(lat)}</div>
+                      {base ? (
+                        <div className={`font-mono text-[10px] ${tono(lat)}`}>{pct((lat / base) * 100)}</div>
+                      ) : null}
+                    </div>
+                  );
+                })()}
+              </div>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-2.5 text-[11px]">
+                <div className="flex items-baseline justify-between gap-2">
+                  <dt className="text-tinta-3">Posiciones</dt>
+                  <dd className="font-mono">{resumen.posiciones.length}</dd>
+                </div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <dt className="text-tinta-3">Invertido <span className="opacity-60">(€)</span></dt>
+                  <dd className="font-mono">{eur(resumen.invertido_eur)}</dd>
+                </div>
+                <div className="flex items-baseline justify-between gap-2 col-span-2">
+                  <dt className="text-tinta-3">Valor hoy <span className="opacity-60">(€)</span></dt>
+                  <dd className="font-mono">{eur(resumen.valor_eur)}</dd>
+                </div>
+              </dl>
+            </li>
+          </ul>
+
+          {/* Escritorio: la tabla de siempre, intacta. Aquí las seis columnas caben
+              y comparar posiciones en vertical es más rápido que en tarjetas. */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-left text-tinta-3 border-b border-linea">
@@ -1616,7 +1769,9 @@ export default function VentasView() {
                 </tr>
               </thead>
               <tbody>
-                {resumen.posiciones.map((p) => (
+                {resumen.posiciones.map((p) => {
+                  const { g, precioMedio, invertido, hayOtroMedio } = datosPosicion(p, comoBroker);
+                  return (
                   <React.Fragment key={p.symbol}>
                   <tr className="border-b border-linea cursor-pointer hover:bg-superficie-alt"
                       onClick={() => setAbierta(abierta === p.symbol ? null : p.symbol)}>
@@ -1652,9 +1807,8 @@ export default function VentasView() {
                       {/* Con el interruptor puesto manda la ponderada, que es la del bróker;
                           la otra baja debajo etiquetada. Ninguna es una corrección de la
                           otra: miden cosas distintas y las dos son correctas. */}
-                      {usd(comoBroker ? (p.precio_medio_ponderado ?? p.precio_medio) : p.precio_medio, p.divisa)}
-                      {p.precio_medio_ponderado != null
-                        && Math.abs(p.precio_medio_ponderado - (p.precio_medio ?? 0)) > 0.01 && (
+                      {usd(precioMedio, p.divisa)}
+                      {hayOtroMedio && (
                         <div className="text-[10px] text-tinta-3"
                              title={comoBroker
                                ? `Arriba, la media ponderada (la de tu bróker). Debajo, el coste real de las ${p.acciones} acciones que te quedan por ${metodo.toUpperCase()}.`
@@ -1665,20 +1819,11 @@ export default function VentasView() {
                         </div>
                       )}
                     </td>
-                    <td className="py-2 text-right font-mono">
-                      {eur(comoBroker ? (p.ponderada?.coste_eur ?? p.coste_eur) : p.coste_eur)}
-                    </td>
+                    <td className="py-2 text-right font-mono">{eur(invertido)}</td>
                     <td className="py-2 text-right font-mono"><CeldaValorHoy p={p} /></td>
                     <td className="px-4 py-2 text-right">
-                      {(() => {
-                        const g = comoBroker && p.ponderada?.pnl_eur != null ? p.ponderada : p;
-                        return (
-                          <>
-                            <span className={`font-mono font-semibold ${tono(g.pnl_eur)}`}>{eur(g.pnl_eur)}</span>
-                            <span className={`font-mono text-[10px] ml-1 ${tono(g.pct_eur)}`}>{pct(g.pct_eur)}</span>
-                          </>
-                        );
-                      })()}
+                      <span className={`font-mono font-semibold ${tono(g.pnl_eur)}`}>{eur(g.pnl_eur)}</span>
+                      <span className={`font-mono text-[10px] ml-1 ${tono(g.pct_eur)}`}>{pct(g.pct_eur)}</span>
                     </td>
                   </tr>
                   {abierta === p.symbol && (
@@ -1689,7 +1834,8 @@ export default function VentasView() {
                     </tr>
                   )}
                   </React.Fragment>
-                ))}
+                  );
+                })}
               </tbody>
               {/* Totales: hasta ahora había que sumar las filas a mano para saber cuánto
                   llevas metido y cuánto vale hoy. El % agregado es sobre lo invertido. */}
