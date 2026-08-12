@@ -53,18 +53,33 @@ def test_confluencia_total_da_conviccion_alta():
     """Insiders + upgrade + earnings batido + score alto → convicción muy alta y
     catalizador duro presente."""
     m, cons, insider, earnings, quote = _base_inputs()
-    conv, reasons, hard, pot = da._score_candidate(m, cons, insider, True, earnings, quote)
+    conv, reasons, hard, pot = da._score_candidate(m, cons, insider, True, earnings, quote, "ALCISTA")
     assert conv >= 80
     assert hard is True
     assert len(reasons) >= 3
 
 
 def test_guardian_tendencia_descarta_bajista():
-    """Aunque tenga insiders y upgrade, si está en clara tendencia bajista y peor que
-    el mercado, el guardián la descarta (convicción 0) — no vamos contra la tendencia."""
+    """Aunque tenga insiders y upgrade, si no está en tendencia alcista el guardián la
+    descarta (convicción 0) — no vamos contra la tendencia.
+
+    El veto ya no se deduce de `return_52w` ni de una etiqueta de texto: lo decide
+    `tendencia.py` y llega como estado. Por eso los fundamentales aquí son los buenos:
+    lo que descarta la acción es su dirección, no su crecimiento.
+    """
     m, cons, insider, earnings, quote = _base_inputs()
-    m = dict(m, return_52w=-25, rel_strength_52w=-18)
-    conv, reasons, hard, pot = da._score_candidate(m, cons, insider, True, earnings, quote)
+    for estado in ("BAJISTA", "INDEFINIDA", "SIN_DATOS"):
+        conv, reasons, hard, pot = da._score_candidate(
+            m, cons, insider, True, earnings, quote, estado)
+        assert conv == 0, estado
+        assert hard is False, estado
+
+
+def test_sin_estado_de_tendencia_no_pasa_nada():
+    """Por defecto SIN_DATOS. Si alguien llama sin pasar el estado, la respuesta segura
+    es descartar, no colar la señal."""
+    m, cons, insider, earnings, quote = _base_inputs()
+    conv, _, hard, _ = da._score_candidate(m, cons, insider, True, earnings, quote)
     assert conv == 0
 
 
@@ -72,14 +87,14 @@ def test_sin_catalizador_duro_no_dispara():
     """Solo un score decente, sin insiders/upgrade/earnings → NO es catalizador duro
     (para eso está el screener; el analista exige un catalizador real)."""
     m, cons, insider, earnings, quote = _base_inputs()
-    conv, reasons, hard, pot = da._score_candidate(m, cons, None, False, None, quote)
+    conv, reasons, hard, pot = da._score_candidate(m, cons, None, False, None, quote, "ALCISTA")
     assert hard is False
 
 
 def test_solo_insiders_es_catalizador_duro():
     """Insiders comprando por sí solo YA es catalizador duro (la señal nº1)."""
     m, cons, insider, earnings, quote = _base_inputs()
-    conv, reasons, hard, pot = da._score_candidate(m, cons, insider, False, None, quote)
+    conv, reasons, hard, pot = da._score_candidate(m, cons, insider, False, None, quote, "ALCISTA")
     assert hard is True
     assert any("Insiders" in r for r in reasons)
 

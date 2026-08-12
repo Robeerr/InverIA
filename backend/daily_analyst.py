@@ -23,6 +23,7 @@ import os
 
 import external_data
 import market_data
+import tendencia
 import mem
 import opportunities
 import telegram_notifier
@@ -65,9 +66,18 @@ def _detect_upgrade(trends) -> bool:
     return buy_score(trends[0]) > buy_score(trends[1])
 
 
-def _score_candidate(m, cons, insider, upgrade, earnings, quote):
+def _score_candidate(m, cons, insider, upgrade, earnings, quote, estado_tendencia="SIN_DATOS"):
     """Convicción 0-100 + lista de razones legibles. La CONVICCIÓN exige catalizador
-    REAL (insiders/upgrade/beat), no solo un score alto — para eso está el screener."""
+    REAL (insiders/upgrade/beat), no solo un score alto — para eso está el screener.
+
+    `estado_tendencia` llega de `tendencia.py`, que es la ÚNICA autoridad sobre la
+    elegibilidad. Antes este veto se leía del prefijo de una etiqueta de texto: si
+    `momentum_label` empezaba por «⚠», se descartaba. Dos problemas a la vez — que un
+    veto dependiera de un emoji, y que la regla estuviera duplicada aquí en vez de
+    consultarse donde vive.
+
+    Por defecto SIN_DATOS, que no autoriza: quien no pase la tendencia no pasa.
+    """
     reasons = []
     conviction = 0.0
     hard_catalyst = False
@@ -101,12 +111,18 @@ def _score_candidate(m, cons, insider, upgrade, earnings, quote):
         _dist_52w(quote, m), cons.get("score") if cons else None,
         m.get("return_26w"), m.get("return_52w"), m.get("rel_strength_52w"),
     )
+    # PENDIENTE (5b-2): este sumando mete un score que mezcla crecimiento, valoración,
+    # punto de entrada, consenso y momentum dentro de una métrica que dice medir
+    # CATALIZADORES. No se toca aquí a propósito: quitarlo baja el máximo de 105 a 75 y
+    # deja el umbral de 80 del régimen rojo INALCANZABLE, así que arrastra una decisión
+    # sobre los umbrales que todavía no está tomada. Lo vigila test_conviction_umbrales.
     conviction += (pot / 100) * 30
     if pot >= 60:
         reasons.append(f"⭐ Score de potencial {pot} · {val_label}")
-    # El guardián de tendencia: si está en clara tendencia bajista, NO la proponemos
-    # aunque tenga catalizador — no vamos contra la tendencia.
-    if mom_label.startswith("⚠"):
+    # El guardián de tendencia. Ya NO se lee de una etiqueta de texto: lo decide
+    # `tendencia.py`, que es la única autoridad sobre la elegibilidad. No vamos contra
+    # la tendencia por muy buen catalizador que haya.
+    if not tendencia.hay_tendencia_valida(estado_tendencia):
         return 0, [], False, pot
 
     return round(min(conviction, 100), 1), reasons, hard_catalyst, pot
@@ -133,7 +149,11 @@ async def _analyze_symbol(symbol):
         earnings = await asyncio.to_thread(external_data.finnhub_earnings_surprises, symbol)
         upgrade = _detect_upgrade(trends)
 
-        conviction, reasons, hard, pot = _score_candidate(m, cons, insider, upgrade, earnings, quote)
+        # La tendencia sale del histórico diario cacheado (fuente gratuita, no Finnhub) y
+        # se calcula en un hilo para no bloquear el bucle.
+        estado_tendencia = await asyncio.to_thread(market_data.tendencia_de, symbol)
+        conviction, reasons, hard, pot = _score_candidate(
+            m, cons, insider, upgrade, earnings, quote, estado_tendencia)
         if conviction < _CONVICTION_THRESHOLD or not hard:
             return None
         return {

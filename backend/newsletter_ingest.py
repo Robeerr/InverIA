@@ -168,6 +168,7 @@ async def _score_ticker(symbol: str):
     import external_data
     import market_data
     import opportunities
+    import tendencia
     try:
         quote = await asyncio.to_thread(market_data.get_quote, symbol)
         if not quote or not quote.get("price"):
@@ -184,8 +185,12 @@ async def _score_ticker(symbol: str):
             cons.get("score") if cons else None,
             m.get("return_26w"), m.get("return_52w"), m.get("rel_strength_52w"),
         )
-        if mom_label.startswith("⚠"):
-            verdict = "🔴 Tu motor la EVITA (tendencia bajista / peor que el mercado)"
+        # El veto de tendencia lo decide `tendencia.py` y nadie más. Antes se leía del
+        # prefijo de `momentum_label`: si empezaba por «⚠», se evitaba. Un veto que
+        # dependía de un emoji, y duplicado respecto a la regla que ya tiene dueño.
+        estado_tendencia = await asyncio.to_thread(market_data.tendencia_de, symbol)
+        if not tendencia.hay_tendencia_valida(estado_tendencia):
+            verdict = "🔴 Tu motor la EVITA (no está en tendencia alcista)"
         elif pot >= 65:
             verdict = "🟢 Coincide con tu motor (score alto)"
         elif pot >= 45:

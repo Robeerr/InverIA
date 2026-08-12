@@ -21,6 +21,7 @@ from typing import Optional
 import pandas as pd
 import requests
 import yfinance as yf
+import tendencia
 
 _log = logging.getLogger("inveria.market_data")
 # Silence yfinance noisy 401 errors (we fall back to other sources anyway)
@@ -463,6 +464,40 @@ def _stamp_source(df, source):
     except Exception:
         pass
     return df
+
+
+def tendencia_de(symbol: str) -> str:
+    """La dirección estructural de un símbolo, desde el histórico diario cacheado.
+
+    Adaptador de entrada/salida sobre `tendencia.py`, que es puro y no sabe descargar
+    nada. Vive aquí, junto a `data_health`, porque es lo mismo: un dato DERIVADO del
+    histórico que varios módulos necesitan y que ninguno debería calcularse por su
+    cuenta.
+
+    Y ese «por su cuenta» es el motivo de que exista. Antes de esto, la misma pregunta
+    se contestaba en `daily_analyst` y en `newsletter_ingest` mirando si una etiqueta de
+    texto empezaba por «⚠» — dos vetos duplicados, dependientes de un emoji, en módulos
+    que ni siquiera mencionaban la tendencia.
+
+    Pide dos años de velas diarias porque una SMA200 necesita 200 cierres; con la
+    ventana de tres meses que usaba el ratio de volumen no habría suficientes y el
+    resultado saldría siempre SIN_DATOS, que es la forma silenciosa de dejar un veto
+    inservible. Va cacheado y sobre la fuente gratuita: no toca Finnhub.
+
+    Ante cualquier fallo devuelve SIN_DATOS, que NO autoriza. Fallo cerrado.
+    """
+    try:
+        df = get_stock_data(symbol, "1D")
+    except Exception:
+        _log.warning("tendencia_de(%s): no se pudo leer el histórico", symbol)
+        return "SIN_DATOS"
+    if df is None or getattr(df, "empty", True) or "Close" not in df.columns:
+        return "SIN_DATOS"
+    try:
+        cierres = df["Close"].dropna().astype(float).tolist()
+    except Exception:
+        return "SIN_DATOS"
+    return tendencia.desde_cierres(cierres)
 
 
 def data_health(df) -> Optional[dict]:

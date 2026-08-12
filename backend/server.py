@@ -3898,9 +3898,13 @@ def _top_seleccion(results: list, heat: dict, n: int = 5) -> list:
         cs = r.get("consensus_score")
         if isinstance(cs, (int, float)) and cs >= 70:
             razones.append("consenso analista fuerte")
-        mom = r.get("momentum") or ""
-        if mom and not mom.startswith("⚠"):
-            razones.append("momentum sano")
+        # La razón «momentum sano» se retira. NO era un veto —solo añadía una frase— pero
+        # salía del mismo sitio que los dos vetos que acabamos de migrar: de comprobar si
+        # una etiqueta de texto empezaba por «⚠». Mientras quede una sola lectura de ese
+        # prefijo, el veto puede volver por ahí sin que nadie lo note, así que se va con
+        # ellos y el test de arquitectura puede exigir CERO apariciones en vez de una lista
+        # de excepciones. Top Selección está congelada hasta que exista `tendencia_score`;
+        # reponer la razón con otro origen sería migrar un consumidor bloqueado.
         if heat.get(r.get("sector"), 0) >= 0.75:
             razones.append("sector caliente 🔥")
         out.append({
