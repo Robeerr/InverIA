@@ -154,11 +154,15 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
         </nav>
 
         {/* Search + autocompletado.
-            `min-w-[240px]` es el suelo: por debajo, el placeholder se corta y el
-            campo deja de decir qué se busca. Antes era `min-w-0`, que permite
-            colapsar hasta cero y hacía del buscador el primero en ceder ancho. */}
+            El campo crece hasta 340px y ahí para. Es lo que hace falta para que
+            entre un ticker y no se corte el placeholder; más allá solo es ancho
+            vacío en pantallas grandes, porque lo que se escribe aquí son cuatro
+            letras. El suelo de 200px evita el fallo contrario: con `min-w-0`
+            colapsaba hasta la nada y solo se veía la lupa.
+            Las acciones llevan `ml-auto` para seguir pegadas a la derecha ahora
+            que el buscador ya no se come el hueco sobrante. */}
         {showSearch && (
-          <div ref={searchRef} className="flex-1 relative min-w-[240px] xl:min-w-[300px]">
+          <div ref={searchRef} className="flex-1 relative min-w-[200px] max-w-[340px]">
             <form onSubmit={submit} className="relative">
               <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-tinta-3" />
               <Input
@@ -190,7 +194,7 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
         )}
 
         {/* Actions */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 ml-auto">
           {/* Status indicator */}
           <div
             title={backendOk === null ? "Comprobando backend..." : backendOk ? "Backend activo ✓" : "Backend no responde"}
