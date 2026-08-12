@@ -218,14 +218,18 @@ def _build_email_html(data: dict, subject: str) -> str:
             sent_html = '<span style="color:#4a7c59;font-size:12px;font-weight:600;"> 👍 la ven bien</span>'
         elif sent == "NEGATIVO":
             sent_html = '<span style="color:#d85c41;font-size:12px;font-weight:600;"> 👎 la ven mal</span>'
-        inv = a.get("inveria")
+        # El veredicto viejo del motor se retira: era un score que mezclaba crecimiento,
+        # valoración, punto de entrada, consenso y momentum, bucketeado en 65/45. En su
+        # lugar, la confluencia descriptiva — y SOLO cuando dice algo. NEUTRAL,
+        # SIN_FUENTES e INSUFICIENTE no se pintan: un texto en cada acción se convierte
+        # en ruido de fondo, que es lo que hace que se deje de mirar cuando sí importa.
+        conf = a.get("confluencia") or {}
         veredicto_html = ""
-        if inv and inv.get("verdict"):
-            extra = f" · score {inv.get('score')}" if inv.get("score") is not None else ""
+        if conf.get("estado") in ("ACUERDO", "CHOQUE") and conf.get("texto"):
             veredicto_html = (
                 f'<p style="margin:6px 0 0 0;font-size:12px;font-weight:600;color:#1a3a32;'
                 f'background:#eef2f0;padding:4px 8px;border-radius:4px;display:inline-block;">'
-                f'{inv["verdict"]}{extra}</p>'
+                f'{conf["texto"]}</p>'
             )
         acc_rows += f"""
         <div style="border-left:3px solid {c};padding:8px 12px;margin:8px 0;background:#faf9f6;border-radius:4px;">

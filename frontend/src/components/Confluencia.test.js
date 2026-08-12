@@ -58,9 +58,14 @@ describe("la pantalla no clasifica", () => {
   });
 
   test("no lee los números sueltos para deducir el estado", () => {
+    // `score_motor` ya no existe; se deja para que no pueda volver.
     for (const campo of ["score_motor", "positivos", "negativos", "n_fuentes"]) {
       expect(codigo).not.toContain(campo);
     }
+    // El campo que lo sustituye se comprueba por ACCESO, no por palabra: «tendencia»
+    // aparece legítimamente como texto visible («Sin tendencia», «tendencia ↔ fuentes»).
+    // Prohibir la palabra sería leer la prosa en vez del código.
+    expect(codigo).not.toContain("confluencia.tendencia");
   });
 
   test("el estado y la frase salen tal cual del backend", () => {
@@ -112,14 +117,27 @@ describe("los campos que ya había siguen ahí", () => {
     }
   });
 
-  test("las tarjetas del radar conservan el veredicto del motor y el consenso", () => {
-    for (const campo of ["row.inveria", "row.n_fuentes", "row.fuentes", "row.angulos"]) {
+  test("las tarjetas del radar conservan los datos de las fuentes", () => {
+    for (const campo of ["row.n_fuentes", "row.fuentes", "row.angulos"]) {
       expect(RADAR).toContain(campo);
     }
   });
 
-  test("el veredicto del motor sigue teniendo su propio chip", () => {
-    // La confluencia es la CONCLUSIÓN de cruzar dos cosas; las dos siguen visibles.
-    expect(RADAR).toContain("verdictStyle");
+  test("el veredicto del motor ya NO tiene chip", () => {
+    // Estos dos tests decían lo contrario, y se invierten a propósito.
+    //
+    // Cuando se añadió la confluencia, protegían que no se llevara por delante el chip
+    // que ya estaba: la confluencia era la conclusión y las dos partes seguían visibles.
+    //
+    // Ya no. El veredicto era un score que mezclaba crecimiento, valoración, punto de
+    // entrada, consenso y momentum, bucketeado en 65/45. Con el motor aportando solo
+    // elegibilidad estructural, ese chip contaría una lógica distinta de la del chip de
+    // confluencia que tiene al lado — dos historias incompatibles en la misma tarjeta.
+    expect(RADAR).not.toContain("verdictStyle");
+    expect(RADAR).not.toContain("inveria");
+  });
+
+  test("el panel de fuentes tampoco menciona el motor", () => {
+    expect(FUENTES).not.toContain("inveria");
   });
 });

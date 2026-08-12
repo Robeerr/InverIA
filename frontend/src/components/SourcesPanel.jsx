@@ -53,7 +53,6 @@ export default function SourcesPanel({ symbol }) {
               <div className="flex items-center gap-2 mt-0.5 text-[10px]">
                 {m.accion && <span style={{ color: c }} className="font-semibold">{m.accion}</span>}
                 {m.niveles && <span className="text-tinta-3">· {m.niveles}</span>}
-                {m.inveria?.verdict && <span className="text-tinta-3 truncate">· motor: {m.inveria.verdict.slice(0, 24)}</span>}
               </div>
             </div>
           );

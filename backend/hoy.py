@@ -62,10 +62,6 @@ LIMITE_POR_DEFECTO = 5
 # pero un 9% no es "hoy": es "algún día". La portada es para hoy.
 UMBRAL_NIVEL_PCT = 4.0
 
-# Fuerza a partir de la cual un nivel se considera "fuerte" y merece la portada.
-# Sale del propio motor: es la escala 0-100 de confluencia de métodos.
-UMBRAL_FUERZA = 55
-
 UMBRAL_RESULTADOS_DIAS = 3
 
 
@@ -278,67 +274,27 @@ def tarjeta_nivel(caliente, nivel_motor=None, aviso=None, tiene_posicion=False,
     )
 
 
-def confluencia(fuentes, veredicto_motor, distancia_nivel=None, fuerza_nivel=None,
-                motor_niveles_con_datos=None):
-    """Estado del cruce entre lo que dicen tus fuentes y lo que mide tu motor.
+def tarjeta_confluencia(symbol, nombre, estado, fuentes, tiene_posicion=False):
+    """4 y 5 · Choque o acuerdo entre lo que dicen tus fuentes y la elegibilidad.
 
-    Devuelve uno de: acuerdo_alto · acuerdo · choque · solo_fuentes · solo_motor · None.
+    `estado` viene de `confluencia.py`, que es la única implementación. Antes esta
+    pantalla tenía la suya propia, con estados distintos y los mismos umbrales de score
+    duplicados: la misma acción podía salir en ACUERDO en el Radar y en `choque` aquí.
 
-    El CHOQUE importa tanto como el acuerdo, y por eso tiene tarjeta propia: es el
-    único caso en que la app puede evitarte una decisión mala en vez de acompañarte
-    en una buena. Un sistema que solo destaca coincidencias acaba siendo una máquina
-    de confirmar lo que ya te habían contado.
+    QUÉ SE FUE, Y LO QUE ESO CUESTA
+
+    `acuerdo_alto` no existe. Combinaba fuentes + motor + «el precio está a menos del 5%
+    de un nivel de fuerza ≥55», y esa última mitad es información de ENTRADA, no de
+    confluencia. Con ella se va el +60 de urgencia que subía esas tarjetas por encima de
+    los choques: todas las coincidencias pasan a la banda normal.
+
+    Es un cambio de orden visible en la portada, y es deliberado. Ese +60 estaba
+    justificado por información de zona que hemos retirado; conservar el efecto sin
+    conservar el significado habría sido inventar un número. La información de zona no
+    se pierde para siempre: tiene dueño, y es la capa de decisión de entrada, que aún no
+    existe.
     """
-    fuentes = fuentes or {}
-    n_fuentes = len(fuentes.get("fuentes") or [])
-    positivos = fuentes.get("positivos") or 0
-    negativos = fuentes.get("negativos") or 0
-    menciones = fuentes.get("menciones") or 0
-    score = (veredicto_motor or {}).get("score")
-    verdict = (veredicto_motor or {}).get("verdict") or ""
-    motor_evita = verdict.startswith("🔴")
-
-    hay_fuentes = menciones > 0
-    hay_motor = score is not None
-
-    if not hay_fuentes and not hay_motor:
-        return None
-    if hay_fuentes and not hay_motor:
-        return "solo_fuentes"
-    if hay_motor and not hay_fuentes:
-        return "solo_motor" if score >= 65 else None
-
-    fuentes_positivas = positivos > negativos
-    fuentes_negativas = negativos > positivos
-    # Si no se dice, se deduce: que llegue alguno de los dos datos significa que el
-    # motor de niveles había calculado algo para este símbolo.
-    if motor_niveles_con_datos is None:
-        motor_niveles_con_datos = distancia_nivel is not None or fuerza_nivel is not None
-
-    # Choque: unos empujan y el otro frena. En cualquiera de los dos sentidos.
-    if (fuentes_positivas and motor_evita) or (fuentes_negativas and score >= 65):
-        return "choque"
-
-    if fuentes_positivas and score >= 65:
-        cerca = distancia_nivel is not None and abs(distancia_nivel) <= 5
-        fuerte = (fuerza_nivel or 0) >= UMBRAL_FUERZA
-        if n_fuentes >= 2 and cerca and fuerte:
-            return "acuerdo_alto"
-        # Sin datos del motor de niveles NO se puede saber si esto era acuerdo_alto.
-        # Devolver "acuerdo" a secas sería degradar en silencio: el usuario vería una
-        # convicción menor sin que nada dijera que falta un dato para calcularla.
-        if n_fuentes >= 2 and not motor_niveles_con_datos:
-            return "acuerdo_sin_niveles"
-        return "acuerdo"
-    if fuentes_positivas and score >= 45:
-        return "acuerdo"
-    return None
-
-
-def tarjeta_confluencia(symbol, nombre, estado, fuentes, veredicto_motor,
-                        distancia_nivel=None, fuerza_nivel=None, tiene_posicion=False):
-    """4 y 5 · Choque o acuerdo entre motor y fuentes."""
-    if estado not in ("choque", "acuerdo_alto", "acuerdo", "acuerdo_sin_niveles"):
+    if estado not in ("CHOQUE", "ACUERDO"):
         return None
 
     fuentes = fuentes or {}
@@ -346,33 +302,33 @@ def tarjeta_confluencia(symbol, nombre, estado, fuentes, veredicto_motor,
     positivos = fuentes.get("positivos") or 0
     negativos = fuentes.get("negativos") or 0
     menciones = fuentes.get("menciones") or 0
-    score = (veredicto_motor or {}).get("score")
     quienes = ", ".join(lista[:3]) + ("…" if len(lista) > 3 else "")
+    cuantas = f"{len(lista)} {'fuente' if len(lista) == 1 else 'fuentes'}"
 
-    if estado == "choque":
+    if estado == "CHOQUE":
         urgencia = BASE["divergencia"] + min(60, menciones * 8)
         if positivos > negativos:
-            que_pasa = f"Tus fuentes empujan {symbol} y tu motor la evita"
+            que_pasa = f"Tus fuentes empujan {symbol} y no está en tendencia alcista"
             por_que = (
-                f"{menciones} menciones en {len(lista)} "
-                f"{'fuente' if len(lista) == 1 else 'fuentes'} ({quienes}), "
-                f"{positivos} en positivo. Tu motor le da {score}/100 y la descarta."
+                f"{menciones} menciones en {cuantas} ({quienes}), {positivos} en "
+                f"positivo. Pero el precio no está por encima de su media de 200 "
+                f"sesiones con la de 50 acompañando."
             )
             vigilar = (
-                "Es el caso en que conviene desconfiar del entusiasmo: mira qué ve el "
-                "motor que la fuente no cuenta."
+                "Es el caso en que conviene desconfiar del entusiasmo: mira qué ve la "
+                "estructura que la fuente no cuenta."
             )
         else:
-            que_pasa = f"Tus fuentes desconfían de {symbol} y tu motor la puntúa alto"
+            que_pasa = f"Tus fuentes desconfían de {symbol} y sí está en tendencia alcista"
             por_que = (
                 f"{negativos} de {menciones} menciones son negativas ({quienes}), "
-                f"pero tu motor le da {score}/100."
+                f"pero estructuralmente la acción sí es elegible."
             )
-            vigilar = "Mira qué riesgo ven las fuentes que los números todavía no reflejan."
+            vigilar = "Mira qué riesgo ven las fuentes que la estructura todavía no refleja."
         return _tarjeta(
             "divergencia", symbol, nombre, urgencia, que_pasa, por_que, vigilar,
             datos={"menciones": menciones, "positivos": positivos, "negativos": negativos,
-                   "fuentes": lista, "score_motor": score, "estado": estado,
+                   "fuentes": lista, "estado": estado,
                    "tiene_posicion": tiene_posicion},
         )
 
@@ -381,46 +337,20 @@ def tarjeta_confluencia(symbol, nombre, estado, fuentes, veredicto_motor,
     if tiene_posicion:
         return None
     urgencia = BASE["confluencia"] + min(80, menciones * 6)
-    alto = estado == "acuerdo_alto"
-    sin_niveles = estado == "acuerdo_sin_niveles"
-    if alto:
-        urgencia += 60
-
-    # «Tu motor» a secas era ambiguo: aquí siempre es el motor de OPORTUNIDADES, el
-    # score persistido en Mongo. No depende de la caché de niveles, así que esta
-    # coincidencia nunca es una suposición.
-    base_por_que = (
-        f"{positivos} menciones positivas en {len(lista)} "
-        f"{'fuente' if len(lista) == 1 else 'fuentes'} ({quienes}), y el motor de "
-        f"oportunidades le da {score}/100."
-    )
-    if alto:
-        base_por_que += (f" Además el motor de niveles marca una zona de fuerza "
-                         f"{fuerza_nivel}/100 a {_fmt_pct(distancia_nivel)}.")
-    elif sin_niveles:
-        base_por_que += (" Motor de niveles: sin datos todavía, así que no se puede "
-                         "comprobar si el precio está en zona.")
-
     return _tarjeta(
         "confluencia", symbol, nombre, urgencia,
-        que_pasa=(
-            f"{symbol}: tus fuentes y el motor de oportunidades coinciden"
-            + (" y el precio está en zona" if alto else "")
+        que_pasa=f"{symbol}: tus fuentes la ven bien y está en tendencia alcista",
+        por_que=(
+            f"{positivos} menciones positivas en {cuantas} ({quienes}), y la acción "
+            f"cotiza por encima de su media de 200 sesiones con la de 50 acompañando."
         ),
-        por_que=base_por_que,
         que_vigilar=(
-            "No la tienes en cartera. Es la coincidencia con más convicción que hay hoy."
-            if alto else
-            # Sin el dato de niveles NO se afirma que la convicción sea menor: se dice
-            # que no se ha podido calcular, que es lo único cierto.
-            ("No la tienes en cartera. La convicción alta no se puede evaluar hasta que "
-             "el motor de niveles calcule este símbolo." if sin_niveles else
-             "No la tienes en cartera. Coinciden, pero el precio aún no acompaña.")
+            "No la tienes en cartera. Coinciden tus fuentes y la estructura; queda por "
+            "ver a qué precio tendría sentido entrar."
         ),
         datos={"menciones": menciones, "positivos": positivos, "negativos": negativos,
-               "fuentes": lista, "score_motor": score, "estado": estado,
-               "distancia_nivel": distancia_nivel, "fuerza_nivel": fuerza_nivel,
-               "motor_niveles": "sin_datos" if sin_niveles else ("confirma" if alto else "ok")},
+               "fuentes": lista, "estado": estado,
+               "tiene_posicion": tiene_posicion},
     )
 
 

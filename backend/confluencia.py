@@ -1,53 +1,62 @@
-"""Confluencia motor ↔ fuentes: cuándo tus datos y tus fuentes dicen lo mismo.
+"""Confluencia: qué dicen tus fuentes cruzado con la elegibilidad estructural.
 
 QUÉ RESUELVE
 
-Tu Cerebro guarda quién menciona cada ticker y con qué sentimiento, y el motor guarda su
-propio veredicto sobre el mismo ticker. Hasta ahora las dos opiniones viajaban juntas y
-el cruce lo hacía la cabeza del lector: un chip verde al lado de un número de fuentes.
+Tu Cerebro guarda quién menciona cada ticker y con qué sentimiento. `tendencia.py` dice
+si la acción está estructuralmente en tendencia alcista. Este módulo cruza las dos cosas
+y lo convierte en un dato.
 
-Este módulo lo convierte en un dato. Y su gemelo importa tanto como él: el CHOQUE —tus
-fuentes empujan algo que tu motor evita— es el único estado donde la app puede evitarte
-una decisión mala en vez de acompañarte en una buena.
+Su gemelo importa tanto como él: el CHOQUE —tus fuentes empujan algo que no es
+elegible— es el único estado donde la app puede evitarte una decisión mala en vez de
+acompañarte en una buena.
 
-LOS UMBRALES, Y DE DÓNDE SALEN
+QUÉ CAMBIÓ, Y POR QUÉ
 
-No están puestos a ojo: salen de medir la distribución real de las menciones con
-`inspeccion_confluencia.py`, comparar cuatro cortes candidatos y elegir uno viendo qué
-casos concretos caían en cada grupo.
+Antes esto cruzaba fuentes con un SCORE del motor, y el corte estaba en 65/45. Ese score
+sumaba en un mismo número crecimiento, valoración, punto de entrada, consenso, calidad y
+momentum: un 60 podía significar «cara pero líder» o «barata pero muerta». Los umbrales
+estaban calibrados sobre esa mezcla, así que medían un ruido bien medido.
 
-    ≥2 fuentes distintas + motor ≥65  →  ACUERDO
-    ≥2 fuentes distintas + motor <45  →  CHOQUE
-    45 a 64,9                          →  NEUTRAL
+Ahora el motor aporta un SÍ/NO estructural. Se pierde granularidad —ya no se puede decir
+CUÁNTO acompaña— y se gana que la palabra signifique algo. Y no hace falta calibrar
+nada: no hay ningún umbral de score que elegir.
 
-Están aquí como constantes de módulo y no dentro de la función a propósito: se pueden
-mirar, discutir y cambiar en un sitio, y el script de inspección los usa como valores por
-defecto para poder barrer alternativas sin duplicar la lógica.
+El concepto de «MOTOR» desaparece. No se renombra: lo que aporta ya tiene nombre exacto,
+que es elegibilidad, y conservar la palabra solo arrastraría su ambigüedad.
 
-LO QUE NO MIDE TODAVÍA
+ES DESCRIPTIVA. NO AUTORIZA NADA
 
-El tercer eje —«además hay un nivel fuerte cerca»— no entra aún. Exige `buy_levels`, que
-solo existe donde el motor ha corrido sobre el histórico. Cuando se añada, un ACUERDO con
-el precio a un 2% de una zona de fuerza 100 valdrá más que uno a un 30%; hoy los dos
-salen igual.
+De un estado de confluencia NO se puede inferir una compra, un punto de entrada, una
+zona, un stop ni un tamaño. Cruza una opinión externa con un estado estructural, y
+ninguno de los dos insumos es una decisión de entrada: su cruce tampoco puede serlo sin
+fabricar autoridad que ninguna de las partes tenía.
+
+ACUERDO **consume** el veto de `tendencia.py`; no lo sustituye ni lo reemplaza. La
+elegibilidad se decide en un solo sitio y no es este.
 
 LAS REGLAS QUE NO SE NEGOCIAN
 
-  - Sin menciones NO hay confluencia. Un ticker con score 95 del que nadie ha hablado no
-    es un acuerdo: es una idea propia. Fabricar una coincidencia que no existe sería el
+  - Sin menciones NO hay confluencia. Un ticker elegible del que nadie ha hablado no es
+    un acuerdo: es una idea propia. Fabricar una coincidencia que no existe sería el
     peor fallo posible en un módulo que se llama así.
-  - Sin veredicto del motor es INSUFICIENTE, no NEUTRAL. Falta una de las dos opiniones,
+  - Sin tendencia clasificable es INSUFICIENTE, no NEUTRAL. Falta una de las dos partes,
     así que no se ha cruzado nada; «neutral» sugeriría que se compararon y empataron.
   - MIXTO —unas fuentes a favor y otras en contra— no es acuerdo ni choque. Que las
     fuentes discrepen entre ellas es información, y promediarla la borraría.
 """
 from typing import Optional
 
-# ── Umbrales del corte «medio», elegido sobre la distribución real ───────────
-MIN_FUENTES = 2          # fuentes DISTINTAS, no menciones: 40 correos del mismo boletín
-                         # son una sola opinión repetida
-SCORE_ACUERDO = 65       # el motor acompaña
-SCORE_CHOQUE = 45        # el motor lo evita; entre 45 y 64,9 no dice ni una cosa ni otra
+import tendencia
+
+# Fuentes DISTINTAS, no menciones: cuarenta correos del mismo boletín son una sola
+# opinión repetida.
+#
+# PARÁMETRO HEREDADO, NO CALIBRADO. Se eligió en la misma sesión de medición que los
+# umbrales de score que este módulo acaba de retirar. Sobrevive porque cuenta opiniones
+# INDEPENDIENTES y no puntos de un score, así que su significado no dependía de lo que
+# se ha ido — pero nadie ha comprobado que 2 discrimine mejor que 1. Queda pendiente de
+# medir, y hoy no existe herramienta para hacerlo: la que había medía el eje del score.
+MIN_FUENTES = 2
 
 ESTADOS = ("ACUERDO", "CHOQUE", "NEUTRAL", "MIXTO", "INSUFICIENTE", "SIN_FUENTES")
 
@@ -57,6 +66,8 @@ def tono_de_fuentes(positivos: int, negativos: int) -> str:
 
     MIXTO no es neutro: es que unas fuentes lo ven bien y otras mal. Esa discrepancia es
     un dato, y un promedio la haría desaparecer.
+
+    No cambia con el nuevo contrato: nunca dependió del score.
     """
     pos, neg = int(positivos or 0), int(negativos or 0)
     if pos and neg:
@@ -69,17 +80,12 @@ def tono_de_fuentes(positivos: int, negativos: int) -> str:
 
 
 def clasificar(n_fuentes: int, positivos: int, negativos: int,
-               score: Optional[float], umbrales: Optional[dict] = None) -> str:
+               estado_tendencia: Optional[str]) -> str:
     """El estado de confluencia de un ticker.
 
-    `umbrales` existe para que el script de inspección pueda barrer cortes alternativos
-    sin duplicar esta lógica. En producción no se pasa: manda el corte elegido.
+    Fallo cerrado en los dos sentidos: ninguna ausencia de datos produce ACUERDO ni
+    CHOQUE. Los dos estados que dicen algo exigen las dos partes presentes.
     """
-    u = umbrales or {}
-    min_fuentes = u.get("min_fuentes", MIN_FUENTES)
-    score_acuerdo = u.get("score_alto", SCORE_ACUERDO)
-    score_choque = u.get("score_bajo", SCORE_CHOQUE)
-
     n_fuentes = int(n_fuentes or 0)
     if n_fuentes <= 0:
         return "SIN_FUENTES"
@@ -87,41 +93,47 @@ def clasificar(n_fuentes: int, positivos: int, negativos: int,
     tono = tono_de_fuentes(positivos, negativos)
     if tono == "MIXTO":
         # Las fuentes no se ponen de acuerdo entre ellas: no hay una opinión con la que
-        # cruzar la del motor. Se dice, en vez de resolverlo por mayoría.
+        # cruzar la elegibilidad. Se dice, en vez de resolverlo por mayoría.
         return "MIXTO"
     if tono == "SIN_SENTIDO":
         return "NEUTRAL"
 
-    if score is None:
+    # SIGNIFICADO NUEVO. Antes INSUFICIENTE era «el motor no lo ha puntuado»; ahora es
+    # «no se puede clasificar la tendencia». El concepto se conserva —falta una de las
+    # dos opiniones— y solo cambia cuál falta.
+    if estado_tendencia == "SIN_DATOS" or estado_tendencia not in tendencia.ESTADOS:
         return "INSUFICIENTE"
 
-    bastantes = n_fuentes >= min_fuentes
-    acompana = score >= score_acuerdo
-    evita = score < score_choque
+    bastantes = n_fuentes >= MIN_FUENTES
+    elegible = tendencia.hay_tendencia_valida(estado_tendencia)
+
+    if not bastantes:
+        return "NEUTRAL"
 
     if tono == "FAVORABLE":
-        if bastantes and acompana:
+        if elegible:
             return "ACUERDO"
-        if bastantes and evita:
+        if estado_tendencia == "BAJISTA":
             return "CHOQUE"
+        # INDEFINIDA: ni una cosa ni otra. No es un choque porque no hay nada a lo que
+        # oponerse — la acción no está en tendencia bajista, simplemente no está clara.
         return "NEUTRAL"
 
     # DESFAVORABLE: las fuentes lo evitan.
     #
-    # Que el motor lo puntúe alto SÍ es un choque —opiniones opuestas—, y va con el mismo
-    # mínimo de fuentes que el resto.
+    # Que sea elegible SÍ es un choque —opiniones opuestas—, con el mismo mínimo de
+    # fuentes que el resto.
     #
-    # Que el motor también lo evite es un acuerdo, pero NEGATIVO, y se queda en NEUTRAL a
+    # Que tampoco sea elegible es un acuerdo, pero NEGATIVO, y se queda en NEUTRAL a
     # propósito: `ACUERDO` se lee en la interfaz como «esto merece tu atención», y usarlo
     # para «los dos coinciden en que no» invitaría a mirar justo lo que no hay que mirar.
     # Merece un estado propio; darle uno es una decisión de producto, no de umbral.
-    if bastantes and acompana:
+    if elegible:
         return "CHOQUE"
     return "NEUTRAL"
 
 
-def describir(estado: str, n_fuentes: int, positivos: int, negativos: int,
-              score: Optional[float]) -> Optional[str]:
+def describir(estado: str, n_fuentes: int, positivos: int, negativos: int) -> Optional[str]:
     """Una frase que dice qué se ha cruzado. DESCRIBE, no recomienda.
 
     Misma regla que en `tesis.py`: aquí no se dice qué hacer, se dice qué hay. Devuelve
@@ -129,28 +141,33 @@ def describir(estado: str, n_fuentes: int, positivos: int, negativos: int,
     """
     fuentes = f"{n_fuentes} fuente" + ("s" if n_fuentes != 1 else "")
     if estado == "ACUERDO":
-        return f"{fuentes} lo ven bien y tu motor acompaña ({score:.0f}/100)."
+        return f"{fuentes} lo ven bien y está en tendencia alcista."
     if estado == "CHOQUE":
         if positivos and not negativos:
-            return f"{fuentes} lo ven bien, pero tu motor lo evita ({score:.0f}/100)."
-        return f"{fuentes} lo ven mal, pero tu motor lo puntúa alto ({score:.0f}/100)."
+            return f"{fuentes} lo ven bien, pero no está en tendencia alcista."
+        return f"{fuentes} lo ven mal, pero sí está en tendencia alcista."
     if estado == "MIXTO":
         return f"Tus fuentes no coinciden: {positivos} a favor y {negativos} en contra."
     if estado == "INSUFICIENTE":
-        return f"{fuentes} lo mencionan; tu motor aún no lo ha puntuado."
+        return (f"{fuentes} lo mencionan; no hay histórico suficiente para saber si está "
+                "en tendencia.")
     return None
 
 
 def evaluar(n_fuentes: int, positivos: int, negativos: int,
-            score: Optional[float], umbrales: Optional[dict] = None) -> dict:
-    """El objeto que viaja en la respuesta. Aditivo: no sustituye a nada."""
-    estado = clasificar(n_fuentes, positivos, negativos, score, umbrales)
+            estado_tendencia: Optional[str]) -> dict:
+    """El objeto que viaja en la respuesta.
+
+    `tendencia` sustituye al antiguo `score_motor`. No es un renombrado: es otro dato,
+    con otro significado y sin escala.
+    """
+    estado = clasificar(n_fuentes, positivos, negativos, estado_tendencia)
     return {
         "estado": estado,
         "texto": describir(estado, int(n_fuentes or 0), int(positivos or 0),
-                           int(negativos or 0), score),
+                           int(negativos or 0)),
         "n_fuentes": int(n_fuentes or 0),
         "positivos": int(positivos or 0),
         "negativos": int(negativos or 0),
-        "score_motor": score,
+        "tendencia": estado_tendencia if estado_tendencia in tendencia.ESTADOS else "SIN_DATOS",
     }

@@ -3322,15 +3322,15 @@ async def fuentes_de_accion(symbol: str, days: int = 30,
     # Fuentes DISTINTAS, no menciones: cuarenta correos del mismo boletin son una sola
     # opinion repetida, y el consenso mide cuanta gente distinta lo dice.
     fuentes_distintas = {m["fuente"] for m in menciones if m.get("fuente")}
-    # El veredicto del motor tal como quedo guardado en la mencion. No se recalcula aqui:
-    # eso costaria una llamada a Finnhub por cada apertura de accion.
-    score = next((((m.get("inveria") or {}).get("score")) for m in menciones
-                  if (m.get("inveria") or {}).get("score") is not None), None)
+    # La elegibilidad estructural, de HOY. Antes aqui se leia un score guardado con la
+    # mencion, que podia tener semanas; la tendencia sale del historico diario cacheado y
+    # de fuente gratuita, asi que ademas cuesta menos que lo que sustituye.
+    estado_tendencia = await asyncio.to_thread(market_data.tendencia_de, sym)
 
     return {"symbol": sym, "n": len(menciones), "positivos": pos, "negativos": neg,
             "menciones": menciones[:20],
-            # Aditivo: nada de lo de arriba cambia.
-            "confluencia": confluencia_mod.evaluar(len(fuentes_distintas), pos, neg, score)}
+            "confluencia": confluencia_mod.evaluar(len(fuentes_distintas), pos, neg,
+                                                   estado_tendencia)}
 
 
 # ---------- Radar: inteligencia acumulada de todas las newsletters ----------
@@ -3402,34 +3402,45 @@ async def radar(days: int = 14, _user: str = Depends(auth.get_current_user)):
             "negativos": s["negativos"],
             "inveria": s.get("inveria"),
             "ultima": s["ultima"],
-            "confluencia": confluencia_mod.evaluar(
-                len(s["fuentes"]), s["positivos"], s["negativos"],
-                (s.get("inveria") or {}).get("score")),
+            # La confluencia se rellena despues, en bloque: hace falta la tendencia de
+            # cada simbolo y resolverlas de una en una dentro de este bucle serializaria
+            # 25 lecturas de historico.
+            "confluencia": None,
         })
     # Ordena por nº de fuentes distintas (consenso) y menciones.
     acciones.sort(key=lambda x: (x["n_fuentes"], x["menciones"]), reverse=True)
 
-    # Reconcilia el veredicto con el motor EN VIVO: el "inveria" guardado es una foto
-    # del día que llegó el email y puede estar rancio. NO bloqueamos la respuesta con
-    # esto: puntuar 25 tickers (quote+financials+consenso) tarda demasiado y el Radar
-    # deja de cargar. En su lugar: servimos al instante lo que haya en caché fresca y
-    # lanzamos el recálculo en SEGUNDO PLANO para que la próxima carga ya esté fresca.
-    top = acciones[:25]
-    faltan = []
-    for item in top:
-        fresh = _cache.get(f"radar_score_{item['ticker']}")
-        if fresh is not None:
-            item["inveria"] = fresh
-            item["inveria_actualizado"] = True
-            # La confluencia se calculo con el veredicto guardado, que puede ser de hace
-            # semanas. Si aqui llega uno fresco hay que rehacerla, o la respuesta saldria
-            # con un `inveria.score` y un `confluencia.score_motor` distintos — y encima
-            # el estado podria no corresponder a ninguno de los dos.
+    # La confluencia de TODAS las acciones que se devuelven, no solo de las 25 primeras.
+    #
+    # El limite de 25 pertenece al trabajo caro del Radar —refrescar el veredicto guardado
+    # con llamadas a Finnhub—, no a la presencia del campo en la respuesta. Calcularla
+    # solo para el top dejaba a los elementos 26 en adelante con `confluencia: None`, y
+    # como el componente hace `confluencia ? ... : null`, esas tarjetas perdian el chip
+    # sin que fallara nada: una degradacion silenciosa.
+    #
+    # La tendencia sale del historico diario, que `market_data.tendencia_de` ya cachea 15
+    # minutos y lee de fuente gratuita — no toca Finnhub. Se resuelven EN PARALELO sobre
+    # hilos: de una en una bloquearian la peticion aunque cada una acierte en cache.
+    if acciones:
+        tendencias = await asyncio.gather(*[
+            asyncio.to_thread(market_data.tendencia_de, item["ticker"]) for item in acciones
+        ], return_exceptions=True)
+        for item, tend in zip(acciones, tendencias):
+            # Un fallo suelto no puede tumbar el Radar entero: SIN_DATOS no autoriza
+            # nada y se lee como lo que es, «no se ha podido clasificar».
+            estado_t = tend if isinstance(tend, str) else "SIN_DATOS"
             item["confluencia"] = confluencia_mod.evaluar(
-                item["n_fuentes"], item["positivos"], item["negativos"],
-                (fresh or {}).get("score"))
-        else:
-            faltan.append(item["ticker"])
+                item["n_fuentes"], item["positivos"], item["negativos"], estado_t)
+
+    # El limite de 25 sigue aplicandose SOLO a lo que de verdad tiene que estar limitado:
+    # el refresco del veredicto guardado, que gasta cuota de Finnhub por simbolo.
+    top = acciones[:25]
+
+    # El refresco del veredicto guardado sigue en pie SIN LECTORES: la confluencia ya no
+    # lo usa y el Radar ya no lo pinta. Muere en el commit 2, junto con `_score_ticker`.
+    # Se deja intacto a propósito para no cruzar la frontera acordada entre commits.
+    faltan = [item["ticker"] for item in top
+              if _cache.get(f"radar_score_{item['ticker']}") is None]
 
     if faltan:
         async def _refresh_bg(tickers):
@@ -4851,26 +4862,28 @@ async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_PO
         tarjetas.append(hoy.tarjeta_nivel(c, zona, aviso=aviso, tiene_posicion=tiene,
                                           motor_con_datos=bool(dash)))
 
-    # 4 y 5 · Choque y coincidencia entre motor y fuentes.
-    for tk, f in fuentes.items():
-        dash = _dashboard_cacheado(tk)
-        zona = None
-        niveles = _niveles_del_motor(dash)
-        if niveles:
-            zona = max(niveles, key=lambda z: z.get("strength") or 0)
-        estado = hoy.confluencia(
-            f, f.get("inveria"),
-            distancia_nivel=(zona or {}).get("distance_pct"),
-            fuerza_nivel=(zona or {}).get("strength"),
-            motor_niveles_con_datos=bool(dash),
-        )
-        tiene = (posiciones.get(tk, {}).get("acciones") or 0) > 0
-        tarjetas.append(hoy.tarjeta_confluencia(
-            tk, f.get("nombre"), estado, f, f.get("inveria"),
-            distancia_nivel=(zona or {}).get("distance_pct"),
-            fuerza_nivel=(zona or {}).get("strength"),
-            tiene_posicion=tiene,
-        ))
+    # 4 y 5 · Choque y coincidencia entre las fuentes y la elegibilidad estructural.
+    # Una sola implementación, la de `confluencia.py`. La que vivía en `hoy.py` tenía
+    # estados distintos y los mismos umbrales de score duplicados: la misma acción podía
+    # salir en ACUERDO en el Radar y en «choque» aquí.
+    #
+    # Desaparece el cálculo de `zona`: solo existía para pasar distancia y fuerza del
+    # nivel, que es información de ENTRADA y no de confluencia.
+    if fuentes:
+        simbolos = list(fuentes)
+        tendencias_f = await asyncio.gather(*[
+            asyncio.to_thread(market_data.tendencia_de, tk) for tk in simbolos
+        ], return_exceptions=True)
+        for tk, tend in zip(simbolos, tendencias_f):
+            f = fuentes[tk]
+            estado_t = tend if isinstance(tend, str) else "SIN_DATOS"
+            estado = confluencia_mod.clasificar(
+                len(f.get("fuentes") or []), f.get("positivos") or 0,
+                f.get("negativos") or 0, estado_t)
+            tiene = (posiciones.get(tk, {}).get("acciones") or 0) > 0
+            tarjetas.append(hoy.tarjeta_confluencia(
+                tk, f.get("nombre"), estado, f, tiene_posicion=tiene,
+            ))
 
     # 6 · Resultados con posición abierta.
     proximos = []

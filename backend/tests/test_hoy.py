@@ -50,8 +50,7 @@ def test_toda_tarjeta_contesta_las_tres_preguntas():
                                             "distancia_pct": -2.1}}),
         hoy.tarjeta_resultados({"symbol": "NVDA", "date": "2026-08-12", "dias": 2},
                                posicion()),
-        hoy.tarjeta_confluencia("AMD", "AMD", "choque", fuentes(),
-                                {"score": 30, "verdict": "🔴 Tu motor la EVITA"}),
+        hoy.tarjeta_confluencia("AMD", "AMD", "CHOQUE", fuentes()),
     ]
     for t in tarjetas:
         assert t is not None
@@ -69,22 +68,23 @@ def test_cada_tarjeta_lleva_a_su_accion():
 def test_el_orden_pone_primero_lo_que_puede_costarte_dinero_hoy():
     tarjetas = [
         hoy.tarjeta_resultados({"symbol": "A", "dias": 1}, posicion()),
-        hoy.tarjeta_confluencia("B", "B", "acuerdo_alto", fuentes(), {"score": 70},
-                                distancia_nivel=-2, fuerza_nivel=70),
+        hoy.tarjeta_confluencia("B", "B", "ACUERDO", fuentes()),
         hoy.tarjeta_nivel(caliente("C"), zona()),
         hoy.tarjeta_alerta({"symbol": "D", "action": "COMPRA", "level_label": "nivel1",
                             "target": 100, "price": 100, "diff_pct": 0}),
         hoy.tarjeta_ruptura(entrada("E"), posicion(),
                             {"salida_10w": {"recien_perdida": True, "sma": 90,
                                             "distancia_pct": -3}}),
-        hoy.tarjeta_confluencia("F", "F", "choque", fuentes(),
-                                {"score": 25, "verdict": "🔴 evita"}),
+        hoy.tarjeta_confluencia("F", "F", "CHOQUE", fuentes()),
     ]
     orden = [t["symbol"] for t in hoy.ordenar_y_recortar(tarjetas, limite=10)]
     assert orden[0] == "E", "una ruptura con dinero dentro va primero"
     assert orden[1] == "D", "después la alerta que el usuario pidió"
     assert orden.index("C") < orden.index("F"), "un nivel cerca pesa más que un choque"
-    assert orden.index("F") < orden.index("B"), "el choque pesa más que el acuerdo"
+    # Retirado `acuerdo_alto`, todas las coincidencias caen a BASE["confluencia"] y el
+    # choque pasa a ir SIEMPRE por delante. Antes el +60 podía invertirlo; ese +60 lo
+    # justificaba información de zona que ya no forma parte de la confluencia.
+    assert orden.index("F") < orden.index("B"), "el choque pesa más que la coincidencia"
     assert orden[-1] == "A", "unos resultados a 1 día son lo menos urgente de la lista"
 
 
@@ -191,54 +191,55 @@ def test_sin_ruptura_reciente_no_hay_tarjeta():
     assert hoy.tarjeta_ruptura(entrada(), posicion(), {}) is None
 
 
-# ── Confluencia y divergencia ────────────────────────────────────────────────
-def test_choque_cuando_las_fuentes_empujan_y_el_motor_frena():
-    estado = hoy.confluencia(fuentes(positivos=3), {"score": 30, "verdict": "🔴 Tu motor la EVITA"})
-    assert estado == "choque"
+# ── Confluencia: ahora la clasifica `confluencia.py` ────────────────────────
+# Los tests de clasificación viven en `test_confluencia.py`. `hoy.py` ya no clasifica:
+# solo redacta la tarjeta a partir del estado que recibe. Aquí se prueba la redacción.
 
-
-def test_choque_tambien_en_el_sentido_contrario():
-    """Las fuentes desconfían y el motor puntúa alto. Igual de informativo."""
-    estado = hoy.confluencia(fuentes(positivos=0, negativos=3), {"score": 72, "verdict": "🟢"})
-    assert estado == "choque"
-
-
-def test_acuerdo_alto_exige_dos_fuentes_precio_en_zona_y_nivel_fuerte():
-    base = (fuentes(n=2), {"score": 70, "verdict": "🟢"})
-    assert hoy.confluencia(*base, distancia_nivel=-2, fuerza_nivel=70) == "acuerdo_alto"
-    # Una sola fuente no es consenso.
-    assert hoy.confluencia(fuentes(n=1), base[1], distancia_nivel=-2, fuerza_nivel=70) == "acuerdo"
-    # Lejos del nivel es una tesis, no una oportunidad de hoy.
-    assert hoy.confluencia(*base, distancia_nivel=-20, fuerza_nivel=70) == "acuerdo"
-    # Un nivel flojo no sostiene la máxima convicción.
-    assert hoy.confluencia(*base, distancia_nivel=-2, fuerza_nivel=20) == "acuerdo"
-
-
-def test_estados_parciales():
-    assert hoy.confluencia(fuentes(), None) == "solo_fuentes"
-    assert hoy.confluencia({}, {"score": 80}) == "solo_motor"
-    # Un motor tibio y sin menciones no es nada que contar.
-    assert hoy.confluencia({}, {"score": 50}) is None
-    assert hoy.confluencia({}, None) is None
+def test_solo_se_redactan_los_dos_estados_que_dicen_algo():
+    """NEUTRAL, MIXTO, INSUFICIENTE y SIN_FUENTES no llegan a la portada: un texto por
+    cada acción se convierte en ruido y entrena a no mirar cuando sí importa."""
+    for estado in ("NEUTRAL", "MIXTO", "INSUFICIENTE", "SIN_FUENTES", "acuerdo_alto", ""):
+        assert hoy.tarjeta_confluencia("X", "X", estado, fuentes()) is None, estado
 
 
 def test_el_choque_se_explica_con_las_dos_partes_enfrentadas():
-    t = hoy.tarjeta_confluencia("AMD", "AMD", "choque", fuentes(menciones=4, positivos=3, n=2),
-                                {"score": 30, "verdict": "🔴 Tu motor la EVITA"})
-    assert "empujan" in t["que_pasa"]
-    assert "4 menciones" in t["por_que"] and "30/100" in t["por_que"]
+    t = hoy.tarjeta_confluencia("AMD", "AMD", "CHOQUE",
+                                fuentes(menciones=4, positivos=3, n=2))
     assert t["tipo"] == "divergencia"
+    texto = t["que_pasa"] + t["por_que"]
+    assert "fuentes" in texto.lower()
+    assert "tendencia" in texto.lower()
 
 
-def test_el_acuerdo_sobre_algo_que_ya_tienes_no_sube():
-    """Coincidir sobre una posición abierta no es una decisión pendiente."""
-    t = hoy.tarjeta_confluencia("AMD", "AMD", "acuerdo_alto", fuentes(), {"score": 70},
-                                distancia_nivel=-2, fuerza_nivel=70, tiene_posicion=True)
-    assert t is None
-    # Pero un CHOQUE sobre algo que tienes sí importa, y mucho.
-    t2 = hoy.tarjeta_confluencia("AMD", "AMD", "choque", fuentes(),
-                                 {"score": 25, "verdict": "🔴"}, tiene_posicion=True)
-    assert t2 is not None
+def test_el_choque_en_sentido_contrario_lo_dice_al_reves():
+    t = hoy.tarjeta_confluencia("AMD", "AMD", "CHOQUE",
+                                fuentes(menciones=4, positivos=0, negativos=3, n=2))
+    assert "desconfían" in t["que_pasa"]
+
+
+def test_la_coincidencia_no_habla_de_zona_ni_de_entrada():
+    """`acuerdo_alto` decía «y el precio está en zona». Eso es información de ENTRADA y
+    se retiró de la confluencia; el texto no puede seguir insinuándolo."""
+    t = hoy.tarjeta_confluencia("X", "X", "ACUERDO", fuentes())
+    todo = (t["que_pasa"] + t["por_que"] + t["que_vigilar"]).lower()
+    for prohibido in ("en zona", "fuerza", "/100", "stop", "objetivo"):
+        assert prohibido not in todo, prohibido
+
+
+def test_la_coincidencia_sobre_algo_que_ya_tienes_no_sube():
+    """Sobre lo que ya tienes, coincidir no es una decisión pendiente. El choque sí sube:
+    ahí sigue habiendo algo que resolver."""
+    assert hoy.tarjeta_confluencia("AMD", "AMD", "ACUERDO", fuentes(),
+                                   tiene_posicion=True) is None
+    assert hoy.tarjeta_confluencia("AMD", "AMD", "CHOQUE", fuentes(),
+                                   tiene_posicion=True) is not None
+
+
+def test_la_coincidencia_ya_no_recibe_veredicto_ni_niveles():
+    """La firma es la garantía de que la confluencia no puede volver a mezclar zona."""
+    import inspect
+    params = set(inspect.signature(hoy.tarjeta_confluencia).parameters)
+    assert params == {"symbol", "nombre", "estado", "fuentes", "tiene_posicion"}
 
 
 # ── La alerta se explica como alerta ─────────────────────────────────────────
@@ -267,42 +268,6 @@ def test_la_tarjeta_de_alerta_no_habla_del_motor():
                             "target": 10.0, "price": 10.0, "diff_pct": 0.0})
     texto = f"{t['que_pasa']} {t['por_que']} {t['que_vigilar']}"
     assert "motor" not in texto.lower()
-
-
-# ── Sin degradación silenciosa de la convicción ──────────────────────────────
-def test_sin_datos_de_niveles_el_acuerdo_no_degrada_en_silencio():
-    """Antes devolvía «acuerdo» a secas: el usuario veía una convicción menor sin que
-    nada dijera que faltaba un dato para poder calcularla."""
-    estado = hoy.confluencia(fuentes(n=2), {"score": 70, "verdict": "🟢"},
-                             motor_niveles_con_datos=False)
-    assert estado == "acuerdo_sin_niveles"
-
-    t = hoy.tarjeta_confluencia("X", "X", estado, fuentes(n=2), {"score": 70})
-    assert "sin datos todavía" in t["por_que"]
-    assert "no se puede evaluar" in t["que_vigilar"]
-    assert t["datos"]["motor_niveles"] == "sin_datos"
-
-
-def test_con_datos_de_niveles_pero_lejos_si_es_un_acuerdo_normal():
-    """Aquí sí se sabe: hay datos y el precio no acompaña. No es lo mismo que no saber."""
-    estado = hoy.confluencia(fuentes(n=2), {"score": 70, "verdict": "🟢"},
-                             distancia_nivel=-20, fuerza_nivel=70,
-                             motor_niveles_con_datos=True)
-    assert estado == "acuerdo"
-
-
-def test_el_acuerdo_alto_sigue_necesitando_todo():
-    estado = hoy.confluencia(fuentes(n=2), {"score": 70, "verdict": "🟢"},
-                             distancia_nivel=-2, fuerza_nivel=70,
-                             motor_niveles_con_datos=True)
-    assert estado == "acuerdo_alto"
-
-
-def test_la_coincidencia_nombra_el_motor_de_oportunidades():
-    """Esta coincidencia sale de un score persistido en Mongo, no de la caché: no es
-    una suposición y conviene que el nombre lo deje claro."""
-    t = hoy.tarjeta_confluencia("X", "X", "acuerdo", fuentes(), {"score": 70})
-    assert "motor de oportunidades" in t["por_que"]
 
 
 # ── Línea de saludo ──────────────────────────────────────────────────────────

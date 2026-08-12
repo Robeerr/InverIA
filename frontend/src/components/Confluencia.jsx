@@ -1,7 +1,7 @@
 import React from "react";
 
 /**
- * El estado de confluencia entre tu motor y tus fuentes.
+ * El estado de confluencia entre tus fuentes y la elegibilidad estructural.
  *
  * Se pinta igual en los dos sitios donde aparece —el panel de fuentes de una acción y
  * las tarjetas del radar— para que el mismo estado no se lea de dos maneras. Toda la
@@ -15,6 +15,12 @@ import React from "react";
  * un chip gris que dijera «neutral» en cada tarjeta se convertiría en ruido de fondo —
  * exactamente lo que hace que se deje de mirar la señal cuando sí aparece.
  *
+ * QUÉ CAMBIÓ
+ *
+ * El cruce ya no es contra un score del motor con cortes en 65/45, sino contra la
+ * ELEGIBILIDAD estructural que decide `tendencia.py`. `INSUFICIENTE` pasa de significar
+ * «el motor no lo ha puntuado» a «no se puede clasificar la tendencia».
+ *
  * EL CHOQUE NO ES «MALO»
  *
  * Va en tono de aviso y no en el rojo de «baja», que en esta app significa que el precio
@@ -27,7 +33,7 @@ export const ESTILO = {
   ACUERDO:      { texto: "text-sube",   fondo: "bg-sube/10",   borde: "border-sube/30",   etiqueta: "Acuerdo" },
   CHOQUE:       { texto: "text-aviso",  fondo: "bg-aviso/10",  borde: "border-aviso/35",  etiqueta: "Choque" },
   MIXTO:        { texto: "text-tinta-2", fondo: "bg-linea/40", borde: "border-linea",     etiqueta: "Fuentes divididas" },
-  INSUFICIENTE: { texto: "text-tinta-3", fondo: "bg-linea/30", borde: "border-linea",     etiqueta: "Sin puntuar" },
+  INSUFICIENTE: { texto: "text-tinta-3", fondo: "bg-linea/30", borde: "border-linea",     etiqueta: "Sin tendencia" },
   NEUTRAL:      null,
   SIN_FUENTES:  null,
 };
@@ -62,7 +68,7 @@ export default function Confluencia({ confluencia, compacto = false, className =
           {estilo.etiqueta}
         </span>
         <span className="text-[9.5px] font-mono uppercase tracking-wider text-tinta-3">
-          motor ↔ fuentes
+          tendencia ↔ fuentes
         </span>
       </div>
       {confluencia.texto && (

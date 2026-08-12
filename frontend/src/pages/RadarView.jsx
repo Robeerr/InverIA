@@ -4,30 +4,7 @@ import { toast } from "sonner";
 import { api } from "../lib/api";
 import Confluencia from "../components/Confluencia";
 
-// Color del veredicto del motor sobre cada acción.
-//
-// Devuelve TRIPLETAS RGB y no colores cerrados porque el color se compone luego con
-// tres opacidades distintas (fondo, texto y borde de la etiqueta). La forma anterior
-// —hex y sufijos tipo `${c}18`— tenía dos problemas: solo funciona con hex, y al ir
-// en un estilo EN LÍNEA el remapeo de oscuro no la alcanzaba nunca, así que los
-// veredictos se pintaban con los colores del tema claro sobre la página oscura.
-//
-// EXCEPCIÓN ANOTADA · «Floja» va con su tripleta literal (#c9843a). Es un cuarto
-// peldaño de la escala y la paleta semántica solo tiene tres colores; con `aviso`
-// se confundiría con «Neutral». Arrastra un defecto preexistente: 3,07:1 sobre el
-// blanco de claro, por debajo del 4,5:1 de un texto. Pide un token propio, que no
-// toca crear en esta tanda.
-function verdictStyle(inv) {
-  const v = inv?.verdict || "";
-  if (v.startsWith("🟢")) return { c: "var(--iv-sube)", short: "Coincide" };
-  if (v.startsWith("🔴")) return { c: "var(--iv-baja)", short: "Evítala" };
-  if (v.startsWith("🟡")) return { c: "var(--iv-aviso)", short: "Neutral" };
-  if (v.startsWith("🟠")) return { c: "201 132 58", short: "Floja" };
-  return null;
-}
-
 function StockCard({ row, onPick }) {
-  const vs = verdictStyle(row.inveria);
   return (
     <div
       onClick={() => onPick(row.ticker)}
@@ -39,18 +16,11 @@ function StockCard({ row, onPick }) {
           <p className="font-mono font-bold text-base text-tinta">{row.ticker}</p>
           {row.nombre && <p className="text-[10px] text-tinta-3 truncate max-w-[150px]">{row.nombre}</p>}
         </div>
-        {vs && (
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 flex items-center gap-1"
-            style={{ background: `rgb(${vs.c} / 0.09)`, color: `rgb(${vs.c})`, border: `1px solid rgb(${vs.c} / 0.25)` }}
-            title={row.inveria_actualizado ? "Veredicto recalculado en vivo con el motor" : "Veredicto del día de la mención"}>
-            {row.inveria_actualizado && <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: `rgb(${vs.c})` }} />}
-            {vs.short}{row.inveria?.score != null ? ` ${row.inveria.score}` : ""}
-          </span>
-        )}
       </div>
 
-      {/* El cruce motor ↔ fuentes. Va antes del recuento porque es la conclusión de
-          juntar las dos cosas que la tarjeta ya enseña por separado. */}
+      {/* El cruce fuentes ↔ elegibilidad. Va arriba porque, retirado el chip de
+          veredicto del motor, es lo único que cruza las dos opiniones: el resto de la
+          tarjeta son datos de las fuentes por separado. */}
       <Confluencia confluencia={row.confluencia} compacto className="mb-1.5" />
 
       {/* Cuántas fuentes lo mencionan = fuerza del consenso */}

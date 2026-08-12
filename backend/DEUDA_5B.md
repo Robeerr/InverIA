@@ -60,10 +60,22 @@ mismos dos números. Se calibraron sobre un score que mezcla crecimiento, valora
 punto de entrada, consenso, calidad y momentum — es decir, sobre un número sin una
 pregunta detrás.
 
-**Decidido para 5b:** confluencia pasa a cruzar **fuentes × elegibilidad estructural**,
-no fuentes × score. Es la única opción que no exige un umbral nuevo, y por tanto la
-única que puede entrar sin backtest. Los 65/45 desaparecen; no se reasignan a otro
-número.
+**Hecho en el commit 1 de confluencia.** Cruza **fuentes × elegibilidad estructural**.
+Los 65/45 desaparecen sin sustituto y el concepto de «MOTOR» se elimina, no se renombra.
+Se retiró además la SEGUNDA implementación que vivía en `hoy.py` con estados propios y
+los mismos umbrales duplicados.
+
+**Pendiente sin herramienta: medir `MIN_FUENTES = 2`.** Es el único parámetro heredado
+que sobrevive en `confluencia.py`. Cuenta opiniones independientes y no puntos de un
+score, así que su significado no dependía de lo retirado — pero nadie ha comprobado que
+2 discrimine mejor que 1. `inspeccion_confluencia.py`, que era la herramienta de
+medición, se ha eliminado en ese mismo commit: existía para barrer cortes del eje del
+score, y ese eje ya no existe. **Medir este parámetro exige construir una herramienta
+nueva, y no se ha hecho.**
+
+**Perdido a propósito:** `acuerdo_alto` en la portada, con su +60 de urgencia. Combinaba
+fuentes con «el precio está a menos del 5% de un nivel de fuerza ≥55», que es información
+de ENTRADA. Su dueño legítimo es la capa de decisión de entrada, que aún no existe.
 
 ---
 
