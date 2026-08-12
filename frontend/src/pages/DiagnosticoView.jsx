@@ -47,16 +47,16 @@ function VelocidadWeb() {
   };
 
   return (
-    <section className="card-flat p-5">
-      <h2 className="font-heading font-semibold text-lg text-[#0e1f1a]">Velocidad de la web</h2>
-      <p className="text-xs text-[#5c6b66] mt-1 mb-3">
+    <section className="iv-panel p-5">
+      <h2 className="font-heading font-semibold text-lg text-tinta">Velocidad de la web</h2>
+      <p className="text-xs text-tinta-3 mt-1 mb-3">
         Lo mide tu navegador, en tu conexión. <b>Mide lo que se haya cargado en ESTA visita</b>,
         así que para ver el peso del Dashboard: entra en el Dashboard, abre una acción, y
         luego ven aquí <b>sin recargar</b> (por el menú) y pulsa Medir. Si recargas estando
         en esta página solo medirás esta página, que es de las ligeras.
       </p>
       <button onClick={medir}
-              className="bg-[#1a3a32] text-[#f5f3ef] rounded px-4 py-1.5 text-sm font-semibold">
+              className="bg-marca text-marca-tinta rounded px-4 py-1.5 text-sm font-semibold">
         Medir esta página
       </button>
       {d && (
@@ -66,13 +66,13 @@ function VelocidadWeb() {
             {d.cargaMs != null && <> · carga total <b className="font-mono">{d.cargaMs} ms</b></>}
           </p>
           <table className="w-full text-xs">
-            <thead><tr className="text-left text-[#5c6b66] border-b border-[#e5e0d8]">
+            <thead><tr className="text-left text-tinta-3 border-b border-linea">
               <th className="py-1">Tipo</th><th className="text-right">Ficheros</th>
               <th className="text-right">KB</th><th className="text-right">El más lento (ms)</th>
             </tr></thead>
             <tbody>
               {d.porTipo.map(([t, v]) => (
-                <tr key={t} className="border-b border-[#f0ebe1]">
+                <tr key={t} className="border-b border-linea/60">
                   <td className="py-1">{t}</td>
                   <td className="text-right font-mono">{v.n}</td>
                   <td className="text-right font-mono font-semibold">{Math.round(v.kb)}</td>
@@ -81,7 +81,7 @@ function VelocidadWeb() {
               ))}
             </tbody>
           </table>
-          <p className="text-[11px] text-[#5c6b66] mt-2 leading-snug">
+          <p className="text-[11px] text-tinta-3 mt-2 leading-snug">
             Referencia: por debajo de 1.000 KB de JavaScript es sano; por encima de 2.000 KB
             la culpa de la lentitud es del tamaño. Si sale 0 KB, vino todo de caché: recarga
             con Ctrl+Shift+R y vuelve a medir.
@@ -136,9 +136,9 @@ function MantenimientoCerebro() {
   };
 
   return (
-    <section className="card-flat p-4">
-      <h2 className="font-heading font-semibold text-lg text-[#0e1f1a] mb-1">Mantenimiento del Cerebro</h2>
-      <p className="text-xs text-[#5c6b66] mb-3">
+    <section className="iv-panel p-4">
+      <h2 className="font-heading font-semibold text-lg text-tinta mb-1">Mantenimiento del Cerebro</h2>
+      <p className="text-xs text-tinta-3 mb-3">
         Antes se lanzaban desde un enlace con el secreto en la URL. Ahora usan tu sesión.
       </p>
       <div className="flex flex-wrap gap-2">
@@ -147,17 +147,17 @@ function MantenimientoCerebro() {
             key={a.id}
             onClick={() => lanzar(a)}
             disabled={ocupada !== null}
-            className="px-3 py-1.5 rounded border border-[#e5e0d8] text-xs font-mono text-[#1a3a32] disabled:opacity-50"
+            className="px-3 py-1.5 rounded border border-linea text-xs font-mono text-marca disabled:opacity-50"
           >
             {ocupada === a.id ? "Ejecutando…" : a.texto}
           </button>
         ))}
       </div>
-      {fallo && <p className="text-xs text-[#d85c41] mt-3">{fallo}</p>}
+      {fallo && <p className="text-xs text-baja mt-3">{fallo}</p>}
       {resultado && (
         <div className="mt-3">
-          <p className="text-xs text-[#5c6b66] mb-1">{resultado.accion}</p>
-          <pre className="text-[11px] bg-[#f5f3ef] p-2 rounded overflow-x-auto max-h-64">
+          <p className="text-xs text-tinta-3 mb-1">{resultado.accion}</p>
+          <pre className="text-[11px] bg-fondo p-2 rounded overflow-x-auto max-h-64">
             {JSON.stringify(resultado.datos, null, 2)}
           </pre>
         </div>
@@ -184,13 +184,13 @@ export default function DiagnosticoView() {
     finally { setCargando(null); }
   };
 
-  const tono = (v) => v === "rápido" ? "text-[#4a7c59]" : v === "LENTO" ? "text-[#d85c41]" : "text-[#c9a14a]";
+  const tono = (v) => v === "rápido" ? "text-sube" : v === "LENTO" ? "text-baja" : "text-aviso";
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-heading font-bold text-2xl text-[#0e1f1a]">Diagnóstico</h1>
-        <p className="text-sm text-[#5c6b66] mt-1">
+        <h1 className="font-heading font-bold text-2xl text-tinta">Diagnóstico</h1>
+        <p className="text-sm text-tinta-3 mt-1">
           Mide de dónde viene la lentitud y contrasta la idea del RSI con datos reales.
         </p>
       </div>
@@ -198,18 +198,18 @@ export default function DiagnosticoView() {
       <VelocidadWeb />
 
       {/* ── Velocidad de carga ── */}
-      <section className="card-flat p-5">
-        <h2 className="font-heading font-semibold text-lg text-[#0e1f1a]">Velocidad de carga</h2>
-        <p className="text-xs text-[#5c6b66] mt-1 mb-3">
+      <section className="iv-panel p-5">
+        <h2 className="font-heading font-semibold text-lg text-tinta">Velocidad de carga</h2>
+        <p className="text-xs text-tinta-3 mt-1 mb-3">
           Cronometra cada fuente por separado, sin caché: es el peor caso, el de abrir un
           ticker por primera vez.
         </p>
         <div className="flex gap-2 mb-3">
           <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())}
-                 className="border border-[#e5e0d8] rounded px-2 py-1.5 font-mono text-sm w-28" />
+                 className="border border-linea rounded px-2 py-1.5 font-mono text-sm w-28" />
           <button onClick={() => pedir(`/diagnostico/carga/${ticker}`, setCarga, "carga")}
                   disabled={cargando === "carga"}
-                  className="bg-[#1a3a32] text-[#f5f3ef] rounded px-4 py-1.5 text-sm font-semibold disabled:opacity-60">
+                  className="bg-marca text-marca-tinta rounded px-4 py-1.5 text-sm font-semibold disabled:opacity-60">
             {cargando === "carga" ? "Midiendo…" : "Medir"}
           </button>
         </div>
@@ -220,8 +220,8 @@ export default function DiagnosticoView() {
                 leerlo como si fuera el tiempo de carga lleva a la conclusión contraria:
                 todo lo que consiste en dejar de repetir trabajo es invisible ahí. */}
             {carga.experiencia_real && (
-              <div className="mb-3 p-3 rounded-md border border-[#e5e0d8] bg-[#faf8f4]">
-                <p className="text-[10px] uppercase tracking-[0.15em] text-[#5c6b66] font-mono mb-1">
+              <div className="mb-3 p-3 rounded-md border border-linea bg-superficie-alt">
+                <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-1">
                   Lo que tardas tú al elegir esta acción
                 </p>
                 <p className="text-sm">
@@ -233,7 +233,7 @@ export default function DiagnosticoView() {
                         : carga.experiencia_real.ms < 1500 ? "rápido" : "lento"}
                   </span>
                 </p>
-                <p className="text-[11px] text-[#5c6b66] mt-1">{carga.experiencia_real.nota}</p>
+                <p className="text-[11px] text-tinta-3 mt-1">{carga.experiencia_real.nota}</p>
               </div>
             )}
             <p className="text-sm mb-2">
@@ -241,32 +241,32 @@ export default function DiagnosticoView() {
               <span className={`font-semibold ${tono(carga.veredicto)}`}>· {carga.veredicto}</span>
             </p>
             <table className="w-full text-xs">
-              <thead><tr className="text-left text-[#5c6b66] border-b border-[#e5e0d8]">
+              <thead><tr className="text-left text-tinta-3 border-b border-linea">
                 <th className="py-1">Fuente</th><th className="text-right">ms</th><th className="pl-3">Estado</th>
               </tr></thead>
               <tbody>
                 {carga.por_fuente.map((f) => (
-                  <tr key={f.fuente} className="border-b border-[#f0ebe1]">
+                  <tr key={f.fuente} className="border-b border-linea/60">
                     <td className="py-1">{f.fuente}</td>
                     <td className="text-right font-mono font-semibold">{f.ms}</td>
-                    <td className="pl-3 text-[#5c6b66]">{f.estado}{f.detalle ? ` · ${f.detalle}` : ""}</td>
+                    <td className="pl-3 text-tinta-3">{f.estado}{f.detalle ? ` · ${f.detalle}` : ""}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
             {carga.desglose_cotizacion && (
               <div className="mt-4">
-                <p className="text-xs font-semibold text-[#0e1f1a] mb-1">
+                <p className="text-xs font-semibold text-tinta mb-1">
                   Dentro de la cotización (la lenta)
-                  <span className="font-normal text-[#5c6b66]"> · {carga.desglose_cotizacion.rama}</span>
+                  <span className="font-normal text-tinta-3"> · {carga.desglose_cotizacion.rama}</span>
                 </p>
                 <table className="w-full text-xs">
                   <tbody>
                     {carga.desglose_cotizacion.fases.map((f) => (
-                      <tr key={f.fase} className="border-b border-[#f0ebe1]">
+                      <tr key={f.fase} className="border-b border-linea/60">
                         <td className="py-1">{f.fase}</td>
                         <td className="text-right font-mono font-semibold w-16">{f.ms}</td>
-                        <td className="pl-3 text-[#5c6b66]">{f.estado}</td>
+                        <td className="pl-3 text-tinta-3">{f.estado}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -275,17 +275,17 @@ export default function DiagnosticoView() {
             )}
             {carga.paneles_al_cambiar_de_accion && (
               <div className="mt-4">
-                <p className="text-xs font-semibold text-[#0e1f1a] mb-1">
+                <p className="text-xs font-semibold text-tinta mb-1">
                   Paneles que se cargan solos al cambiar de acción
-                  <span className="font-normal text-[#5c6b66]"> · suman {carga.total_paneles_ms} ms</span>
+                  <span className="font-normal text-tinta-3"> · suman {carga.total_paneles_ms} ms</span>
                 </p>
                 <table className="w-full text-xs">
                   <tbody>
                     {carga.paneles_al_cambiar_de_accion.map((f) => (
-                      <tr key={f.fuente} className="border-b border-[#f0ebe1]">
+                      <tr key={f.fuente} className="border-b border-linea/60">
                         <td className="py-1">{f.fuente}</td>
                         <td className="text-right font-mono font-semibold w-16">{f.ms}</td>
-                        <td className="pl-3 text-[#5c6b66]">{f.estado}</td>
+                        <td className="pl-3 text-tinta-3">{f.estado}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -293,7 +293,7 @@ export default function DiagnosticoView() {
               </div>
             )}
             {carga.cuota_finnhub && (
-              <p className={`text-xs mt-2 ${carga.cuota_finnhub.saturado ? "text-[#d85c41] font-semibold" : "text-[#5c6b66]"}`}>
+              <p className={`text-xs mt-2 ${carga.cuota_finnhub.saturado ? "text-baja font-semibold" : "text-tinta-3"}`}>
                 Cuota de datos: {carga.cuota_finnhub.usadas_ultimo_minuto} de{" "}
                 {carga.cuota_finnhub.tope_total} en el último minuto ·{" "}
                 <b>{carga.cuota_finnhub.libres_para_ti} libres</b> para navegar
@@ -309,53 +309,53 @@ export default function DiagnosticoView() {
       </section>
 
       {/* ── Estudio del RSI ── */}
-      <section className="card-flat p-5">
-        <h2 className="font-heading font-semibold text-lg text-[#0e1f1a]">
+      <section className="iv-panel p-5">
+        <h2 className="font-heading font-semibold text-lg text-tinta">
           ¿Sube siempre el S&amp;P tras un RSI por debajo de 30?
         </h2>
-        <p className="text-xs text-[#5c6b66] mt-1 mb-3">
+        <p className="text-xs text-tinta-3 mt-1 mb-3">
           Con datos hasta hoy. Compara con comprar un día cualquiera: si el índice sube el
           70% de las veces igualmente, un 70% tras la señal no demuestra nada.
         </p>
         <button onClick={() => pedir("/estudio/rsi-sobreventa", setEstudio, "estudio")}
                 disabled={cargando === "estudio"}
-                className="bg-[#1a3a32] text-[#f5f3ef] rounded px-4 py-1.5 text-sm font-semibold disabled:opacity-60">
+                className="bg-marca text-marca-tinta rounded px-4 py-1.5 text-sm font-semibold disabled:opacity-60">
           {cargando === "estudio" ? "Calculando… (tarda unos segundos)" : "Calcular"}
         </button>
         {estudio && !estudio.error && (
           <div className="mt-3">
-            <p className="text-xs text-[#5c6b66] mb-2">
+            <p className="text-xs text-tinta-3 mb-2">
               {estudio.desde} → {estudio.hasta} · {estudio.episodios} episodios
             </p>
             <table className="w-full text-xs">
-              <thead><tr className="text-left text-[#5c6b66] border-b border-[#e5e0d8]">
+              <thead><tr className="text-left text-tinta-3 border-b border-linea">
                 <th className="py-1">Horizonte</th><th className="text-right">Tras RSI&lt;30</th>
                 <th className="text-right">Día cualquiera</th><th className="text-right">Sobre SMA200</th>
                 <th className="text-right">Peor caso</th>
               </tr></thead>
               <tbody>
                 {Object.keys(estudio.tras_sobreventa).map((h) => (
-                  <tr key={h} className="border-b border-[#f0ebe1]">
+                  <tr key={h} className="border-b border-linea/60">
                     <td className="py-1">{h}</td>
                     <td className="text-right font-mono font-semibold">{estudio.tras_sobreventa[h].subio_pct}%</td>
-                    <td className="text-right font-mono text-[#5c6b66]">{estudio.dia_cualquiera[h]?.subio_pct}%</td>
-                    <td className="text-right font-mono text-[#4a7c59]">{estudio.sobre_sma200[h]?.subio_pct ?? "—"}%</td>
-                    <td className="text-right font-mono text-[#d85c41]">{estudio.tras_sobreventa[h].peor}%</td>
+                    <td className="text-right font-mono text-tinta-3">{estudio.dia_cualquiera[h]?.subio_pct}%</td>
+                    <td className="text-right font-mono text-sube">{estudio.sobre_sma200[h]?.subio_pct ?? "—"}%</td>
+                    <td className="text-right font-mono text-baja">{estudio.tras_sobreventa[h].peor}%</td>
                   </tr>
                 ))}
               </tbody>
             </table>
             {estudio.aviso_independencia && (
-              <p className="text-[11px] text-[#5c6b66] mt-2 leading-snug">{estudio.aviso_independencia}</p>
+              <p className="text-[11px] text-tinta-3 mt-2 leading-snug">{estudio.aviso_independencia}</p>
             )}
           </div>
         )}
-        {estudio?.error && <p className="text-xs text-[#d85c41] mt-2">{estudio.error}</p>}
+        {estudio?.error && <p className="text-xs text-baja mt-2">{estudio.error}</p>}
       </section>
 
       <MantenimientoCerebro />
 
-      {error && <p className="text-sm text-[#d85c41]">{error}</p>}
+      {error && <p className="text-sm text-baja">{error}</p>}
     </div>
   );
 }
