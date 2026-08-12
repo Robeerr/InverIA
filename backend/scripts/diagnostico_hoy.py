@@ -21,8 +21,8 @@ Lo que sí responde, porque sale de Mongo —estado compartido entre procesos—
 
   1. Qué regla ha disparado y cuál no, con sus conteos.
   2. Qué tarjetas salen, con su tipo y su urgencia.
-  3. Si tus menciones tienen guardado el veredicto del motor de OPORTUNIDADES, que es
-     otra cosa distinta de la caché de niveles y sí es persistente.
+  3. Cuántos de tus tickers mencionados tienen tendencia clasificable y cuántos son
+     estructuralmente elegibles, que es lo que el cruce necesita de verdad.
 
 No imprime ninguna credencial ni ningún dato personal más allá de tus propios
 tickers y precios, que es exactamente lo que la pantalla ya te enseña.
@@ -66,7 +66,15 @@ async def main(simbolos):
                   for p in (resumen.get("posiciones") or [])}
     abiertas = {s: p for s, p in posiciones.items() if (p.get("acciones") or 0) > 0}
     fuentes = await server._fuentes_por_ticker(14)
-    con_veredicto = {t: f for t, f in fuentes.items() if f.get("inveria")}
+    # El cruce ya NO necesita un veredicto guardado: necesita la ELEGIBILIDAD, que decide
+    # `tendencia.py`. Contar veredictos aquí explicaría la ausencia de tarjetas con una
+    # causa equivocada, que es peor que no medir — manda a buscar donde no está.
+    import market_data
+    import tendencia as tendencia_mod
+    estados = {t: await asyncio.to_thread(market_data.tendencia_de, t) for t in fuentes}
+    clasificables = {t: e for t, e in estados.items() if e != "SIN_DATOS"}
+    elegibles = {t: e for t, e in estados.items()
+                 if tendencia_mod.hay_tendencia_valida(e)}
 
     cerca = [c for c in calientes
              if (c.get("pct_away") or 99) <= hoy_mod.UMBRAL_NIVEL_PCT]
@@ -82,10 +90,14 @@ async def main(simbolos):
     print(f"  Regla 3 · niveles a menos del {hoy_mod.UMBRAL_NIVEL_PCT}%                          : {len(cerca)}"
           f"  <-- las que ves")
     print(f"  Reglas 4 y 5 · tickers mencionados por tus fuentes (14 días)  : {len(fuentes)}")
-    print(f"               de esos, con veredicto del motor guardado        : {len(con_veredicto)}")
-    if not con_veredicto:
-        print("               sin veredicto no puede haber choque ni coincidencia:")
-        print("               el cruce necesita las DOS opiniones.")
+    print(f"               de esos, con tendencia clasificable                : {len(clasificables)}")
+    print(f"               de esos, estructuralmente elegibles (ALCISTA)      : {len(elegibles)}")
+    if not clasificables:
+        print("               sin tendencia clasificable no puede haber choque ni")
+        print("               coincidencia: el cruce necesita las DOS opiniones.")
+    elif not elegibles:
+        print("               ninguna es elegible: los cruces posibles son CHOQUE, no")
+        print("               coincidencia.")
     print(f"  Regla 6 · posiciones abiertas                                 : {len(abiertas)}")
 
     # ── 3 · Lo que devuelve /hoy, con su urgencia ────────────────────────────

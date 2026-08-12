@@ -46,6 +46,16 @@ a «convicción», que sobreviviría intacto a cualquier renombrado que hiciéra
 reemplazo. Los umbrales 65 y 80 se retiran sin sustituto; en régimen rojo solo se recorta
 `max_alerts`.
 
+**Y el productor, retirado en el commit 2 de confluencia.** `newsletter_ingest._score_ticker`
+generaba el veredicto 🟢🟡🟠🔴 a partir de `_potential_score` y lo guardaba en `inveria`;
+un refresco en segundo plano lo recalculaba cada 30 minutos para hasta 25 tickers. Tras la
+migración de confluencia nadie lo leía: tres llamadas a Finnhub por ticker para producir un
+campo muerto. Se van `_score_ticker`, `inveria`, `inveria_actualizado`, `radar_score_`,
+`_refresh_bg`, `faltan` y `top = acciones[:25]`, que solo existía para acotar el refresco.
+
+Los documentos históricos de Mongo conservan su `inveria` y NO se migran: describe algo que
+ya no existe y reescribirlo sería inventar su equivalente.
+
 Limitación conocida y aceptada: contar iguala catalizadores de frescura muy distinta —un
 *beat* de hasta tres meses vale lo mismo que una compra de directivos de esta semana—.
 Exigir frescura introduciría un número de días sin medir.

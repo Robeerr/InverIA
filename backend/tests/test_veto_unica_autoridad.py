@@ -101,10 +101,22 @@ def test_nadie_inspecciona_momentum_label_para_decidir():
 
 # ── Y `tendencia.py` sí ──────────────────────────────────────────────────────
 
-def test_los_dos_consumidores_migrados_preguntan_a_tendencia():
-    for nombre in ("daily_analyst.py", "newsletter_ingest.py"):
-        codigo = _codigo(nombre)
-        assert "hay_tendencia_valida" in codigo, nombre
+def test_el_consumidor_que_queda_pregunta_a_tendencia():
+    """Eran dos. `newsletter_ingest` ya no pregunta nada porque ya no emite veredicto:
+    `_score_ticker` se retiró entero al quedarse sin lectores. Que no consulte la
+    tendencia dejó de ser un defecto y pasó a ser la consecuencia de no decidir nada."""
+    assert "hay_tendencia_valida" in _codigo("daily_analyst.py")
+
+
+def test_newsletter_ingest_ya_no_emite_ningun_veredicto():
+    codigo = _codigo("newsletter_ingest.py")
+    for muerto in ("_score_ticker", "verdict", "_potential_score"):
+        assert muerto not in codigo, muerto
+    # `inveria` se comprueba como CAMPO, no como palabra: es también el nombre de la
+    # aplicación y aparece legítimamente en `getLogger("inveria.newsletter")`. Prohibir
+    # la palabra sería leer el nombre del proyecto en vez del código.
+    assert '"inveria"' not in codigo
+    assert "['inveria']" not in codigo
 
 
 def test_el_veto_lo_decide_el_estado_y_nada_mas():

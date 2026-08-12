@@ -45,9 +45,9 @@ SRC = _codigo()
 
 
 def _bloque_radar() -> str:
-    """Desde el orden de la lista hasta el refresco en segundo plano."""
+    """Desde el orden de la lista hasta el `return` del endpoint."""
     ini = SRC.index('acciones.sort(key=lambda x: (x["n_fuentes"]')
-    fin = SRC.index("if faltan:")
+    fin = SRC.index('"total_newsletters": len(docs),')
     return SRC[ini:fin]
 
 
@@ -69,26 +69,26 @@ def test_las_tendencias_se_piden_para_todas():
     assert "for item in top" not in trozo
 
 
-def test_el_limite_de_25_se_aplica_despues_y_solo_al_refresco():
-    """El recorte tiene que venir DESPUÉS del cálculo, o volvemos al mismo sitio."""
+def test_ya_no_queda_ningun_recorte_a_25():
+    """`top = acciones[:25]` existía SOLO para acotar el refresco del veredicto guardado,
+    que gastaba cuota de Finnhub. Retirado ese refresco en el commit 2, la variable se
+    quedó sin función: mantenerla habría sido código muerto, y aplicarla a la resolución
+    de tendencias habría reintroducido la regresión que este fichero existe para impedir.
+    """
     bloque = _bloque_radar()
-    assert bloque.index("zip(acciones, tendencias)") < bloque.index("top = acciones[:25]")
-
-
-def test_el_refresco_caro_sigue_limitado_a_25():
-    """Lo que gasta cuota de Finnhub no se desata: solo se movió lo que no cuesta nada."""
-    bloque = _bloque_radar()
-    assert "top = acciones[:25]" in bloque
-    assert 'for item in top' in bloque[bloque.index("top = acciones[:25]"):]
+    assert "acciones[:25]" not in bloque
+    assert "radar_score_" not in bloque
+    assert "_refresh_bg" not in bloque
 
 
 def test_la_respuesta_sigue_devolviendo_la_lista_entera():
-    """El contrato de la API no cambia: `acciones` completo, mismo orden."""
-    cola = SRC[SRC.index("if faltan:"):]
+    """El contrato de la API no cambia: `acciones` completo, mismo orden. Nunca estuvo
+    recortada, ni antes ni después."""
+    cola = SRC[SRC.index("for item, tend in zip(acciones, tendencias)"):]
     cola = cola[:cola.index("@api_router")] if "@api_router" in cola else cola
     assert '"acciones": acciones,' in cola
     assert '"acciones": top' not in cola
-    assert "acciones[:25]" not in cola.split('"acciones"')[1][:200]
+    assert "acciones[:25]" not in cola
 
 
 # ── La parte pura: emparejar y clasificar ────────────────────────────────────

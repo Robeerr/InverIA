@@ -3317,7 +3317,7 @@ async def fuentes_de_accion(symbol: str, days: int = 30,
             menciones.append({
                 "fuente": src, "accion": a.get("accion"), "sentimiento": sent or None,
                 "niveles": a.get("niveles"), "motivo": a.get("motivo"),
-                "fecha": d.get("received_at"), "inveria": a.get("inveria"),
+                "fecha": d.get("received_at"),
             })
     # Fuentes DISTINTAS, no menciones: cuarenta correos del mismo boletin son una sola
     # opinion repetida, y el consenso mide cuanta gente distinta lo dice.
@@ -3368,7 +3368,7 @@ async def radar(days: int = 14, _user: str = Depends(auth.get_current_user)):
             slot = by_ticker.setdefault(tk, {
                 "ticker": tk, "nombre": a.get("nombre") or "",
                 "menciones": 0, "fuentes": set(), "angulos": [],
-                "acciones_reco": set(), "inveria": a.get("inveria"), "ultima": when,
+                "acciones_reco": set(), "ultima": when,
                 "positivos": 0, "negativos": 0,
             })
             slot["menciones"] += 1
@@ -3383,8 +3383,6 @@ async def radar(days: int = 14, _user: str = Depends(auth.get_current_user)):
             elif sent == "NEGATIVO":
                 slot["negativos"] += 1
             # Guarda el veredicto del motor más reciente disponible.
-            if a.get("inveria") and not slot.get("inveria"):
-                slot["inveria"] = a["inveria"]
             if not slot["nombre"] and a.get("nombre"):
                 slot["nombre"] = a["nombre"]
 
@@ -3400,7 +3398,6 @@ async def radar(days: int = 14, _user: str = Depends(auth.get_current_user)):
             "recomendaciones": sorted(s["acciones_reco"]),
             "positivos": s["positivos"],
             "negativos": s["negativos"],
-            "inveria": s.get("inveria"),
             "ultima": s["ultima"],
             # La confluencia se rellena despues, en bloque: hace falta la tendencia de
             # cada simbolo y resolverlas de una en una dentro de este bucle serializaria
@@ -3431,34 +3428,6 @@ async def radar(days: int = 14, _user: str = Depends(auth.get_current_user)):
             estado_t = tend if isinstance(tend, str) else "SIN_DATOS"
             item["confluencia"] = confluencia_mod.evaluar(
                 item["n_fuentes"], item["positivos"], item["negativos"], estado_t)
-
-    # El limite de 25 sigue aplicandose SOLO a lo que de verdad tiene que estar limitado:
-    # el refresco del veredicto guardado, que gasta cuota de Finnhub por simbolo.
-    top = acciones[:25]
-
-    # El refresco del veredicto guardado sigue en pie SIN LECTORES: la confluencia ya no
-    # lo usa y el Radar ya no lo pinta. Muere en el commit 2, junto con `_score_ticker`.
-    # Se deja intacto a propósito para no cruzar la frontera acordada entre commits.
-    faltan = [item["ticker"] for item in top
-              if _cache.get(f"radar_score_{item['ticker']}") is None]
-
-    if faltan:
-        async def _refresh_bg(tickers):
-            sem = asyncio.Semaphore(5)
-
-            async def _one(tk):
-                async with sem:
-                    try:
-                        fresh = await newsletter_ingest._score_ticker(tk)
-                    except Exception:
-                        fresh = None
-                if fresh is not None:
-                    _cache.set(f"radar_score_{tk}", fresh, ttl=1800)  # 30 min
-            await asyncio.gather(*[_one(tk) for tk in tickers], return_exceptions=True)
-
-        task = asyncio.create_task(_refresh_bg(faltan))
-        _bg_tasks.add(task)
-        task.add_done_callback(_bg_tasks.discard)
 
     return {
         "days": days,
@@ -4604,7 +4573,7 @@ async def _fuentes_por_ticker(days: int = 14) -> dict:
                 continue
             slot = out.setdefault(tk, {
                 "menciones": 0, "positivos": 0, "negativos": 0,
-                "fuentes": set(), "inveria": None, "ultima": d.get("received_at"),
+                "fuentes": set(), "ultima": d.get("received_at"),
                 "nombre": a.get("nombre") or "",
             })
             slot["menciones"] += 1
@@ -4614,19 +4583,11 @@ async def _fuentes_por_ticker(days: int = 14) -> dict:
                 slot["positivos"] += 1
             elif sent == "NEGATIVO":
                 slot["negativos"] += 1
-            if a.get("inveria") and not slot["inveria"]:
-                slot["inveria"] = a["inveria"]
             if not slot["nombre"] and a.get("nombre"):
                 slot["nombre"] = a["nombre"]
 
     for tk, s in out.items():
         s["fuentes"] = sorted(s["fuentes"])
-        # El veredicto guardado es una foto del día que llegó el correo. Si el radar
-        # ya lo ha refrescado en segundo plano, mandamos el fresco — pero NUNCA se
-        # calcula aquí: puntuar 25 tickers tardaría más que toda la portada.
-        fresco = _cache.get(f"radar_score_{tk}")
-        if fresco is not None:
-            s["inveria"] = fresco
     return out
 
 

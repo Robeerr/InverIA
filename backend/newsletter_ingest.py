@@ -159,49 +159,6 @@ async def _extract(subject: str, text: str) -> dict:
                            cap, str(e)[:120])
     raise last_err if last_err else RuntimeError("extracción falló")
 
-
-async def _score_ticker(symbol: str):
-    """Cruza un ticker que menciona la newsletter con TU motor: calcula el score de
-    potencial y devuelve un veredicto (verde/amarillo/rojo). Así no te fías de lo que
-    diga la newsletter a ciegas, sino de si coincide con tus datos. None si no hay datos."""
-    import asyncio
-    import external_data
-    import market_data
-    import opportunities
-    import tendencia
-    try:
-        quote = await asyncio.to_thread(market_data.get_quote, symbol)
-        if not quote or not quote.get("price"):
-            return None
-        m = await asyncio.to_thread(external_data.finnhub_basic_financials, symbol) or {}
-        trends = await asyncio.to_thread(external_data.finnhub_recommendation_trends, symbol)
-        cons = external_data.aggregate_recommendation(trends)
-        price = quote.get("price")
-        high52 = quote.get("high_52w") or m.get("high_52w")
-        dist = ((price - high52) / high52 * 100) if (high52 and price) else None
-        pot, val_label, mom_label = opportunities._potential_score(
-            m.get("revenue_growth"), m.get("eps_growth"),
-            quote.get("pe_ratio") or m.get("pe_ratio"), dist,
-            cons.get("score") if cons else None,
-            m.get("return_26w"), m.get("return_52w"), m.get("rel_strength_52w"),
-        )
-        # El veto de tendencia lo decide `tendencia.py` y nadie más. Antes se leía del
-        # prefijo de `momentum_label`: si empezaba por «⚠», se evitaba. Un veto que
-        # dependía de un emoji, y duplicado respecto a la regla que ya tiene dueño.
-        estado_tendencia = await asyncio.to_thread(market_data.tendencia_de, symbol)
-        if not tendencia.hay_tendencia_valida(estado_tendencia):
-            verdict = "🔴 Tu motor la EVITA (no está en tendencia alcista)"
-        elif pot >= 65:
-            verdict = "🟢 Coincide con tu motor (score alto)"
-        elif pot >= 45:
-            verdict = "🟡 Neutral para tu motor"
-        else:
-            verdict = "🟠 Floja para tu motor (score bajo)"
-        return {"score": pot, "valuation": val_label, "momentum": mom_label, "verdict": verdict}
-    except Exception:
-        return None
-
-
 def _build_email_html(data: dict, subject: str) -> str:
     acciones = data.get("acciones") or []
     ideas = data.get("ideas_clave") or []
@@ -296,8 +253,6 @@ async def process_newsletter(db, subject: str, body_html: str, body_text: str = 
         _trace(subject=subject, sender=sender, stage="extract", ok=False, error=str(e)[:300])
         return {"ok": False, "error": f"extracción falló: {e}"}
 
-    # CRUCE CON TU MOTOR: cada acción mencionada se pasa por el score + guardián de
-    # tendencia, para que sepas si fiarte o no (verde/amarillo/rojo). Acotado a 6 tickers.
     acciones = data.get("acciones") or []
     # Red de seguridad: descarta patrocinadores/anuncios que la IA haya colado como acciones.
     filtradas = [a for a in acciones if not _is_sponsor(a)]
@@ -315,11 +270,6 @@ async def process_newsletter(db, subject: str, body_html: str, body_text: str = 
         t = (a.get("ticker") or "").strip().upper()
         if t:
             a["ticker"] = t
-    for a in acciones[:6]:
-        ticker = a.get("ticker") or ""
-        if ticker:
-            a["inveria"] = await _score_ticker(ticker)
-
     doc = {
         "subject": subject,
         "sender": sender,
@@ -364,10 +314,6 @@ async def store_extracted(db, fuente: str, data: dict, tipo: str, raw_text: str 
     import knowledge_base
     acciones = [a for a in (data.get("acciones") or []) if not _is_sponsor(a)]
     data["acciones"] = acciones
-    for a in acciones[:6]:
-        tk = (a.get("ticker") or "").strip().upper()
-        if tk:
-            a["inveria"] = await _score_ticker(tk)
     if acciones:
         try:
             await db.newsletter_summaries.insert_one({

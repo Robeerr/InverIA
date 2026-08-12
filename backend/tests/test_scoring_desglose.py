@@ -8,7 +8,7 @@ DOS COSAS PROTEGE ESTE FICHERO, Y LA SEGUNDA IMPORTA MAS
   1. Que el desglose CUADRE con el score. Un desglose que no reconstruya el numero es
      peor que ninguno: da una sensacion de transparencia que no se sostiene.
   2. Que el contrato viejo siga intacto. `_potential_score` la usan el screener, el
-     analista diario y `newsletter_ingest._score_ticker` — este ultimo alimenta la
+     analista diario — el consumidor de `newsletter_ingest` desaparecio al retirar
      confluencia, asi que romperlo se llevaria por delante algo ya aprobado.
 
 EL SCORE NO ES UNA SUMA
@@ -100,15 +100,6 @@ def test_la_firma_no_ha_cambiado():
                 "ret_52w", "rel_strength", "net_margin", "roe", "debt_to_equity"]
     assert list(inspect.signature(_potential_score).parameters) == esperada
     assert list(inspect.signature(_potential_score_detalle).parameters) == esperada
-
-
-def test_newsletter_ingest_lo_sigue_desempaquetando_igual():
-    """`_score_ticker` alimenta la confluencia aprobada. Se comprueba la FORMA de la
-    llamada, que es lo que se romperia con un cuarto elemento."""
-    ruta = os.path.join(os.path.dirname(__file__), "..", "newsletter_ingest.py")
-    with open(ruta, encoding="utf-8") as fh:
-        src = fh.read()
-    assert "pot, val_label, mom_label = opportunities._potential_score(" in src
 
 
 # ── 3 · Los componentes se portan ───────────────────────────────────────────
