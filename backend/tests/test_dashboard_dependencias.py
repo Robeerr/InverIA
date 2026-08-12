@@ -33,15 +33,22 @@ import server  # noqa: E402
 SYM = "TEST"
 
 
-def _velas(n=400, semilla=7):
-    """Serie OHLCV determinista y con forma realista.
+def _velas(n=400, semilla=7, deriva=0.15):
+    """Serie OHLCV determinista, con forma realista y EN TENDENCIA ALCISTA.
 
     Hace falta longitud de sobra: la SMA200 necesita 200 sesiones y la salida por
     media de 10 semanas otras 50. Con una serie corta, las tres claves saldrían
     vacías en los dos casos y el test pasaría sin comprobar nada.
+
+    La deriva subió de 0,05 a 0,15 cuando se añadió el veto de tendencia. Con la
+    anterior, la serie terminaba por debajo de su SMA200 —tendencia INDEFINIDA— y el
+    dashboard ocultaba las zonas de compra, con lo que `buy_levels` salía vacío en los
+    dos lados de la comparación y este fichero dejaba de medir nada. Lo cazó su propio
+    centinela, que para eso está. La serie tiene que ser alcista para que haya zonas
+    que comparar; qué pasa cuando NO lo es se prueba en `test_zonas_ocultas.py`.
     """
     rng = np.random.default_rng(semilla)
-    precio = 100 + np.cumsum(rng.normal(0.05, 1.2, n))
+    precio = 100 + np.cumsum(rng.normal(deriva, 1.2, n))
     precio = np.maximum(precio, 5.0)
     fechas = pd.bdate_range(end="2026-08-07", periods=n)
     return pd.DataFrame({
@@ -57,6 +64,17 @@ def _velas(n=400, semilla=7):
 DF = _velas()
 QUOTE = {"price": float(DF["Close"].iloc[-1]), "previous_close": float(DF["Close"].iloc[-2]),
          "change_percent": 0.8, "symbol": SYM, "name": "Test Corp"}
+
+
+def test_la_serie_de_pruebas_es_alcista():
+    """Precondición explícita, no implícita.
+
+    Si un día alguien cambia la semilla o la deriva y la serie deja de ser alcista, el
+    dashboard ocultará las zonas y los tests de este fichero fallarán con un «buy_levels
+    vacío» que no dice por qué. Este test falla ANTES y con el motivo escrito.
+    """
+    import tendencia
+    assert tendencia.desde_cierres(DF["Close"].tolist()) == "ALCISTA"
 
 # Lo que devolverían las cuatro fuentes caras cuando SÍ responden.
 NOTICIAS = [{"headline": "Titular de prueba", "datetime": 1_700_000_000, "url": "http://x"}]

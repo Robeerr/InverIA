@@ -48,6 +48,7 @@ import tesis
 import confluencia as confluencia_mod
 import mem
 import levels_engine
+import estado_accion
 import auth
 
 ROOT_DIR = Path(__file__).parent
@@ -1518,7 +1519,59 @@ MIN_RR = 2.0
 # por debajo del precio actual. Es el límite que ya pedía SYSTEM_PROMPT para el NIVEL 3
 # ("de -15% a -30%") y que el motor no aplicaba. Marca dónde acaba el stop, porque el stop
 # va por debajo de la zona más profunda del plan.
+#
+# PENDIENTE DE VALIDACIÓN, NO REGLA RESPALDADA. Este 30% no lo eligió nadie con datos:
+# viene del rango que pedía el prompt. Se queda intacto a propósito —cambiarlo por otro
+# número sería inventarlo dos veces— hasta que el experimento sobre el histórico diga
+# cuál es la profundidad de retroceso que de verdad aporta.
 MAX_PLAN_DEPTH = float(os.environ.get("MAX_PLAN_DEPTH", "0.30"))
+
+
+def _aplicar_estado_tendencia(payload: dict, precio, indicadores) -> dict:
+    """Añade el estado de la acción y OCULTA las zonas de compra si no hay tendencia.
+
+    Es una capa de PRESENTACIÓN, y solo eso. No cambia ni un número: `buy_levels` se ha
+    calculado igual que siempre y `key_levels.support` sigue intacto como información
+    técnica. Lo que se retira es su INTERPRETACIÓN como oportunidad de compra, que es lo
+    que un soporte nunca ha podido autorizar por sí solo.
+
+    Se aplica en los dos sitios que producen zonas —el ensamblado del dashboard y
+    /analyze— para que la respuesta no dependa de por dónde se haya entrado.
+
+    POR QUÉ SE OCULTAN AQUÍ Y NO SE DEJAN DE CALCULAR
+
+    Es tentador vaciar `buy_levels` antes y ahorrarse el cálculo. Sería un error en
+    /analyze: sin zonas deterministas, `_deterministic_levels` devuelve None, el flujo
+    cae al clásico y entonces LOS NÚMEROS LOS INVENTA EL MODELO. Ocultar una zona
+    calculada es seguro; no calcularla abre la puerta a una peor.
+    """
+    est = estado_accion.desde_indicadores(precio, indicadores)
+    payload["tendencia"] = est["tendencia"]
+    payload["estado"] = est["estado"]
+    payload["estado_motivo"] = est["motivo"]
+    if not est["zonas_visibles"]:
+        payload["buy_levels"] = []
+        payload["zonas_ocultas_por_tendencia"] = True
+    return payload
+
+
+def _ocultar_plan_de_entrada(analisis: dict) -> dict:
+    """Quita del análisis los campos que invitan a comprar, dejando el resto.
+
+    Solo para /analyze y solo cuando no hay tendencia. Se van la zona de entrada y el
+    plan escalonado; se quedan soportes, resistencias y el texto, que siguen siendo
+    lectura técnica válida sobre una acción que no se debe comprar todavía.
+
+    Los stops y objetivos se van con ellos: un stop sin entrada no protege nada y en
+    pantalla se lee como parte de un plan que ya no existe.
+    """
+    if not isinstance(analisis, dict):
+        return analisis
+    for campo in ("entry_zones", "entry_zone", "entry_avg", "plan_nota",
+                  "stop_losses", "stop_loss", "take_profits",
+                  "take_profit_1", "take_profit_2", "risk_reward_ratio", "rr_bajo"):
+        analisis.pop(campo, None)
+    return analisis
 
 
 def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_target) -> dict:
@@ -1995,6 +2048,15 @@ async def analyze(req: AnalyzeRequest, _user: str = Depends(auth.get_current_use
     }
     await db.analyses.insert_one(doc)
 
+    # Mismo estado y mismas reglas de visibilidad que en el dashboard. Se aplica DESPUÉS
+    # de que `_deterministic_levels` haya hecho su trabajo: así los números que se ocultan
+    # son los del motor y no los que habría inventado el modelo si le hubiéramos quitado
+    # las zonas de debajo antes de llamarlo.
+    respuesta = {"buy_levels": buy_levels or []}
+    _aplicar_estado_tendencia(respuesta, quote.get("price"), indicators_data)
+    if respuesta.get("zonas_ocultas_por_tendencia"):
+        _ocultar_plan_de_entrada(result)
+
     return {
         "symbol": symbol,
         "model": used_model,
@@ -2011,7 +2073,14 @@ async def analyze(req: AnalyzeRequest, _user: str = Depends(auth.get_current_use
         "insider": insider,
         "earnings_history": earnings_hist,
         "volume_profile": vp or None,
-        "buy_levels": buy_levels or [],
+        # Del `respuesta` de arriba, no de `buy_levels` a pelo: ahí es donde se ha
+        # decidido si las zonas se pueden enseñar. Leerlo dos veces de sitios distintos
+        # es como se acaba enviando una lista de zonas junto a un NO_COMPRAR.
+        "buy_levels": respuesta["buy_levels"],
+        "tendencia": respuesta["tendencia"],
+        "estado": respuesta["estado"],
+        "estado_motivo": respuesta["estado_motivo"],
+        "zonas_ocultas_por_tendencia": respuesta.get("zonas_ocultas_por_tendencia", False),
     }
 
 
@@ -2469,6 +2538,12 @@ async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
     #
     # Va antes del `set` a propósito: así viaja EN la respuesta cacheada y la página tiene
     # una explicación en frío, sin pulsar «Análisis completo IA» ni esperar.
+    # Estado de la acción y visibilidad de las zonas. Va ANTES de la tesis a propósito:
+    # la tesis se redacta sobre `result`, así que si las zonas se ocultaran después, la
+    # frase «la zona de compra más sólida es…» seguiría en pantalla señalando una lista
+    # que ya no está. Aplicado aquí, la tesis describe lo mismo que se ve.
+    _aplicar_estado_tendencia(result, quote.get("price"), indicators_data)
+
     try:
         result["tesis"] = tesis.redactar(result)
     except Exception:

@@ -12,6 +12,7 @@ import IndicatorsPanel, { FuerzaRelativa } from "../components/IndicatorsPanel";
 import TesisPanel from "../components/TesisPanel";
 import EstadoTecnico from "../components/EstadoTecnico";
 import TuPosicion from "../components/TuPosicion";
+import EstadoTendencia from "../components/EstadoTendencia";
 import TradingLevels from "../components/TradingLevels";
 import WhyMovingCard from "../components/WhyMovingCard";
 import BacktestCard from "../components/BacktestCard";
@@ -183,6 +184,12 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const news = datos?.news || [];
   const analystData = p.analystData || datos?.analyst || null;
   const buyLevels = p.buyLevels || datos?.buy_levels || null;
+  // Estado de tendencia: SIEMPRE del servidor, igual que la tesis. Es una decisión
+  // determinista del backend y no puede quedar pisada por el parche de la IA ni
+  // sobrevivir a un cambio de ticker.
+  const estado = p.estado || datos?.estado || null;
+  const estadoMotivo = p.estadoMotivo || datos?.estado_motivo || null;
+  const zonasOcultas = p.zonasOcultas ?? datos?.zonas_ocultas_por_tendencia ?? false;
   const volumeProfile = p.volumeProfile || datos?.volume_profile || null;
   const dataHealth = datos?.data_health || null;
   // Se lee siempre del servidor, incluso a null: si la acción anterior tenía Fuerza
@@ -261,6 +268,10 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       }
       if (res.volume_profile) nuevo.volumeProfile = res.volume_profile;
       if (res.buy_levels) nuevo.buyLevels = res.buy_levels;
+      // El estado viaja con el análisis: sin esto, pulsar «Ampliar con IA» sobre una
+      // acción bajista devolvería el panel de niveles que el dashboard ya había ocultado.
+      if (res.estado) { nuevo.estado = res.estado; nuevo.estadoMotivo = res.estado_motivo; }
+      if (res.zonas_ocultas_por_tendencia !== undefined) nuevo.zonasOcultas = res.zonas_ocultas_por_tendencia;
       // Una sola escritura: antes eran hasta siete setState seguidos, o sea siete pasadas
       // de render con el panel a medio rellenar.
       parchear(nuevo);
@@ -408,15 +419,25 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
           Sale de /signals, que ya estaba cargado y no se cruzaba con el ticker abierto. */}
       <TuPosicion signals={signals} symbol={symbol} quote={quote} />
 
-      {/* ══ 05 · Niveles ══ buy_levels es la autoridad única de zonas de compra. */}
-      <TradingLevels
-        quote={quote}
-        analysis={analysis}
-        analystConsensus={analystData?.consensus}
-        priceTarget={analystData?.price_target}
-        volumeProfile={volumeProfile}
-        buyLevels={buyLevels}
-      />
+      {/* ══ 05 · Niveles ══ buy_levels es la autoridad única de zonas de compra.
+          Sin tendencia alcista no se presentan: en su lugar va el motivo. Es un `o`, no
+          un `y` — enseñar las dos cosas sería contradecirse en la misma pantalla. */}
+      {zonasOcultas ? (
+        <EstadoTendencia
+          estado={estado}
+          motivo={estadoMotivo}
+          soportes={analysis?.key_levels?.support}
+        />
+      ) : (
+        <TradingLevels
+          quote={quote}
+          analysis={analysis}
+          analystConsensus={analystData?.consensus}
+          priceTarget={analystData?.price_target}
+          volumeProfile={volumeProfile}
+          buyLevels={buyLevels}
+        />
+      )}
 
       {/* ══ 06 · Gráfico ══ Pegado a Niveles porque dibuja lo mismo. */}
       <Suspense fallback={<HuecoGrafico />}>
