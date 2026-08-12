@@ -7,6 +7,7 @@ from datetime import datetime, timezone, timedelta
 import market_data
 import indicators as ind
 import external_data
+import separacion
 
 _log = logging.getLogger("inveria.opportunities")
 
@@ -566,6 +567,21 @@ async def _run_screener_scan():
                     "analyst_consensus": cons_label,
                     "consensus_score": round(cons_score, 1) if cons_score is not None else None,
                     "reason": reason,
+                    # ── 5a · La misma información, SEPARADA ──────────────────
+                    # Viaja junto al score viejo, sin sustituirlo y sin que la lea nadie
+                    # todavía. Cada bloque responde a UNA pregunta y no hay total: la
+                    # calidad no se puede sumar con la tendencia, y la valoración y el
+                    # consenso valen cero puntos.
+                    #
+                    # No hay `tendencia_score` a propósito: agregar sus insumos exige
+                    # pesos que no están medidos. Ver `separacion.py`.
+                    "separado": separacion.campos(
+                        rev_g=rev_g, eps_g=eps_g, pe=pe,
+                        cons_score=cons_score, cons_label=cons_label,
+                        ret_26w=ret_26w, ret_52w=ret_52w, rel_strength=rel_str,
+                        net_margin=m.get("net_margin"), roe=m.get("roe"),
+                        debt_to_equity=m.get("debt_to_equity"),
+                    ),
                 })
 
             # Ordena por SCORE DE POTENCIAL (mejores oportunidades arriba): combina

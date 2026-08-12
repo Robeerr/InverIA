@@ -1,0 +1,3302 @@
+[
+{
+"in": [
+12,
+60,
+-3,
+null,
+85,
+-10,
+40,
+15
+],
+"score": 32.3,
+"val": "sin beneficios (PER negativo)",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+35,
+10,
+null,
+-50,
+85,
+null,
+40,
+-20
+],
+"score": 37.2,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+80,
+60,
+-3,
+null,
+50,
+-10,
+40,
+-20
+],
+"score": 46.5,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+60,
+8,
+-3,
+85,
+20,
+-25,
+null
+],
+"score": 54.2,
+"val": "infravalorada (PEG<1)",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+12,
+60,
+-3,
+null,
+50,
+20,
+-5,
+15
+],
+"score": 32.5,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+null,
+-3,
+-3,
+null,
+-10,
+null,
+-20
+],
+"score": 30.0,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+10,
+25,
+-12,
+null,
+20,
+40,
+0
+],
+"score": 70.4,
+"val": "infravalorada (PEG<1)",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+0,
+null,
+8,
+-3,
+50,
+null,
+40,
+-20
+],
+"score": 12.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+null,
+-3,
+-50,
+null,
+null,
+-25,
+-20
+],
+"score": 4.1,
+"val": "sin beneficios (PER negativo)",
+"mom": "⚠ tendencia bajista y peor que el mercado"
+},
+{
+"in": [
+80,
+60,
+25,
+null,
+85,
+-10,
+40,
+null
+],
+"score": 78.3,
+"val": "infravalorada (PEG<1)",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+35,
+null,
+-3,
+-12,
+85,
+20,
+40,
+null
+],
+"score": 55.8,
+"val": "sin beneficios (PER negativo)",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+12,
+60,
+25,
+-3,
+50,
+-10,
+-5,
+15
+],
+"score": 40.5,
+"val": "valoración razonable",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+60,
+8,
+-3,
+50,
+20,
+40,
+15
+],
+"score": 74.0,
+"val": "infravalorada (PEG<1)",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+35,
+60,
+null,
+-50,
+50,
+null,
+40,
+null
+],
+"score": 37.0,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+80,
+60,
+8,
+null,
+85,
+20,
+null,
+null
+],
+"score": 88.3,
+"val": "infravalorada (PEG<1)",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+null,
+-3,
+-50,
+85,
+null,
+-5,
+-20
+],
+"score": 17.3,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+10,
+25,
+-12,
+85,
+-10,
+-5,
+null
+],
+"score": 30.7,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+60,
+null,
+-25,
+null,
+20,
+null,
+15
+],
+"score": 41.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+60,
+8,
+-25,
+null,
+null,
+-5,
+15
+],
+"score": 25.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+60,
+8,
+-50,
+50,
+-10,
+40,
+null
+],
+"score": 19.5,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+null,
+10,
+25,
+-3,
+null,
+20,
+-25,
+0
+],
+"score": 18.7,
+"val": "sin datos",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+35,
+null,
+90,
+null,
+null,
+-10,
+-25,
+15
+],
+"score": 19.5,
+"val": "algo cara",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+80,
+60,
+25,
+-25,
+50,
+-10,
+-25,
+null
+],
+"score": 58.1,
+"val": "infravalorada (PEG<1)",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+80,
+null,
+25,
+null,
+50,
+20,
+-25,
+-20
+],
+"score": 36.6,
+"val": "infravalorada (PEG<1)",
+"mom": "⚠ tendencia bajista y peor que el mercado"
+},
+{
+"in": [
+35,
+60,
+8,
+-25,
+85,
+null,
+-5,
+15
+],
+"score": 74.8,
+"val": "infravalorada (PEG<1)",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+null,
+25,
+-50,
+null,
+null,
+-5,
+null
+],
+"score": 7.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+10,
+90,
+null,
+85,
+20,
+40,
+0
+],
+"score": 48.2,
+"val": "algo cara",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+12,
+10,
+-3,
+null,
+null,
+20,
+-5,
+0
+],
+"score": 22.9,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+60,
+-3,
+-3,
+null,
+-10,
+-25,
+15
+],
+"score": 22.9,
+"val": "sin beneficios (PER negativo)",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+35,
+60,
+90,
+-12,
+50,
+20,
+-25,
+15
+],
+"score": 46.5,
+"val": "algo cara",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+80,
+10,
+8,
+-3,
+null,
+20,
+-5,
+-20
+],
+"score": 76.9,
+"val": "infravalorada (PEG<1)",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+60,
+-3,
+null,
+null,
+-10,
+-25,
+-20
+],
+"score": 18.7,
+"val": "sin beneficios (PER negativo)",
+"mom": "⚠ tendencia bajista y peor que el mercado"
+},
+{
+"in": [
+35,
+60,
+90,
+null,
+85,
+-10,
+-5,
+15
+],
+"score": 47.8,
+"val": "algo cara",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+60,
+90,
+-3,
+85,
+null,
+null,
+-20
+],
+"score": 34.3,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+60,
+-3,
+-25,
+50,
+20,
+-25,
+-20
+],
+"score": 29.1,
+"val": "sin beneficios (PER negativo)",
+"mom": "⚠ tendencia bajista y peor que el mercado"
+},
+{
+"in": [
+null,
+null,
+-3,
+-3,
+85,
+-10,
+-25,
+15
+],
+"score": 16.7,
+"val": "sin beneficios (PER negativo)",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+35,
+null,
+25,
+null,
+50,
+-10,
+null,
+15
+],
+"score": 44.0,
+"val": "infravalorada (PEG<1)",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+10,
+null,
+-25,
+85,
+null,
+-5,
+15
+],
+"score": 25.7,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+10,
+null,
+-12,
+null,
+null,
+40,
+0
+],
+"score": 20.9,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+null,
+null,
+25,
+-3,
+null,
+20,
+null,
+null
+],
+"score": 22.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+null,
+8,
+-3,
+50,
+20,
+null,
+-20
+],
+"score": 22.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+10,
+8,
+null,
+null,
+null,
+40,
+15
+],
+"score": 6.9,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+35,
+10,
+90,
+-12,
+85,
+20,
+null,
+null
+],
+"score": 62.2,
+"val": "algo cara",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+null,
+8,
+-25,
+85,
+null,
+null,
+15
+],
+"score": 23.3,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+80,
+60,
+null,
+-50,
+null,
+-10,
+null,
+0
+],
+"score": 49.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+60,
+8,
+-3,
+null,
+-10,
+-25,
+null
+],
+"score": 39.4,
+"val": "infravalorada (PEG<1)",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+0,
+60,
+90,
+-25,
+50,
+-10,
+-25,
+15
+],
+"score": 19.1,
+"val": "sin datos",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+12,
+60,
+null,
+null,
+50,
+-10,
+-25,
+0
+],
+"score": 16.9,
+"val": "sin datos",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+35,
+10,
+25,
+-25,
+85,
+20,
+-5,
+-20
+],
+"score": 75.2,
+"val": "infravalorada (PEG<1)",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+null,
+8,
+-25,
+85,
+20,
+null,
+null
+],
+"score": 33.3,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+null,
+8,
+-3,
+null,
+20,
+-25,
+-20
+],
+"score": 34.1,
+"val": "infravalorada (PEG<1)",
+"mom": "⚠ tendencia bajista y peor que el mercado"
+},
+{
+"in": [
+0,
+10,
+-3,
+-3,
+50,
+null,
+null,
+null
+],
+"score": 14.9,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+60,
+25,
+-3,
+50,
+null,
+-5,
+0
+],
+"score": 64.0,
+"val": "infravalorada (PEG<1)",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+60,
+-3,
+-25,
+85,
+-10,
+40,
+-20
+],
+"score": 35.3,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+null,
+null,
+-12,
+50,
+-10,
+null,
+-20
+],
+"score": 36.0,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+null,
+null,
+-12,
+null,
+null,
+40,
+-20
+],
+"score": 18.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+80,
+null,
+null,
+-3,
+50,
+-10,
+-25,
+0
+],
+"score": 31.9,
+"val": "sin datos",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+null,
+10,
+8,
+-25,
+85,
+null,
+null,
+-20
+],
+"score": 25.7,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+60,
+-3,
+-25,
+null,
+-10,
+null,
+15
+],
+"score": 31.5,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+60,
+90,
+-25,
+null,
+null,
+null,
+-20
+],
+"score": 47.0,
+"val": "algo cara",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+60,
+null,
+-3,
+50,
+20,
+-25,
+-20
+],
+"score": 19.0,
+"val": "sin datos",
+"mom": "⚠ tendencia bajista y peor que el mercado"
+},
+{
+"in": [
+12,
+10,
+8,
+null,
+null,
+-10,
+null,
+0
+],
+"score": 34.9,
+"val": "infravalorada (PEG<1)",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+10,
+null,
+null,
+85,
+-10,
+40,
+15
+],
+"score": 34.2,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+null,
+10,
+8,
+-12,
+85,
+-10,
+40,
+null
+],
+"score": 30.7,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+80,
+null,
+90,
+-12,
+null,
+-10,
+null,
+15
+],
+"score": 64.5,
+"val": "precio atractivo (PEG<1.5)",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+10,
+25,
+null,
+50,
+20,
+-25,
+-20
+],
+"score": 9.3,
+"val": "sin datos",
+"mom": "⚠ tendencia bajista y peor que el mercado"
+},
+{
+"in": [
+0,
+60,
+25,
+-25,
+50,
+-10,
+-25,
+0
+],
+"score": 19.1,
+"val": "sin datos",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+80,
+10,
+25,
+-50,
+85,
+20,
+-5,
+15
+],
+"score": 81.7,
+"val": "infravalorada (PEG<1)",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+10,
+null,
+-50,
+50,
+-10,
+-5,
+15
+],
+"score": 9.9,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+null,
+-3,
+-25,
+50,
+null,
+40,
+null
+],
+"score": 31.0,
+"val": "sin beneficios (PER negativo)",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+0,
+60,
+-3,
+-3,
+50,
+-10,
+40,
+0
+],
+"score": 24.5,
+"val": "sin beneficios (PER negativo)",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+null,
+null,
+8,
+-25,
+50,
+-10,
+40,
+-20
+],
+"score": 13.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+10,
+-3,
+-3,
+85,
+20,
+-5,
+0
+],
+"score": 34.7,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+10,
+-3,
+-3,
+null,
+20,
+-5,
+0
+],
+"score": 42.4,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+80,
+10,
+90,
+-25,
+85,
+null,
+-5,
+15
+],
+"score": 71.7,
+"val": "precio atractivo (PEG<1.5)",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+10,
+90,
+-50,
+null,
+-10,
+null,
+-20
+],
+"score": 9.9,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+10,
+-3,
+-12,
+null,
+20,
+null,
+null
+],
+"score": 36.9,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+10,
+90,
+-50,
+null,
+null,
+-5,
+null
+],
+"score": 9.9,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+60,
+-3,
+-12,
+50,
+null,
+-5,
+null
+],
+"score": 30.5,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+10,
+null,
+null,
+85,
+20,
+null,
+0
+],
+"score": 32.7,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+10,
+-3,
+null,
+50,
+null,
+-5,
+15
+],
+"score": 6.9,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+null,
+-3,
+-12,
+85,
+null,
+null,
+0
+],
+"score": 28.3,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+80,
+null,
+8,
+-3,
+85,
+null,
+-25,
+-20
+],
+"score": 40.9,
+"val": "infravalorada (PEG<1)",
+"mom": "⚠ tendencia bajista y peor que el mercado"
+},
+{
+"in": [
+null,
+null,
+null,
+null,
+null,
+20,
+null,
+15
+],
+"score": 14.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+null,
+90,
+-12,
+null,
+-10,
+-5,
+null
+],
+"score": 18.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+null,
+90,
+null,
+50,
+-10,
+null,
+null
+],
+"score": 4.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+null,
+90,
+-25,
+85,
+-10,
+-25,
+-20
+],
+"score": 12.8,
+"val": "sin datos",
+"mom": "⚠ tendencia bajista y peor que el mercado"
+},
+{
+"in": [
+12,
+60,
+8,
+-25,
+85,
+20,
+null,
+-20
+],
+"score": 73.3,
+"val": "infravalorada (PEG<1)",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+null,
+90,
+null,
+85,
+-10,
+40,
+0
+],
+"score": 20.3,
+"val": "cara (PEG>4)",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+80,
+null,
+90,
+-12,
+50,
+20,
+-5,
+0
+],
+"score": 74.5,
+"val": "precio atractivo (PEG<1.5)",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+10,
+-3,
+null,
+85,
+-10,
+40,
+-20
+],
+"score": 22.7,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+10,
+25,
+-3,
+null,
+null,
+-25,
+15
+],
+"score": 23.2,
+"val": "valoración razonable",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+null,
+10,
+-3,
+-25,
+null,
+20,
+null,
+0
+],
+"score": 25.9,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+10,
+-3,
+-12,
+85,
+null,
+-25,
+-20
+],
+"score": 26.5,
+"val": "sin beneficios (PER negativo)",
+"mom": "⚠ tendencia bajista y peor que el mercado"
+},
+{
+"in": [
+35,
+60,
+8,
+-3,
+50,
+-10,
+null,
+15
+],
+"score": 64.0,
+"val": "infravalorada (PEG<1)",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+null,
+25,
+null,
+50,
+null,
+null,
+null
+],
+"score": 4.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+80,
+60,
+null,
+-50,
+null,
+20,
+40,
+null
+],
+"score": 59.5,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+80,
+null,
+-3,
+-12,
+null,
+-10,
+-25,
+0
+],
+"score": 36.4,
+"val": "sin beneficios (PER negativo)",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+0,
+10,
+90,
+-12,
+85,
+-10,
+null,
+null
+],
+"score": 30.7,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+null,
+null,
+-25,
+null,
+20,
+40,
+0
+],
+"score": 29.5,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+null,
+10,
+8,
+-50,
+50,
+20,
+40,
+15
+],
+"score": 19.9,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+0,
+60,
+25,
+-3,
+50,
+20,
+-5,
+15
+],
+"score": 34.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+null,
+null,
+-3,
+50,
+null,
+-25,
+null
+],
+"score": 13.9,
+"val": "sin datos",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+null,
+null,
+-3,
+-3,
+85,
+20,
+null,
+null
+],
+"score": 32.3,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+10,
+8,
+-3,
+50,
+20,
+-5,
+-20
+],
+"score": 52.9,
+"val": "infravalorada (PEG<1)",
+"mom": "neutra"
+},
+{
+"in": [
+80,
+10,
+25,
+-50,
+85,
+20,
+40,
+0
+],
+"score": 81.7,
+"val": "infravalorada (PEG<1)",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+null,
+60,
+null,
+-25,
+85,
+null,
+-25,
+null
+],
+"score": 26.5,
+"val": "sin datos",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+null,
+60,
+8,
+-3,
+null,
+20,
+-25,
+null
+],
+"score": 25.9,
+"val": "sin datos",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+0,
+10,
+8,
+-12,
+null,
+-10,
+null,
+15
+],
+"score": 20.9,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+80,
+null,
+90,
+-3,
+85,
+null,
+40,
+15
+],
+"score": 68.3,
+"val": "precio atractivo (PEG<1.5)",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+null,
+10,
+90,
+null,
+85,
+20,
+40,
+0
+],
+"score": 26.7,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+null,
+null,
+null,
+-50,
+85,
+20,
+40,
+-20
+],
+"score": 27.3,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+10,
+null,
+-12,
+null,
+20,
+-25,
+-20
+],
+"score": 17.0,
+"val": "sin datos",
+"mom": "⚠ tendencia bajista y peor que el mercado"
+},
+{
+"in": [
+12,
+60,
+8,
+-3,
+50,
+20,
+-25,
+0
+],
+"score": 46.9,
+"val": "infravalorada (PEG<1)",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+80,
+60,
+8,
+-12,
+85,
+null,
+-5,
+-20
+],
+"score": 92.3,
+"val": "infravalorada (PEG<1)",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+60,
+90,
+-3,
+50,
+20,
+null,
+null
+],
+"score": 40.5,
+"val": "cara (PEG>4)",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+null,
+-3,
+null,
+85,
+-10,
+40,
+null
+],
+"score": 14.3,
+"val": "sin beneficios (PER negativo)",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+80,
+null,
+8,
+null,
+50,
+null,
+40,
+null
+],
+"score": 56.5,
+"val": "infravalorada (PEG<1)",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+35,
+10,
+null,
+-50,
+50,
+-10,
+40,
+-20
+],
+"score": 27.4,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+null,
+8,
+null,
+85,
+null,
+-5,
+0
+],
+"score": 14.3,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+60,
+null,
+-25,
+50,
+20,
+-5,
+0
+],
+"score": 41.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+null,
+-3,
+-3,
+50,
+20,
+-25,
+-20
+],
+"score": 22.0,
+"val": "sin beneficios (PER negativo)",
+"mom": "⚠ tendencia bajista y peor que el mercado"
+},
+{
+"in": [
+0,
+null,
+8,
+-3,
+85,
+-10,
+null,
+null
+],
+"score": 22.3,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+80,
+10,
+-3,
+-25,
+null,
+null,
+40,
+-20
+],
+"score": 45.9,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+80,
+60,
+null,
+null,
+null,
+-10,
+40,
+15
+],
+"score": 46.5,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+null,
+60,
+-3,
+-50,
+50,
+20,
+-25,
+15
+],
+"score": 22.1,
+"val": "sin beneficios (PER negativo)",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+12,
+10,
+25,
+null,
+85,
+-10,
+null,
+0
+],
+"score": 32.7,
+"val": "valoración razonable",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+60,
+25,
+-12,
+85,
+20,
+-5,
+0
+],
+"score": 89.8,
+"val": "infravalorada (PEG<1)",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+null,
+90,
+-50,
+50,
+20,
+40,
+-20
+],
+"score": 23.5,
+"val": "cara (PEG>4)",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+60,
+null,
+-25,
+null,
+null,
+null,
+15
+],
+"score": 25.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+10,
+null,
+-50,
+85,
+null,
+-25,
+-20
+],
+"score": 14.1,
+"val": "sin datos",
+"mom": "⚠ tendencia bajista y peor que el mercado"
+},
+{
+"in": [
+12,
+10,
+25,
+-3,
+50,
+-10,
+-25,
+0
+],
+"score": 23.2,
+"val": "valoración razonable",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+0,
+null,
+90,
+-3,
+85,
+-10,
+40,
+0
+],
+"score": 22.3,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+null,
+null,
+null,
+null,
+null,
+-10,
+40,
+0
+],
+"score": 4.5,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+0,
+10,
+90,
+-12,
+85,
+-10,
+null,
+-20
+],
+"score": 30.7,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+80,
+60,
+25,
+null,
+50,
+20,
+40,
+null
+],
+"score": 78.5,
+"val": "infravalorada (PEG<1)",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+35,
+10,
+25,
+-50,
+85,
+null,
+40,
+-20
+],
+"score": 59.2,
+"val": "infravalorada (PEG<1)",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+60,
+8,
+-25,
+50,
+null,
+40,
+null
+],
+"score": 25.5,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+null,
+null,
+-3,
+-25,
+85,
+20,
+-25,
+0
+],
+"score": 25.0,
+"val": "sin beneficios (PER negativo)",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+0,
+null,
+90,
+null,
+85,
+20,
+null,
+-20
+],
+"score": 24.3,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+null,
+8,
+null,
+null,
+20,
+null,
+15
+],
+"score": 14.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+10,
+null,
+-50,
+50,
+null,
+40,
+15
+],
+"score": 15.9,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+35,
+10,
+90,
+-25,
+85,
+20,
+40,
+-20
+],
+"score": 57.2,
+"val": "algo cara",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+60,
+25,
+-12,
+null,
+null,
+40,
+15
+],
+"score": 70.0,
+"val": "infravalorada (PEG<1)",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+35,
+10,
+8,
+-12,
+50,
+20,
+null,
+15
+],
+"score": 70.4,
+"val": "infravalorada (PEG<1)",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+10,
+90,
+null,
+50,
+20,
+40,
+15
+],
+"score": 16.9,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+null,
+null,
+25,
+-50,
+null,
+-10,
+-25,
+15
+],
+"score": 5.6,
+"val": "sin datos",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+null,
+60,
+25,
+-3,
+50,
+20,
+-25,
+15
+],
+"score": 25.9,
+"val": "sin datos",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+0,
+null,
+90,
+-12,
+null,
+null,
+-25,
+15
+],
+"score": 13.9,
+"val": "sin datos",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+12,
+60,
+null,
+null,
+85,
+20,
+-5,
+null
+],
+"score": 42.3,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+10,
+25,
+-12,
+50,
+-10,
+40,
+0
+],
+"score": 20.9,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+null,
+null,
+null,
+-50,
+50,
+null,
+null,
+15
+],
+"score": 7.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+80,
+60,
+null,
+-3,
+50,
+20,
+40,
+0
+],
+"score": 64.5,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+35,
+60,
+null,
+-12,
+85,
+null,
+40,
+0
+],
+"score": 57.8,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+0,
+60,
+90,
+-50,
+85,
+null,
+-25,
+0
+],
+"score": 22.0,
+"val": "sin datos",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+0,
+60,
+-3,
+-50,
+85,
+-10,
+-5,
+15
+],
+"score": 29.3,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+10,
+null,
+null,
+85,
+null,
+40,
+null
+],
+"score": 22.7,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+null,
+10,
+-3,
+-25,
+50,
+null,
+-5,
+0
+],
+"score": 15.9,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+10,
+-3,
+-25,
+85,
+-10,
+-25,
+null
+],
+"score": 19.3,
+"val": "sin beneficios (PER negativo)",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+null,
+10,
+25,
+-3,
+null,
+null,
+null,
+-20
+],
+"score": 14.9,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+null,
+25,
+-50,
+85,
+20,
+40,
+15
+],
+"score": 27.3,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+35,
+10,
+25,
+null,
+null,
+-10,
+40,
+0
+],
+"score": 46.4,
+"val": "infravalorada (PEG<1)",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+35,
+60,
+8,
+-50,
+85,
+null,
+-25,
+15
+],
+"score": 51.6,
+"val": "infravalorada (PEG<1)",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+0,
+10,
+8,
+null,
+50,
+20,
+-25,
+0
+],
+"score": 12.7,
+"val": "sin datos",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+null,
+null,
+-3,
+-12,
+null,
+null,
+-5,
+null
+],
+"score": 18.5,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+10,
+90,
+-25,
+50,
+20,
+40,
+-20
+],
+"score": 47.4,
+"val": "algo cara",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+null,
+25,
+-12,
+85,
+-10,
+null,
+-20
+],
+"score": 44.3,
+"val": "valoración razonable",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+null,
+25,
+-50,
+null,
+-10,
+-25,
+15
+],
+"score": 17.6,
+"val": "valoración razonable",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+35,
+60,
+-3,
+-25,
+null,
+-10,
+-25,
+-20
+],
+"score": 23.6,
+"val": "sin beneficios (PER negativo)",
+"mom": "⚠ tendencia bajista y peor que el mercado"
+},
+{
+"in": [
+12,
+60,
+-3,
+-3,
+null,
+20,
+-25,
+-20
+],
+"score": 22.3,
+"val": "sin beneficios (PER negativo)",
+"mom": "⚠ tendencia bajista y peor que el mercado"
+},
+{
+"in": [
+null,
+60,
+-3,
+-12,
+85,
+20,
+null,
+-20
+],
+"score": 50.3,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+10,
+25,
+-12,
+null,
+20,
+-25,
+15
+],
+"score": 52.8,
+"val": "infravalorada (PEG<1)",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+12,
+60,
+90,
+null,
+null,
+-10,
+-25,
+-20
+],
+"score": 12.4,
+"val": "cara (PEG>4)",
+"mom": "⚠ tendencia bajista y peor que el mercado"
+},
+{
+"in": [
+35,
+10,
+8,
+-3,
+50,
+-10,
+-25,
+15
+],
+"score": 40.8,
+"val": "infravalorada (PEG<1)",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+null,
+60,
+8,
+-3,
+85,
+null,
+40,
+15
+],
+"score": 34.3,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+12,
+10,
+null,
+null,
+85,
+null,
+-25,
+15
+],
+"score": 17.0,
+"val": "sin datos",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+0,
+null,
+-3,
+-25,
+null,
+-10,
+40,
+-20
+],
+"score": 13.5,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+60,
+8,
+null,
+50,
+-10,
+null,
+15
+],
+"score": 56.0,
+"val": "infravalorada (PEG<1)",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+60,
+90,
+null,
+null,
+-10,
+-25,
+-20
+],
+"score": 9.1,
+"val": "sin datos",
+"mom": "⚠ tendencia bajista y peor que el mercado"
+},
+{
+"in": [
+0,
+60,
+25,
+-3,
+50,
+-10,
+null,
+-20
+],
+"score": 24.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+10,
+null,
+-25,
+85,
+20,
+-25,
+15
+],
+"score": 26.8,
+"val": "sin datos",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+80,
+60,
+90,
+-12,
+null,
+-10,
+-5,
+15
+],
+"score": 76.5,
+"val": "precio atractivo (PEG<1.5)",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+60,
+null,
+-12,
+85,
+-10,
+-25,
+0
+],
+"score": 43.3,
+"val": "sin datos",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+0,
+10,
+8,
+-25,
+50,
+-10,
+40,
+15
+],
+"score": 15.9,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+80,
+10,
+-3,
+null,
+null,
+-10,
+null,
+15
+],
+"score": 36.9,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+null,
+8,
+-3,
+50,
+null,
+-25,
+0
+],
+"score": 9.4,
+"val": "sin datos",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+null,
+60,
+90,
+-12,
+null,
+-10,
+null,
+-20
+],
+"score": 30.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+80,
+10,
+8,
+-3,
+50,
+-10,
+-5,
+0
+],
+"score": 66.9,
+"val": "infravalorada (PEG<1)",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+60,
+8,
+-3,
+null,
+20,
+-25,
+null
+],
+"score": 55.5,
+"val": "infravalorada (PEG<1)",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+35,
+10,
+null,
+-12,
+null,
+null,
+40,
+0
+],
+"score": 38.4,
+"val": "sin datos",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+0,
+null,
+8,
+-50,
+50,
+-10,
+null,
+15
+],
+"score": 7.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+80,
+null,
+8,
+-12,
+50,
+20,
+40,
+-20
+],
+"score": 80.5,
+"val": "infravalorada (PEG<1)",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+10,
+null,
+-3,
+85,
+null,
+null,
+-20
+],
+"score": 30.7,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+60,
+25,
+-50,
+50,
+20,
+-25,
+0
+],
+"score": 34.1,
+"val": "valoración razonable",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+35,
+10,
+90,
+-50,
+85,
+null,
+null,
+-20
+],
+"score": 41.2,
+"val": "algo cara",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+10,
+8,
+null,
+85,
+null,
+-5,
+null
+],
+"score": 16.7,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+10,
+25,
+-3,
+85,
+-10,
+-25,
+null
+],
+"score": 30.5,
+"val": "valoración razonable",
+"mom": "⚠ en tendencia bajista (1 año)"
+},
+{
+"in": [
+null,
+null,
+90,
+-3,
+50,
+20,
+null,
+0
+],
+"score": 22.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+10,
+90,
+-12,
+null,
+20,
+-25,
+-20
+],
+"score": 17.0,
+"val": "sin datos",
+"mom": "⚠ tendencia bajista y peor que el mercado"
+},
+{
+"in": [
+null,
+10,
+90,
+-50,
+50,
+20,
+-5,
+0
+],
+"score": 19.9,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+null,
+25,
+-12,
+50,
+20,
+-5,
+null
+],
+"score": 28.5,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+35,
+null,
+-3,
+-25,
+null,
+-10,
+-5,
+-20
+],
+"score": 31.0,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+10,
+25,
+-3,
+null,
+-10,
+null,
+15
+],
+"score": 14.9,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+10,
+-3,
+-25,
+50,
+-10,
+-5,
+null
+],
+"score": 15.9,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+80,
+10,
+8,
+-3,
+85,
+null,
+-25,
+-20
+],
+"score": 42.2,
+"val": "infravalorada (PEG<1)",
+"mom": "⚠ tendencia bajista y peor que el mercado"
+},
+{
+"in": [
+80,
+null,
+90,
+null,
+50,
+20,
+40,
+15
+],
+"score": 60.5,
+"val": "precio atractivo (PEG<1.5)",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+12,
+10,
+null,
+-25,
+null,
+20,
+null,
+null
+],
+"score": 31.9,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+10,
+25,
+-3,
+85,
+20,
+-5,
+-20
+],
+"score": 34.7,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+10,
+25,
+-3,
+50,
+-10,
+-5,
+0
+],
+"score": 30.9,
+"val": "valoración razonable",
+"mom": "neutra"
+},
+{
+"in": [
+80,
+60,
+90,
+-50,
+85,
+-10,
+40,
+15
+],
+"score": 75.3,
+"val": "precio atractivo (PEG<1.5)",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+35,
+10,
+90,
+-3,
+50,
+-10,
+null,
+0
+],
+"score": 36.4,
+"val": "algo cara",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+60,
+90,
+-25,
+50,
+-10,
+null,
+0
+],
+"score": 31.5,
+"val": "cara (PEG>4)",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+60,
+-3,
+-25,
+50,
+-10,
+40,
+0
+],
+"score": 25.5,
+"val": "sin beneficios (PER negativo)",
+"mom": "tendencia alcista sólida"
+},
+{
+"in": [
+35,
+null,
+8,
+-3,
+85,
+null,
+null,
+15
+],
+"score": 61.8,
+"val": "infravalorada (PEG<1)",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+null,
+null,
+-50,
+85,
+-10,
+-5,
+-20
+],
+"score": 17.3,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+80,
+10,
+null,
+-12,
+85,
+-10,
+-5,
+-20
+],
+"score": 60.7,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+10,
+-3,
+-3,
+null,
+20,
+-5,
+15
+],
+"score": 24.9,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+null,
+60,
+-3,
+-12,
+50,
+-10,
+-5,
+15
+],
+"score": 30.5,
+"val": "sin beneficios (PER negativo)",
+"mom": "neutra"
+},
+{
+"in": [
+0,
+10,
+null,
+-25,
+85,
+20,
+-5,
+null
+],
+"score": 35.7,
+"val": "sin datos",
+"mom": "neutra"
+},
+{
+"in": [
+12,
+60,
+25,
+-25,
+null,
+-10,
+null,
+15
+],
+"score": 41.5,
+"val": "valoración razonable",
+"mom": "neutra"
+}
+]
