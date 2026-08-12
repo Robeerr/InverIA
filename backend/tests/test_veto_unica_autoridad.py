@@ -17,13 +17,14 @@ Se retiró además una TERCERA lectura, en `server._top_seleccion`, que no era u
 una sola lectura, el veto podía volver por ahí; retirándola, este fichero puede exigir
 CERO apariciones en vez de mantener una lista de excepciones que nadie revisa.
 
-QUÉ NO SE TOCÓ, Y ESTÁ VIGILADO ABAJO
+EL CENTINELA QUE YA CUMPLIÓ
 
-El sumando `conviction += (pot / 100) * 30` sigue en pie. Quitarlo baja el máximo de
-convicción de 105 a 75 y deja el umbral de 80 del régimen rojo INALCANZABLE, así que
-arrastra una decisión sobre los umbrales que todavía no está tomada. El último test de
-este fichero deja esa aritmética explícita para que, cuando se retire, el efecto salte
-en vez de descubrirse por un analista diario que se ha quedado mudo.
+Este fichero llevaba un test que dejaba escrita la aritmética de `conviction` para que
+retirar el score no dejara el umbral de 80 inalcanzable sin que nadie se enterase. Esa
+decisión se tomó en 5b-2 —la puerta pasó a contar catalizadores y el 80 desapareció—,
+así que el centinela se retira: vigilaba un código que ya no existe.
+
+Lo demás sigue en pie, que es lo que este fichero protege de verdad.
 """
 import os
 import re
@@ -106,24 +107,26 @@ def test_los_dos_consumidores_migrados_preguntan_a_tendencia():
         assert "hay_tendencia_valida" in codigo, nombre
 
 
-def test_el_veto_de_conviccion_lo_decide_el_estado_no_los_retornos():
-    """Comprobado ejecutando: con los MISMOS fundamentales, lo único que cambia el
-    resultado es la dirección. Si el veto volviera a deducirse de `return_52w` o de la
-    fuerza relativa, este test lo cazaría."""
-    m = {"revenue_growth": 30, "eps_growth": 25, "pe_ratio": 20,
-         "return_26w": 20, "return_52w": 40, "rel_strength_52w": 15}
+def test_el_veto_lo_decide_el_estado_y_nada_mas():
+    """Comprobado ejecutando: con los MISMOS catalizadores, lo único que cambia el
+    veredicto es la dirección. Si el veto volviera a deducirse de un score o de los
+    retornos, este test lo cazaría.
+
+    Reescrito en 5b-2 contra `evaluar_candidato`: `_score_candidate` desapareció con la
+    métrica de puntos, pero lo que protegía sigue vigente.
+    """
     cons = {"score": 85, "consensus": "Buy"}
     insider = {"net_shares": 1000, "buy_transactions": 3}
-    quote = {"price": 100.0, "high_52w": 105.0, "pe_ratio": 20}
 
-    conv_ok, _, hard_ok, _ = da._score_candidate(m, cons, insider, True, None, quote, "ALCISTA")
-    assert conv_ok > 0 and hard_ok is True
+    ok = da.evaluar_candidato(insider, True, None, cons=cons, estado_tendencia="ALCISTA")
+    assert ok["aceptada"] is True
 
     for estado in ("BAJISTA", "INDEFINIDA", "SIN_DATOS", "LO_QUE_SEA"):
-        conv, razones, hard, _ = da._score_candidate(
-            m, cons, insider, True, None, quote, estado)
-        assert conv == 0, estado
-        assert razones == [], estado
+        v = da.evaluar_candidato(insider, True, None, cons=cons, estado_tendencia=estado)
+        assert v["aceptada"] is False, estado
+        assert v["estado"] == da.DESCARTADA_POR_TENDENCIA, estado
+        # El recuento se conserva: el veto no borra el diagnóstico.
+        assert v["catalizadores"] == 2, estado
 
 
 def test_un_estado_desconocido_no_autoriza():
@@ -133,34 +136,3 @@ def test_un_estado_desconocido_no_autoriza():
 
 
 # ── La aritmética de `conviction`, explícita antes de tocarla ────────────────
-
-def test_conviction_umbrales_la_cuenta_que_hay_que_mirar_en_5b2():
-    """CENTINELA. No prueba un comportamiento: documenta una consecuencia.
-
-    Los catalizadores suman 35 + 25 + 15 = 75. El score de potencial aporta hasta 30 más,
-    y el total se recorta a 100. Los umbrales de envío son 65, y 80 cuando el régimen
-    está en rojo.
-
-    Si en 5b-2 se retira el sumando del score SIN tocar los umbrales:
-      · el máximo alcanzable pasa a 75;
-      · el umbral de 80 queda INALCANZABLE y el analista diario enmudece en mercado rojo;
-      · con 65, solo pasaría el trío completo de catalizadores.
-
-    Este test falla en cuanto la aritmética cambie, para que esa decisión se tome a
-    conciencia y no se descubra por un correo que dejó de llegar.
-    """
-    CATALIZADORES = {"insiders": 35, "upgrade": 25, "earnings_batido": 15}
-    APORTE_SCORE = 30
-    assert sum(CATALIZADORES.values()) == 75
-    assert da._CONVICTION_THRESHOLD == 65
-    assert sum(CATALIZADORES.values()) + APORTE_SCORE == 105  # se recorta a 100
-
-    codigo = _codigo("daily_analyst.py")
-    assert "conviction += (pot / 100) * 30" in codigo, (
-        "El sumando del score ha cambiado. Antes de seguir: ¿se han revisado los "
-        "umbrales 65 y 80? Sin el score el máximo es 75 y el 80 es inalcanzable."
-    )
-    assert "min_conv = 80" in codigo, (
-        "El umbral del régimen rojo ha cambiado. Solo tiene sentido revisarlo junto al "
-        "sumando del score, no por separado."
-    )

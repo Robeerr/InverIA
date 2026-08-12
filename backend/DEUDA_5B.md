@@ -10,7 +10,7 @@ cambiadas, cero umbrales nuevos.
 
 ---
 
-## 1 · El veto que vive dentro de una cadena de texto
+## 1 · ~~El veto que vive dentro de una cadena de texto~~ · RESUELTO en 5b-1
 
 **Bandera roja.** `tendencia.py` debe ser la única autoridad sobre la elegibilidad, y
 hoy no lo es: hay un veto de tendencia funcionando a través del prefijo de un emoji.
@@ -23,12 +23,13 @@ concreto significa que cambiar un emoji en `_potential_score_detalle` desactiva
 silenciosamente el filtro en dos módulos que no lo mencionan. Y que el veto exista ahí
 duplica una regla que ya tiene dueño.
 
-**En 5b:** sustituir por `tendencia.hay_tendencia_valida`. No es una migración de score:
-es mover un veto al sitio donde debe estar.
+**Hecho en 5b-1.** Los dos preguntan a `tendencia.hay_tendencia_valida` a través de
+`market_data.tendencia_de`. Se retiró además una tercera lectura del mismo prefijo en
+`server._top_seleccion`, que no vetaba pero mantenía viva la vía.
 
 ---
 
-## 2 · `daily_analyst`: el score mezclado dentro de otro score
+## 2 · ~~`daily_analyst`: el score mezclado dentro de otro score~~ · RESUELTO en 5b-2
 
 ```python
 conviction += (pot / 100) * 30          # _score_candidate
@@ -40,9 +41,14 @@ correo y a Telegram. La segunda es peor conceptualmente: el mismo número **reno
 a «convicción», que sobreviviría intacto a cualquier renombrado que hiciéramos en
 `opportunities.py`.
 
-**En 5b, ya decidido:** la primera se **elimina**, no se sustituye por otro número. La
-segunda tampoco se convierte en `tendencia_score`: la convicción necesita su propia
-semántica, y hoy no la tiene.
+**Hecho en 5b-2.** `conviction` desaparece como escala y se sustituye por
+`catalizadores` (recuento 0-3) con puerta en dos. La segunda vía pierde el campo, sin
+reemplazo. Los umbrales 65 y 80 se retiran sin sustituto; en régimen rojo solo se recorta
+`max_alerts`.
+
+Limitación conocida y aceptada: contar iguala catalizadores de frescura muy distinta —un
+*beat* de hasta tres meses vale lo mismo que una compra de directivos de esta semana—.
+Exigir frescura introduciría un número de días sin medir.
 
 ---
 

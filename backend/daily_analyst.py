@@ -39,8 +39,6 @@ EASTERN = ZoneInfo("America/New_York")
 
 # No volver a avisar de la misma acción en este nº de días (evita repetir la misma idea).
 _COOLDOWN_DAYS = 7
-# Umbral de convicción para disparar el aviso. Alto a propósito: preferimos pocas y buenas.
-_CONVICTION_THRESHOLD = 65
 # Cuántas ideas como mucho por barrido (evita avalancha si un día hay muchas señales).
 _MAX_ALERTS_PER_SCAN = 4
 
@@ -66,66 +64,99 @@ def _detect_upgrade(trends) -> bool:
     return buy_score(trends[0]) > buy_score(trends[1])
 
 
-def _score_candidate(m, cons, insider, upgrade, earnings, quote, estado_tendencia="SIN_DATOS"):
-    """Convicción 0-100 + lista de razones legibles. La CONVICCIÓN exige catalizador
-    REAL (insiders/upgrade/beat), no solo un score alto — para eso está el screener.
+# Los tres catalizadores. Como tabla y no dispersos por una función para que se puedan
+# leer de un vistazo y para que añadir uno obligue a decidir su clave, no a colar un
+# `if` más en medio de un acumulador.
+CATALIZADORES = ("insiders", "mejora_recomendacion", "beat_earnings")
 
-    `estado_tendencia` llega de `tendencia.py`, que es la ÚNICA autoridad sobre la
-    elegibilidad. Antes este veto se leía del prefijo de una etiqueta de texto: si
-    `momentum_label` empezaba por «⚠», se descartaba. Dos problemas a la vez — que un
-    veto dependiera de un emoji, y que la regla estuviera duplicada aquí en vez de
-    consultarse donde vive.
+# Cuántos hacen falta para proponer una idea. NO es un umbral calibrable ni el primero de
+# una familia: es una regla semántica sobre EVENTOS INDEPENDIENTES, del mismo tipo que el
+# mínimo de fuentes de `confluencia.py`. No admite pesos, porcentajes ni equivalentes.
+MIN_CATALIZADORES = 2
 
-    Por defecto SIN_DATOS, que no autoriza: quien no pase la tendencia no pasa.
+# Los tres resultados posibles de evaluar un candidato. Separados a propósito: «no tiene
+# catalizadores» y «la tendencia lo descartó» son diagnósticos distintos que antes salían
+# los dos como un cero, y eso hacía imposible saber por qué no llegaba una idea.
+ACEPTADA = "ACEPTADA"
+DESCARTADA_POR_TENDENCIA = "DESCARTADA_POR_TENDENCIA"
+POCOS_CATALIZADORES = "POCOS_CATALIZADORES"
+
+
+def catalizadores_de(insider, upgrade, earnings, cons=None) -> dict:
+    """Cuántos catalizadores verificables tiene una idea, y cuáles.
+
+    Responde UNA pregunta: ¿cuántos? No puntúa, no pondera y no mira ni un score. Su
+    firma es la garantía: no recibe fundamentales, ni valoración, ni consenso como
+    número, ni nada de tendencia. `cons` entra solo para poder escribir el nombre de la
+    recomendación en el texto, y no influye en el recuento.
+
+    LIMITACIÓN CONOCIDA Y ACEPTADA. Los tres catalizadores tienen frescuras muy
+    distintas: las compras de directivos son transacciones recientes, la mejora de
+    recomendación compara este mes contra el anterior, y el beat de resultados sale de
+    `quarters[0]`, que puede tener hasta unos tres meses. Contando, los tres valen
+    exactamente 1. Bajo el sistema de puntos anterior esa diferencia estaba escondida en
+    los pesos (35/25/15). Exigir frescura al beat introduciría un número de días —un
+    parámetro nuevo sin medir—, así que se deja como está y se dice.
     """
-    reasons = []
-    conviction = 0.0
-    hard_catalyst = False
+    detalle, razones = [], []
 
-    # 1) Insiders comprando — la señal más fuerte.
     if insider and (insider.get("net_shares") or 0) > 0 and insider.get("buy_transactions", 0) >= 1:
-        conviction += 35
-        hard_catalyst = True
-        reasons.append(f"🟢 Insiders comprando ({insider['buy_transactions']} compras)")
+        detalle.append("insiders")
+        razones.append(f"🟢 Insiders comprando ({insider['buy_transactions']} compras)")
 
-    # 2) Upgrade de analistas este mes.
     if upgrade:
-        conviction += 25
-        hard_catalyst = True
+        detalle.append("mejora_recomendacion")
         cons_label = cons.get("consensus") if cons else None
-        reasons.append(f"📈 Mejora de recomendación de analistas{f' → {cons_label}' if cons_label else ''}")
+        razones.append(f"📈 Mejora de recomendación de analistas{f' → {cons_label}' if cons_label else ''}")
 
-    # 3) Earnings recientes batidos.
     if earnings and earnings.get("quarters"):
         q0 = earnings["quarters"][0]
         if q0.get("actual") is not None and q0.get("estimate") is not None and q0["actual"] > q0["estimate"]:
-            conviction += 15
-            hard_catalyst = True
+            detalle.append("beat_earnings")
             sp = q0.get("surprise_percent")
-            reasons.append(f"💥 Batió el último earnings{f' (+{sp}% sorpresa)' if sp else ''}")
+            razones.append(f"💥 Batió el último earnings{f' (+{sp}% sorpresa)' if sp else ''}")
 
-    # 4) Score de potencial del motor (crecimiento + valoración + tendencia).
-    rev_g = m.get("revenue_growth")
-    pot, val_label, mom_label = opportunities._potential_score(
-        rev_g, m.get("eps_growth"), quote.get("pe_ratio") or m.get("pe_ratio"),
-        _dist_52w(quote, m), cons.get("score") if cons else None,
-        m.get("return_26w"), m.get("return_52w"), m.get("rel_strength_52w"),
-    )
-    # PENDIENTE (5b-2): este sumando mete un score que mezcla crecimiento, valoración,
-    # punto de entrada, consenso y momentum dentro de una métrica que dice medir
-    # CATALIZADORES. No se toca aquí a propósito: quitarlo baja el máximo de 105 a 75 y
-    # deja el umbral de 80 del régimen rojo INALCANZABLE, así que arrastra una decisión
-    # sobre los umbrales que todavía no está tomada. Lo vigila test_conviction_umbrales.
-    conviction += (pot / 100) * 30
-    if pot >= 60:
-        reasons.append(f"⭐ Score de potencial {pot} · {val_label}")
-    # El guardián de tendencia. Ya NO se lee de una etiqueta de texto: lo decide
-    # `tendencia.py`, que es la única autoridad sobre la elegibilidad. No vamos contra
-    # la tendencia por muy buen catalizador que haya.
+    return {"n": len(detalle), "detalle": detalle, "razones": razones}
+
+
+def pasa_la_puerta(n) -> bool:
+    """¿Bastan estos catalizadores? Nada más que una comparación de recuento."""
+    try:
+        return int(n) >= MIN_CATALIZADORES
+    except (TypeError, ValueError):
+        return False
+
+
+def evaluar_candidato(insider, upgrade, earnings, cons=None,
+                      estado_tendencia="SIN_DATOS") -> dict:
+    """El veredicto sobre un candidato, con el MOTIVO separado del recuento.
+
+    Dos decisiones INDEPENDIENTES y en este orden:
+
+      1. Elegibilidad estructural — la decide `tendencia.py`, único dueño del veto. Una
+         acción que no está en tendencia alcista no se propone por muchos catalizadores
+         que acumule.
+      2. Puerta de catalizadores — ¿llegan a MIN_CATALIZADORES?
+
+    Se devuelven las dos por separado, así que el recuento se conoce incluso cuando la
+    tendencia ha vetado. Antes las dos salían como un cero indistinguible y no había
+    forma de saber si una idea no llegaba por falta de catalizadores o por dirección.
+    """
+    cat = catalizadores_de(insider, upgrade, earnings, cons=cons)
     if not tendencia.hay_tendencia_valida(estado_tendencia):
-        return 0, [], False, pot
-
-    return round(min(conviction, 100), 1), reasons, hard_catalyst, pot
+        estado = DESCARTADA_POR_TENDENCIA
+    elif not pasa_la_puerta(cat["n"]):
+        estado = POCOS_CATALIZADORES
+    else:
+        estado = ACEPTADA
+    return {
+        "estado": estado,
+        "aceptada": estado == ACEPTADA,
+        "catalizadores": cat["n"],
+        "catalizadores_detalle": cat["detalle"],
+        "razones": cat["razones"],
+        "tendencia": estado_tendencia,
+    }
 
 
 def _dist_52w(quote, m):
@@ -137,7 +168,7 @@ def _dist_52w(quote, m):
 
 
 async def _analyze_symbol(symbol):
-    """Reúne todas las señales de un símbolo y calcula su convicción. None si no aplica."""
+    """Reúne las señales de un símbolo y decide si es candidata. None si no aplica."""
     try:
         quote = await asyncio.to_thread(market_data.get_quote, symbol)
         if not quote or not quote.get("price"):
@@ -152,9 +183,14 @@ async def _analyze_symbol(symbol):
         # La tendencia sale del histórico diario cacheado (fuente gratuita, no Finnhub) y
         # se calcula en un hilo para no bloquear el bucle.
         estado_tendencia = await asyncio.to_thread(market_data.tendencia_de, symbol)
-        conviction, reasons, hard, pot = _score_candidate(
-            m, cons, insider, upgrade, earnings, quote, estado_tendencia)
-        if conviction < _CONVICTION_THRESHOLD or not hard:
+        veredicto = evaluar_candidato(insider, upgrade, earnings, cons=cons,
+                                      estado_tendencia=estado_tendencia)
+        if not veredicto["aceptada"]:
+            # El motivo, no solo el descarte: distinguir «va contra tendencia» de «solo
+            # tiene un catalizador» es lo que permite saber por qué no llegan ideas.
+            logger.debug("daily_analyst %s descartada: %s (catalizadores=%d, tendencia=%s)",
+                         symbol, veredicto["estado"], veredicto["catalizadores"],
+                         veredicto["tendencia"])
             return None
         return {
             "symbol": symbol,
@@ -162,9 +198,15 @@ async def _analyze_symbol(symbol):
             "price": quote.get("price"),
             "change_percent": quote.get("change_percent"),
             "sector": quote.get("sector"),
-            "conviction": conviction,
-            "potential_score": pot,
-            "reasons": reasons,
+            # `conviction` y `potential_score` YA NO se escriben. El primero significaba
+            # otra cosa —una escala 0-100 que mezclaba catalizadores con un score de
+            # crecimiento y valoración— y reutilizar el nombre con un dominio nuevo sería
+            # el renombrado semántico que llevamos todo el proyecto evitando. El segundo
+            # ya no gobierna nada, y guardar un número que nadie usa es como vuelven los
+            # consumidores.
+            "catalizadores": veredicto["catalizadores"],
+            "catalizadores_detalle": veredicto["catalizadores_detalle"],
+            "reasons": veredicto["razones"],
             "detected_at": datetime.now(timezone.utc).isoformat(),
         }
     except Exception:
@@ -188,6 +230,22 @@ _SOURCE_LABEL = {
     "titulares": ("📰 Titulares recientes (sin análisis IA)", "básica — solo los titulares en crudo"),
     "ninguna": ("— sin investigación disponible", "—"),
 }
+
+
+def _texto_catalizadores(idea) -> str:
+    """«2 catalizadores» / «3 catalizadores», o vacío si el documento no los trae.
+
+    Sustituye al viejo «Convicción X/100». Ese «/100» describía una escala que ya no
+    existe: la métrica ahora cuenta eventos, y su máximo es tres.
+
+    Devuelve cadena vacía para los documentos HISTÓRICOS, que llevan `conviction` en la
+    escala vieja. No se reinterpretan ni se convierten: significaban otra cosa y traducir
+    un 82 a un número de catalizadores sería inventárselo.
+    """
+    n = (idea or {}).get("catalizadores")
+    if not isinstance(n, int):
+        return ""
+    return f"{n} catalizador" + ("es" if n != 1 else "")
 
 
 def _earnings_warning_html(ew) -> str:
@@ -253,7 +311,7 @@ def _build_email_html(ideas: list) -> str:
         <div style="border:1px solid #e5e0d8;border-radius:10px;padding:20px;margin:0 0 16px 0;background:#faf9f6;">
           <div style="display:flex;justify-content:space-between;align-items:baseline;">
             <span style="font-size:20px;font-weight:700;color:#0e1f1a;">{idea['symbol']}</span>
-            <span style="font-size:12px;color:#5c6b66;">Convicción {idea['conviction']}/100</span>
+            <span style="font-size:12px;color:#5c6b66;">{_texto_catalizadores(idea)}</span>
           </div>
           <p style="margin:2px 0 12px 0;color:#5c6b66;font-size:13px;">{idea.get('name') or ''}</p>
           <p style="margin:0 0 12px 0;font-size:16px;color:#0e1f1a;">
@@ -287,7 +345,7 @@ async def _send_email(ideas: list) -> tuple:
     resend.api_key = api_key
     sender = os.environ.get("ALERT_FROM_EMAIL") or os.environ.get("SENDER_EMAIL") or "onboarding@resend.dev"
     n = len(ideas)
-    subject = (f"InverIA · {ideas[0]['symbol']} destaca (convicción {ideas[0]['conviction']})"
+    subject = (f"InverIA · {ideas[0]['symbol']} destaca ({_texto_catalizadores(ideas[0])})"
                if n == 1 else f"InverIA · {n} ideas del Analista hoy")
     try:
         await asyncio.to_thread(resend.Emails.send, {
@@ -309,7 +367,7 @@ def _format_telegram(idea) -> str:
         f"🎯 *Analista InverIA · {esc(idea['symbol'])}*",
         f"_{esc(idea.get('name') or '')}_",
         "",
-        f"Precio: *${esc(str(idea['price']))}* \\({esc(chg)}\\) · Convicción *{esc(str(idea['conviction']))}/100*",
+        f"Precio: *${esc(str(idea['price']))}* \\({esc(chg)}\\) · *{esc(_texto_catalizadores(idea))}*",
         "",
         "*Por qué destaca hoy:*",
     ]
@@ -337,7 +395,16 @@ async def scan(db, universe=None, notify: bool = True) -> dict:
 
         results = await asyncio.gather(*[bounded(s) for s in universe])
         candidates = [r for r in results if r]
-        candidates.sort(key=lambda x: x["conviction"], reverse=True)
+        # Orden: más catalizadores primero; a igualdad, lo detectado más recientemente;
+        # y un desempate estable por símbolo. Con solo dos valores posibles tras la puerta
+        # (2 y 3), los empates son la norma, y sin criterio explícito quien entrara en el
+        # tope lo decidiría el orden del universo — o sea, el azar del fichero.
+        # Dos pasadas aprovechando que `sort` es ESTABLE: primero el desempate menos
+        # significativo, luego el criterio principal. Un solo `sort` no vale porque
+        # `detected_at` va descendente y `symbol` ascendente, y una fecha en texto no se
+        # puede negar dentro de la clave.
+        candidates.sort(key=lambda x: x["symbol"])
+        candidates.sort(key=lambda x: (x["catalizadores"], x["detected_at"]), reverse=True)
 
         # FILTRO DE RÉGIMEN DE MERCADO: en un mercado bajista (semáforo rojo) las compras
         # fallan más, así que somos más selectivos — menos ideas y solo las de máxima
@@ -348,18 +415,20 @@ async def scan(db, universe=None, notify: bool = True) -> dict:
         except Exception:
             regime = None
         light = (regime or {}).get("light")
+        # El régimen ya NO sube el listón, solo baja el número. Antes exigía 80 sobre una
+        # escala 0-100 que incluía un score de crecimiento y valoración; retirado ese
+        # score, ese 80 no significaba nada y era además inalcanzable. «Más selectivo en
+        # rojo» lo cumple el tope de avisos, y no se sustituye por otro umbral.
         max_alerts = _MAX_ALERTS_PER_SCAN
-        min_conv = _CONVICTION_THRESHOLD
         if light == "rojo":
             max_alerts = 2
-            min_conv = 80  # solo lo excepcional cuando el mercado está en riesgo
         elif light == "amarillo":
             max_alerts = 3
 
         fresh = []
         for c in candidates:
-            if c["conviction"] < min_conv:
-                continue
+            # La puerta de catalizadores ya se aplicó en `_analyze_symbol`: aquí no se
+            # vuelve a filtrar por calidad, solo por repetición y por el tope.
             if await _in_cooldown(db, c["symbol"]):
                 continue
             c["market_regime"] = regime
@@ -451,14 +520,18 @@ async def _top_screener_ideas(db, n: int, exclude: set):
     for r in results:
         reasons = []
         if r.get("valuation"):
-            reasons.append(f"⭐ Score {r.get('potential_score')} · {r['valuation']}")
+            reasons.append(f"Valoración: {r['valuation']}")
         if r.get("momentum") and r["momentum"] != "neutra":
             reasons.append(r["momentum"])
         if r.get("analyst_consensus"):
             reasons.append(f"Analistas: {r['analyst_consensus']}")
         idea = {
             "symbol": r["symbol"], "name": r.get("name"), "price": r.get("price"),
-            "change_percent": r.get("change_percent"), "conviction": r.get("potential_score"),
+            # Sin `conviction`: estas ideas salen del SCREENER y no pasan por ninguna
+            # evaluación de catalizadores. Llamar convicción al score de potencial era un
+            # renombrado, no una métrica. No se sustituye por ningún otro número: son lo
+            # que son, ideas del screener, y sus razones ya lo dicen.
+            "change_percent": r.get("change_percent"),
             "reasons": reasons or ["Destaca en el screener de crecimiento"],
         }
         try:
@@ -492,7 +565,7 @@ async def send_daily_digest(db) -> dict:
     start = f"{today}T00:00:00+00:00"
     catalyst = await db.analyst_ideas.find(
         {"detected_at": {"$gte": start}}, {"_id": 0}
-    ).sort("conviction", -1).to_list(20)
+    ).sort([("catalizadores", -1), ("detected_at", -1)]).to_list(20)
 
     # Garantiza investigación profunda diaria: si hay pocas ideas con catalizador,
     # completa con las mejores del screener (investigadas).
@@ -591,7 +664,7 @@ def _cards_html(ideas) -> str:
         <div style="border:1px solid #e5e0d8;border-radius:10px;padding:20px;margin:0 0 16px 0;background:#faf9f6;">
           <div style="display:flex;justify-content:space-between;align-items:baseline;">
             <span style="font-size:20px;font-weight:700;color:#0e1f1a;">{idea['symbol']}</span>
-            <span style="font-size:12px;color:#5c6b66;">Convicción {idea.get('conviction')}/100</span>
+            <span style="font-size:12px;color:#5c6b66;">{_texto_catalizadores(idea)}</span>
           </div>
           <p style="margin:2px 0 12px 0;color:#5c6b66;font-size:13px;">{idea.get('name') or ''}</p>
           <p style="margin:0 0 12px 0;font-size:16px;color:#0e1f1a;">
