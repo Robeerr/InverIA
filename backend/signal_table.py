@@ -24,6 +24,7 @@ _PANIC_DROP_PCT = -7.0
 
 import market_data
 import telegram_notifier
+import tendencia
 
 logger = logging.getLogger("signal_table")
 
@@ -240,13 +241,15 @@ async def _set_cooldown(db, cd_key: str):
     )
 
 
-async def _volume_ratio(symbol: str):
-    """Volumen de HOY / media de las últimas ~20 sesiones, desde el histórico diario
-    (cacheado). >1.5 ≈ volumen alto → un rebote en soporte es más fiable. None si no hay
-    datos. Se calcula SOLO al disparar una alerta (raro), así que el coste es mínimo.
-    Antes esto se sacaba de get_quote_fast, que no trae volumen → salía siempre None."""
+def _ratio_volumen(df):
+    """Volumen de HOY / media de las últimas ~20 sesiones. None si no hay datos.
+
+    Sigue siendo INFORMATIVO: viaja en el mensaje de la alerta para que se lea, pero no
+    condiciona el disparo. Convertirlo en condición exige decidir a partir de qué ratio
+    un rebote «tiene volumen», y ese número hay que medirlo en nuestro histórico antes
+    de ponerlo a filtrar alertas.
+    """
     try:
-        df = await asyncio.to_thread(market_data.get_stock_data, symbol, "3M")
         if df is None or df.empty or "Volume" not in df.columns:
             return None
         vols = df["Volume"].dropna().astype(float)
@@ -260,6 +263,35 @@ async def _volume_ratio(symbol: str):
         return round(hoy / media, 2)
     except Exception:
         return None
+
+
+async def _contexto_alerta(symbol: str):
+    """Lo que hace falta para decidir si una alerta de COMPRA puede salir: (tendencia, ratio).
+
+    UNA SOLA DESCARGA. Antes se pedían «3M» solo para el volumen; ahora se piden las
+    velas diarias de dos años, que es lo que exige una SMA200, y de ese mismo DataFrame
+    salen las dos cosas. Con «3M» (unas 126 sesiones) no hay 200 cierres y la tendencia
+    saldría siempre SIN_DATOS, que es la forma silenciosa de dejar el veto inservible.
+
+    Se calcula SOLO cuando una alerta está a punto de dispararse —que es raro— y el
+    histórico va cacheado, así que el coste sigue siendo el de antes. No toca Finnhub:
+    es la fuente gratuita de histórico.
+
+    Si algo falla, la tendencia queda SIN_DATOS y la alerta NO sale. Fallo cerrado a
+    propósito: ante la duda, no se manda un mensaje que dice COMPRA.
+    """
+    try:
+        df = await asyncio.to_thread(market_data.get_stock_data, symbol, "1D")
+    except Exception:
+        logger.warning("alerta[%s]: no se pudo leer el histórico para la tendencia", symbol)
+        return "SIN_DATOS", None
+    if df is None or getattr(df, "empty", True) or "Close" not in df.columns:
+        return "SIN_DATOS", None
+    try:
+        cierres = df["Close"].dropna().astype(float).tolist()
+    except Exception:
+        cierres = []
+    return tendencia.desde_cierres(cierres), _ratio_volumen(df)
 
 
 SIGNAL_WORKER_INTERVAL = int(os.environ.get("SIGNAL_WORKER_INTERVAL", 45))
@@ -414,6 +446,28 @@ async def signal_worker_loop(db, interval: int = SIGNAL_WORKER_INTERVAL):
                             continue  # todavía por encima de la zona
                         if prev_price is None or prev_price <= threshold:
                             continue  # sin baseline aún, o ya estaba en zona (no es cruce nuevo)
+                        # ── VETO DE TENDENCIA ────────────────────────────────
+                        # Un soporte dice DÓNDE sería interesante comprar. Nunca dice
+                        # que HAYA que comprar. Hasta aquí, esta alerta salía por el
+                        # solo hecho de que el precio cruzara un nivel: una acción en
+                        # caída libre generaba un mensaje que ponía COMPRA cada vez que
+                        # atravesaba uno de sus soportes, que es exactamente lo que se
+                        # espera de una acción en caída libre.
+                        #
+                        # Va ANTES del cooldown a propósito: si se marcara el cooldown y
+                        # luego se vetara, el nivel quedaría quemado por hoy y la alerta
+                        # no saldría tampoco si la tendencia se arreglara en la sesión.
+                        #
+                        # Las alertas de VENTA no pasan por aquí. Exigir tendencia
+                        # alcista para avisar de una salida sería el error inverso:
+                        # callarse justo cuando la acción se está rompiendo.
+                        estado_tendencia, vol_ratio = await _contexto_alerta(symbol)
+                        if not tendencia.hay_tendencia_valida(estado_tendencia):
+                            logger.info(
+                                "alerta COMPRA vetada %s %s: tendencia %s",
+                                symbol, level_key, estado_tendencia,
+                            )
+                            continue
                         cd_key = f"{symbol}_{level_key}_{today}"
                         if await _is_in_cooldown(db, cd_key):
                             continue
@@ -421,10 +475,6 @@ async def signal_worker_loop(db, interval: int = SIGNAL_WORKER_INTERVAL):
                         diff_pct = round(((price - target) / target) * 100, 2)
                         level_num = level_key.replace("nivel", "Nivel ")
                         approaching = price > target  # precio en zona pero aún sobre el nivel exacto
-                        # Confirmación por VOLUMEN: un rebote en soporte con volumen alto es
-                        # mucho más fiable. Ratio volumen-hoy / media, desde el histórico diario
-                        # (el quote rápido no trae volumen, por eso antes salía siempre None).
-                        vol_ratio = await _volume_ratio(symbol)
                         await _fire_alert(
                             entry, symbol, level_num, target, price, diff_pct, "COMPRA",
                             db=db, approaching=approaching, vol_ratio=vol_ratio,
