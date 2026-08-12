@@ -5,12 +5,24 @@ import { api } from "../lib/api";
 import Confluencia from "../components/Confluencia";
 
 // Color del veredicto del motor sobre cada acción.
+//
+// Devuelve TRIPLETAS RGB y no colores cerrados porque el color se compone luego con
+// tres opacidades distintas (fondo, texto y borde de la etiqueta). La forma anterior
+// —hex y sufijos tipo `${c}18`— tenía dos problemas: solo funciona con hex, y al ir
+// en un estilo EN LÍNEA el remapeo de oscuro no la alcanzaba nunca, así que los
+// veredictos se pintaban con los colores del tema claro sobre la página oscura.
+//
+// EXCEPCIÓN ANOTADA · «Floja» va con su tripleta literal (#c9843a). Es un cuarto
+// peldaño de la escala y la paleta semántica solo tiene tres colores; con `aviso`
+// se confundiría con «Neutral». Arrastra un defecto preexistente: 3,07:1 sobre el
+// blanco de claro, por debajo del 4,5:1 de un texto. Pide un token propio, que no
+// toca crear en esta tanda.
 function verdictStyle(inv) {
   const v = inv?.verdict || "";
-  if (v.startsWith("🟢")) return { c: "#4a7c59", short: "Coincide" };
-  if (v.startsWith("🔴")) return { c: "#d85c41", short: "Evítala" };
-  if (v.startsWith("🟡")) return { c: "#c9a14a", short: "Neutral" };
-  if (v.startsWith("🟠")) return { c: "#c9843a", short: "Floja" };
+  if (v.startsWith("🟢")) return { c: "var(--iv-sube)", short: "Coincide" };
+  if (v.startsWith("🔴")) return { c: "var(--iv-baja)", short: "Evítala" };
+  if (v.startsWith("🟡")) return { c: "var(--iv-aviso)", short: "Neutral" };
+  if (v.startsWith("🟠")) return { c: "201 132 58", short: "Floja" };
   return null;
 }
 
@@ -19,19 +31,19 @@ function StockCard({ row, onPick }) {
   return (
     <div
       onClick={() => onPick(row.ticker)}
-      className="card-flat p-4 cursor-pointer card-hover hover:shadow-md transition-all"
+      className="iv-panel p-4 cursor-pointer card-hover hover:shadow-md transition-all"
       data-testid={`radar-stock-${row.ticker}`}
     >
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="min-w-0">
-          <p className="font-mono font-bold text-base text-[#0e1f1a]">{row.ticker}</p>
-          {row.nombre && <p className="text-[10px] text-[#5c6b66] truncate max-w-[150px]">{row.nombre}</p>}
+          <p className="font-mono font-bold text-base text-tinta">{row.ticker}</p>
+          {row.nombre && <p className="text-[10px] text-tinta-3 truncate max-w-[150px]">{row.nombre}</p>}
         </div>
         {vs && (
           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 flex items-center gap-1"
-            style={{ background: `${vs.c}18`, color: vs.c, border: `1px solid ${vs.c}40` }}
+            style={{ background: `rgb(${vs.c} / 0.09)`, color: `rgb(${vs.c})`, border: `1px solid rgb(${vs.c} / 0.25)` }}
             title={row.inveria_actualizado ? "Veredicto recalculado en vivo con el motor" : "Veredicto del día de la mención"}>
-            {row.inveria_actualizado && <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: vs.c }} />}
+            {row.inveria_actualizado && <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: `rgb(${vs.c})` }} />}
             {vs.short}{row.inveria?.score != null ? ` ${row.inveria.score}` : ""}
           </span>
         )}
@@ -43,24 +55,24 @@ function StockCard({ row, onPick }) {
 
       {/* Cuántas fuentes lo mencionan = fuerza del consenso */}
       <div className="flex items-center gap-1.5 mb-1">
-        <span className="text-[11px] font-semibold text-[#1a3a32]">
+        <span className="text-[11px] font-semibold text-marca">
           {row.n_fuentes} {row.n_fuentes === 1 ? "fuente" : "fuentes"}
         </span>
-        <span className="text-[10px] text-[#5c6b66] truncate">· {row.fuentes.join(", ")}</span>
+        <span className="text-[10px] text-tinta-3 truncate">· {row.fuentes.join(", ")}</span>
       </div>
       {/* Sentimiento de las fuentes: hablan bien/mal de la empresa */}
       {(row.positivos > 0 || row.negativos > 0) && (
         <div className="flex items-center gap-2 mb-1.5 text-[10px] font-semibold">
-          {row.positivos > 0 && <span className="text-[#4a7c59]">👍 {row.positivos} la ven bien</span>}
-          {row.negativos > 0 && <span className="text-[#d85c41]">👎 {row.negativos} la ven mal</span>}
+          {row.positivos > 0 && <span className="text-sube">👍 {row.positivos} la ven bien</span>}
+          {row.negativos > 0 && <span className="text-baja">👎 {row.negativos} la ven mal</span>}
         </div>
       )}
 
       {row.angulos?.length > 0 && (
-        <p className="text-[11px] text-[#5c6b66] leading-snug line-clamp-2">{row.angulos[0]}</p>
+        <p className="text-[11px] text-tinta-3 leading-snug line-clamp-2">{row.angulos[0]}</p>
       )}
 
-      <div className="flex items-center justify-end text-[10px] text-[#1a3a32] font-mono mt-2">
+      <div className="flex items-center justify-end text-[10px] text-marca font-mono mt-2">
         Analizar <ArrowRight size={10} weight="bold" className="ml-1" />
       </div>
     </div>
@@ -70,18 +82,18 @@ function StockCard({ row, onPick }) {
 function InfoRow({ item }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="card-flat px-4 py-3">
+    <div className="iv-panel px-4 py-3">
       <button onClick={() => setOpen((v) => !v)} className="w-full flex items-start justify-between gap-3 text-left">
         <div className="min-w-0">
-          <p className="font-semibold text-sm text-[#0e1f1a] leading-snug">{item.titulo}</p>
-          {!open && <p className="text-[11px] text-[#5c6b66] mt-0.5 line-clamp-1">{item.resumen}</p>}
+          <p className="font-semibold text-sm text-tinta leading-snug">{item.titulo}</p>
+          {!open && <p className="text-[11px] text-tinta-3 mt-0.5 line-clamp-1">{item.resumen}</p>}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-[9px] font-mono uppercase tracking-wider text-[#5c6b66] hidden sm:inline">{item.fuente}</span>
-          <CaretDown size={14} className={`text-[#5c6b66] transition-transform ${open ? "rotate-180" : ""}`} />
+          <span className="text-[9px] font-mono uppercase tracking-wider text-tinta-3 hidden sm:inline">{item.fuente}</span>
+          <CaretDown size={14} className={`text-tinta-3 transition-transform ${open ? "rotate-180" : ""}`} />
         </div>
       </button>
-      {open && <p className="text-[13px] text-[#0e1f1a] leading-relaxed mt-2">{item.resumen}</p>}
+      {open && <p className="text-[13px] text-tinta leading-relaxed mt-2">{item.resumen}</p>}
     </div>
   );
 }
@@ -107,14 +119,14 @@ export default function RadarView({ setSymbol }) {
 
   return (
     <div className="space-y-4">
-      <section className="card-flat p-6">
+      <section className="iv-panel p-6">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <Target size={22} weight="fill" className="text-[#1a3a32]" />
-              <h2 className="font-heading font-bold text-2xl text-[#0e1f1a]">Radar</h2>
+              <Target size={22} weight="fill" className="text-marca" />
+              <h2 className="font-heading font-bold text-2xl text-tinta">Radar</h2>
             </div>
-            <p className="text-sm text-[#5c6b66]">
+            <p className="text-sm text-tinta-3">
               Las acciones que mencionan tus {data?.total_newsletters ?? 0} newsletters, ordenadas
               por consenso y contrastadas con tu motor.
             </p>
@@ -127,27 +139,27 @@ export default function RadarView({ setSymbol }) {
 
         <div className="flex items-center gap-1 mt-4 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg p-1 w-fit">
           <button onClick={() => setTab("acciones")}
-            className={`px-4 py-2 rounded-md text-sm font-medium ${tab === "acciones" ? "bg-[#1a3a32] text-white" : "text-[#5c6b66]"}`}>
+            className={`px-4 py-2 rounded-md text-sm font-medium ${tab === "acciones" ? "bg-marca text-marca-tinta" : "text-tinta-3"}`}>
             📈 Acciones ({acciones.length})
           </button>
           <button onClick={() => setTab("info")}
-            className={`px-4 py-2 rounded-md text-sm font-medium ${tab === "info" ? "bg-[#1a3a32] text-white" : "text-[#5c6b66]"}`}>
+            className={`px-4 py-2 rounded-md text-sm font-medium ${tab === "info" ? "bg-marca text-marca-tinta" : "text-tinta-3"}`}>
             📰 Titulares ({info.length})
           </button>
         </div>
       </section>
 
       {loading ? (
-        <div className="card-flat p-8 text-center text-[#5c6b66]">Cargando el Radar…</div>
+        <div className="iv-panel p-8 text-center text-tinta-3">Cargando el Radar…</div>
       ) : tab === "acciones" ? (
         acciones.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {acciones.map((r) => <StockCard key={r.ticker} row={r} onPick={pick} />)}
           </div>
         ) : (
-          <div className="card-flat p-8 text-center">
-            <p className="text-[#0e1f1a] font-medium mb-1">Aún no hay acciones recopiladas</p>
-            <p className="text-sm text-[#5c6b66]">
+          <div className="iv-panel p-8 text-center">
+            <p className="text-tinta font-medium mb-1">Aún no hay acciones recopiladas</p>
+            <p className="text-sm text-tinta-3">
               Aparecerán solas a medida que lleguen newsletters con tickers. Las recibidas antes de
               la última actualización no los tienen guardados.
             </p>
@@ -159,7 +171,7 @@ export default function RadarView({ setSymbol }) {
             {info.map((it, i) => <InfoRow key={i} item={it} />)}
           </div>
         ) : (
-          <div className="card-flat p-8 text-center text-[#5c6b66]">Sin titulares acumulados todavía.</div>
+          <div className="iv-panel p-8 text-center text-tinta-3">Sin titulares acumulados todavía.</div>
         )
       )}
     </div>

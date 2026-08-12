@@ -190,6 +190,15 @@ function usePnlEnEuros() {
 }
 
 // ── Resumen de cartera: P&L total (#20) + diversificación por sector (#21) ───────
+// EXCEPCIÓN ANOTADA · Paleta CATEGÓRICA, no semántica. Estos ocho colores no
+// significan «sube», «baja» ni «aviso»: solo tienen que distinguirse entre sí para
+// separar sectores en el gráfico. La paleta de tokens tiene tres colores con
+// significado y no puede dar ocho tonos distinguibles, así que se queda literal —
+// misma categoría de excepción que el morado del gráfico de precios.
+//
+// Que vaya en JavaScript y no en clases tiene además una consecuencia buena: el
+// remapeo de oscuro no la toca, y una leyenda de sectores DEBE conservar el mismo
+// color en los dos temas o deja de poder compararse entre capturas.
 const SECTOR_COLORS = ["#1a3a32", "#4a7c59", "#c9a14a", "#d85c41", "#2563eb", "#7c3aed", "#0891b2", "#9333ea"];
 function PortfolioSummary({ entries }) {
   // El total en euros, igual que las filas: si una cosa va en euros y la otra en dólares
@@ -241,7 +250,7 @@ function PortfolioSummary({ entries }) {
               <div><span className="text-neutral-400">Valor actual</span><br /><b>{eur0(totalValue)}</b></div>
             </div>
             {(incompletas > 0 || multiDivisa) && (
-              <p className="text-[10px] text-[#c9a14a] mt-2 leading-snug">
+              <p className="text-[10px] text-aviso mt-2 leading-snug">
                 {incompletas > 0 && <>⚠ {incompletas} posición{incompletas > 1 ? "es" : ""} sin precio de compra o sin cotización — no cuenta{incompletas > 1 ? "n" : ""} en el total. </>}
                 {multiDivisa && <>⚠ Hay varias divisas ({[...divisas].join(", ")}): el total es una suma sin convertir.</>}
               </p>
@@ -254,7 +263,7 @@ function PortfolioSummary({ entries }) {
         <div className="flex items-center justify-between mb-2">
           <p className="text-[11px] uppercase tracking-wide text-neutral-400 font-mono">Diversificación {useValue ? "(por valor)" : "(por nº acciones)"}</p>
           {topPct >= 40 && (
-            <span className="text-[10px] font-bold text-[#d85c41] bg-red-50 dark:bg-red-900/30 px-2 py-0.5 rounded-full">
+            <span className="text-[10px] font-bold text-baja bg-red-50 dark:bg-red-900/30 px-2 py-0.5 rounded-full">
               ⚠ Concentración alta: {topPct.toFixed(0)}% en {sectors[0].name}
             </span>
           )}
@@ -287,7 +296,7 @@ function PortfolioSummary({ entries }) {
 function corrNivel(avg) {
   if (avg == null) return { txt: "—", cls: "text-neutral-400" };
   if (avg < 0.3) return { txt: "Bien diversificada", cls: "text-green-600 dark:text-green-400" };
-  if (avg < 0.5) return { txt: "Diversificación moderada", cls: "text-[#c9a14a]" };
+  if (avg < 0.5) return { txt: "Diversificación moderada", cls: "text-aviso" };
   if (avg < 0.7) return { txt: "Poco diversificada", cls: "text-orange-500" };
   return { txt: "Muy correlacionada (riesgo de bloque)", cls: "text-red-600 dark:text-red-400" };
 }
@@ -313,7 +322,7 @@ function CorrelationCard() {
       <div className="flex items-center justify-between gap-2 mb-1">
         <p className="text-[11px] uppercase tracking-wide text-neutral-400 font-mono">🔗 Correlación (concentración oculta)</p>
         <button onClick={run} disabled={loading}
-          className="px-2.5 py-1 rounded text-[11px] font-mono font-semibold bg-[#1a3a32] text-white disabled:opacity-50">
+          className="px-2.5 py-1 rounded text-[11px] font-mono font-semibold bg-marca text-marca-tinta disabled:opacity-50">
           {loading ? "Calculando…" : done ? "Recalcular" : "Analizar"}
         </button>
       </div>
@@ -370,7 +379,7 @@ function BellToggle({ active, onClick, title }) {
     <button
       onClick={onClick}
       title={title || (active ? "Alerta activa — clic para desactivar" : "Alerta inactiva — clic para activar")}
-      className={`p-1 rounded transition-colors ${active ? "text-[#c9a14a] hover:text-yellow-600" : "text-neutral-300 hover:text-neutral-500"}`}
+      className={`p-1 rounded transition-colors ${active ? "text-aviso hover:text-yellow-600" : "text-neutral-300 hover:text-neutral-500"}`}
     >
       {active ? <Bell size={14} weight="fill" /> : <BellSlash size={14} />}
     </button>
@@ -710,7 +719,7 @@ export default function SignalsView({ setSymbol }) {
             className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; doImportImage(f); }}
           />
-          <button onClick={() => { setNewEntry(EMPTY); setShowAdd(true); }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1a3a32] hover:bg-[#0e2820] text-white text-sm font-medium transition-colors">
+          <button onClick={() => { setNewEntry(EMPTY); setShowAdd(true); }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-marca hover:bg-marca/90 text-marca-tinta text-sm font-medium transition-colors">
             <Plus size={14} weight="bold" /> Añadir acción
           </button>
         </div>
@@ -728,7 +737,7 @@ export default function SignalsView({ setSymbol }) {
               onClick={() => switchGrupo(g.key)}
               data-testid={`signals-tab-${g.key}`}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                active ? "bg-[#1a3a32] text-white" : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                active ? "bg-marca text-marca-tinta" : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
               }`}
             >
               <Icon size={15} weight="bold" />
@@ -748,7 +757,7 @@ export default function SignalsView({ setSymbol }) {
 
       {/* Legend */}
       <div className="flex flex-wrap gap-4 text-xs text-neutral-500">
-        <span className="flex items-center gap-1"><Bell size={12} weight="fill" className="text-[#c9a14a]" /> Alerta activa</span>
+        <span className="flex items-center gap-1"><Bell size={12} weight="fill" className="text-aviso" /> Alerta activa</span>
         <span className="flex items-center gap-1"><BellSlash size={12} className="text-neutral-300" /> Alerta inactiva</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100 dark:bg-blue-900/40 border border-blue-300 inline-block"></span> Nivel Deseado / Venta</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-50 dark:bg-green-900/20 border border-green-200 inline-block"></span> Niveles de Compra</span>
@@ -782,9 +791,9 @@ export default function SignalsView({ setSymbol }) {
 
       {/* Add panel */}
       {showAdd && (
-        <div className="rounded-xl border border-[#1a3a32]/30 bg-[#f5f3ef] dark:bg-neutral-900 p-4 space-y-3">
+        <div className="rounded-xl border border-marca/30 bg-fondo p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-[#0e1f1a] dark:text-neutral-200">➕ Nueva acción · Cartera</p>
+            <p className="text-sm font-semibold text-tinta">➕ Nueva acción · Cartera</p>
             <button onClick={() => setShowAdd(false)}><X size={16} /></button>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -792,7 +801,7 @@ export default function SignalsView({ setSymbol }) {
               <div key={key} className="flex flex-col gap-1">
                 <label className="text-xs text-neutral-500">{label}</label>
                 <input
-                  className="border border-neutral-200 dark:border-neutral-600 rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-neutral-800 outline-none focus:border-[#1a3a32] focus:ring-1 focus:ring-[#1a3a32]/20"
+                  className="border border-neutral-200 dark:border-neutral-600 rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-neutral-800 outline-none focus:border-marca focus:ring-1 focus:ring-marca/20"
                   placeholder={placeholder}
                   value={newEntry[key] ?? ""}
                   onChange={(e) => setNewEntry((p) => ({ ...p, [key]: e.target.value }))}
@@ -801,7 +810,7 @@ export default function SignalsView({ setSymbol }) {
             ))}
           </div>
           <div className="flex gap-2">
-            <button onClick={addEntry} className="px-4 py-2 rounded-lg bg-[#1a3a32] hover:bg-[#0e2820] text-white text-sm font-medium">Guardar</button>
+            <button onClick={addEntry} className="px-4 py-2 rounded-lg bg-marca hover:bg-marca/90 text-marca-tinta text-sm font-medium">Guardar</button>
             <button onClick={() => setShowAdd(false)} className="px-4 py-2 rounded-lg border border-neutral-300 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800">Cancelar</button>
           </div>
         </div>
@@ -872,7 +881,7 @@ function DialogoVenta({ entry, onClose, onHecho }) {
         {!res ? (
           <>
             <div className="flex items-center justify-between mb-1">
-              <h3 className="font-bold text-lg text-[#0e1f1a] dark:text-neutral-100">Vender {entry.symbol}</h3>
+              <h3 className="font-bold text-lg text-tinta">Vender {entry.symbol}</h3>
               <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600"><X size={18} /></button>
             </div>
             <p className="text-xs text-neutral-500 mb-4">
@@ -895,20 +904,20 @@ function DialogoVenta({ entry, onClose, onHecho }) {
                        className="w-full mt-1 border rounded px-2 py-1.5 font-mono dark:bg-neutral-800 dark:border-neutral-700" />
               </label>
               {!entry.fecha_compra && divisa !== "EUR" && (
-                <p className="text-[11px] text-[#8a6508] bg-[#c9a14a]/10 rounded px-2 py-1.5 leading-snug">
+                <p className="text-[11px] text-aviso bg-aviso/10 rounded px-2 py-1.5 leading-snug">
                   Esta posición no tiene <b>fecha de compra</b>, así que la ganancia en euros
                   saldrá aproximada. Rellénala en la Cartera para que sea exacta.
                 </p>
               )}
             </div>
             <button onClick={enviar} disabled={enviando}
-                    className="w-full mt-4 bg-[#1a3a32] text-[#f5f3ef] rounded-lg py-2 font-semibold disabled:opacity-60">
+                    className="w-full mt-4 bg-marca text-marca-tinta rounded-lg py-2 font-semibold disabled:opacity-60">
               {enviando ? "Calculando…" : "Registrar venta"}
             </button>
           </>
         ) : (
           <>
-            <h3 className="font-bold text-lg mb-3 text-[#0e1f1a] dark:text-neutral-100">
+            <h3 className="font-bold text-lg mb-3 text-tinta">
               Venta registrada · {res.acciones} {entry.symbol}
             </h3>
             <div className="space-y-2 text-sm">
@@ -925,7 +934,7 @@ function DialogoVenta({ entry, onClose, onHecho }) {
                   <span className="font-mono">{eur(res.efecto_divisa_eur)}</span></div>
               )}
               {!res.exacto && (
-                <p className="text-[11px] text-[#8a6508] bg-[#c9a14a]/10 rounded px-2 py-1.5 leading-snug">
+                <p className="text-[11px] text-aviso bg-aviso/10 rounded px-2 py-1.5 leading-snug">
                   Aproximado: falta el tipo de cambio del día de la compra.
                 </p>
               )}
@@ -955,7 +964,7 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
             <div className="flex items-start justify-between gap-2">
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-bold text-[#1a3a32] dark:text-blue-400 cursor-pointer text-lg" onClick={() => setSymbol && setSymbol(e.symbol)}>{e.symbol}</span>
+                  <span className="font-bold text-marca cursor-pointer text-lg" onClick={() => setSymbol && setSymbol(e.symbol)}>{e.symbol}</span>
                   {e.mercado && <span className="text-[10px] font-mono bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded">{e.mercado}</span>}
                   <RiesgoBadge value={e.riesgo} />
                 </div>
@@ -965,14 +974,14 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
               <div className="flex items-center gap-2 shrink-0">
                 <div className="text-right">
                   <p className="text-xs text-neutral-400">Precio actual</p>
-                  <p className="font-mono font-bold text-[#0e1f1a] dark:text-neutral-100">{fmtP(e.last_price)}</p>
+                  <p className="font-mono font-bold text-tinta">{fmtP(e.last_price)}</p>
                   <ExtendedBadge entry={e} />
                 </div>
                 {/* Solo tiene sentido vender lo que se tiene. Sin acciones, el botón
                     llevaría a un error del servidor en vez de a algo útil. */}
                 {Number(e.acciones) > 0 && (
                   <button onClick={() => setVendiendo(e)} title="Registrar una venta"
-                          className="flex items-center gap-1 text-[11px] font-semibold border border-[#4a7c59] text-[#4a7c59] hover:bg-[#4a7c59] hover:text-white rounded px-2 py-1 transition-colors">
+                          className="flex items-center gap-1 text-[11px] font-semibold border border-sube text-sube hover:bg-sube hover:text-marca-tinta rounded px-2 py-1 transition-colors">
                     <CurrencyEur size={13} weight="bold" /> Vender
                   </button>
                 )}
@@ -1020,7 +1029,7 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                   const d = ventaDist(e, n);
                   const isNext = n === nextV;
                   return (
-                    <div key={`v${n}`} className={`bg-blue-50 dark:bg-blue-900/20 rounded-lg p-2 ${isNext ? "border-2 border-[#c9a14a]" : "border border-blue-200 dark:border-blue-800"}`}>
+                    <div key={`v${n}`} className={`bg-blue-50 dark:bg-blue-900/20 rounded-lg p-2 ${isNext ? "border-2 border-aviso" : "border border-blue-200 dark:border-blue-800"}`}>
                       <div className="flex items-center justify-between mb-0.5">
                         <p className="text-[9px] text-blue-500 uppercase font-mono font-bold">Venta {n}{isNext ? " ◀" : ""}</p>
                         <BellToggle active={alertOn} onClick={() => updateField(e.id, alertKey, !alertOn)} />
@@ -1041,7 +1050,7 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                 const d = nivelDist(e, n);
                 const isNext = n === nextN;
                 return (
-                  <div key={n} className={`bg-green-50 dark:bg-green-900/20 rounded-lg p-2 ${isNext ? "border-2 border-[#c9a14a]" : "border border-green-200 dark:border-green-800"}`}>
+                  <div key={n} className={`bg-green-50 dark:bg-green-900/20 rounded-lg p-2 ${isNext ? "border-2 border-aviso" : "border border-green-200 dark:border-green-800"}`}>
                     <div className="flex items-center justify-between mb-0.5">
                       <p className="text-[9px] text-green-600 uppercase font-mono font-bold">Nivel {n}{isNext ? " ◀" : ""}</p>
                       <BellToggle active={alertOn} onClick={() => updateField(e.id, alertKey, !alertOn)} />
@@ -1086,11 +1095,11 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
             {entries.map((e, idx) => (
               <tr key={e.id} className={`border-t border-neutral-100 dark:border-neutral-800 transition-colors group ${!e.active ? "opacity-40" : ""} ${idx % 2 === 0 ? "bg-white dark:bg-neutral-900" : "bg-neutral-50 dark:bg-neutral-800/40"} hover:bg-amber-50/60 dark:hover:bg-neutral-700/40`}>
                 <td className="px-3 py-2.5 text-center">
-                  <input type="checkbox" checked={e.active} onChange={(ev) => updateField(e.id, "active", ev.target.checked)} className="w-4 h-4 cursor-pointer accent-[#1a3a32]" title={e.active ? "Monitorización activa" : "Monitorización pausada"} />
+                  <input type="checkbox" checked={e.active} onChange={(ev) => updateField(e.id, "active", ev.target.checked)} className="w-4 h-4 cursor-pointer accent-marca" title={e.active ? "Monitorización activa" : "Monitorización pausada"} />
                 </td>
                 <td className="px-3 py-2.5 whitespace-nowrap">
                   <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-[#1a3a32] dark:text-emerald-400 cursor-pointer hover:underline text-sm" onClick={() => setSymbol && setSymbol(e.symbol)}>{e.symbol}</span>
+                    <span className="font-bold text-marca cursor-pointer hover:underline text-sm" onClick={() => setSymbol && setSymbol(e.symbol)}>{e.symbol}</span>
                     {saving[e.id] && <span className="text-[10px] text-neutral-400 animate-pulse">·</span>}
                   </div>
                   <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate max-w-[130px] font-medium">{e.name}</p>
@@ -1127,12 +1136,12 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                   const d = ventaDist(e, n);
                   const isNext = n === nextV;
                   return (
-                    <td key={`v${n}`} className={`px-3 py-2.5 ${isNext ? "bg-[#c9a14a]/15" : "bg-blue-50 dark:bg-blue-900/10"}`}>
+                    <td key={`v${n}`} className={`px-3 py-2.5 ${isNext ? "bg-aviso/15" : "bg-blue-50 dark:bg-blue-900/10"}`}>
                       <div className="flex items-center justify-end gap-1">
                         <EditableCell value={val} onChange={(v) => updateField(e.id, `venta${n}`, v)} className="font-mono text-sm font-semibold text-blue-800 dark:text-blue-300" />
                         <BellToggle active={alertOn} onClick={() => updateField(e.id, alertKey, !alertOn)} />
                       </div>
-                      {d != null && <p className={`text-[9px] font-mono text-right mt-0.5 ${isNext ? "text-[#8a6508] font-bold" : d < 0 ? "text-green-600" : "text-neutral-400"}`}>{isNext ? "◀ " : ""}{d < 0 ? `✓ superado ${d.toFixed(1)}%` : `+${d.toFixed(1)}%`}</p>}
+                      {d != null && <p className={`text-[9px] font-mono text-right mt-0.5 ${isNext ? "text-aviso font-bold" : d < 0 ? "text-green-600" : "text-neutral-400"}`}>{isNext ? "◀ " : ""}{d < 0 ? `✓ superado ${d.toFixed(1)}%` : `+${d.toFixed(1)}%`}</p>}
                     </td>
                   );
                 }); })()}
@@ -1143,12 +1152,12 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                   const d = nivelDist(e, n);
                   const isNext = n === nextN;
                   return (
-                    <td key={n} className={`px-3 py-2.5 border-l border-green-100 dark:border-green-900 ${isNext ? "bg-[#c9a14a]/15" : "bg-green-50 dark:bg-green-900/10"}`}>
+                    <td key={n} className={`px-3 py-2.5 border-l border-green-100 dark:border-green-900 ${isNext ? "bg-aviso/15" : "bg-green-50 dark:bg-green-900/10"}`}>
                       <div className="flex items-center justify-end gap-1">
                         <EditableCell value={val} onChange={(v) => updateField(e.id, `nivel${n}`, v)} className="font-mono text-sm font-semibold text-green-900 dark:text-green-300" />
                         <BellToggle active={alertOn} onClick={() => updateField(e.id, alertKey, !alertOn)} />
                       </div>
-                      {d != null && <p className={`text-[9px] font-mono text-right mt-0.5 ${isNext ? "text-[#8a6508] font-bold" : "text-neutral-400"}`}>{isNext ? "◀ " : ""}{d >= 0 ? "+" : ""}{d.toFixed(1)}%</p>}
+                      {d != null && <p className={`text-[9px] font-mono text-right mt-0.5 ${isNext ? "text-aviso font-bold" : "text-neutral-400"}`}>{isNext ? "◀ " : ""}{d >= 0 ? "+" : ""}{d.toFixed(1)}%</p>}
                     </td>
                   );
                 }); })()}
