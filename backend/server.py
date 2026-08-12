@@ -3674,6 +3674,18 @@ async def add_alert(item: PriceAlertCreate, _user: str = Depends(auth.get_curren
     return obj.model_dump()
 
 
+# Va ANTES de `/alerts/{alert_id}` por lo mismo que el bloque del Analista: con la ruta
+# con parámetro por delante, DELETE /api/alerts/history intentaba borrar una alerta cuyo
+# id fuera «history», no encontraba ninguna y devolvía 404 «Alerta no encontrada». Aquí
+# el síntoma sí era visible, pero apuntaba al sitio equivocado: parecía que el historial
+# no existía, no que la ruta estuviera tapada.
+@api_router.delete("/alerts/history")
+async def clear_alert_history(_user: str = Depends(auth.get_current_user)):
+    """Borra todo el historial."""
+    await db.alert_history.delete_many({})
+    return {"ok": True}
+
+
 @api_router.delete("/alerts/{alert_id}")
 async def remove_alert(alert_id: str, _user: str = Depends(auth.get_current_user)):
     res = await db.alerts.delete_one({"id": alert_id})
@@ -3700,6 +3712,27 @@ async def popular_stocks(_user: str = Depends(auth.get_current_user)):
 
 
 # ---------- Analyst consensus & sentiment ----------
+# ---------- Analista Institucional ----------
+# ORDEN IMPORTANTE: estas dos rutas van ANTES de `/analyst/{symbol}`. FastAPI resuelve
+# por orden de registro, así que una ruta con parámetro declarada antes se traga
+# cualquier ruta estática que comparta prefijo. Con `/analyst/{symbol}` por delante,
+# GET /api/analyst/ideas devolvía el consenso de analistas del «símbolo» IDEAS —
+# 200 OK, cuerpo con sentido, y el endpoint correcto inalcanzable. Un 404 se habría
+# visto; esto no.
+@api_router.get("/analyst/ideas")
+async def analyst_ideas(limit: int = 30, _user: str = Depends(auth.get_current_user)):
+    """Histórico de ideas que el Analista Institucional ha detectado (más recientes primero)."""
+    items = await db.analyst_ideas.find({}, {"_id": 0}).sort("detected_at", -1).limit(limit).to_list(limit)
+    return {"ideas": items}
+
+
+@api_router.post("/analyst/scan")
+async def analyst_scan(notify: bool = False, _user: str = Depends(auth.get_current_user)):
+    """Lanza un barrido manual del Analista Institucional. Con notify=false solo devuelve
+    las candidatas (para probar sin enviar Telegram); con notify=true además avisa."""
+    return await daily_analyst.scan(db, notify=notify)
+
+
 @api_router.get("/analyst/{symbol}")
 async def analyst_data(symbol: str, _user: str = Depends(auth.get_current_user)):
     sym = symbol.upper()
@@ -4022,20 +4055,6 @@ async def alternativa_sectorial(symbol: str, _user: str = Depends(auth.get_curre
     return {"symbol": sym, "sector": sector, "industry": industry,
             "grupo": grupo, "alternativas": alts}
 
-
-# ---------- Analista Institucional ----------
-@api_router.get("/analyst/ideas")
-async def analyst_ideas(limit: int = 30, _user: str = Depends(auth.get_current_user)):
-    """Histórico de ideas que el Analista Institucional ha detectado (más recientes primero)."""
-    items = await db.analyst_ideas.find({}, {"_id": 0}).sort("detected_at", -1).limit(limit).to_list(limit)
-    return {"ideas": items}
-
-
-@api_router.post("/analyst/scan")
-async def analyst_scan(notify: bool = False, _user: str = Depends(auth.get_current_user)):
-    """Lanza un barrido manual del Analista Institucional. Con notify=false solo devuelve
-    las candidatas (para probar sin enviar Telegram); con notify=true además avisa."""
-    return await daily_analyst.scan(db, notify=notify)
 
 
 # ---------- Newsletter (Capa 3): buzón de entrada ----------
@@ -4494,12 +4513,6 @@ async def get_alert_history(limit: int = 50, _user: str = Depends(auth.get_curre
     items = await db.alert_history.find({}, {"_id": 0}).sort("fired_at", -1).limit(limit).to_list(limit)
     return items
 
-
-@api_router.delete("/alerts/history")
-async def clear_alert_history(_user: str = Depends(auth.get_current_user)):
-    """Borra todo el historial."""
-    await db.alert_history.delete_many({})
-    return {"ok": True}
 
 
 # ---------- Hot Signals (señales calientes para el Dashboard) ----------
