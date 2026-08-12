@@ -93,89 +93,103 @@ export default function TelegramConnectView() {
 
   const Field = ({ label, ...p }) => (
     <label className="block mb-3">
-      <span className="text-[11px] uppercase tracking-wider text-[#5c6b66] font-mono">{label}</span>
-      <input {...p} className="w-full mt-1 px-3 py-2 rounded-md border border-[#e5e0d8] bg-white text-[#0e1f1a] text-sm" />
+      <span className="text-[11px] uppercase tracking-wider text-tinta-3 font-mono">{label}</span>
+      <input {...p} className="w-full mt-1 px-3 py-2 rounded-md border border-linea bg-superficie text-tinta text-sm" />
     </label>
   );
 
   return (
     <div className="max-w-lg mx-auto space-y-4">
       <div className="flex items-center gap-2">
+        {/* EXCEPCIÓN DE MARCA · #229ED9 es el azul de Telegram, no un color de
+            InverIA. Se queda fijo en los dos temas, igual que el morado #7c5cbf
+            del gráfico: un logo que cambia de color con el tema deja de ser el
+            logo. Tampoco lo toca el parche `!important`, y así debe seguir.
+            Contraste comprobado como elemento gráfico (umbral 3:1): 3,02:1
+            sobre el blanco de claro y 4,81:1 sobre el #1e2c28 de oscuro. */}
         <TelegramLogo size={24} weight="fill" className="text-[#229ED9]" />
         <div>
-          <h1 className="font-heading font-bold text-lg text-[#0e1f1a] leading-tight">Conectar Telegram</h1>
-          <p className="text-[11px] text-[#5c6b66]">Lee los canales de tu grupo de pago para alimentar el cerebro (solo lectura).</p>
+          <h1 className="font-heading font-bold text-lg text-tinta leading-tight">Conectar Telegram</h1>
+          <p className="text-[11px] text-tinta-3">Lee los canales de tu grupo de pago para alimentar el cerebro (solo lectura).</p>
         </div>
       </div>
 
       {step === "token" && (
-        <div className="card-flat p-5">
+        <div className="iv-panel p-5">
           <Field label="Token de acceso" type="password" value={token} placeholder="tu INBOUND_SECRET"
             onChange={(e) => setToken(e.target.value)} />
-          <button onClick={submitToken} disabled={busy} className="w-full py-2 rounded-md bg-[#1a3a32] text-white text-sm font-semibold disabled:opacity-50">
+          <button onClick={submitToken} disabled={busy} className="w-full py-2 rounded-md bg-marca text-marca-tinta text-sm font-semibold disabled:opacity-50">
             Continuar
           </button>
         </div>
       )}
 
       {step === "phone" && (
-        <div className="card-flat p-5">
-          <p className="text-xs text-[#5c6b66] mb-3">Introduce tu número de Telegram. Te llegará un código dentro de la propia app de Telegram.</p>
+        <div className="iv-panel p-5">
+          <p className="text-xs text-tinta-3 mb-3">Introduce tu número de Telegram. Te llegará un código dentro de la propia app de Telegram.</p>
           <Field label="Teléfono (con prefijo)" type="tel" value={phone} placeholder="+34600000000"
             onChange={(e) => setPhone(e.target.value)} />
-          <button onClick={sendCode} disabled={busy} className="w-full py-2 rounded-md bg-[#1a3a32] text-white text-sm font-semibold disabled:opacity-50">
+          <button onClick={sendCode} disabled={busy} className="w-full py-2 rounded-md bg-marca text-marca-tinta text-sm font-semibold disabled:opacity-50">
             {busy ? "Enviando…" : "Enviar código"}
           </button>
         </div>
       )}
 
       {step === "code" && (
-        <div className="card-flat p-5">
-          <p className="text-xs text-[#5c6b66] mb-3">Mira el código que te ha llegado <b>en Telegram</b> (mensaje de "Telegram") y ponlo aquí. Si tienes verificación en 2 pasos, añade tu contraseña.</p>
+        <div className="iv-panel p-5">
+          <p className="text-xs text-tinta-3 mb-3">Mira el código que te ha llegado <b>en Telegram</b> (mensaje de "Telegram") y ponlo aquí. Si tienes verificación en 2 pasos, añade tu contraseña.</p>
           <Field label="Código" type="text" inputMode="numeric" value={code} placeholder="12345"
             onChange={(e) => setCode(e.target.value)} />
           <Field label="Contraseña 2FA (si tienes)" type="password" value={password} placeholder="opcional"
             onChange={(e) => setPassword(e.target.value)} />
-          <button onClick={submitCode} disabled={busy} className="w-full py-2 rounded-md bg-[#1a3a32] text-white text-sm font-semibold disabled:opacity-50">
+          <button onClick={submitCode} disabled={busy} className="w-full py-2 rounded-md bg-marca text-marca-tinta text-sm font-semibold disabled:opacity-50">
             {busy ? "Verificando…" : "Conectar"}
           </button>
         </div>
       )}
 
       {step === "channels" && (
-        <div className="card-flat p-5">
+        <div className="iv-panel p-5">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-semibold text-[#0e1f1a]">Elige qué capturar</p>
-            <button onClick={() => loadDialogs(token)} className="p-1.5 rounded-md border border-[#e5e0d8]" title="Recargar">
+            <p className="text-sm font-semibold text-tinta">Elige qué capturar</p>
+            <button onClick={() => loadDialogs(token)} className="p-1.5 rounded-md border border-linea" title="Recargar">
               <ArrowClockwise size={14} weight="bold" className={busy ? "animate-spin" : ""} />
             </button>
           </div>
-          <p className="text-[11px] text-[#5c6b66] mb-3">Marca los canales de los <b>dueños</b> (señal). Deja sin marcar los chats de miembros (ruido).</p>
+          <p className="text-[11px] text-tinta-3 mb-3">Marca los canales de los <b>dueños</b> (señal). Deja sin marcar los chats de miembros (ruido).</p>
           <div className="space-y-1.5 max-h-[50vh] overflow-y-auto mb-4">
-            {dialogs.length === 0 && !busy && <p className="text-xs text-[#5c6b66]">No hay canales o aún cargando…</p>}
+            {dialogs.length === 0 && !busy && <p className="text-xs text-tinta-3">No hay canales o aún cargando…</p>}
             {dialogs.map((c) => (
               <button key={c.id} onClick={() => toggle(c.id)}
                 className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md border text-left"
-                style={{ borderColor: selected.has(c.id) ? "#4a7c59" : "#e5e0d8", background: selected.has(c.id) ? "#4a7c5910" : "white" }}>
+                /* Va en línea y no en clases porque el color depende del estado de
+                   selección. Los hex fijos que había aquí NO los alcanzaba el
+                   remapeo de oscuro —solo actúa sobre clases—, así que un canal
+                   sin marcar se pintaba blanco sobre la página oscura. `var()` sí
+                   se resuelve con el tema, igual que ya hace WatchlistStrip. */
+                style={{
+                  borderColor: selected.has(c.id) ? "rgb(var(--iv-sube))" : "rgb(var(--iv-linea))",
+                  background: selected.has(c.id) ? "rgb(var(--iv-sube) / 0.06)" : "rgb(var(--iv-superficie))",
+                }}>
                 <div className="min-w-0">
-                  <p className="text-sm text-[#0e1f1a] truncate">{c.nombre}</p>
-                  <p className="text-[10px] text-[#5c6b66]">{c.tipo} · {c.id}</p>
+                  <p className="text-sm text-tinta truncate">{c.nombre}</p>
+                  <p className="text-[10px] text-tinta-3">{c.tipo} · {c.id}</p>
                 </div>
-                {selected.has(c.id) && <CheckCircle size={18} weight="fill" className="text-[#4a7c59] shrink-0" />}
+                {selected.has(c.id) && <CheckCircle size={18} weight="fill" className="text-sube shrink-0" />}
               </button>
             ))}
           </div>
-          <button onClick={saveCapture} disabled={busy} className="w-full py-2 rounded-md bg-[#1a3a32] text-white text-sm font-semibold disabled:opacity-50">
+          <button onClick={saveCapture} disabled={busy} className="w-full py-2 rounded-md bg-marca text-marca-tinta text-sm font-semibold disabled:opacity-50">
             Guardar y empezar a capturar ({selected.size})
           </button>
-          <button onClick={() => setStep("phone")} className="w-full mt-2 py-2 text-[#5c6b66] text-xs underline">
+          <button onClick={() => setStep("phone")} className="w-full mt-2 py-2 text-tinta-3 text-xs underline">
             ¿Problemas? Rehacer login (teléfono + código)
           </button>
         </div>
       )}
 
       {status && (
-        <p className="text-[10px] text-[#5c6b66] text-center">
+        <p className="text-[10px] text-tinta-3 text-center">
           Sesión: {status.sesion_guardada ? "✅ conectada" : "—"} · Capturando: {status.canales_capturando?.length || 0} canal(es)
         </p>
       )}
