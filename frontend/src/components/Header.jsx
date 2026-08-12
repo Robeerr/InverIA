@@ -121,18 +121,23 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
         </Link>
 
         {/* Desktop nav ─────────────────────────────────────────────────────────
-            Solo iconos. Con las siete etiquetas la nav mide ~790px y, sumada al
-            logo y a las acciones, no deja sitio al buscador ni siquiera en el
-            ancho máximo del contenedor (`max-w-[1480px]`): el campo se quedaba
-            en ~110px y se cortaba el placeholder. No hay ningún tamaño de
-            pantalla en el que ambas cosas quepan, así que las etiquetas se
-            mantienen donde sí caben —el menú móvil— y aquí manda el icono.
-            `shrink-0` impide además que la nav se comprima y parta un icono.
+            Las etiquetas vuelven, pero la nav va COMPRIMIDA para que quepan. Con
+            el espaciado original (px-3, gap-1.5, 12px) las siete entradas miden
+            ~790px y, con el logo y las acciones, no dejaban sitio al buscador ni
+            en el ancho máximo del contenedor. Apretando el relleno y bajando el
+            texto a 11px —el suelo de legibilidad de la escala— bajan a ~675px,
+            que sí cabe.
 
-            El `title` no es decoración: cuando solo se ve el icono, es la única
-            forma de saber a dónde lleva. `aria-label` mantiene el nombre para
-            lectores de pantalla en los dos tamaños. */}
-        <nav className="hidden lg:flex shrink-0 items-center gap-1 bg-superficie border border-linea rounded-md p-1">
+            El punto de corte es 1400px y no `2xl`: por debajo de ahí las
+            etiquetas volverían a comerse el buscador, y por encima de `2xl`
+            (1536) se habrían quedado ocultas justo en las pantallas donde
+            perfectamente caben. Es un ancho medido, no un escalón heredado.
+
+            Debajo de 1400 quedan los iconos solos, y ahí `title` no es
+            decoración: es la única forma de saber a dónde lleva cada uno.
+            `aria-label` mantiene el nombre para lectores de pantalla siempre.
+            `shrink-0` impide que la nav se comprima y parta un icono. */}
+        <nav className="hidden lg:flex shrink-0 items-center gap-0.5 bg-superficie border border-linea rounded-md p-1">
           {NAV.map((n) => {
             const Icon = n.icon;
             const active = location.pathname === n.to;
@@ -143,26 +148,26 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
                 data-testid={n.testId}
                 title={n.label}
                 aria-label={n.label}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-mono transition-colors ${
+                className={`flex items-center gap-1 px-2 py-1.5 rounded text-[11px] font-mono whitespace-nowrap transition-colors ${
                   active ? "bg-marca text-marca-tinta" : "text-tinta-3 hover:text-tinta"
                 }`}
               >
-                <Icon size={14} weight="bold" />
+                <Icon size={13} weight="bold" />
+                <span className="hidden min-[1400px]:inline">{n.label}</span>
               </Link>
             );
           })}
         </nav>
 
         {/* Search + autocompletado.
-            El campo crece hasta 340px y ahí para. Es lo que hace falta para que
-            entre un ticker y no se corte el placeholder; más allá solo es ancho
-            vacío en pantallas grandes, porque lo que se escribe aquí son cuatro
-            letras. El suelo de 200px evita el fallo contrario: con `min-w-0`
-            colapsaba hasta la nada y solo se veía la lupa.
-            Las acciones llevan `ml-auto` para seguir pegadas a la derecha ahora
-            que el buscador ya no se come el hueco sobrante. */}
+            Sin techo, a propósito. Un `max-w` dejaba un hueco muerto entre el
+            campo y las acciones en cuanto sobraba sitio, y ese hueco se ve peor
+            que un buscador holgado. Ahora el campo se queda con lo que sobre, y
+            lo que sobra es poco porque la nav ya no lo acapara.
+            El suelo de 200px se mantiene: es lo que impide el fallo original,
+            cuando `min-w-0` lo dejaba colapsar hasta que solo se veía la lupa. */}
         {showSearch && (
-          <div ref={searchRef} className="flex-1 relative min-w-[200px] max-w-[340px]">
+          <div ref={searchRef} className="flex-1 relative min-w-[200px]">
             <form onSubmit={submit} className="relative">
               <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-tinta-3" />
               <Input
