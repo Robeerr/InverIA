@@ -113,13 +113,26 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
           </div>
           <div className="hidden sm:block">
             <h1 className="font-heading font-bold text-lg leading-none tracking-tight text-tinta">InverIA</h1>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-tinta-3 mt-0.5">Análisis bursátil en vivo</p>
+            {/* La coletilla mide ~155px por el `tracking` ancho y es lo que menos
+                aporta de toda la barra. Se reserva para 2xl, donde sobra sitio. */}
+            <p className="hidden 2xl:block text-[10px] uppercase tracking-[0.2em] text-tinta-3 mt-0.5">Análisis bursátil en vivo</p>
           </div>
           <span className="sm:hidden font-heading font-bold text-lg text-tinta">InverIA</span>
         </Link>
 
-        {/* Desktop nav */}
-        <nav className="hidden lg:flex items-center gap-1 bg-superficie border border-linea rounded-md p-1">
+        {/* Desktop nav ─────────────────────────────────────────────────────────
+            Solo iconos. Con las siete etiquetas la nav mide ~790px y, sumada al
+            logo y a las acciones, no deja sitio al buscador ni siquiera en el
+            ancho máximo del contenedor (`max-w-[1480px]`): el campo se quedaba
+            en ~110px y se cortaba el placeholder. No hay ningún tamaño de
+            pantalla en el que ambas cosas quepan, así que las etiquetas se
+            mantienen donde sí caben —el menú móvil— y aquí manda el icono.
+            `shrink-0` impide además que la nav se comprima y parta un icono.
+
+            El `title` no es decoración: cuando solo se ve el icono, es la única
+            forma de saber a dónde lleva. `aria-label` mantiene el nombre para
+            lectores de pantalla en los dos tamaños. */}
+        <nav className="hidden lg:flex shrink-0 items-center gap-1 bg-superficie border border-linea rounded-md p-1">
           {NAV.map((n) => {
             const Icon = n.icon;
             const active = location.pathname === n.to;
@@ -128,20 +141,24 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
                 key={n.to}
                 to={n.to}
                 data-testid={n.testId}
+                title={n.label}
+                aria-label={n.label}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-mono transition-colors ${
                   active ? "bg-marca text-marca-tinta" : "text-tinta-3 hover:text-tinta"
                 }`}
               >
                 <Icon size={14} weight="bold" />
-                {n.label}
               </Link>
             );
           })}
         </nav>
 
-        {/* Search + autocompletado */}
+        {/* Search + autocompletado.
+            `min-w-[240px]` es el suelo: por debajo, el placeholder se corta y el
+            campo deja de decir qué se busca. Antes era `min-w-0`, que permite
+            colapsar hasta cero y hacía del buscador el primero en ceder ancho. */}
         {showSearch && (
-          <div ref={searchRef} className="flex-1 relative min-w-0">
+          <div ref={searchRef} className="flex-1 relative min-w-[240px] xl:min-w-[300px]">
             <form onSubmit={submit} className="relative">
               <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-tinta-3" />
               <Input
