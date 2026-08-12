@@ -95,7 +95,12 @@ describe("los tres estados de carga están cubiertos", () => {
 describe("cerrado se ve exactamente como antes", () => {
   test("el chip original sigue en la vista, con su color y su texto", () => {
     expect(VISTA).toContain("{ps} pts");
-    expect(VISTA).toContain("background: `${psColor}18`");
+    // El chip sigue componiendo fondo, texto y borde a partir de `psColor`. Lo que
+    // cambió con la migración a tokens es la FORMA de ese color: era un hex y ahora
+    // es una tripleta RGB, porque un hex con sufijo de alfa (`${psColor}18`) no
+    // podía llevar variables CSS y dejaba el chip con la paleta clara en oscuro.
+    expect(VISTA).toContain("background: `rgb(${psColor} / 0.09)`");
+    expect(VISTA).toContain("color: `rgb(${psColor})`");
   });
 
   test("el componente solo lo envuelve", () => {
