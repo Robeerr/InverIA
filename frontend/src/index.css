@@ -38,6 +38,34 @@ body {
     color: #e5e7eb;
 }
 
+/* ── LO QUE QUEDA DEL PARCHE, Y POR QUÉ ───────────────────────────────────────
+   Este bloque eran 50 reglas indexadas por VALOR HEX. Migradas las nueve
+   pantallas a tokens, se han retirado las 24 cuyo selector ya no aparece en
+   ninguna parte del código: eran remapeos de colores que ya no existen.
+
+   Las que siguen NO son residuo: cada una tiene todavía a alguien detrás, y
+   borrarla rompe ese sitio en oscuro. Se van solas cuando se vaya su motivo.
+
+     · BrainView.jsx (74 hex) sostiene la mayoría. Está FUERA de la migración a
+       propósito: se va a reescribir en cuatro pestañas, y pintarlo dos veces
+       no tiene sentido. Sus reglas caen con esa reescritura.
+     · App.js (9 hex) nunca entró en ninguna tanda: no es una pantalla, es el
+       armazón (pantalla de carga y pie de página). Sostiene bg-[#f5f3ef],
+       bg-[#1a3a32], text-[#5c6b66] y border-[#e5e0d8].
+     · `card-flat` sigue en BrainView y en LightweightChart.
+     · `bg-white` a secas sigue en BrainView, QuoteHeader y ChartistPanel.
+     · `divider-soft` y `label-small` no están indexadas por hex: son clases de
+       utilidad vivas en cinco componentes ya migrados. No son parte de la deuda.
+     · Las reglas de `input`, `select`, `textarea`, `::placeholder` y la barra de
+       desplazamiento van por ELEMENTO, no por color. Quitarlas no destapa el
+       token: deja los campos con el blanco por defecto del navegador sobre la
+       página oscura. Necesitan estilo propio en la capa de tokens, que es
+       trabajo aparte y no una retirada.
+
+   Nada de esto son las excepciones de marca (el azul de Telegram, el morado
+   del gráfico, la paleta de sectores): aquellas viven en su componente, están
+   documentadas allí y no dependen de este bloque.
+   ────────────────────────────────────────────────────────────────────────── */
 .dark .card-flat {
     background: #131a23 !important;
     border-color: #283341 !important;
@@ -47,18 +75,13 @@ body {
 .dark .text-\[\#0e1f1a\] { color: #f1f5f9 !important; }
 .dark .text-\[\#5c6b66\] { color: #94a3b8 !important; }
 .dark .bg-\[\#f5f3ef\] { background-color: #1c2530 !important; }
-.dark .bg-\[\#f5f3ef\]\/95 { background-color: rgba(10, 14, 19, 0.95) !important; }
 .dark .border-\[\#e5e0d8\] { border-color: #283341 !important; }
 .dark .bg-white { background-color: #131a23 !important; }
-.dark .border-\[\#f0ebe1\] { border-color: #1f2937 !important; }
 .dark .bg-\[\#1a3a32\] { background-color: #f59e0b !important; color: #0a0e13 !important; }
 .dark .bg-\[\#1a3a32\]:hover { background-color: #fbbf24 !important; }
-.dark .hover\:bg-\[\#0e1f1a\]:hover { background-color: #fbbf24 !important; }
 .dark .text-\[\#1a3a32\] { color: #fbbf24 !important; }
 .dark .divider-soft { background: #283341 !important; }
 .dark .label-small { color: #94a3b8 !important; }
-.dark .bg-\[\#f5f3ef\]\/5 { background-color: rgba(255, 255, 255, 0.03) !important; }
-.dark .bg-\[\#e5e0d8\] { background-color: #283341 !important; }
 .dark input, .dark select, .dark textarea {
     background-color: #1c2530 !important;
     color: #f1f5f9 !important;
@@ -71,39 +94,16 @@ body {
 .dark ::-webkit-scrollbar-thumb:hover {
     background: #475569 !important;
 }
-/* Brand mark in dark mode */
-.dark .bg-\[\#1a3a32\].text-\[\#f5f3ef\] { color: #0a0e13 !important; }
 /* Maintain buy/sell colors slightly adjusted for dark */
 .dark .text-\[\#4a7c59\] { color: #4ade80 !important; }
 .dark .text-\[\#d85c41\] { color: #f87171 !important; }
-.dark .bg-\[\#4a7c59\] { background-color: #16a34a !important; }
-.dark .bg-\[\#d85c41\] { background-color: #dc2626 !important; }
 .dark .border-\[\#4a7c59\] { border-color: #4ade80 !important; }
-.dark .border-\[\#d85c41\] { border-color: #f87171 !important; }
-.dark .bg-\[\#4a7c59\]\/10 { background-color: rgba(74, 222, 128, 0.1) !important; }
-.dark .bg-\[\#d85c41\]\/10 { background-color: rgba(248, 113, 113, 0.1) !important; }
-.dark .bg-\[\#4a7c59\]\/5 { background-color: rgba(74, 222, 128, 0.06) !important; }
-.dark .bg-\[\#d85c41\]\/5 { background-color: rgba(248, 113, 113, 0.06) !important; }
-.dark .border-\[\#4a7c59\]\/30 { border-color: rgba(74, 222, 128, 0.3) !important; }
 
-/* Colores de texto que se escaparon del remapeo de arriba. Sobre la tarjeta oscura
-   (#131a23) daban entre 1,87:1 y 3,39:1 — todos por debajo del mínimo legible (4,5:1),
-   y justo en los paneles que más se leen: Niveles de Trading, Chartista, Backtest y
-   "Por qué se mueve hoy". Contraste medido, no estimado. */
-.dark .text-\[\#3a4a44\] { color: #cbd5e1 !important; }  /* era 1,87:1 — prácticamente invisible */
-.dark .text-\[\#8a6508\] { color: #fbbf24 !important; }  /* avisos ámbar: 3,29:1 */
-.dark .text-\[\#c0392b\] { color: #f87171 !important; }  /* bajista/riesgo: 3,22:1 */
-.dark .text-\[\#1e7a3a\] { color: #4ade80 !important; }  /* alcista: 3,25:1 */
-.dark .text-\[\#1a6a94\] { color: #60a5fa !important; }  /* 2,94:1 */
-.dark .text-\[\#2563eb\] { color: #60a5fa !important; }  /* 3,39:1 */
-.dark .border-\[\#d85c41\]\/30 { border-color: rgba(248, 113, 113, 0.3) !important; }
-/* Gold accent (warnings, "actualizando", highlights) — brighter on dark */
+/* Estos dos daban 3,39:1 y 3,29:1 sobre la tarjeta oscura, por debajo del 4,5:1
+   que necesita un texto. Los paneles para los que se escribieron ya usan tokens;
+   los dos selectores sobreviven solo por BrainView. Contraste medido, no estimado. */
+.dark .text-\[\#2563eb\] { color: #60a5fa !important; }
 .dark .text-\[\#c9a14a\] { color: #fbbf24 !important; }
-.dark .bg-\[\#c9a14a\] { background-color: #fbbf24 !important; color: #0a0e13 !important; }
-/* Blue accent (volume, "más negociadas") — brighter on dark */
-.dark .text-\[\#1F6FB5\] { color: #60a5fa !important; }
-.dark .bg-\[\#1F6FB5\]\/10 { background-color: rgba(96, 165, 250, 0.12) !important; }
-.dark .border-\[\#1F6FB5\]\/30 { border-color: rgba(96, 165, 250, 0.3) !important; }
 
 .font-heading {
     font-family: 'Manrope', sans-serif;
