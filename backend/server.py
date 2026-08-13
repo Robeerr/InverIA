@@ -49,6 +49,7 @@ import confluencia as confluencia_mod
 import mem
 import levels_engine
 import estado_accion
+import veto_compra
 import auth
 
 ROOT_DIR = Path(__file__).parent
@@ -221,13 +222,34 @@ async def _chartist_vigilante(sym: str, result: dict):
     o el sentido gira a alcista/bajista). Muy selectivo + 1 aviso/día por acción para que sea
     señal y no ruido. Guarda el estado en Mongo (db.chartist_state)."""
     try:
+        # El MISMO veto que aplica el endpoint, y por el mismo motivo. Un aviso de compra
+        # es mas fuerte que una pantalla: llega al telefono sin que nadie lo haya pedido y
+        # no tiene al lado el panel que explica que la accion esta vetada.
+        #
+        # Se decide sobre el veredicto degradado, no sobre el original.
+        estado_t = await asyncio.to_thread(market_data.tendencia_de, sym)
+        est = estado_accion.evaluar(estado_t)
+        vetado = veto_compra.hay_veto(est["estado"])
+        result = veto_compra.degradar_chartista(result, est["estado"], est["motivo"])
+
         plan = result.get("plan") or {}
         accion = (plan.get("accion") or "").upper()
         sentido = (result.get("sentido") or "").lower()
         prev = await db.chartist_state.find_one({"symbol": sym}, {"_id": 0})
         today = datetime.now(timezone.utc).date().isoformat()
+        # Se guarda la accion DEGRADADA, no la del modelo. `chartist_state` no es el
+        # veredicto generativo: es la contabilidad de avisos, y su unica pregunta es "ha
+        # cambiado algo desde la ultima vez que mire?".
+        #
+        # Guardar COMPRAR mientras se veta romperia el aviso futuro: al levantarse el veto,
+        # `prev_accion` ya seria COMPRAR, la transicion no dispararia y el usuario no se
+        # enteraria nunca de que la compra quedo autorizada. Con ESPERAR guardado, el paso
+        # ESPERAR -> COMPRAR llega el dia en que la estructura acompana.
         nuevo_estado = {"symbol": sym, "accion": accion, "sentido": sentido,
                         "updated_at": datetime.now(timezone.utc).isoformat()}
+        if vetado:
+            logger.info("Vigilante Chartista %s: compra vetada por tendencia (%s)",
+                        sym, est["tendencia"])
 
         async def _guardar():
             await db.chartist_state.update_one({"symbol": sym}, {"$set": nuevo_estado}, upsert=True)
@@ -924,6 +946,14 @@ class SignalEntryCreate(BaseModel):
     compra: Optional[float] = None
     fecha_compra: Optional[str] = None
     acciones: Optional[float] = None
+    # Saltarse el veto de tendencia a conciencia. NO se guarda: no esta en
+    # `signal_table.ALLOWED_CREATE`, asi que la capa de datos lo descarta sola.
+    #
+    # Existe porque el veto protege del automatismo, no del usuario. Que la IA no pueda
+    # autorizar una compra no significa que la aplicacion pueda prohibirsela a quien la
+    # decide: querer los niveles preparados de una accion todavia bajista, para cuando
+    # gire, es un caso legitimo. Por defecto se bloquea; saltarselo hay que decirlo.
+    forzar: Optional[bool] = False
 
 
 class SignalEntryUpdate(BaseModel):
@@ -961,6 +991,10 @@ class SignalEntryUpdate(BaseModel):
     # Necesaria para el tipo de cambio del día de la compra: sin ella la ganancia en
     # euros al vender sale aproximada. Editable para poder rellenarla en posiciones viejas.
     fecha_compra: Optional[str] = None
+    # Mismo escape explicito que en el alta, y tampoco se guarda: `ALLOWED_UPDATE` no lo
+    # incluye. Va con default `False` y no `None` para que `exclude_unset` no lo arrastre
+    # como campo a escribir cuando el cliente no lo manda.
+    forzar: Optional[bool] = False
 
 
 class SignalBulkImport(BaseModel):
@@ -1234,31 +1268,55 @@ async def chartist_verdict(symbol: str, refresh: bool = False, cached_only: bool
     análisis que el pre-cálculo de la watchlist ya dejó listos."""
     sym = symbol.upper()
     key = f"chartist:{sym}"
+    precomputado = False
+    result = None
     if not refresh:
         cached = _cache.get(key)
         if cached:
-            return {**cached, "_precomputed": True} if cached_only else cached
-    if cached_only:
+            result = cached
+            precomputado = True
+    if result is None and cached_only:
+        # Sin veredicto guardado no hay nada que vetar, y resolver la tendencia aqui
+        # gastaria una lectura de historico por cada accion que el pre-calculo aun no ha
+        # tocado - que es justo el caso mas frecuente de esta rama.
         return {"cached": False}
-    try:
-        result = await chartist.analyze(sym)
-    except RuntimeError as e:
-        raise HTTPException(422, str(e))
-    except Exception as e:
-        msg = str(e)
-        low = msg.lower()
-        # Límite de la API de Gemini (plan gratis): mensaje limpio en vez del JSON crudo.
-        if "429" in msg or "resource_exhausted" in low or "quota" in low or "rate limit" in low:
-            raise HTTPException(429, "Límite de la API de Gemini alcanzado (plan gratis: 20 análisis/día). "
-                                     "Espera un momento y reintenta, o activa el plan de pago de Gemini para subir el tope.")
-        # Errores de config/clave frecuentes -> mensaje útil.
-        if "api key" in low or "api_key" in low or "permission" in low or "invalid" in low or "no configurada" in low:
-            raise HTTPException(500, "Problema con la API key de Gemini: " + msg[:200])
-        if "billing" in low or "consumer" in low or "disabled" in low or "suspend" in low:
-            raise HTTPException(500, "La cuenta de Gemini de pago tiene un problema de facturación: " + msg[:200])
-        raise HTTPException(500, "El Chartista IA no pudo generar el análisis (" + msg[:180] + ")")
-    _cache.set(key, result, ttl=1800)  # 30 min
-    return result
+    if result is None:
+        try:
+            result = await chartist.analyze(sym)
+        except RuntimeError as e:
+            raise HTTPException(422, str(e))
+        except Exception as e:
+            msg = str(e)
+            low = msg.lower()
+            # Límite de la API de Gemini (plan gratis): mensaje limpio en vez del JSON crudo.
+            if "429" in msg or "resource_exhausted" in low or "quota" in low or "rate limit" in low:
+                raise HTTPException(429, "Límite de la API de Gemini alcanzado (plan gratis: 20 análisis/día). "
+                                         "Espera un momento y reintenta, o activa el plan de pago de Gemini para subir el tope.")
+            # Errores de config/clave frecuentes -> mensaje útil.
+            if "api key" in low or "api_key" in low or "permission" in low or "invalid" in low or "no configurada" in low:
+                raise HTTPException(500, "Problema con la API key de Gemini: " + msg[:200])
+            if "billing" in low or "consumer" in low or "disabled" in low or "suspend" in low:
+                raise HTTPException(500, "La cuenta de Gemini de pago tiene un problema de facturación: " + msg[:200])
+            raise HTTPException(500, "El Chartista IA no pudo generar el análisis (" + msg[:180] + ")")
+        # Se guarda LO QUE DIJO EL MODELO, sin tocar. El veto viene despues y sobre una
+        # copia: la cache tiene que conservar el veredicto generativo integro para que un
+        # cambio de tendencia se refleje en la siguiente lectura sin regenerar nada.
+        _cache.set(key, result, ttl=1800)  # 30 min
+
+    # -- El veto, aqui y no antes -------------------------------------------
+    # Se resuelve la tendencia AHORA, no cuando se genero el veredicto: entre una cosa y
+    # otra pueden pasar hasta 4 horas (el pre-calculo guarda con CHARTIST_TTL) y la
+    # direccion de la accion se recalcula cada 15 minutos.
+    #
+    # La autoridad es la de siempre: `market_data.tendencia_de` lee el historico diario ya
+    # cacheado y `estado_accion` traduce. Aqui no se compara ningun precio contra ninguna
+    # media - reimplementarlo seria la tercera copia de una regla que tiene dueno.
+    estado_t = await asyncio.to_thread(market_data.tendencia_de, sym)
+    est = estado_accion.evaluar(estado_t)
+    salida = veto_compra.degradar_chartista(result, est["estado"], est["motivo"])
+    if cached_only and precomputado:
+        salida = {**salida, "_precomputed": True}
+    return salida
 
 
 @api_router.get("/indicators/{symbol}")
@@ -1553,6 +1611,38 @@ def _aplicar_estado_tendencia(payload: dict, precio, indicadores) -> dict:
         payload["buy_levels"] = []
         payload["zonas_ocultas_por_tendencia"] = True
     return payload
+
+
+async def _puerta_de_tendencia(symbol, datos: dict, forzar) -> None:
+    """Corta la escritura de niveles de compra sobre una accion vetada. O deja pasar.
+
+    Es la MISMA autoridad que el resto: `market_data.tendencia_de` lee el historico diario
+    ya cacheado y `estado_accion` traduce; quien decide si eso bloquea es
+    `veto_compra.hay_veto`. Aqui no se compara ningun estado a mano.
+
+    POR QUE EXISTE, HABIENDO YA UNA GUARDA EN LA PANTALLA
+
+    `ChartistPanel.addToCartera` se para si el veredicto viene vetado, pero es codigo de
+    cliente: una peticion directa a la API no pasa por ahi, y tampoco lo haria una
+    respuesta servida desde la cache del navegador. Mostrar se protege en la pantalla;
+    ESCRIBIR se protege en el servidor.
+
+    QUE NO CORTA
+
+    Nada si no hay niveles de compra en el payload - un alta sin niveles, o una edicion de
+    `notes`, no consultan la tendencia y ni siquiera pagan la lectura de historico. Y nunca
+    `deseado` ni `venta1..3`: son objetivos de VENTA, y el veto es sobre comprar.
+    """
+    if forzar or not veto_compra.niveles_de_compra_en(datos):
+        return
+    estado_t = await asyncio.to_thread(market_data.tendencia_de, symbol)
+    est = estado_accion.evaluar(estado_t)
+    if not veto_compra.hay_veto(est["estado"]):
+        return
+    # 409 y no 403: el conflicto es con el estado del recurso, igual que el duplicado que
+    # se comprueba justo antes. El motivo sale de `estado_accion`, que es su dueno -
+    # redactarlo aqui seria una segunda explicacion de lo mismo.
+    raise HTTPException(409, f"{symbol}: {est['motivo']}")
 
 
 def _ocultar_plan_de_entrada(analisis: dict) -> dict:
@@ -2056,6 +2146,14 @@ async def analyze(req: AnalyzeRequest, _user: str = Depends(auth.get_current_use
     _aplicar_estado_tendencia(respuesta, quote.get("price"), indicators_data)
     if respuesta.get("zonas_ocultas_por_tendencia"):
         _ocultar_plan_de_entrada(result)
+    # Y el veredicto, no solo sus numeros. Quitar la zona de entrada dejaba en pantalla la
+    # pildora verde "COMPRAR" junto al panel rojo que dice que la accion no se compra: dos
+    # respuestas incompatibles a la misma pregunta, y la del modelo era la que se leia
+    # primero. La IA recomienda; autorizar es de la estructura.
+    #
+    # Va DESPUES del `insert_one` de arriba a proposito: en Mongo queda lo que dijo el
+    # modelo, integro. Lo que se degrada es lo que se ensena, no lo que se midio.
+    result = veto_compra.degradar_analisis(result, respuesta.get("estado"))
 
     return {
         "symbol": symbol,
@@ -4401,7 +4499,15 @@ async def create_signal(item: SignalEntryCreate, _user: str = Depends(auth.get_c
     sym = (item.symbol or "").upper().strip()
     if sym and await db.signal_entries.find_one({"symbol": sym}, {"_id": 0, "id": 1}):
         raise HTTPException(409, f"{sym} ya está en tu Cartera")
-    entry = await signal_table.create_entry(db, item.model_dump())
+    datos = item.model_dump()
+    # La puerta de tendencia, ANTES de cualquier escritura. La guarda del Chartista es de
+    # cliente y una peticion directa se la salta; esta no.
+    #
+    # Va DESPUES del duplicado a proposito: aquel es una lectura de Mongo que ya se hacia,
+    # y comprobarlo primero evita gastar una lectura de historico en un alta que iba a
+    # fallar de todos modos.
+    await _puerta_de_tendencia(sym, datos, item.forzar)
+    entry = await signal_table.create_entry(db, datos)
     # Una cotización AL MOMENTO, aunque el mercado esté cerrado. El worker solo trabaja en
     # sesión, así que un valor añadido el sábado se quedaba sin precio ("—" en toda la fila)
     # hasta el lunes a las 15:30 — pasó con UBER. Una única llamada; si falla, el worker lo
@@ -4430,6 +4536,15 @@ async def update_signal(entry_id: str, item: SignalEntryUpdate, _user: str = Dep
     # exclude_unset: distingue "no enviado" de "enviado como null". Antes se filtraban todos
     # los None, así que era IMPOSIBLE borrar compra/acciones/venta1-3: el valor viejo volvía.
     data = item.model_dump(exclude_unset=True)
+    # El simbolo NO viaja en el payload de un PATCH: sale de la entrada guardada. Fiarse de
+    # uno enviado por el cliente permitiria pedir la tendencia de un simbolo alcista para
+    # escribir los niveles de otro.
+    if veto_compra.niveles_de_compra_en(data) and not item.forzar:
+        existente = await db.signal_entries.find_one({"id": entry_id}, {"_id": 0, "symbol": 1})
+        if not existente:
+            # 404 antes que 409: si la entrada no existe, el problema no es la tendencia.
+            raise HTTPException(404, "Señal no encontrada")
+        await _puerta_de_tendencia(existente.get("symbol"), data, False)
     updated = await signal_table.update_entry(db, entry_id, data)
     if not updated:
         raise HTTPException(404, "Señal no encontrada")

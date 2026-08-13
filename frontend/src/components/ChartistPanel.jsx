@@ -30,6 +30,15 @@ export default function ChartistPanel({ symbol, runSignal }) {
   async function addToCartera() {
     const plan = data?.plan;
     if (!symbol || !plan || addingCartera) return;
+    // Guarda explícita, aunque el backend ya vacíe los niveles al servir un veredicto
+    // vetado y rechace la escritura con un 409. Este botón no muestra: ESCRIBE en la
+    // Cartera, y un efecto persistente no puede depender de que otra capa haya limpiado
+    // bien los datos antes. Si algún día llega un plan vetado con niveles —una respuesta
+    // cacheada en el navegador, un veredicto anterior a este cambio—, aquí se para.
+    if (data?.vetado_por_tendencia) {
+      toast.error("Esta acción no está en tendencia alcista: su plan de compra no se guarda");
+      return;
+    }
     const precios = (plan.niveles_entrada || [])
       .map((n) => Number(n.precio)).filter((v) => v > 0)
       .sort((a, b) => b - a).slice(0, 5);   // nivel1 = el más alto (primero que se toca)
@@ -154,6 +163,19 @@ export default function ChartistPanel({ symbol, runSignal }) {
           {data.veredicto && (
             <div className="text-[12px] border border-linea rounded p-2 leading-snug">
               {data.veredicto}
+            </div>
+          )}
+
+          {/* Por qué el plan no trae compra. Va ANTES del plan, no debajo: si el usuario
+              lee «ESPERAR» sin explicación, lo atribuye al criterio del chartista y no a
+              la estructura, que es justo el matiz que hace que aprenda algo. */}
+          {data.vetado_por_tendencia && (
+            <div data-testid="chartista-vetado"
+                 className="border-l-[3px] border-baja bg-baja/5 rounded p-2 text-[11px] leading-snug">
+              <span className="font-semibold text-baja">Compra vetada por la tendencia. </span>
+              <span className="text-tinta-3">
+                {data.veto_motivo || "La acción no está en tendencia alcista."}
+              </span>
             </div>
           )}
 
