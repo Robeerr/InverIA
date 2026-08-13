@@ -288,9 +288,14 @@ def test_no_verificable_y_veto_son_preguntas_distintas():
     assert veto_compra.no_verificable("ALCISTA") is False
     assert veto_compra.no_verificable("INDEFINIDA") is False
     assert veto_compra.no_verificable("BAJISTA") is False
-    # Y no se solapan: BAJISTA es verificable Y vetado; SIN_DATOS ni una cosa ni la otra.
+    # Y no se solapan: BAJISTA es una tendencia comprobada, y su estado derivado es el que
+    # veta. Cada función pregunta sobre un dominio distinto — `no_verificable` sobre
+    # tendencias, `hay_veto` sobre estados de acción— y pasarle a una el valor de la otra
+    # es un error de categoría: `no_verificable("NO_COMPRAR")` responde «no lo reconozco»,
+    # que es exactamente lo correcto y el motivo de que el fallo sea cerrado.
     assert veto_compra.hay_veto("NO_COMPRAR") is True
-    assert veto_compra.no_verificable("NO_COMPRAR") is False
+    assert veto_compra.no_verificable("NO_COMPRAR") is True
+    assert veto_compra.hay_veto("BAJISTA") is False
 
 
 # ── 7 · El coste se acota ───────────────────────────────────────────────────

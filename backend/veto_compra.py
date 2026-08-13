@@ -39,6 +39,8 @@ diga un modelo.
 """
 from typing import Optional
 
+import tendencia
+
 # El único estado que veta. Se escribe una vez y se compara contra él en vez de repetir
 # la cadena por ahí: si mañana `EN_SEGUIMIENTO` también tuviera que bloquear, cambia aquí
 # y no en cinco sitios que nadie recordaría revisar.
@@ -93,12 +95,31 @@ def no_verificable(estado_tendencia: Optional[str]) -> bool:
     rechazo—, así que `hay_veto` devuelve False aquí. Correcto para el estado de la acción;
     insuficiente para etiquetar una proximidad como compra. De ahí esta segunda pregunta.
 
-    Cualquier cosa que no sea una cadena conocida cuenta como no verificable: una excepción
-    convertida a este estado por el llamador, un None, o una etiqueta nueva que nadie haya
-    mapeado todavía. Fallo cerrado.
+    QUÉ CUENTA COMO NO VERIFICABLE
+
+    Todo lo que no sea uno de los estados que `tendencia.py` sabe producir, más SIN_DATOS,
+    que es el que ese módulo emite precisamente cuando no ha podido comprobar nada. Un
+    None, una excepción que el llamador ha traducido a este estado, una cadena vacía o una
+    etiqueta que nadie ha mapeado: todas significan lo mismo aquí — no lo sé — y ninguna
+    puede autorizar una compra.
+
+    LA COMPROBACIÓN CONTRA `tendencia.ESTADOS` NO ES DECORATIVA
+
+    Sin ella quedaba un hueco entre dos capas. `estado_accion.evaluar` mapea cualquier
+    estado desconocido a SIN_DATOS —o sea, LO RECONOCE como no comprobable— y devuelve
+    EN_SEGUIMIENTO, que no veta. Pero esta función solo miraba `""` y SIN_DATOS, así que
+    una etiqueta desconocida se colaba entre las dos y salía como COMPRA.
+
+    No era alcanzable: `market_data.tendencia_de` solo devuelve los cuatro estados o
+    SIN_DATOS ante cualquier fallo. Pero una capa defensiva que depende de que nadie añada
+    un estado nuevo no está defendiendo nada — está esperando. Se cierra preguntando al
+    dueño de la lista en vez de mantener aquí una copia de qué estados existen.
     """
-    return not isinstance(estado_tendencia, str) or \
-        estado_tendencia in ("", TENDENCIA_NO_VERIFICABLE)
+    if not isinstance(estado_tendencia, str):
+        return True
+    if estado_tendencia not in tendencia.ESTADOS:
+        return True
+    return estado_tendencia == TENDENCIA_NO_VERIFICABLE
 
 
 def degradar_analisis(analisis: dict, estado: Optional[str]) -> dict:

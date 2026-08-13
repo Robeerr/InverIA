@@ -505,33 +505,54 @@ def test_la_portada_rankea_antes_de_vetar():
     assert '"NO_COMPRAR"' not in helper
 
 
-def test_HUECO_una_tendencia_desconocida_no_activa_el_fallo_cerrado():
-    """DOCUMENTA UN HUECO REAL, encontrado al escribir estos tests. No lo arregla.
+def test_una_tendencia_desconocida_se_trata_como_no_verificable():
+    """EL HUECO QUE ESTE TEST DOCUMENTABA, YA CERRADO.
 
-    `estado_accion.evaluar` mapea cualquier estado que no conozca a SIN_DATOS —o sea, LO
-    RECONOCE como no comprobable— pero `veto_compra.no_verificable` solo mira `""`,
-    `SIN_DATOS` y los no-cadena. Una etiqueta desconocida cae entre las dos:
+    `estado_accion.evaluar` mapea a SIN_DATOS cualquier estado que no conozca —o sea, LO
+    RECONOCE como no comprobable— y devuelve EN_SEGUIMIENTO, que no veta. Pero
+    `no_verificable` solo miraba `""` y SIN_DATOS, así que una etiqueta desconocida caía
+    entre las dos capas y salía como COMPRA.
 
-        no_verificable("LO_QUE_SEA")           -> False
-        estado_accion.evaluar("LO_QUE_SEA")    -> tendencia SIN_DATOS, EN_SEGUIMIENTO
-        hay_veto(EN_SEGUIMIENTO)               -> False   => sale como COMPRA
-
-    HOY NO ES ALCANZABLE: `market_data.tendencia_de` solo devuelve los cuatro estados de
-    `tendencia.ESTADOS`, o SIN_DATOS ante cualquier fallo. Es un hueco de la capa
-    defensiva, no un defecto en producción — pero es exactamente el tipo de cosa que se
-    convierte en defecto el día que alguien añada un estado nuevo.
-
-    Arreglarlo toca `veto_compra.py`, que está fuera del alcance aprobado de esta tanda.
-    El test fija el comportamiento ACTUAL para que el día que se decida cambiarlo sea una
-    decisión y no un accidente.
+    No era alcanzable —`tendencia_de` solo devuelve los cuatro estados de
+    `tendencia.ESTADOS`— pero una capa defensiva que depende de que nadie añada un estado
+    nuevo no está defendiendo: está esperando.
     """
     import estado_accion
+    import tendencia
     import veto_compra
     desconocido = "ESTADO_QUE_NADIE_HA_MAPEADO"
-    assert veto_compra.no_verificable(desconocido) is False
-    assert estado_accion.evaluar(desconocido)["tendencia"] == "SIN_DATOS"
-    assert veto_compra.hay_veto(estado_accion.evaluar(desconocido)["estado"]) is False
-    # Y la prueba de que hoy no se puede llegar ahí:
-    import tendencia
     assert desconocido not in tendencia.ESTADOS
-    assert set(tendencia.ESTADOS) == {"ALCISTA", "BAJISTA", "INDEFINIDA", "SIN_DATOS"}
+    assert veto_compra.no_verificable(desconocido) is True
+    # Y las dos capas dicen ahora lo mismo sobre él.
+    assert estado_accion.evaluar(desconocido)["tendencia"] == "SIN_DATOS"
+
+
+def test_los_cuatro_estados_conocidos_no_se_vuelven_no_verificables():
+    """Cerrar el hueco no puede convertir en «no lo sé» lo que sí se comprobó."""
+    import tendencia
+    import veto_compra
+    for estado in tendencia.ESTADOS:
+        esperado = (estado == veto_compra.TENDENCIA_NO_VERIFICABLE)
+        assert veto_compra.no_verificable(estado) is esperado, estado
+
+
+def test_el_modulo_pregunta_por_los_estados_en_vez_de_copiarlos():
+    """Si aquí hubiera una tupla propia con los cuatro nombres, añadir un estado nuevo en
+    `tendencia.py` volvería a abrir el mismo hueco sin que fallara nada."""
+    codigo = _codigo(os.path.join(_BACKEND, "veto_compra.py"))
+    assert "tendencia.ESTADOS" in codigo
+    for copiado in ("ALCISTA", "BAJISTA", "INDEFINIDA"):
+        assert copiado not in codigo, copiado
+
+
+@pytest.mark.anyio
+async def test_una_tendencia_desconocida_no_produce_compra_en_la_portada(portada, monkeypatch):
+    """El efecto de extremo a extremo, que es lo que de verdad importaba."""
+    server, estado = portada
+    estado["tendencia"] = "ESTADO_QUE_NADIE_HA_MAPEADO"
+    estado["entradas"] = _niveles(4)
+    r, _ = await _abrir(server, estado, monkeypatch)
+    tarjetas = _tarjetas_nivel(r)
+    assert tarjetas
+    for t in tarjetas:
+        assert t["datos"]["accion"] is None
