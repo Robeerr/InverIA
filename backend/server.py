@@ -4662,6 +4662,26 @@ async def hot_signals(limit: int = 5, max_pct: float = _HOT_MAX_PCT_POR_DEFECTO,
     cached = _cache.get(_clave_signals_hot(limit, max_pct))
     if cached is not None:
         return cached
+    top = await _candidatos_calientes(limit, max_pct)
+    # El endpoint publico VETA todo lo que devuelve. Su contrato no se relaja: quien lo
+    # llame directamente no puede recibir una compra que la estructura no autoriza.
+    await _vetar_calientes(top)
+    _cache.set(_clave_signals_hot(limit, max_pct), top, ttl=300)
+    return top
+
+
+async def _candidatos_calientes(limit: int, max_pct: float) -> list:
+    """Los niveles mas cercanos al precio, SIN cruzar con la tendencia.
+
+    Es la mitad barata del endpoint: Mongo y aritmetica, cero red. Se separa porque la
+    portada necesita rankear ANTES de pagar ninguna lectura de historico — la urgencia de
+    una tarjeta de nivel sale de la distancia, de la fuerza de la zona (que
+    `_dashboard_cacheado` sirve de cache) y de si tienes posicion, y ninguna de las tres
+    depende de la tendencia.
+
+    Medido: con 39 candidatos dentro del 4% se resolvian 31 tendencias para acabar
+    pintando 5 tarjetas. Rankear primero convierte esas 31 lecturas en 5.
+    """
     entries = await db.signal_entries.find({"active": True}, {"_id": 0}).to_list(200)
     results = []
     for entry in entries:
@@ -4733,8 +4753,21 @@ async def hot_signals(limit: int = 5, max_pct: float = _HOT_MAX_PCT_POR_DEFECTO,
     # Los niveles guardados no se tocan — esto es presentación, no una reescritura de tu
     # tabla.
     results.sort(key=lambda x: x["pct_away"])
-    top = results[:limit]
-    compras = [r for r in top if r["action"] == "COMPRA"]
+    return results[:limit]
+
+
+async def _vetar_calientes(items) -> None:
+    """Cruza con la tendencia los candidatos de COMPRA de una lista, EN EL SITIO.
+
+    Se extrae del endpoint para que la portada pueda llamarlo sobre las tarjetas que de
+    verdad va a pintar, en vez de sobre todos los candidatos: medido, 31 lecturas de
+    histórico para enseñar 5 tarjetas. Aquí no se decide QUÉ se enseña —eso lo decide la
+    urgencia, que no depende de la tendencia— sino qué se puede llamar compra.
+
+    Autoridad de siempre: `market_data.tendencia_de` lee el histórico cacheado,
+    `estado_accion` traduce y `veto_compra` decide. Ningún estado se compara a mano.
+    """
+    compras = [r for r in items if r.get("action") == "COMPRA"]
     if compras:
         tendencias = await asyncio.gather(*[
             asyncio.to_thread(market_data.tendencia_de, r["symbol"]) for r in compras
@@ -4757,11 +4790,50 @@ async def hot_signals(limit: int = 5, max_pct: float = _HOT_MAX_PCT_POR_DEFECTO,
                 item["action"] = None
                 item["vetado_por_tendencia"] = True
                 item["veto_motivo"] = est["motivo"]
-    _cache.set(_clave_signals_hot(limit, max_pct), top, ttl=300)
-    return top
 
 
 # ---------- Dashboard «Hoy» ----------
+async def _fuentes_con_tendencia(days: int = 14):
+    """Las menciones de tus fuentes y la tendencia de las que pueden dar tarjeta.
+
+    DOS CORRECCIONES DE RENDIMIENTO, MEDIDAS
+
+    Antes esto eran dos pasos y los dos costaban de más. `_fuentes_por_ticker` iba en el
+    `gather` de la portada, pero la resolución de tendencias iba DESPUÉS, en el cuerpo:
+    su latencia se sumaba a la de `hot_signals` en vez de solaparse. Y se preguntaba por
+    TODOS los tickers mencionados en 14 días de newsletters, sin tope.
+
+    Con 120 tickers eso son 120 descargas de dos años de velas. Medido con 5 hilos —lo que
+    da un CPU en Render— y 1,2 s por lectura: 39,8 s de portada, y la caché de histórico
+    (120 entradas) desbordada, así que ni la segunda carga se salvaba.
+
+    La mayoría no podían cambiar nada. `hoy.tarjeta_confluencia` solo emite con ACUERDO o
+    CHOQUE, y `confluencia.puede_cruzarse` dice cuáles pueden llegar ahí SIN reimplementar
+    la condición: se la pregunta a `clasificar`. Un ticker mencionado una sola vez, o con
+    opiniones encontradas, sale NEUTRAL o MIXTO diga lo que diga la estructura.
+
+    Devolver las dos cosas juntas es lo que permite meterlo entero en el `gather`: la
+    tendencia depende de las fuentes, así que no podían ser dos ramas hermanas.
+
+    Ante cualquier fallo, SIN_DATOS — que da INSUFICIENTE y no produce tarjeta. Fallo
+    cerrado, igual que antes.
+    """
+    fuentes = await _fuentes_por_ticker(days)
+    cruzables = [tk for tk, f in fuentes.items()
+                 if confluencia_mod.puede_cruzarse(len(f.get("fuentes") or []),
+                                                   f.get("positivos") or 0,
+                                                   f.get("negativos") or 0)]
+    tendencias: dict = {}
+    if cruzables:
+        resueltas = await asyncio.gather(*[
+            asyncio.to_thread(market_data.tendencia_de, tk) for tk in cruzables
+        ], return_exceptions=True)
+        for tk, tend in zip(cruzables, resueltas):
+            tendencias[tk] = tend if isinstance(tend, str) else "SIN_DATOS"
+    return fuentes, tendencias
+
+
+
 async def _fuentes_por_ticker(days: int = 14) -> dict:
     """Mapa ticker → menciones, sentimiento, quién lo dice y el veredicto del motor.
 
@@ -4960,6 +5032,65 @@ def _ventanas_de_hoy(desde: Optional[str], ahora=None) -> tuple:
     return corte_alertas, (desde or corte_alertas)
 
 
+async def _tarjetas_de_nivel(calientes, posiciones, limite) -> list:
+    """Las tarjetas de nivel de la portada, resolviendo la tendencia SOLO de las que salen.
+
+    EL DESPERDICIO QUE ESTO CORTA
+
+    Medido: 39 candidatos dentro del 4% producían 31 lecturas de histórico y acababan
+    pintando 5 tarjetas. Las otras 34 pagaban la descarga y las descartaba
+    `hoy.ordenar_y_recortar`, que devuelve `finales[:limite]`.
+
+    POR QUÉ SE PUEDE RANKEAR ANTES DE PREGUNTAR
+
+    La urgencia de una tarjeta de nivel no depende de la tendencia:
+
+        urgencia = BASE + (UMBRAL - distancia)*20 + min(60, fuerza*0.6) + 15 si hay posición
+
+    La distancia ya está calculada, `fuerza` sale de `_dashboard_cacheado` —que solo lee
+    caché y nunca calcula— y la posición, de Mongo. Ninguna toca la red. La tendencia solo
+    decide si la tarjeta puede llamarse compra, no si sale ni en qué orden.
+
+    POR QUÉ EL TOPE ES EXACTO Y NO UNA APROXIMACIÓN
+
+    La respuesta final trae como mucho `limite` tarjetas EN TOTAL, de todos los tipos. Así
+    que las `limite` de nivel más urgentes son un SUPERCONJUNTO de las que van a salir:
+    otras tarjetas pueden robarles sitio, nunca al revés. Resolver la tendencia de esas es
+    suficiente, y no puede dejar sin vetar ninguna que llegue a pantalla.
+
+    Se reconstruye la tarjeta después de vetar en vez de parchear su texto: el «· sería una
+    compra» lo redacta `hoy.py`, y escribirlo aquí sería tener la misma frase en dos sitios.
+    La urgencia no cambia al vetar, así que la posición en el ranking tampoco.
+    """
+    contexto = {}
+    for c in calientes:
+        sym = (c.get("symbol") or "").upper()
+        dash = _dashboard_cacheado(sym)
+        # `bool(dash)` distingue "el motor no ha calculado este símbolo" de "ha
+        # calculado pero sus zonas caen lejos de este precio". Se leían igual y no lo son.
+        contexto[id(c)] = {"zona": _mejor_zona(dash, c.get("target")),
+                           "aviso": _aviso_de_datos(dash),
+                           "tiene": (posiciones.get(sym, {}).get("acciones") or 0) > 0,
+                           "con_datos": bool(dash)}
+
+    def _construir(c):
+        ctx = contexto[id(c)]
+        return hoy.tarjeta_nivel(c, ctx["zona"], aviso=ctx["aviso"],
+                                 tiene_posicion=ctx["tiene"],
+                                 motor_con_datos=ctx["con_datos"])
+
+    previas = [(c, _construir(c)) for c in calientes]
+    vivas = [(c, t) for c, t in previas if t]
+    vivas.sort(key=lambda par: par[1]["urgencia"], reverse=True)
+
+    candidatas = [c for c, _ in vivas[:limite]]
+    await _vetar_calientes(candidatas)
+    vetadas = {id(c) for c in candidatas}
+
+    # Solo se rehacen las que pasaron por el veto; el resto conserva su tarjeta original.
+    return [(_construir(c) if id(c) in vetadas else t) for c, t in vivas]
+
+
 # Techo de tarjetas de la portada. Estaba escrito a mano dentro del saneado del
 # parametro; se le pone nombre porque un tope no puede ser un numero suelto en mitad de
 # una expresion.
@@ -4990,7 +5121,7 @@ async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_PO
 
     corte_alertas, corte = _ventanas_de_hoy(desde)
 
-    entradas, calientes, alertas, resumen, fuentes = await asyncio.gather(
+    entradas, calientes, alertas, resumen, fuentes_y_tendencias = await asyncio.gather(
         db.signal_entries.find({"active": True}, {"_id": 0}).to_list(200),
         # Se pide por DISTANCIA, no por cantidad. `hoy.tarjeta_nivel` descarta todo lo que
         # supere `UMBRAL_NIVEL_PCT`, así que la banda 4-10% eran filas que se traían, se
@@ -5000,12 +5131,15 @@ async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_PO
         # tarjeta de nivel no es solo la distancia —suma hasta 60 por la fuerza de la zona
         # y 15 por tener posición—, así que quedarse con las diez más cercanas habría
         # borrado en silencio una tarjeta al 3,5% con zona fuerte que sí debía salir.
-        hot_signals(limit=_HOY_MAX_CANDIDATOS_NIVEL,
-                    max_pct=hoy.UMBRAL_NIVEL_PCT, _user="hoy"),
+        _candidatos_calientes(_HOY_MAX_CANDIDATOS_NIVEL, hoy.UMBRAL_NIVEL_PCT),
         db.alert_history.find({"fired_at": {"$gte": corte_alertas}}, {"_id": 0})
                         .sort("fired_at", -1).limit(20).to_list(20),
         resumen_cartera(_user="hoy"),
-        _fuentes_por_ticker(14),
+        # Las fuentes Y la tendencia de las que pueden dar tarjeta, juntas. La segunda
+        # depende de la primera, así que no pueden ser ramas hermanas — pero metidas en
+        # una sola corrutina su latencia se solapa con la de `hot_signals` en vez de
+        # sumarse, que es lo que pasaba cuando esto vivía detrás del `gather`.
+        _fuentes_con_tendencia(14),
         return_exceptions=True,
     )
     # Un fallo aislado degrada su bloque, no la portada entera: es preferible una
@@ -5020,7 +5154,7 @@ async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_PO
     calientes = _ok(calientes, [])
     alertas = _ok(alertas, [])
     resumen = _ok(resumen, {})
-    fuentes = _ok(fuentes, {})
+    fuentes, tendencias_fuentes = _ok(fuentes_y_tendencias, ({}, {}))
 
     por_symbol = {(e.get("symbol") or "").upper(): e for e in entradas}
     posiciones = {(p.get("symbol") or "").upper(): p
@@ -5041,16 +5175,7 @@ async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_PO
         tarjetas.append(hoy.tarjeta_alerta(a, por_symbol.get((a.get("symbol") or "").upper())))
 
     # 3 · Niveles cerca, con el porqué del motor cuando esté caliente.
-    for c in calientes:
-        sym = (c.get("symbol") or "").upper()
-        dash = _dashboard_cacheado(sym)
-        zona = _mejor_zona(dash, c.get("target"))
-        aviso = _aviso_de_datos(dash)
-        tiene = (posiciones.get(sym, {}).get("acciones") or 0) > 0
-        # `bool(dash)` distingue "el motor no ha calculado este símbolo" de "ha
-        # calculado pero sus zonas caen lejos de este precio". Se leían igual y no lo son.
-        tarjetas.append(hoy.tarjeta_nivel(c, zona, aviso=aviso, tiene_posicion=tiene,
-                                          motor_con_datos=bool(dash)))
+    tarjetas += await _tarjetas_de_nivel(calientes, posiciones, limite)
 
     # 4 y 5 · Choque y coincidencia entre las fuentes y la elegibilidad estructural.
     # Una sola implementación, la de `confluencia.py`. La que vivía en `hoy.py` tenía
@@ -5059,14 +5184,16 @@ async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_PO
     #
     # Desaparece el cálculo de `zona`: solo existía para pasar distancia y fuerza del
     # nivel, que es información de ENTRADA y no de confluencia.
+    #
+    # La tendencia ya viene resuelta desde el `gather`, y SOLO para los tickers que podían
+    # dar tarjeta. Los demás entran igual con SIN_DATOS: `clasificar` los manda a
+    # INSUFICIENTE, que es lo que ya salía, y `tarjeta_confluencia` calla. No se resuelven
+    # porque su estado no puede cambiar el resultado — y cada uno costaba una descarga de
+    # dos años de velas.
     if fuentes:
-        simbolos = list(fuentes)
-        tendencias_f = await asyncio.gather(*[
-            asyncio.to_thread(market_data.tendencia_de, tk) for tk in simbolos
-        ], return_exceptions=True)
-        for tk, tend in zip(simbolos, tendencias_f):
+        for tk in fuentes:
             f = fuentes[tk]
-            estado_t = tend if isinstance(tend, str) else "SIN_DATOS"
+            estado_t = tendencias_fuentes.get(tk, "SIN_DATOS")
             estado = confluencia_mod.clasificar(
                 len(f.get("fuentes") or []), f.get("positivos") or 0,
                 f.get("negativos") or 0, estado_t)

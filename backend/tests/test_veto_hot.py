@@ -376,13 +376,16 @@ def test_la_portada_pide_por_distancia_y_no_por_cantidad():
     selección. Quien elige las tarjetas es `hoy.tarjeta_nivel` por urgencia."""
     import hoy as _hoy
     hoy_endpoint = _cuerpo("dashboard_hoy")
-    assert "max_pct=hoy.UMBRAL_NIVEL_PCT" in hoy_endpoint
-    assert "hot_signals(limit=_HOY_MAX_CANDIDATOS_NIVEL" in hoy_endpoint
+    assert "_candidatos_calientes(_HOY_MAX_CANDIDATOS_NIVEL, hoy.UMBRAL_NIVEL_PCT)" \
+        in hoy_endpoint
     assert "hot_signals(limit=50" not in SRV
     assert "hot_signals(limit=_HOY_MAX_TARJETAS" not in SRV, (
         "el tope de TARJETAS no puede usarse como tope de CANDIDATOS: recortaría por "
         "cercanía y borraría una tarjeta lejana con zona fuerte")
     assert _hoy.UMBRAL_NIVEL_PCT == 4.0
+    # La portada ya no pasa por el endpoint: pide los candidatos SIN vetar y resuelve la
+    # tendencia solo de las tarjetas que sobreviven al ranking.
+    assert "hot_signals(" not in hoy_endpoint
 
 
 # ── El umbral de distancia: se pide lo que se va a pintar ──────────────────
@@ -477,14 +480,19 @@ async def test_invalidar_tira_todas_las_variantes(entorno, monkeypatch):
 
 
 def test_el_recorte_precede_a_la_consulta_en_el_codigo():
-    """Fija el orden, que es donde vive la corrección. Si alguien devolviera el `gather`
-    por delante del `sort`, los tests de arriba seguirían pasando en salida pero el coste
-    volvería a ser el de antes."""
+    """Fija el orden, que es donde vive la corrección: primero se calcula y se recorta,
+    después se cruza con la tendencia. Ahora son dos funciones, y el orden lo impone el
+    endpoint al llamarlas."""
     hot = _cuerpo("hot_signals")
-    assert hot.index("top = results[:limit]") < hot.index("asyncio.gather")
-    assert hot.index("results.sort(") < hot.index("asyncio.gather")
-    assert "compras = [r for r in top" in hot
-    assert "compras = [r for r in results" not in hot
+    assert hot.index("_candidatos_calientes") < hot.index("_vetar_calientes")
+    # El cálculo de candidatos no toca la red.
+    calc = _cuerpo("_candidatos_calientes")
+    for ajeno in ("tendencia_de", "veto_compra", "estado_accion", "asyncio.gather"):
+        assert ajeno not in calc, ajeno
+    assert "return results[:limit]" in calc
+    # Y el veto trabaja sobre lo que se le pasa, no sobre todo lo calculado.
+    veta = _cuerpo("_vetar_calientes")
+    assert "compras = [r for r in items" in veta
 
 
 @pytest.mark.anyio
@@ -532,9 +540,12 @@ def test_las_fronteras_del_veto_siguen_donde_estaban():
 
 def test_la_regla_sigue_centralizada():
     assert '"NO_COMPRAR"' not in SRV
-    hot = _cuerpo("hot_signals")
-    assert "veto_compra.hay_veto" in hot
-    assert "estado_accion.evaluar" in hot
+    # El cruce vive ahora en `_vetar_calientes`, que es lo que permite aplicarlo tanto al
+    # endpoint entero como solo a las tarjetas que la portada va a pintar.
+    veta = _cuerpo("_vetar_calientes")
+    assert "veto_compra.hay_veto" in veta
+    assert "estado_accion.evaluar" in veta
+    assert "market_data.tendencia_de" in veta
 
 
 def test_hot_no_reimplementa_la_clasificacion():

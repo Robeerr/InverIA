@@ -133,6 +133,30 @@ def clasificar(n_fuentes: int, positivos: int, negativos: int,
     return "NEUTRAL"
 
 
+def puede_cruzarse(n_fuentes: int, positivos: int, negativos: int) -> bool:
+    """¿Puede este recuento de menciones producir ACUERDO o CHOQUE con ALGUNA tendencia?
+
+    Sirve para no pedir un dato caro que no va a cambiar nada. La portada resuelve la
+    tendencia de cada ticker mencionado, y eso es una descarga de dos anos de velas por
+    simbolo; para un ticker que sale NEUTRAL o MIXTO diga lo que diga la estructura, esa
+    descarga se hace y se tira.
+
+    NO REPITE LA CONDICION: LA PREGUNTA
+
+    Seria facil escribir aqui «n_fuentes >= MIN_FUENTES y el tono no es mixto». Y seria
+    una segunda copia de la regla, que es justo lo que este modulo existe para evitar: el
+    dia que `clasificar` cambiara, el filtro empezaria a descartar tickers que si debian
+    salir y no fallaria nada — simplemente dejarian de aparecer tarjetas.
+
+    Asi que se consulta a `clasificar` con todos los estados de tendencia posibles y se
+    responde si alguno da uno de los dos estados que hablan. Cuatro llamadas puras por
+    ticker, contra una descarga de red: el cambio sale a cuenta por varios ordenes de
+    magnitud, y sigue a la regla sin conocerla.
+    """
+    return any(clasificar(n_fuentes, positivos, negativos, estado) in ("ACUERDO", "CHOQUE")
+               for estado in tendencia.ESTADOS)
+
+
 def describir(estado: str, n_fuentes: int, positivos: int, negativos: int) -> Optional[str]:
     """Una frase que dice qué se ha cruzado. DESCRIBE, no recomienda.
 
