@@ -10,7 +10,7 @@ La IA recibe estas zonas ya rankeadas y solo las explica/afina.
 from __future__ import annotations
 
 import math
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 
 
 # ── Peso base por fuente ─────────────────────────────────────────────────────
@@ -504,6 +504,10 @@ def _precio(z) -> Optional[float]:
 def indices_del_plan(current_price, buy_levels, max_depth: float) -> List[int]:
     """Índices de `buy_levels` que forman el plan escalonado, de cerca a lejos.
 
+    Fachada de `indices_del_plan_detallado`, que es donde vive la regla. Conserva firma y
+    comportamiento porque la mayoría de los llamadores solo necesitan los índices y no les
+    importa por qué camino salieron.
+
     La regla, tal cual la aplicaba `_deterministic_levels`:
 
       - se miran las `VENTANA` primeras zonas (la lista viene ordenada de cerca a lejos);
@@ -518,13 +522,42 @@ def indices_del_plan(current_price, buy_levels, max_depth: float) -> List[int]:
     cerca— se devuelve la menos profunda de toda la lista. Es preferible a quedarse sin
     plan, porque sin plan los números los inventa la IA.
     """
+    return indices_del_plan_detallado(current_price, buy_levels, max_depth)[0]
+
+
+def indices_del_plan_detallado(current_price, buy_levels,
+                               max_depth: float) -> Tuple[List[int], bool]:
+    """Lo mismo, más SI el plan devuelto es el rescate y no una selección.
+
+    POR QUÉ HACE FALTA SABERLO
+
+    El respaldo devuelve la zona menos profunda AUNQUE quede por debajo del suelo. Quien
+    redacta la nota del plan no podía distinguir ese caso de uno normal, así que escribía
+    siempre la misma frase —«deja fuera las que están a más de un 30% bajo el precio»—
+    mientras la única zona que el plan usaba estaba, ella también, por debajo de ese 30%.
+    La nota contradecía al plan que acompañaba.
+
+    Y hay una variante peor: con UNA sola zona bajo el suelo no sobraba ninguna, así que
+    la nota ni siquiera salía. El usuario recibía un plan con el stop a -38% y ningún
+    aviso.
+
+    SE DEVUELVE, NO SE DEDUCE
+
+    El dato se conoce exactamente aquí, en la rama que lo decide. Dejar que el llamador lo
+    infiera comparando la zona elegida contra `precio × (1 − max_depth)` sería reimplantar
+    el suelo fuera de su dueño, que es la clase de duplicación que este módulo existe para
+    evitar.
+
+    `indices_del_plan` sigue siendo la puerta de entrada normal: mantiene su firma para
+    que ni `marcar_en_plan` ni los tests que fijan la selección tengan que cambiar.
+    """
     zonas = buy_levels or []
     try:
         precio = float(current_price)
     except (TypeError, ValueError):
-        return []
+        return [], False
     if precio <= 0:
-        return []
+        return [], False
 
     suelo = precio * (1 - max_depth)
 
@@ -538,12 +571,13 @@ def indices_del_plan(current_price, buy_levels, max_depth: float) -> List[int]:
         elegidos.append(i)
 
     if elegidos:
-        return elegidos
+        return elegidos, False
 
     for i, z in enumerate(zonas):
         if _precio(z) is not None:
-            return [i]
-    return []
+            return [i], True
+    # Sin ninguna zona con precio no hay plan NI rescate: no se ha salvado nada.
+    return [], False
 
 
 def marcar_en_plan(buy_levels, current_price, max_depth: float):

@@ -103,9 +103,24 @@ def _sin_comentarios(src):
 
 
 def _cuerpo_plan_nota():
+    """El bloque que redacta la nota, ENTERO: las dos ramas.
+
+    Acota desde el recuento hasta `entry_hi`, que es la primera linea del calculo. Si
+    alguien sacara la rama de respaldo fuera de ese tramo, los tests de texto seguirian
+    pasando sobre media funcion sin que nada avisara — por eso hay un test que comprueba
+    que las dos ramas caen dentro."""
     src = _fuente()
     ini = src.index("con_precio = [z for z in buy_levels")
     return src[ini:src.index("entry_hi", ini)]
+
+
+def test_el_acotador_abarca_las_dos_ramas():
+    """Protege a los demas tests de este fichero: si el acotador se quedara corto,
+    dejarian de mirar lo que creen que miran."""
+    cuerpo = _cuerpo_plan_nota()
+    assert "if respaldo:" in cuerpo
+    assert "elif fuera > 0:" in cuerpo
+    assert cuerpo.index("if respaldo:") < cuerpo.index("elif fuera > 0:")
 
 
 def test_el_total_de_la_nota_son_todas_las_zonas_con_precio():
@@ -152,3 +167,157 @@ def test_la_cuenta_cuadra_en_los_tres_repartos(precio, niveles, esperado):
     zonas = [{"price": p} for p in niveles]
     en_plan = len(levels_engine.indices_del_plan(precio, zonas, 0.30))
     assert (en_plan, len(zonas)) == esperado
+
+
+# ── El plan de RESCATE: ninguna zona dentro del umbral ───────────────────────
+#
+# `indices_del_plan` devuelve la menos profunda AUNQUE quede bajo el suelo, para no dejar
+# el plan sin niveles. La nota no sabia distinguir ese caso y escribia la frase normal:
+# decia que se dejan fuera las que pasan del 30% mientras la unica que usaba estaba a
+# -35%. Y con UNA sola zona no sobraba ninguna, asi que ni salia.
+
+def _zona_cruda(precio, etiqueta="NIVEL"):
+    return {"price": precio, "zone_low": precio * 0.99, "zone_high": precio * 1.01,
+            "strength": 70, "reasons": ["soporte"], "label": etiqueta}
+
+
+def _plan(precio_actual, precios):
+    import server
+    return server._deterministic_levels(
+        {"price": precio_actual}, {"sma": {"50": 90.0, "200": 80.0}, "atr": 2.0},
+        [_zona_cruda(p, f"NIVEL {i + 1}") for i, p in enumerate(precios)], None)
+
+
+# 1-3 · La frase de respaldo dice la verdad sobre su propio plan
+
+def test_el_respaldo_no_dice_que_deja_fuera_las_profundas():
+    """El defecto exacto: la zona que USA tambien esta fuera del umbral."""
+    nota = _plan(100.0, [65.0, 60.0, 55.0])["plan_nota"]
+    assert "deja fuera las que están a más de un" not in nota
+    assert "El plan usa" not in nota
+
+
+def test_el_respaldo_dice_que_ha_rescatado_la_menos_profunda():
+    nota = _plan(100.0, [65.0, 60.0, 55.0])["plan_nota"]
+    assert "Ninguna zona de confluencia queda dentro del umbral" in nota
+    assert "rescatado la zona menos profunda" in nota
+
+
+def test_el_respaldo_advierte_de_la_distancia_del_stop():
+    nota = _plan(100.0, [65.0, 60.0, 55.0])["plan_nota"]
+    assert "El stop queda por debajo de esa zona" in nota
+    assert "distancia de riesgo es elevada" in nota
+
+
+# 4 · La variante silenciosa
+
+def test_con_una_sola_zona_fuera_del_suelo_la_nota_SALE():
+    """Antes era `None`: `fuera` valia 0 porque no sobraba ninguna. Un plan con el stop a
+    -38% y ningun aviso."""
+    r = _plan(100.0, [65.0])
+    assert r["plan_nota"] is not None
+    assert "Ninguna zona de confluencia queda dentro del umbral" in r["plan_nota"]
+
+
+# 5-6 · La bandera se levanta cuando toca, y solo cuando toca
+
+def test_respaldo_verdadero_solo_si_ninguna_sobrevive():
+    import levels_engine
+    zonas = [{"price": p} for p in (65.0, 60.0, 55.0)]
+    idx, respaldo = levels_engine.indices_del_plan_detallado(100.0, zonas, 0.30)
+    assert (idx, respaldo) == ([0], True)
+
+
+def test_sobrar_por_el_tope_NO_es_rescatar():
+    """Cuatro zonas dentro del suelo: sobra una por `MAX_ESCALONES`. Eso es una exclusion
+    normal, no un rescate."""
+    import levels_engine
+    zonas = [{"price": p} for p in (95.0, 90.0, 85.0, 80.0)]
+    idx, respaldo = levels_engine.indices_del_plan_detallado(100.0, zonas, 0.30)
+    assert (idx, respaldo) == ([0, 1, 2], False)
+
+
+def test_sin_zonas_con_precio_no_hay_rescate():
+    """No haber salvado nada no es haber rescatado algo."""
+    import levels_engine
+    assert levels_engine.indices_del_plan_detallado(100.0, [], 0.30) == ([], False)
+    assert levels_engine.indices_del_plan_detallado(
+        100.0, [{"strength": 50}], 0.30) == ([], False)
+    assert levels_engine.indices_del_plan_detallado(0.0, [{"price": 1.0}], 0.30) == ([], False)
+
+
+# 7 · La fachada no cambia
+
+@pytest.mark.parametrize("precio,niveles,max_depth", [
+    (100.0, [95.0, 90.0, 85.0, 80.0], 0.30),
+    (100.0, [65.0, 60.0, 55.0], 0.30),
+    (100.0, [65.0], 0.30),
+    (100.0, [], 0.30),
+    (FORM_PRECIO, FORM_NIVELES, 0.30),
+    (100.0, [95.0, 70.0, 50.0], 0.30),
+])
+def test_la_fachada_devuelve_los_mismos_indices(precio, niveles, max_depth):
+    """`indices_del_plan` conserva firma y comportamiento: es la variante detallada sin su
+    segundo valor. Si divergieran, `marcar_en_plan` y el plan pintarian cosas distintas."""
+    import levels_engine
+    zonas = [{"price": p} for p in niveles]
+    assert levels_engine.indices_del_plan(precio, zonas, max_depth) == \
+        levels_engine.indices_del_plan_detallado(precio, zonas, max_depth)[0]
+
+
+# 8-10 · Los casos normales, byte a byte
+
+_NOTA_NORMAL = (
+    "El plan usa 3 de las 4 zonas de confluencia: se reparte en 3 escalones como mucho y "
+    "deja fuera las que están a más de un 30% bajo el precio, que arrastrarían el stop "
+    "hasta ahí. Todas siguen listadas como soportes."
+)
+
+
+def test_el_texto_normal_no_ha_cambiado_ni_un_byte():
+    assert _plan(100.0, [95.0, 90.0, 85.0, 80.0])["plan_nota"] == _NOTA_NORMAL
+
+
+def test_form_sigue_diciendo_tres_de_seis():
+    nota = _plan(FORM_PRECIO, FORM_NIVELES)["plan_nota"]
+    assert "El plan usa 3 de las 6 zonas de confluencia" in nota
+
+
+def test_los_dos_motivos_siguen_nombrados_en_el_caso_normal():
+    nota = _plan(100.0, [95.0, 90.0, 85.0, 80.0])["plan_nota"]
+    assert "escalones como mucho" in nota
+    assert "bajo el precio" in nota
+
+
+# 11 · `en_plan` intacto
+
+def test_marcar_en_plan_no_cambia():
+    import levels_engine
+    for niveles in ([95.0, 90.0, 85.0, 80.0], [65.0, 60.0, 55.0], [65.0], FORM_NIVELES):
+        precio = FORM_PRECIO if niveles is FORM_NIVELES else 100.0
+        zonas = [{"price": p} for p in niveles]
+        levels_engine.marcar_en_plan(zonas, precio, 0.30)
+        esperado = set(levels_engine.indices_del_plan(precio, zonas, 0.30))
+        assert [i for i, z in enumerate(zonas) if z["en_plan"]] == sorted(esperado), niveles
+
+
+# 12-13 · Esto es redaccion, no calculo
+
+@pytest.mark.parametrize("precio,niveles", [
+    (100.0, [95.0, 90.0, 85.0, 80.0]),
+    (100.0, [65.0, 60.0, 55.0]),
+    (100.0, [65.0]),
+    (FORM_PRECIO, FORM_NIVELES),
+])
+def test_las_zonas_de_entrada_y_los_stops_no_dependen_de_la_nota(precio, niveles):
+    """`entry_zones` y `stop_losses` salen de `ez`, y `ez` no ha cambiado. La bandera de
+    respaldo solo entra en la frase."""
+    r = _plan(precio, niveles)
+    esperadas = [(z["min"], z["max"]) for z in r["entry_zones"]]
+    stops = [s["price"] for s in r["stop_losses"]]
+    # El plan lo determina la seleccion, que es la de siempre.
+    import levels_engine
+    idx = levels_engine.indices_del_plan(precio, [{"price": p} for p in niveles], 0.30)
+    assert len(esperadas) == len(idx)
+    assert stops == sorted(stops, reverse=True)
+    assert min(s for s in stops) < min(lo for lo, _ in esperadas)

@@ -1726,7 +1726,9 @@ def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_targe
     # `en_plan` en cada zona. Antes este bucle era la unica implementacion y la pantalla
     # no tenia forma de saber que zonas usaba el plan sin replicar el umbral.
     ez = []
-    for n, i in enumerate(levels_engine.indices_del_plan(price, buy_levels, MAX_PLAN_DEPTH), 1):
+    indices, respaldo = levels_engine.indices_del_plan_detallado(
+        price, buy_levels, MAX_PLAN_DEPTH)
+    for n, i in enumerate(indices, 1):
         zona = _zona(buy_levels[i], n)
         if zona:
             ez.append(zona)
@@ -1749,10 +1751,26 @@ def _deterministic_levels(quote: dict, indicators: dict, buy_levels, price_targe
     #
     # La frase tambien atribuia a la profundidad TODAS las exclusiones. Ahora nombra los
     # dos motivos, que es lo que de verdad pasa.
+    #
+    # Y hay un tercer motivo, que no es una exclusion sino un RESCATE. Cuando ninguna zona
+    # sobrevive al suelo, `indices_del_plan` devuelve igualmente la menos profunda para no
+    # dejar el plan sin niveles. La frase de arriba era entonces falsa sobre su propio
+    # plan: decia que se dejan fuera las que pasan del 30% mientras la unica que usaba
+    # estaba a -35%. Y con UNA sola zona no sobraba ninguna, asi que ni siquiera salia:
+    # un plan con el stop a -38% y ningun aviso.
     con_precio = [z for z in buy_levels if _f(z.get("price")) is not None]
     fuera = len(con_precio) - len(ez)
     plan_nota = None
-    if fuera > 0:
+    if respaldo:
+        # Sale SIEMPRE, no solo si sobran zonas: aqui lo que hay que contar no es cuantas
+        # quedaron fuera, sino que la que se usa tampoco cumple.
+        plan_nota = (
+            f"Ninguna zona de confluencia queda dentro del umbral del {MAX_PLAN_DEPTH:.0%}. "
+            f"Se ha rescatado la zona menos profunda para evitar dejar el plan sin niveles "
+            f"y que los números los determine la IA. El stop queda por debajo de esa zona, "
+            f"por lo que la distancia de riesgo es elevada."
+        )
+    elif fuera > 0:
         plan_nota = (
             f"El plan usa {len(ez)} de las {len(con_precio)} zonas de confluencia: se reparte "
             f"en {levels_engine.MAX_ESCALONES} escalones como mucho y deja fuera las que están "
