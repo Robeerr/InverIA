@@ -319,7 +319,7 @@ async def lifespan(app: FastAPI):
         if _rm.deleted_count:
             logger.info("Cimientos retirado: %d entradas borradas", _rm.deleted_count)
             _cache._store.pop("signals_list", None)
-            _cache._store.pop("signals_hot", None)
+            _invalidar_signals_hot()
     except Exception as e:
         logger.warning(f"Purga de Cimientos falló: {e}")
     await db.analyses.create_index([("symbol", 1), ("created_at", -1)])
@@ -4535,7 +4535,7 @@ async def create_signal(item: SignalEntryCreate, _user: str = Depends(auth.get_c
     except Exception as e:
         logger.info("Sin cotización inicial para %s: %s", sym, e)
     _cache._store.pop("signals_list", None)
-    _cache._store.pop("signals_hot", None)
+    _invalidar_signals_hot()
     return entry
 
 
@@ -4557,7 +4557,7 @@ async def update_signal(entry_id: str, item: SignalEntryUpdate, _user: str = Dep
     if not updated:
         raise HTTPException(404, "Señal no encontrada")
     _cache._store.pop("signals_list", None)
-    _cache._store.pop("signals_hot", None)
+    _invalidar_signals_hot()
     return updated
 
 
@@ -4567,7 +4567,7 @@ async def delete_signal(entry_id: str, _user: str = Depends(auth.get_current_use
     if not ok:
         raise HTTPException(404, "Señal no encontrada")
     _cache._store.pop("signals_list", None)
-    _cache._store.pop("signals_hot", None)
+    _invalidar_signals_hot()
     return {"deleted": entry_id}
 
 
@@ -4575,7 +4575,7 @@ async def delete_signal(entry_id: str, _user: str = Depends(auth.get_current_use
 async def bulk_import_signals(payload: SignalBulkImport, _user: str = Depends(auth.get_current_user)):
     result = await signal_table.bulk_upsert(db, payload.rows)
     _cache._store.pop("signals_list", None)
-    _cache._store.pop("signals_hot", None)
+    _invalidar_signals_hot()
     return result
 
 
@@ -4605,7 +4605,7 @@ async def import_signals_from_image(
         return {"rows": rows, "count": len(rows), "saved": False}
     result = await signal_table.bulk_upsert(db, rows)
     _cache._store.pop("signals_list", None)
-    _cache._store.pop("signals_hot", None)
+    _invalidar_signals_hot()
     return {**result, "rows": rows, "saved": True}
 
 
@@ -4619,11 +4619,47 @@ async def get_alert_history(limit: int = 50, _user: str = Depends(auth.get_curre
 
 
 # ---------- Hot Signals (señales calientes para el Dashboard) ----------
+# El umbral histórico de este endpoint. Se nombra para que quede claro que el 10% es SU
+# valor por defecto y no una constante del dominio: cada consumidor tiene el suyo.
+_HOT_MAX_PCT_POR_DEFECTO = 10.0
+
+
+def _clave_signals_hot(limit, max_pct) -> str:
+    """La caché va por PARÁMETROS, no por endpoint.
+
+    Antes era una sola clave, `signals_hot`, y ya entonces mentía: quien pedía `limit=5`
+    dejaba cacheadas 5 filas y la portada, que pide más, recibía esas 5. Con `max_pct` el
+    error dejaría de ser de cantidad para pasar a ser de CONTENIDO —una lista acotada al
+    4% servida a quien pidió el 10%—, así que la clave tiene que distinguirlos.
+    """
+    return f"signals_hot:{limit}:{max_pct}"
+
+
+def _invalidar_signals_hot() -> None:
+    """Tira TODAS las variantes. Con la clave parametrizada, olvidar una dejaría filas
+    viejas servidas a un consumidor concreto y a ningún otro — el peor tipo de caché
+    rancia, porque solo se nota en una pantalla."""
+    for clave in [k for k in _cache._store if k.startswith("signals_hot")]:
+        _cache._store.pop(clave, None)
 @api_router.get("/signals/hot")
-async def hot_signals(limit: int = 5, _user: str = Depends(auth.get_current_user)):
+async def hot_signals(limit: int = 5, max_pct: float = _HOT_MAX_PCT_POR_DEFECTO,
+                      _user: str = Depends(auth.get_current_user)):
     """Devuelve las acciones con precio más cercano a algún nivel de compra o venta.
-    Usa last_price guardado por el worker en MongoDB — respuesta instantánea."""
-    cached = _cache.get("signals_hot")
+    Usa last_price guardado por el worker en MongoDB — respuesta instantánea.
+
+    `max_pct` acota la distancia al nivel. Existe porque cada consumidor descarta a una
+    distancia distinta y traerse lo que el llamador va a tirar dejó de ser gratis: desde
+    que la fila de COMPRA se cruza con la tendencia, cada candidato cuesta una lectura de
+    histórico. La portada «Hoy» descarta por encima de `hoy.UMBRAL_NIVEL_PCT`, así que
+    pedirle la banda 4-10% era pagar decenas de lecturas para nada.
+
+    NO es un recorte por cercanía disfrazado: dentro del umbral vienen TODOS, porque quien
+    ordena las tarjetas de nivel es `hoy.tarjeta_nivel` y su urgencia no depende solo de la
+    distancia — suma hasta 60 puntos por la fuerza de la zona del motor y 15 por tener
+    posición abierta. Un candidato al 3,5% con zona fuerte puede mandar sobre uno al 0,5%
+    sin ella, y recortando por distancia habría desaparecido sin que nadie lo notara.
+    """
+    cached = _cache.get(_clave_signals_hot(limit, max_pct))
     if cached is not None:
         return cached
     entries = await db.signal_entries.find({"active": True}, {"_id": 0}).to_list(200)
@@ -4655,7 +4691,7 @@ async def hot_signals(limit: int = 5, _user: str = Depends(auth.get_current_user
                     best_label = lk
                     best_target = target
                     best_action = "VENTA" if lk == "deseado" else "COMPRA"
-            if best_pct is not None and best_pct <= 10:  # solo si está a menos del 10%
+            if best_pct is not None and best_pct <= max_pct:
                 results.append({
                     "symbol": symbol,
                     "name": entry.get("name", symbol),
@@ -4680,11 +4716,25 @@ async def hot_signals(limit: int = 5, _user: str = Depends(auth.get_current_user
     # próxima. Con `action` a None esa coletilla desaparece sola y la tarjeta sigue
     # contando lo que de verdad pasa.
     #
-    # Se pregunta DESPUÉS del filtro del 10% y solo por los de COMPRA: la Cartera puede
-    # tener 200 entradas y resolver la tendencia de todas serían 200 lecturas de histórico
-    # para descartar casi todas por distancia. Los niveles guardados no se tocan — esto es
-    # presentación, no una reescritura de tu tabla.
-    compras = [r for r in results if r["action"] == "COMPRA"]
+    # Se pregunta DESPUÉS de ordenar y recortar, y solo por los de COMPRA.
+    #
+    # EL ORDEN IMPORTA, Y ES UNA CORRECCIÓN DE RENDIMIENTO
+    #
+    # Antes se preguntaba por TODOS los candidatos del 10% y solo después se recortaba a
+    # `limit`. La portada «Hoy» llama con un límite pequeño, así que se pagaban decenas de
+    # lecturas de histórico para tirar casi todas: medido, con 150 candidatos y 5 hilos
+    # eran 150 lecturas y ~36 s bloqueando la respuesta, contra 12 s recortando antes.
+    #
+    # Es seguro porque el veto NO toca `pct_away`, que es la única clave de ordenación:
+    # solo escribe `action`, `vetado_por_tendencia` y `veto_motivo`. Ni el orden ni qué
+    # elementos entran en el recorte pueden cambiar por vetar antes o después, así que la
+    # salida es idéntica y solo cambia cuánto se paga por ella.
+    #
+    # Los niveles guardados no se tocan — esto es presentación, no una reescritura de tu
+    # tabla.
+    results.sort(key=lambda x: x["pct_away"])
+    top = results[:limit]
+    compras = [r for r in top if r["action"] == "COMPRA"]
     if compras:
         tendencias = await asyncio.gather(*[
             asyncio.to_thread(market_data.tendencia_de, r["symbol"]) for r in compras
@@ -4707,9 +4757,7 @@ async def hot_signals(limit: int = 5, _user: str = Depends(auth.get_current_user
                 item["action"] = None
                 item["vetado_por_tendencia"] = True
                 item["veto_motivo"] = est["motivo"]
-    results.sort(key=lambda x: x["pct_away"])
-    top = results[:limit]
-    _cache.set("signals_hot", top, ttl=300)
+    _cache.set(_clave_signals_hot(limit, max_pct), top, ttl=300)
     return top
 
 
@@ -4912,6 +4960,19 @@ def _ventanas_de_hoy(desde: Optional[str], ahora=None) -> tuple:
     return corte_alertas, (desde or corte_alertas)
 
 
+# Techo de tarjetas de la portada. Estaba escrito a mano dentro del saneado del
+# parametro; se le pone nombre porque un tope no puede ser un numero suelto en mitad de
+# una expresion.
+_HOY_MAX_TARJETAS = 10
+
+# Cuantos candidatos de nivel puede traer la portada. No es un recorte por cercania: es el
+# mismo tope que ya acota la lectura de `signal_entries`, puesto aqui para que ninguna
+# consulta pueda crecer sin limite. Dentro del umbral de distancia vienen TODOS, porque
+# quien decide cuales se pintan es `hoy.tarjeta_nivel` por urgencia — y su urgencia suma la
+# fuerza de la zona del motor y si tienes posicion abierta, no solo la distancia.
+_HOY_MAX_CANDIDATOS_NIVEL = 200
+
+
 @api_router.get("/hoy")
 async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_POR_DEFECTO,
                         _user: str = Depends(auth.get_current_user)):
@@ -4925,13 +4986,22 @@ async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_PO
     precalentado deja listas, y lo que no esté caliente sale con menos detalle en vez
     de hacer esperar a la página.
     """
-    limite = max(1, min(int(limite or hoy.LIMITE_POR_DEFECTO), 10))
+    limite = max(1, min(int(limite or hoy.LIMITE_POR_DEFECTO), _HOY_MAX_TARJETAS))
 
     corte_alertas, corte = _ventanas_de_hoy(desde)
 
     entradas, calientes, alertas, resumen, fuentes = await asyncio.gather(
         db.signal_entries.find({"active": True}, {"_id": 0}).to_list(200),
-        hot_signals(limit=50, _user="hoy"),
+        # Se pide por DISTANCIA, no por cantidad. `hoy.tarjeta_nivel` descarta todo lo que
+        # supere `UMBRAL_NIVEL_PCT`, así que la banda 4-10% eran filas que se traían, se
+        # pagaba una lectura de histórico por cada una y se tiraban aquí mismo.
+        #
+        # Y NO se recorta por cercanía: dentro del 4% vienen todas. La urgencia de una
+        # tarjeta de nivel no es solo la distancia —suma hasta 60 por la fuerza de la zona
+        # y 15 por tener posición—, así que quedarse con las diez más cercanas habría
+        # borrado en silencio una tarjeta al 3,5% con zona fuerte que sí debía salir.
+        hot_signals(limit=_HOY_MAX_CANDIDATOS_NIVEL,
+                    max_pct=hoy.UMBRAL_NIVEL_PCT, _user="hoy"),
         db.alert_history.find({"fired_at": {"$gte": corte_alertas}}, {"_id": 0})
                         .sort("fired_at", -1).limit(20).to_list(20),
         resumen_cartera(_user="hoy"),

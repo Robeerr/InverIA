@@ -100,14 +100,15 @@ def entorno(monkeypatch):
         return valor
 
     monkeypatch.setattr(server.market_data, "tendencia_de", _tendencia_de)
-    server._cache._store.pop("signals_hot", None)
+    server._invalidar_signals_hot()
     return server, estado
 
 
-async def _hot(server, docs, monkeypatch, limit=5):
+async def _hot(server, docs, monkeypatch, limit=5, max_pct=None):
     monkeypatch.setattr(server, "db", _DB(docs))
-    server._cache._store.pop("signals_hot", None)
-    return await server.hot_signals(limit=limit, _user="test")
+    server._invalidar_signals_hot()
+    extra = {} if max_pct is None else {"max_pct": max_pct}
+    return await server.hot_signals(limit=limit, _user="test", **extra)
 
 
 def _de(resultados, symbol):
@@ -260,7 +261,7 @@ async def test_un_error_no_borra_el_nivel_guardado(entorno, monkeypatch):
     estado["por_symbol"]["ROTO"] = RuntimeError("caído")
     db = _DB([_entrada("ROTO", nivel1=99.0)])
     monkeypatch.setattr(server, "db", db)
-    server._cache._store.pop("signals_hot", None)
+    server._invalidar_signals_hot()
     await server.hot_signals(limit=5, _user="test")
     assert db.signal_entries.escrituras == []
     assert db.signal_entries.docs[0]["nivel1"] == 99.0
@@ -313,6 +314,180 @@ async def test_solo_se_pregunta_por_los_candidatos_de_compra_cercanos(entorno, m
 # ── 8 · El orden y el recorte no cambian ────────────────────────────────────
 
 @pytest.mark.anyio
+async def test_no_se_pregunta_por_los_candidatos_que_el_limite_descarta(entorno, monkeypatch):
+    """El ajuste de rendimiento: ordenar y recortar ANTES de consultar la tendencia.
+
+    Antes se preguntaba por los 30 candidatos del 10% y solo después se recortaba a 5:
+    25 lecturas de histórico que se tiraban. La portada llama a este endpoint dentro de su
+    `gather`, así que ese trabajo bloqueaba la respuesta entera.
+    """
+    server, estado = entorno
+    estado["defecto"] = "BAJISTA"
+    docs = [_entrada(f"T{i:02d}", nivel1=round(100 - i * 0.1, 2)) for i in range(30)]
+    r = await _hot(server, docs, monkeypatch, limit=5)
+    assert len(r) == 5
+    assert len(estado["consultas"]) == 5, estado["consultas"]
+    # Y son exactamente los cinco que se devuelven, no otros cinco.
+    assert sorted(estado["consultas"]) == sorted(x["symbol"] for x in r)
+
+
+@pytest.mark.anyio
+async def test_recortar_antes_no_cambia_lo_que_se_devuelve(entorno, monkeypatch):
+    """La garantía que hace seguro el cambio: el veto no toca `pct_away`, la única clave
+    de ordenación. Se compara contra el orden calculado a mano sobre los mismos datos."""
+    server, estado = entorno
+    estado["defecto"] = "ALCISTA"
+    docs = [_entrada("A", nivel1=95.0), _entrada("B", nivel1=99.5),
+            _entrada("C", nivel1=98.0), _entrada("D", nivel1=101.0)]
+    r = await _hot(server, docs, monkeypatch, limit=3)
+    esperado = sorted(
+        [("A", 5.0), ("B", 0.5025), ("C", 2.0408), ("D", 0.9901)], key=lambda x: x[1])[:3]
+    assert [x["symbol"] for x in r] == [s for s, _ in esperado]
+
+
+@pytest.mark.anyio
+async def test_el_veto_sigue_aplicandose_a_lo_que_si_se_devuelve(entorno, monkeypatch):
+    """Recortar antes no puede dejar sin vetar lo que sí se enseña."""
+    server, estado = entorno
+    estado["defecto"] = "BAJISTA"
+    docs = [_entrada(f"T{i:02d}", nivel1=round(100 - i * 0.1, 2)) for i in range(30)]
+    r = await _hot(server, docs, monkeypatch, limit=5)
+    assert all(x["action"] is None for x in r)
+    assert all(x["vetado_por_tendencia"] is True for x in r)
+
+
+@pytest.mark.anyio
+async def test_las_ventas_no_gastan_hueco_de_consulta_ni_en_el_recorte(entorno, monkeypatch):
+    server, estado = entorno
+    estado["defecto"] = "BAJISTA"
+    docs = [_entrada("V1", deseado=100.1), _entrada("V2", deseado=100.2),
+            _entrada("C1", nivel1=99.9)]
+    r = await _hot(server, docs, monkeypatch, limit=3)
+    assert estado["consultas"] == ["C1"]
+    assert len(r) == 3
+
+
+def test_la_portada_pide_por_distancia_y_no_por_cantidad():
+    """`/hoy` pedía 50 filas del 10% y descartaba todo lo que superara el 4%. Con una
+    lectura de histórico por candidato, esa banda dejó de ser solo memoria: era tiempo de
+    respuesta. Ahora el umbral que se pide ES el que la portada aplica.
+
+    Y NO se recorta por cercanía: el límite que viaja es el tope de seguridad, no una
+    selección. Quien elige las tarjetas es `hoy.tarjeta_nivel` por urgencia."""
+    import hoy as _hoy
+    hoy_endpoint = _cuerpo("dashboard_hoy")
+    assert "max_pct=hoy.UMBRAL_NIVEL_PCT" in hoy_endpoint
+    assert "hot_signals(limit=_HOY_MAX_CANDIDATOS_NIVEL" in hoy_endpoint
+    assert "hot_signals(limit=50" not in SRV
+    assert "hot_signals(limit=_HOY_MAX_TARJETAS" not in SRV, (
+        "el tope de TARJETAS no puede usarse como tope de CANDIDATOS: recortaría por "
+        "cercanía y borraría una tarjeta lejana con zona fuerte")
+    assert _hoy.UMBRAL_NIVEL_PCT == 4.0
+
+
+# ── El umbral de distancia: se pide lo que se va a pintar ──────────────────
+
+@pytest.mark.anyio
+async def test_un_candidato_al_6_por_ciento_no_se_consulta_para_hoy(entorno, monkeypatch):
+    """La banda 4-10% se traía, costaba una lectura de histórico cada fila y `hoy.py` la
+    tiraba en `tarjeta_nivel`. Con el umbral de la portada ni siquiera entra."""
+    import hoy
+    server, estado = entorno
+    estado["defecto"] = "BAJISTA"
+    r = await _hot(server, [_entrada("LEJOS", nivel1=94.0)], monkeypatch,
+                   limit=200, max_pct=hoy.UMBRAL_NIVEL_PCT)
+    assert r == []
+    assert estado["consultas"] == []
+
+
+@pytest.mark.anyio
+async def test_un_candidato_al_3_por_ciento_si_se_consulta(entorno, monkeypatch):
+    import hoy
+    server, estado = entorno
+    estado["defecto"] = "BAJISTA"
+    r = await _hot(server, [_entrada("CERCA", nivel1=97.0)], monkeypatch,
+                   limit=200, max_pct=hoy.UMBRAL_NIVEL_PCT)
+    assert estado["consultas"] == ["CERCA"]
+    assert _de(r, "CERCA")["action"] is None
+
+
+@pytest.mark.anyio
+async def test_el_umbral_por_defecto_sigue_siendo_el_10(entorno, monkeypatch):
+    """Ningún otro consumidor cambia de comportamiento: quien no pida umbral recibe el de
+    siempre."""
+    import server as _srv
+    server, estado = entorno
+    assert _srv._HOT_MAX_PCT_POR_DEFECTO == 10.0
+    r = await _hot(server, [_entrada("SEIS", nivel1=94.0)], monkeypatch, limit=200)
+    assert [x["symbol"] for x in r] == ["SEIS"]
+
+
+@pytest.mark.anyio
+async def test_dentro_del_umbral_vienen_TODOS_sin_recortar_por_cercania(entorno, monkeypatch):
+    """El punto de la opción elegida. Un candidato al 3,5% con zona fuerte puede mandar
+    sobre uno al 0,5% sin ella: la urgencia de `tarjeta_nivel` suma hasta 60 por la fuerza
+    del motor y 15 por tener posición. Recortando a los 10 más cercanos habría
+    desaparecido en silencio."""
+    import hoy
+    server, estado = entorno
+    estado["defecto"] = "ALCISTA"
+    docs = [_entrada(f"C{i:02d}", nivel1=round(100 - i * 0.2, 2)) for i in range(18)]
+    r = await _hot(server, docs, monkeypatch, limit=200, max_pct=hoy.UMBRAL_NIVEL_PCT)
+    dentro = [d for d in docs if abs(100 - d["nivel1"]) / d["nivel1"] * 100 <= 4.0]
+    assert len(r) == len(dentro) > 10, f"{len(r)} devueltos de {len(dentro)} dentro del 4%"
+    # El más lejano dentro del umbral sigue estando: es el que un recorte a 10 habría
+    # borrado, y es justo el que puede traer la zona fuerte.
+    assert r[-1]["pct_away"] == max(x["pct_away"] for x in r)
+
+
+def test_tarjeta_nivel_conserva_su_seleccion_por_urgencia():
+    """La selección NO se ha movido al servidor. `hoy.py` sigue siendo quien decide, y su
+    urgencia sigue sumando la fuerza de la zona y la posición abierta."""
+    codigo = _codigo(os.path.join(_BACKEND, "hoy.py"))
+    assert 'urgencia = BASE["nivel"] + max(0, (UMBRAL_NIVEL_PCT - distancia) * 20)' in codigo
+    assert "urgencia += min(60, fuerza * 0.6)" in codigo
+    assert "urgencia += 15" in codigo
+    assert "if distancia is None or distancia > UMBRAL_NIVEL_PCT:" in codigo
+    # Y el servidor no ha aprendido a ordenar tarjetas.
+    hot = _cuerpo("hot_signals")
+    for ajeno in ("fuerza", "urgencia", "tiene_posicion", "UMBRAL_NIVEL_PCT"):
+        assert ajeno not in hot, ajeno
+
+
+def test_la_cache_distingue_los_parametros():
+    """Con una sola clave, una lista acotada al 4% se serviría a quien pidió el 10%. Antes
+    el error era de CANTIDAD; con `max_pct` pasaría a ser de CONTENIDO."""
+    import server as _srv
+    assert _srv._clave_signals_hot(5, 10.0) != _srv._clave_signals_hot(5, 4.0)
+    assert _srv._clave_signals_hot(5, 4.0) != _srv._clave_signals_hot(200, 4.0)
+    assert '_cache._store.pop("signals_hot", None)' not in SRV, (
+        "las invalidaciones tienen que tirar TODAS las variantes")
+    assert SRV.count("_invalidar_signals_hot()") >= 7
+
+
+@pytest.mark.anyio
+async def test_invalidar_tira_todas_las_variantes(entorno, monkeypatch):
+    server, estado = entorno
+    docs = [_entrada("X", nivel1=99.0)]
+    await _hot(server, docs, monkeypatch, limit=5, max_pct=10.0)
+    await _hot(server, docs, monkeypatch, limit=200, max_pct=4.0)
+    assert [k for k in server._cache._store if k.startswith("signals_hot")]
+    server._invalidar_signals_hot()
+    assert [k for k in server._cache._store if k.startswith("signals_hot")] == []
+
+
+def test_el_recorte_precede_a_la_consulta_en_el_codigo():
+    """Fija el orden, que es donde vive la corrección. Si alguien devolviera el `gather`
+    por delante del `sort`, los tests de arriba seguirían pasando en salida pero el coste
+    volvería a ser el de antes."""
+    hot = _cuerpo("hot_signals")
+    assert hot.index("top = results[:limit]") < hot.index("asyncio.gather")
+    assert hot.index("results.sort(") < hot.index("asyncio.gather")
+    assert "compras = [r for r in top" in hot
+    assert "compras = [r for r in results" not in hot
+
+
+@pytest.mark.anyio
 async def test_el_orden_por_distancia_y_el_limite_se_conservan(entorno, monkeypatch):
     server, estado = entorno
     estado["defecto"] = "BAJISTA"
@@ -333,7 +508,7 @@ async def test_no_se_escribe_nada_en_la_cartera(entorno, monkeypatch):
     estado["defecto"] = "BAJISTA"
     db = _DB([_entrada("CAE", nivel1=99.0, nivel2=95.0)])
     monkeypatch.setattr(server, "db", db)
-    server._cache._store.pop("signals_hot", None)
+    server._invalidar_signals_hot()
     await server.hot_signals(limit=5, _user="test")
     assert db.signal_entries.escrituras == []
     assert db.signal_entries.docs[0]["nivel1"] == 99.0
@@ -341,6 +516,19 @@ async def test_no_se_escribe_nada_en_la_cartera(entorno, monkeypatch):
 
 
 # ── 10-11 · Arquitectura y alcance ──────────────────────────────────────────
+
+def test_las_fronteras_del_veto_siguen_donde_estaban():
+    """El ajuste es de RENDIMIENTO. Ni la autoridad ni la semántica del veto se mueven, y
+    el umbral de distancia es cosa del endpoint: ningún módulo de dominio lo conoce."""
+    for fichero in ("tendencia.py", "estado_accion.py", "hoy.py", "signal_table.py",
+                    "cartera_api.py", "veto_compra.py"):
+        codigo = _codigo(os.path.join(_BACKEND, fichero))
+        assert "max_pct" not in codigo, fichero
+        assert "_HOT_MAX_PCT_POR_DEFECTO" not in codigo, fichero
+    op = _codigo(os.path.join(_BACKEND, "opportunities.py"))
+    assert "_potential_score" in op
+    assert "/opportunities/score/{symbol}" in SRV
+
 
 def test_la_regla_sigue_centralizada():
     assert '"NO_COMPRAR"' not in SRV
