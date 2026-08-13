@@ -46,6 +46,50 @@ describe("añadir a Cartera respeta el veto", () => {
       .toBeLessThan(hastaLaEscritura.indexOf("niveles_entrada"));
   });
 
+  test("un 409 por veto NO marca la acción como añadida", () => {
+    // Es el fallo que este bloque existe para impedir: cualquier 409 se leía como
+    // duplicado, así que un rechazo terminaba con el check verde de «En Cartera».
+    // Mentía dos veces — ni estaba guardada, ni el motivo era ese.
+    const captura = cuerpo.slice(cuerpo.indexOf("catch"));
+    const rama = captura.slice(captura.indexOf('detail?.error === "vetado_por_tendencia"'));
+    const hastaElCierre = rama.slice(0, rama.indexOf("}"));
+    expect(hastaElCierre).not.toContain("setAddedCartera");
+    expect(hastaElCierre).toMatch(/return;/);
+  });
+
+  test("los dos 409 se separan por un campo, no por el texto", () => {
+    // El mensaje del veto lo redacta `estado_accion` y puede cambiar; el campo no.
+    const captura = cuerpo.slice(cuerpo.indexOf("catch"));
+    expect(captura).toContain('detail?.error === "vetado_por_tendencia"');
+    expect(captura.indexOf('vetado_por_tendencia'))
+      .toBeLessThan(captura.indexOf("status === 409"));
+  });
+
+  test("cierra la carrera: el veto se descubre en la respuesta, no solo en el plan", () => {
+    // El veredicto del Chartista se cachea hasta 4 horas, así que el plan que tiene la
+    // pantalla puede ser anterior al giro de tendencia: llega SIN marcar, la guarda de
+    // entrada no salta y la petición sale. El 409 del servidor es entonces el único
+    // punto donde se descubre, y por eso la rama vive en el `catch` y no depende de
+    // `data.vetado_por_tendencia`.
+    const captura = cuerpo.slice(cuerpo.indexOf("catch"));
+    const rama = captura.slice(captura.indexOf('detail?.error === "vetado_por_tendencia"'));
+    const hastaElCierre = rama.slice(0, rama.indexOf("}"));
+    expect(hastaElCierre).not.toContain("data?.vetado_por_tendencia");
+    expect(hastaElCierre).not.toContain("data.vetado_por_tendencia");
+  });
+
+  test("el toast del veto usa el mensaje del backend", () => {
+    const captura = cuerpo.slice(cuerpo.indexOf("catch"));
+    expect(captura).toContain("detail.mensaje");
+  });
+
+  test("el detalle del duplicado se sigue leyendo como cadena", () => {
+    // El contrato del duplicado no cambia: `detail` sigue siendo un string. Sin el
+    // `typeof`, un detalle-objeto acabaría en `/ya/i.test("[object Object]")`.
+    const captura = cuerpo.slice(cuerpo.indexOf("catch"));
+    expect(captura).toContain('typeof detail === "string"');
+  });
+
   test("nunca envía `forzar` al servidor", () => {
     // El servidor bloquea por defecto la escritura de niveles sobre una acción vetada, y
     // `forzar: true` es el escape. Tiene que ser una decisión EXPLÍCITA del usuario: un

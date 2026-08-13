@@ -55,6 +55,17 @@ _ACCIONABLES = ("niveles_entrada", "gatillo", "invalidacion", "objetivo")
 # no debe moverlo»— y aquí se respeta la misma frontera.
 CAMPOS_NIVEL = ("nivel1", "nivel2", "nivel3", "nivel4", "nivel5")
 
+# El estado que `tendencia.py` emite cuando NO HA PODIDO comprobar la dirección: menos de
+# 200 cierres, o el histórico no cargó. Se nombra aquí para que los consumidores no
+# escriban la cadena a mano, igual que con `ESTADO_BLOQUEANTE`.
+TENDENCIA_NO_VERIFICABLE = "SIN_DATOS"
+
+MOTIVO_NO_VERIFICABLE = (
+    "No se ha podido comprobar en qué tendencia está esta acción — hacen falta 200 "
+    "sesiones de histórico y no se han podido leer. No se presenta como compra algo que "
+    "no se ha podido verificar."
+)
+
 
 def hay_veto(estado: Optional[str]) -> bool:
     """¿Bloquea este estado una compra?
@@ -64,6 +75,30 @@ def hay_veto(estado: Optional[str]) -> bool:
     implementación de una regla que tiene dueño.
     """
     return estado == ESTADO_BLOQUEANTE
+
+
+def no_verificable(estado_tendencia: Optional[str]) -> bool:
+    """¿Se ha podido comprobar la dirección de esta acción?
+
+    NO es lo mismo que `hay_veto`, y por eso son dos funciones y no una:
+
+        NO_COMPRAR  → se comprobó, y la estructura dice que no.
+        SIN_DATOS   → no se pudo comprobar. No dice nada.
+
+    Los dos acaban ocultando una compra, pero por motivos distintos y con explicaciones
+    distintas. Fundirlos haría que «no lo sé» se leyera como «está bajista», que es una
+    afirmación sobre el mercado que nadie ha hecho.
+
+    Nótese que `estado_accion` traduce SIN_DATOS a EN_SEGUIMIENTO —vigílalo, no es un
+    rechazo—, así que `hay_veto` devuelve False aquí. Correcto para el estado de la acción;
+    insuficiente para etiquetar una proximidad como compra. De ahí esta segunda pregunta.
+
+    Cualquier cosa que no sea una cadena conocida cuenta como no verificable: una excepción
+    convertida a este estado por el llamador, un None, o una etiqueta nueva que nadie haya
+    mapeado todavía. Fallo cerrado.
+    """
+    return not isinstance(estado_tendencia, str) or \
+        estado_tendencia in ("", TENDENCIA_NO_VERIFICABLE)
 
 
 def degradar_analisis(analisis: dict, estado: Optional[str]) -> dict:

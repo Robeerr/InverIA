@@ -201,7 +201,52 @@ async def test_el_motivo_del_409_es_el_de_estado_accion(entorno, monkeypatch):
     estado["tendencia"] = "BAJISTA"
     with pytest.raises(server.HTTPException) as exc:
         await _crear(server, _DB(), _alta(server, nivel1=180.0), monkeypatch)
-    assert estado_accion.evaluar("BAJISTA")["motivo"] in exc.value.detail
+    assert estado_accion.evaluar("BAJISTA")["motivo"] == exc.value.detail["mensaje"]
+
+
+@pytest.mark.anyio
+async def test_el_409_de_veto_se_identifica_por_un_campo_y_no_por_su_texto(entorno, monkeypatch):
+    """Hay DOS 409 en este endpoint y significan lo contrario. Distinguirlos por prosa ya
+    falló una vez: `ChartistPanel` trataba cualquier 409 como duplicado y pintaba el check
+    verde de «En Cartera» sobre un rechazo."""
+    server, estado = entorno
+    estado["tendencia"] = "BAJISTA"
+    with pytest.raises(server.HTTPException) as exc:
+        await _crear(server, _DB(), _alta(server, nivel1=180.0), monkeypatch)
+    assert exc.value.detail["error"] == "vetado_por_tendencia"
+    assert exc.value.detail["symbol"] == "TEST"
+
+
+@pytest.mark.anyio
+async def test_el_409_de_duplicado_conserva_su_contrato(entorno, monkeypatch):
+    """Sigue siendo una cadena. El cambio de forma es solo del veto — romper el duplicado
+    habría roto la rama que el frontend lleva usando desde siempre."""
+    server, estado = entorno
+    estado["tendencia"] = "ALCISTA"
+    db = _DB({"id": "ya-existe"})
+    with pytest.raises(server.HTTPException) as exc:
+        await _crear(server, db, _alta(server, nivel1=180.0), monkeypatch)
+    assert exc.value.status_code == 409
+    assert isinstance(exc.value.detail, str)
+    assert "ya está en tu Cartera" in exc.value.detail
+    assert db.signal_entries.escrituras == []
+
+
+@pytest.mark.anyio
+async def test_los_dos_409_son_separables_sin_leer_el_mensaje(entorno, monkeypatch):
+    """El invariante que usa el cliente: uno trae `detail.error`, el otro no."""
+    server, estado = entorno
+
+    estado["tendencia"] = "BAJISTA"
+    with pytest.raises(server.HTTPException) as veto:
+        await _crear(server, _DB(), _alta(server, nivel1=180.0), monkeypatch)
+
+    estado["tendencia"] = "ALCISTA"
+    with pytest.raises(server.HTTPException) as dup:
+        await _crear(server, _DB({"id": "x"}), _alta(server, nivel1=180.0), monkeypatch)
+
+    assert isinstance(veto.value.detail, dict) and veto.value.detail.get("error")
+    assert not isinstance(dup.value.detail, dict)
 
 
 # ── 9-13 · POST permitido ───────────────────────────────────────────────────
@@ -268,6 +313,7 @@ async def test_patch_vetado_409_y_cero_escrituras(entorno, monkeypatch):
         await _editar(server, db, "id-1",
                       server.SignalEntryUpdate(nivel2=90.0), monkeypatch)
     assert exc.value.status_code == 409
+    assert exc.value.detail["error"] == "vetado_por_tendencia"
     assert db.signal_entries.escrituras == []
 
 

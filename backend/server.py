@@ -1642,7 +1642,15 @@ async def _puerta_de_tendencia(symbol, datos: dict, forzar) -> None:
     # 409 y no 403: el conflicto es con el estado del recurso, igual que el duplicado que
     # se comprueba justo antes. El motivo sale de `estado_accion`, que es su dueno -
     # redactarlo aqui seria una segunda explicacion de lo mismo.
-    raise HTTPException(409, f"{symbol}: {est['motivo']}")
+    #
+    # El detalle va ESTRUCTURADO y no como cadena porque ahora hay dos 409 distintos en
+    # este endpoint, y el cliente tiene que poder separarlos sin leer prosa. Distinguirlos
+    # por texto ya falló: `ChartistPanel` trataba cualquier 409 como duplicado y pintaba el
+    # check verde de «En Cartera» sobre un veto — el peor final posible, porque un rechazo
+    # se leia como exito. El duplicado conserva su cadena: su contrato no cambia.
+    raise HTTPException(409, {"error": "vetado_por_tendencia",
+                              "symbol": symbol,
+                              "mensaje": est["motivo"]})
 
 
 def _ocultar_plan_de_entrada(analisis: dict) -> dict:
@@ -4663,6 +4671,42 @@ async def hot_signals(limit: int = 5, _user: str = Depends(auth.get_current_user
                 })
         except Exception:
             continue
+    # ── El veto, sobre los candidatos de COMPRA ya filtrados ────────────────
+    #
+    # «Está a un 2% de tu Nivel 3» es un HECHO y se conserva. Lo que no se sostiene es
+    # llamarlo COMPRA cuando la estructura no autoriza comprar: la portada «Hoy» imprime
+    # «· sería una compra» desde este campo (`hoy.tarjeta_nivel`), así que un valor en
+    # caída libre acercándose a un nivel escrito hace meses aparecía como una compra
+    # próxima. Con `action` a None esa coletilla desaparece sola y la tarjeta sigue
+    # contando lo que de verdad pasa.
+    #
+    # Se pregunta DESPUÉS del filtro del 10% y solo por los de COMPRA: la Cartera puede
+    # tener 200 entradas y resolver la tendencia de todas serían 200 lecturas de histórico
+    # para descartar casi todas por distancia. Los niveles guardados no se tocan — esto es
+    # presentación, no una reescritura de tu tabla.
+    compras = [r for r in results if r["action"] == "COMPRA"]
+    if compras:
+        tendencias = await asyncio.gather(*[
+            asyncio.to_thread(market_data.tendencia_de, r["symbol"]) for r in compras
+        ], return_exceptions=True)
+        for item, tend in zip(compras, tendencias):
+            # Una excepción se convierte al estado de «no se pudo comprobar», que es
+            # exactamente lo que ha ocurrido. Fallo CERRADO: no presentar como compra lo
+            # que no se ha podido verificar.
+            estado_t = tend if isinstance(tend, str) else veto_compra.TENDENCIA_NO_VERIFICABLE
+            if veto_compra.no_verificable(estado_t):
+                # «No lo sé» y «está bajista» ocultan los dos la compra, pero no son lo
+                # mismo y no pueden explicarse igual: la segunda es una afirmación sobre el
+                # mercado, y aquí nadie la ha hecho.
+                item["action"] = None
+                item["vetado_por_tendencia"] = True
+                item["veto_motivo"] = veto_compra.MOTIVO_NO_VERIFICABLE
+                continue
+            est = estado_accion.evaluar(estado_t)
+            if veto_compra.hay_veto(est["estado"]):
+                item["action"] = None
+                item["vetado_por_tendencia"] = True
+                item["veto_motivo"] = est["motivo"]
     results.sort(key=lambda x: x["pct_away"])
     top = results[:limit]
     _cache.set("signals_hot", top, ttl=300)

@@ -52,7 +52,25 @@ export default function ChartistPanel({ symbol, runSignal }) {
       setAddedCartera(true);
       toast.success(`${symbol} añadida a tu Cartera con ${precios.length} niveles`);
     } catch (e) {
-      const msg = e?.response?.data?.detail || "";
+      const detail = e?.response?.data?.detail;
+      // Hay DOS 409 distintos en `POST /signals` y significan lo contrario:
+      //
+      //   · duplicado → la acción YA está en tu Cartera. Marcar el botón es correcto.
+      //   · veto      → la acción NO se ha guardado, y no se va a guardar.
+      //
+      // Tratarlos igual pintaba el check verde de «En Cartera» sobre un rechazo: mentía
+      // dos veces, porque ni estaba ni el motivo era ese. Se separan por un campo, no por
+      // el texto: el mensaje del veto lo escribe `estado_accion` y puede cambiar.
+      //
+      // Esta rama es también la que cierra la CARRERA: el veredicto del Chartista se
+      // cachea hasta 4 horas, así que el plan que tiene la pantalla puede venir de antes
+      // de que la tendencia se girara. La guarda de arriba no salta —ese plan no está
+      // marcado— y es aquí, con la respuesta del servidor, donde se descubre.
+      if (detail?.error === "vetado_por_tendencia") {
+        toast.error(detail.mensaje || "Esta acción no está en tendencia alcista");
+        return;   // sin `setAddedCartera`: no se ha guardado nada
+      }
+      const msg = typeof detail === "string" ? detail : "";
       if (e?.response?.status === 409 || /ya/i.test(msg)) {
         setAddedCartera(true);
         toast(`${symbol} ya estaba en tu Cartera`);
