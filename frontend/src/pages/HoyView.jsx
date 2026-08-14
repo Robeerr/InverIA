@@ -2,44 +2,35 @@ import React, { useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/utils";
 import PageShell from "@/components/base/PageShell";
 import TarjetaAtencion from "@/components/base/TarjetaAtencion";
-import Metrica from "@/components/base/Metrica";
-import Chip from "@/components/base/Chip";
 import Boton from "@/components/base/Boton";
 import { Cargando, Error as ErrorEstado } from "@/components/base/Estado";
-import { fmtEur, fmtHace, fmtPct, fmtEnDias } from "@/lib/format";
+import { fmtHace } from "@/lib/format";
 import { MarketFuturesBar, FearGreedBar, SectorHeatmap } from "@/components/ContextoMercado";
+import BandaRegimen from "@/components/hoy/BandaRegimen";
+import PanelCartera from "@/components/hoy/PanelCartera";
+import PanelAgenda from "@/components/hoy/PanelAgenda";
+import PanelCerebro from "@/components/hoy/PanelCerebro";
 
-/* Dashboard «Hoy» · la portada
+/* Dashboard «Hoy» · la portada, rediseñada como terminal financiero
    ─────────────────────────────────────────────────────────────────────────────
-   Contesta tres preguntas en el orden en que se hacen al abrir la app:
+   Contesta «¿qué merece mi atención hoy?» en el orden en que se hace la pregunta:
 
-       ¿Qué merece mi atención hoy?  → el bloque grande, máximo cinco
-       ¿Por qué?                     → dentro de cada tarjeta
-       ¿Qué debería revisar?         → dentro de cada tarjeta
+     1. La CINTA DE MERCADO abre arriba —régimen + SPY + futuros + miedo/codicia—:
+        el estado del terreno de juego, en cifras, antes de decidir nada.
+     2. El TITULAR responde la pregunta en una línea, en el mayor tamaño de la escala.
+     3. LO QUE IMPORTA HOY, la columna ancha: hasta cinco tarjetas-fila con su lectura
+        numérica. Es el bloque grande porque es la razón de existir de la pantalla.
+     4. La BARRA LATERAL agrupa el contexto —cartera, agenda, cerebro— con jerarquía
+        propia y compacta, en vez de las cuatro cajas del mismo peso de antes.
+     5. El MAPA DE SECTORES cierra a pie de página: se consulta, no se opera.
 
-   Lo que NO hay aquí, a propósito: ningún widget que no sostenga una decisión. No
-   hay gráfico de índices, ni mapa de calor sectorial, ni lista de "más negociadas".
-   Todos ellos son ciertos y ninguno cambia lo que vas a hacer hoy.
-
-   Los bloques de abajo (cartera, cerebro, próximos días) son contexto, y por eso
-   son pequeños y van después. Si alguno empieza a necesitar más sitio, la respuesta
-   correcta casi siempre es que ese contenido pertenece a su propia sección. */
+   No se pierde ni un dato del inventario 1.1, y no se inventa ninguna métrica: cada
+   cifra sale de `GET /hoy` o de las tres consultas de contexto de mercado. */
 
 const CLAVE_ULTIMA_VISITA = "inveria-ultima-visita-hoy";
 
-/* El titular de la portada · LEY 6
-   ───────────────────────────────────────────────────────────────────────────────
-   La primera línea tiene que RESPONDER la pregunta con la que se abre la app —
-   «¿qué hago hoy?»— antes de leer nada más. Hasta ahora lo primero era un saludo
-   pequeño y una rejilla de tarjetas del mismo peso: la respuesta había que
-   deducirla recorriéndolas.
-
-   NO INVENTA NADA. Cuenta las tarjetas que el backend ya ha decidido enviar y las
-   nombra por su tipo. Si mañana el backend deja de mandar un tipo, aquí desaparece
-   solo. El orden de las ramas es el de urgencia, el mismo que ya ordena la lista. */
 const NOMBRES = {
   nivel: ["ha llegado a tu nivel", "han llegado a tu nivel"],
   ruptura: ["ha roto su nivel", "han roto su nivel"],
@@ -52,7 +43,6 @@ const CANTIDAD = ["Ninguna", "Una", "Dos", "Tres", "Cuatro", "Cinco"];
 
 function titularDe(tarjetas) {
   if (!tarjetas?.length) return null;
-  // Se agrupa por tipo conservando el orden de urgencia en que llegaron.
   const porTipo = [];
   for (const t of tarjetas) {
     const fila = porTipo.find((x) => x.tipo === t.tipo);
@@ -79,9 +69,6 @@ function leerUltimaVisita() {
 }
 
 export default function HoyView() {
-  // Se lee UNA vez al montar y se congela: si se leyera en cada render, al guardar
-  // la visita nueva el bloque "desde tu última visita" se vaciaría solo delante del
-  // usuario, que es justo lo que venía a leer.
   const desde = useMemo(() => leerUltimaVisita(), []);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
@@ -91,8 +78,6 @@ export default function HoyView() {
     refetchOnWindowFocus: true,
   });
 
-  // La visita se marca solo cuando ha llegado algo: si se marcara al entrar y la
-  // petición fallara, se perdería el "qué ha cambiado" sin haberlo enseñado nunca.
   useEffect(() => {
     if (!data) return;
     try {
@@ -108,10 +93,7 @@ export default function HoyView() {
   const cerebro = data?.cerebro || {};
   const mercado = data?.mercado;
 
-  // Contexto de mercado. Estaba en la página de UNA acción, aunque los tres son
-  // idénticos para las quinientas. Aquí sí corresponden: esta es la pantalla del
-  // mercado. Misma cadencia que tenían, así que el coste no cambia de tamaño, solo
-  // de sitio.
+  // Contexto de mercado, misma cadencia que tenía en la ficha de acción.
   const { data: futures } = useQuery({
     queryKey: ["market-futures"],
     queryFn: api.marketFutures,
@@ -133,25 +115,35 @@ export default function HoyView() {
 
   return (
     <PageShell
-      descripcion={
-        data?.generado_en
-          ? `Calculado ${fmtHace(data.generado_en)}. Se actualiza al volver a la pestaña.`
-          : undefined
-      }
       acciones={
-        <Boton variante="fantasma" tamano="sm" onClick={() => refetch()} ocupado={isFetching}>
-          Actualizar
-        </Boton>
+        <div className="flex items-center gap-3">
+          {data?.generado_en && (
+            <span className="text-etiqueta text-tinta-3 hidden sm:inline">
+              Calculado {fmtHace(data.generado_en)}
+            </span>
+          )}
+          <Boton variante="fantasma" tamano="sm" onClick={() => refetch()} ocupado={isFetching}>
+            Actualizar
+          </Boton>
+        </div>
       }
     >
-      {/* ── EL TITULAR · ley 6 ──────────────────────────────────────────────
-          Antes esto era «Hoy: pieza · pieza · pieza» en cuerpo: un índice de lo
-          que venía debajo, no una respuesta. Ahora la primera línea DICE qué
-          pasa, en el tamaño mayor de la escala, y el índice baja a apoyo.
-          Es el <h1> de la pantalla: tener además un «Hoy» genérico eran dos
-          títulos peleándose, y ganaba el genérico por posición. */}
+      {/* ── 1 · CINTA DE MERCADO ────────────────────────────────────────────
+          El estado del terreno de juego, arriba y en cifras. El régimen decide si
+          fiarse de las señales; los futuros y el termómetro de miedo lo enmarcan. */}
       {!isLoading && !error && (
-        <div className="mb-6 -mt-1">
+        <div className="space-y-2 mb-6">
+          <BandaRegimen mercado={mercado} />
+          <MarketFuturesBar futures={futures} />
+          <FearGreedBar data={sentiment} />
+        </div>
+      )}
+
+      {/* ── 2 · EL TITULAR ──────────────────────────────────────────────────
+          La respuesta a «¿qué hago hoy?» en una línea. Cuando no hay nada, se dice
+          con la misma calidad: un día vacío es una respuesta legítima. */}
+      {!isLoading && !error && (
+        <div className="mb-5">
           <h1 className="font-heading text-cifra font-bold text-tinta text-balance leading-[1.15]">
             {titular ? (
               <>
@@ -168,207 +160,93 @@ export default function HoyView() {
             )}
           </h1>
           {data?.saludo?.piezas?.length > 0 && (
-            <p className="text-apoyo text-tinta-3 mt-1.5">
-              {data.saludo.piezas.join(" · ")}
-            </p>
+            <p className="text-apoyo text-tinta-3 mt-1.5">{data.saludo.piezas.join(" · ")}</p>
           )}
         </div>
       )}
 
-      {/* ── Lo que importa hoy ── */}
-      {isLoading ? (
-        <div className="space-y-3">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="iv-panel p-5">
-              <Cargando filas={3} />
-            </div>
-          ))}
-        </div>
-      ) : error ? (
-        <ErrorEstado
-          error={error}
-          onReintentar={refetch}
-          titulo="No se ha podido preparar tu portada"
-        />
-      ) : importa.length === 0 ? (
-        /* El día vacío es una respuesta legítima y se escribe con la misma calidad
-           que una tarjeta. Rellenar con lo sexto más urgente entrena a desconfiar. */
-        <div className="iv-destacada p-6 text-center">
-          <p className="text-cuerpo text-tinta font-medium">
-            Hoy no hay nada que requiera tu atención.
-          </p>
-          <p className="text-apoyo text-tinta-2 mt-1 max-w-[60ch] mx-auto">
-            Ningún nivel cerca, ninguna alerta saltada y nada nuevo en tus fuentes sobre lo
-            que sigues. Es una respuesta, no un hueco.
-          </p>
-          <div className="flex gap-2 justify-center mt-4">
-            <Boton variante="contorno" tamano="sm" asChild>
-              <Link to="/cartera">Ver la cartera</Link>
-            </Boton>
-            <Boton variante="fantasma" tamano="sm" asChild>
-              <Link to="/oportunidades">Buscar oportunidades</Link>
-            </Boton>
+      {/* ── Terminal: lo que importa (ancho) + contexto (lateral) ──────────── */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
+        {/* Columna principal */}
+        <div className="min-w-0">
+          <div className="flex items-baseline justify-between mb-2.5">
+            <h2 className="iv-etiqueta text-tinta-2 tracking-[0.14em]">Lo que importa hoy</h2>
+            {!isLoading && !error && importa.length > 0 && (
+              <span className="iv-cifra text-etiqueta text-tinta-3">
+                {importa.length} de 5 · por urgencia
+              </span>
+            )}
           </div>
-        </div>
-      ) : (
-        <>
-          <div className="space-y-3">
-            {importa.map((t, i) => (
-              <TarjetaAtencion key={`${t.symbol}-${t.tipo}`} tarjeta={t} orden={i + 1} />
-            ))}
-          </div>
-          {importa.length < 3 && (
-            <p className="text-apoyo text-tinta-3 mt-3">
-              {importa.length === 1
-                ? "Solo hay una cosa que mirar hoy."
-                : "Solo hay dos cosas que mirar hoy."}{" "}
-              La lista no se rellena para parecer más larga.
-            </p>
-          )}
-        </>
-      )}
 
-      {/* ── Contexto: pequeño, y después ── */}
-      <div className="grid gap-4 sm:grid-cols-2 mt-8">
-        <div className="iv-panel p-4">
-          <div className="flex items-baseline justify-between mb-3">
-            <h2 className="iv-etiqueta">Tu cartera</h2>
-            <Link to="/cartera" className="text-etiqueta text-marca hover:underline">ver todo</Link>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Metrica etiqueta="Valor" valor={fmtEur(cartera.valor_eur)} />
-            <Metrica
-              etiqueta="Latente"
-              valor={fmtEur(cartera.latente_eur)}
-              valorNumerico={cartera.latente_eur}
-              tono="auto"
-            />
-            <Metrica
-              etiqueta="Realizado"
-              valor={fmtEur(cartera.realizado_eur)}
-              valorNumerico={cartera.realizado_eur}
-              tono="auto"
-            />
-            <Metrica etiqueta="Invertido" valor={fmtEur(cartera.invertido_eur)} />
-          </div>
-          {cartera.posiciones_sin_valorar > 0 && (
-            <p className="text-etiqueta text-tinta-3 mt-2">
-              {cartera.posiciones_sin_valorar} sin valorar (falta precio o tipo de cambio)
-            </p>
-          )}
-          {cartera.atencion?.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-linea space-y-1.5">
-              {cartera.atencion.map((p) => (
-                <div key={p.symbol} className="flex items-center justify-between gap-2">
-                  <Link to={`/accion/${p.symbol}`} className="iv-cifra text-apoyo text-tinta hover:text-marca">
-                    {p.symbol}
-                  </Link>
-                  <span
-                    className="iv-cifra text-apoyo text-baja"
-                    title="Rendimiento de la acción en su divisa: lo que dice si la tesis va mal, sin el ruido del tipo de cambio"
-                  >
-                    {fmtPct(p.pct)}
-                  </span>
+          {isLoading ? (
+            <div className="space-y-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="iv-panel p-5">
+                  <Cargando filas={3} />
                 </div>
               ))}
             </div>
-          )}
-        </div>
-
-        {/* Los nombres de campo son los que devuelve market_regime.get_market_regime():
-            light / label / advice / dist_sma200_pct. La primera versión leía
-            estado/emoji/detalle, que no existen, y por eso salía un «—» pelado: el
-            dato estaba ahí y la pantalla no sabía dónde mirar. */}
-        <div className="iv-panel p-4">
-          <h2 className="iv-etiqueta mb-3">Mercado</h2>
-          {mercado?.label && mercado.light !== "desconocido" ? (
-            <>
+          ) : error ? (
+            <ErrorEstado
+              error={error}
+              onReintentar={refetch}
+              titulo="No se ha podido preparar tu portada"
+            />
+          ) : importa.length === 0 ? (
+            <div className="iv-destacada p-6">
               <p className="text-cuerpo text-tinta font-medium">
-                <span className={cn("inline-block w-2 h-2 rounded-full mr-2 align-middle",
-                  mercado.light === "verde" && "bg-sube",
-                  mercado.light === "amarillo" && "bg-aviso",
-                  mercado.light === "rojo" && "bg-baja")} />
-                {mercado.label}
+                Hoy no hay nada que requiera tu atención.
               </p>
-              {mercado.dist_sma200_pct != null && (
-                <p className="iv-cifra text-apoyo text-tinta-2 mt-1">
-                  SPY a {fmtPct(mercado.dist_sma200_pct)} de su media de 200 sesiones
+              <p className="text-apoyo text-tinta-2 mt-1 max-w-[60ch]">
+                Ningún nivel cerca, ninguna alerta saltada y nada nuevo en tus fuentes sobre lo
+                que sigues. Es una respuesta, no un hueco.
+              </p>
+              <div className="flex gap-2 mt-4">
+                <Boton variante="contorno" tamano="sm" asChild>
+                  <Link to="/cartera">Ver la cartera</Link>
+                </Boton>
+                <Boton variante="fantasma" tamano="sm" asChild>
+                  <Link to="/oportunidades">Buscar oportunidades</Link>
+                </Boton>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-3">
+                {importa.map((t, i) => (
+                  <TarjetaAtencion key={`${t.symbol}-${t.tipo}`} tarjeta={t} orden={i + 1} />
+                ))}
+              </div>
+              {importa.length < 3 && (
+                <p className="text-apoyo text-tinta-3 mt-3">
+                  {importa.length === 1
+                    ? "Solo hay una cosa que mirar hoy."
+                    : "Solo hay dos cosas que mirar hoy."}{" "}
+                  La lista no se rellena para parecer más larga.
                 </p>
               )}
-              {mercado.advice && (
-                <p className="text-apoyo text-tinta-3 mt-1.5">{mercado.advice}</p>
-              )}
             </>
-          ) : (
-            /* Estado explicativo, no un guion: un «—» no distingue «no se ha podido
-               calcular» de «no hay nada que decir», y son cosas distintas. */
-            <p className="text-apoyo text-tinta-3">
-              No se ha podido evaluar el régimen de mercado ahora mismo. Suele ser que el
-              histórico de SPY no está disponible; se reintenta solo en la próxima carga.
-            </p>
           )}
         </div>
-      </div>
 
-      {/* Futuros, Miedo/Codicia y sectores, llegados desde la página de acción. Se
-          montan con el aspecto que ya tenían: armonizarlos con los tokens del sistema
-          es trabajo de la pasada de UX, no de esta reestructuración. */}
-      <div className="space-y-4 mt-4">
-        <MarketFuturesBar futures={futures} />
-        <FearGreedBar data={sentiment} />
-        <SectorHeatmap data={heatmap} />
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 mt-4">
-        <div className="iv-panel p-4">
-          <div className="flex items-baseline justify-between mb-3">
-            <h2 className="iv-etiqueta">Desde tu última visita</h2>
-            <Link to="/cerebro" className="text-etiqueta text-marca hover:underline">el Cerebro</Link>
-          </div>
-          {cerebro.menciones_nuevas > 0 || cerebro.tickers_nuevos?.length > 0 ? (
+        {/* Barra lateral: contexto con jerarquía, no cuatro cajas iguales */}
+        <aside className="min-w-0 lg:sticky lg:top-4 lg:self-start space-y-4">
+          {isLoading ? (
+            <div className="iv-panel p-4"><Cargando filas={4} /></div>
+          ) : (
             <>
-              <p className="text-apoyo text-tinta-2">
-                {cerebro.menciones_nuevas} menciones nuevas en tus fuentes.
-              </p>
-              {cerebro.tickers_nuevos?.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {cerebro.tickers_nuevos.slice(0, 8).map((t) => (
-                    <Link key={t} to={`/accion/${t}`}>
-                      <Chip tono="marca">{t}</Chip>
-                    </Link>
-                  ))}
-                </div>
-              )}
+              <PanelCartera cartera={cartera} />
+              <PanelAgenda eventos={data?.proximos_7_dias} />
+              <PanelCerebro cerebro={cerebro} />
             </>
-          ) : (
-            <p className="text-apoyo text-tinta-3">
-              Tus fuentes no han publicado nada nuevo desde la última vez que entraste.
-            </p>
           )}
-        </div>
+        </aside>
+      </div>
 
-        <div className="iv-panel p-4">
-          <div className="flex items-baseline justify-between mb-3">
-            <h2 className="iv-etiqueta">Próximos 7 días</h2>
-            <Link to="/calendario" className="text-etiqueta text-marca hover:underline">calendario</Link>
-          </div>
-          {data?.proximos_7_dias?.length > 0 ? (
-            <div className="space-y-1.5">
-              {data.proximos_7_dias.map((e) => (
-                <div key={e.symbol} className="flex items-center justify-between gap-2">
-                  <Link to={`/accion/${e.symbol}`} className="iv-cifra text-apoyo text-tinta hover:text-marca">
-                    {e.symbol}
-                  </Link>
-                  <span className="text-apoyo text-tinta-3">{fmtEnDias(e.date)}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-apoyo text-tinta-3">
-              Ninguna de tus posiciones presenta resultados esta semana.
-            </p>
-          )}
-        </div>
+      {/* ── 5 · MAPA DE SECTORES ────────────────────────────────────────────
+          Cierra a pie de página: es lectura del mercado, no una decisión de hoy. */}
+      <div className="mt-6">
+        <SectorHeatmap data={heatmap} />
       </div>
     </PageShell>
   );
