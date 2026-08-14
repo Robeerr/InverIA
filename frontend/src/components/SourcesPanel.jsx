@@ -34,7 +34,7 @@ export default function SourcesPanel({ symbol }) {
           «cuatro fuentes hablan de esto» en algo sobre lo que decidir. */}
       <Confluencia confluencia={data.confluencia} className="mb-3" />
 
-      <div className="flex items-center gap-3 mb-3 text-[11px] font-semibold">
+      <div className="flex items-center gap-3 mb-3 text-etiqueta font-semibold">
         <span className="text-tinta-3">{data.n} mención{data.n === 1 ? "" : "es"}</span>
         {data.positivos > 0 && <span className="text-sube">👍 {data.positivos}</span>}
         {data.negativos > 0 && <span className="text-baja">👎 {data.negativos}</span>}
@@ -46,11 +46,11 @@ export default function SourcesPanel({ symbol }) {
           return (
             <div key={i} className="border-l-2 pl-3 py-0.5" style={{ borderColor: c }}>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold text-marca truncate">{m.fuente}</span>
-                <span className="text-[9px] text-tinta-3 font-mono shrink-0">{fecha(m.fecha)}</span>
+                <span className="text-etiqueta font-semibold text-marca truncate">{m.fuente}</span>
+                <span className="text-etiqueta text-tinta-3 font-mono shrink-0">{fecha(m.fecha)}</span>
               </div>
-              {m.motivo && <p className="text-[12px] text-tinta leading-snug mt-0.5">{m.motivo}</p>}
-              <div className="flex items-center gap-2 mt-0.5 text-[10px]">
+              {m.motivo && <p className="text-apoyo text-tinta leading-snug mt-0.5">{m.motivo}</p>}
+              <div className="flex items-center gap-2 mt-0.5 text-etiqueta">
                 {m.accion && <span style={{ color: c }} className="font-semibold">{m.accion}</span>}
                 {m.niveles && <span className="text-tinta-3">· {m.niveles}</span>}
               </div>
@@ -58,7 +58,7 @@ export default function SourcesPanel({ symbol }) {
           );
         })}
       </div>
-      <p className="text-[10px] text-tinta-3 mt-3 leading-snug">Lo que dicen tus fuentes de pago, cruzado con el veredicto de tu motor. No es recomendación.</p>
+      <p className="text-etiqueta text-tinta-3 mt-3 leading-snug">Lo que dicen tus fuentes de pago, cruzado con el veredicto de tu motor. No es recomendación.</p>
     </section>
   );
 }

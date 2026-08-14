@@ -5,6 +5,7 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams,
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Header from "./components/Header";
+import Rail from "./components/Rail";
 import ErrorBoundary from "./components/ErrorBoundary";
 import LoginPage from "./pages/LoginPage";
 
@@ -154,6 +155,10 @@ function AppInner() {
 
   return (
     <div className="App min-h-screen overflow-x-hidden">
+      {/* Navegación persistente. El lienzo se desplaza con `lg:pl-[196px]` en vez de
+          con un grid: así ninguna de las rutas tiene que cambiar su contenedor. */}
+      <Rail />
+      <div className="lg:pl-[196px]">
       <Header
         symbol={symbol}
         setSymbol={irAAccion}
@@ -199,14 +204,15 @@ function AppInner() {
       </Suspense>
       </ErrorBoundary>
 
-      <footer className="border-t border-[#e5e0d8] mt-12 py-6 text-center space-y-2">
-        <p className="text-xs text-[#5c6b66]">
-          InverIA · Datos en vivo de Yahoo Finance + Finnhub · IA con Groq, OpenAI, Anthropic & Google
+      <footer className="border-t border-linea mt-12 py-6 text-center space-y-1.5">
+        <p className="text-apoyo text-tinta-3">
+          InverIA · Datos en vivo de Yahoo Finance + Finnhub · IA con Groq, OpenAI, Anthropic &amp; Google
         </p>
-        <p className="text-[10px] text-[#5c6b66] max-w-2xl mx-auto px-6">
+        <p className="text-apoyo text-tinta-3 max-w-2xl mx-auto px-6 opacity-80">
           ⚠️ Solo con fines educativos. Esta aplicación no constituye asesoramiento financiero, fiscal o legal.
         </p>
       </footer>
+      </div>
     </div>
   );
 }

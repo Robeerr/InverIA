@@ -32,11 +32,11 @@ function OpportunityCard({ op, onPick }) {
           </div>
           <div className="min-w-0">
             <p className="font-mono font-bold text-sm text-tinta">{op.symbol}</p>
-            <p className="text-[10px] text-tinta-3 truncate max-w-[140px]">{op.name}</p>
+            <p className="text-etiqueta text-tinta-3 truncate max-w-[140px]">{op.name}</p>
           </div>
         </div>
         <span
-          className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider"
+          className="px-2 py-0.5 rounded-full text-etiqueta font-mono font-bold uppercase tracking-wider"
           style={{ background: `rgb(${meta.color} / 0.08)`, color: `rgb(${meta.color})`, border: `1px solid rgb(${meta.color} / 0.25)` }}
         >
           Score {op.score}
@@ -51,33 +51,33 @@ function OpportunityCard({ op, onPick }) {
       </div>
 
       {op.reason && (
-        <p className="text-[11px] text-tinta-3 italic mb-2 leading-snug">{op.reason}</p>
+        <p className="text-etiqueta text-tinta-3 italic mb-2 leading-snug">{op.reason}</p>
       )}
       <div className="space-y-1 mb-3">
         {op.signals.slice(0, 3).map((s, i) => (
-          <p key={i} className="text-[11px] text-tinta flex items-start gap-1">
+          <p key={i} className="text-etiqueta text-tinta flex items-start gap-1">
             <span className="text-marca mt-0.5">·</span>
             {s}
           </p>
         ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-1 text-center mb-3 text-[10px] font-mono">
+      <div className="grid grid-cols-3 gap-1 text-center mb-3 text-etiqueta font-mono">
         <div className="bg-fondo border border-linea rounded px-1 py-1">
-          <p className="text-tinta-3 uppercase text-[9px]">RSI</p>
+          <p className="text-tinta-3 uppercase text-etiqueta">RSI</p>
           <p className="text-tinta font-semibold">{op.rsi ?? "—"}</p>
         </div>
         <div className="bg-sube/10 border border-sube/30 rounded px-1 py-1">
-          <p className="text-tinta-3 uppercase text-[9px]">Soporte</p>
+          <p className="text-tinta-3 uppercase text-etiqueta">Soporte</p>
           <p className="text-sube font-semibold">${fmtPrice(op.nearest_support) || "—"}</p>
         </div>
         <div className="bg-baja/10 border border-baja/30 rounded px-1 py-1">
-          <p className="text-tinta-3 uppercase text-[9px]">Resist.</p>
+          <p className="text-tinta-3 uppercase text-etiqueta">Resist.</p>
           <p className="text-baja font-semibold">${fmtPrice(op.nearest_resistance) || "—"}</p>
         </div>
       </div>
 
-      <div className="flex items-center justify-between text-[10px] text-tinta-3">
+      <div className="flex items-center justify-between text-etiqueta text-tinta-3">
         {op.analyst_consensus ? (
           <span
             className={`font-mono font-semibold ${
@@ -127,7 +127,7 @@ function ScreenerCard({ row, onPick, top }) {
         /* `marca-tinta` y no blanco fijo: `aviso` es ámbar OSCURO en claro y ámbar
            BRILLANTE en oscuro, así que el blanco funcionaba en un tema y se perdía
            en el otro. El token de texto sobre fondo de acento cambia con él. */
-        <span className="absolute -top-2 left-3 px-2 py-0.5 rounded-full text-[9px] font-bold text-marca-tinta bg-aviso shadow">
+        <span className="absolute -top-2 left-3 px-2 py-0.5 rounded-full text-etiqueta font-bold text-marca-tinta bg-aviso shadow">
           ★ TOP SELECCIÓN
         </span>
       )}
@@ -138,9 +138,9 @@ function ScreenerCard({ row, onPick, top }) {
           </div>
           <div className="min-w-0">
             <p className="font-mono font-bold text-sm text-tinta">{row.symbol}</p>
-            <p className="text-[10px] text-tinta-3 truncate max-w-[140px]">{row.name}</p>
+            <p className="text-etiqueta text-tinta-3 truncate max-w-[140px]">{row.name}</p>
             {row.fuentes && (
-              <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-info/10 text-info border border-info/20"
+              <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded-full text-etiqueta font-bold bg-info/10 text-info border border-info/20"
                 title={`Mencionada por tus fuentes: ${(row.fuentes.fuentes || []).join(", ")}`}>
                 📣 Tus fuentes ({row.fuentes.menciones})
                 {row.fuentes.positivos > 0 && ` 👍${row.fuentes.positivos}`}
@@ -154,7 +154,7 @@ function ScreenerCard({ row, onPick, top }) {
              ve igual y no pide nada: la peticion ocurre en el primer clic. */
           <Score symbol={row.symbol}>
             <span
-              className="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold"
+              className="px-2 py-0.5 rounded-full text-etiqueta font-mono font-bold"
               style={{ background: `rgb(${psColor} / 0.09)`, color: `rgb(${psColor})`, border: `1px solid rgb(${psColor} / 0.25)` }}
               title="Potencial a medio plazo: crecimiento + valoración + punto de entrada"
             >
@@ -167,58 +167,58 @@ function ScreenerCard({ row, onPick, top }) {
       <div className="flex items-baseline justify-between mb-2">
         <p className="font-mono font-bold text-lg text-tinta">${fmtPrice(row.price)}</p>
         <span
-          className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold"
+          className="px-2 py-0.5 rounded-full text-etiqueta font-mono font-bold"
           style={{ background: `rgb(${distColor} / 0.08)`, color: `rgb(${distColor})`, border: `1px solid rgb(${distColor} / 0.25)` }}
         >
           {dist != null ? `${dist}% máx.` : "—"}
         </span>
       </div>
       {row.valuation && (
-        <p className="text-[10px] font-mono mb-1" style={{ color: `rgb(${psColor})` }}>
+        <p className="text-etiqueta font-mono mb-1" style={{ color: `rgb(${psColor})` }}>
           {row.valuation}{row.pe_ratio ? ` · PER ${row.pe_ratio}` : ""}
         </p>
       )}
       {row.momentum && row.momentum !== "neutra" && (
         <p
-          className="text-[10px] font-mono mb-1"
+          className="text-etiqueta font-mono mb-1"
           style={{ color: row.momentum.startsWith("⚠") ? "rgb(var(--iv-baja))" : "rgb(var(--iv-sube))" }}
         >
           {row.momentum}{row.return_52w != null ? ` · ${row.return_52w > 0 ? "+" : ""}${row.return_52w}% 1a` : ""}
         </p>
       )}
       {row.analyst_consensus && (
-        <p className="text-[10px] font-mono mb-1 text-tinta-3">
+        <p className="text-etiqueta font-mono mb-1 text-tinta-3">
           Analistas: <span className="text-marca font-semibold">{row.analyst_consensus}</span>
           {row.consensus_score != null ? ` (${row.consensus_score})` : ""}
         </p>
       )}
       {row.reason && (
-        <p className="text-[11px] text-tinta-3 italic mb-2 leading-snug">{row.reason}</p>
+        <p className="text-etiqueta text-tinta-3 italic mb-2 leading-snug">{row.reason}</p>
       )}
       {row.earnings_days != null && (
-        <p className="text-[10px] font-mono mb-2 text-baja bg-baja/10 border border-baja/30 rounded px-2 py-1">
+        <p className="text-etiqueta font-mono mb-2 text-baja bg-baja/10 border border-baja/30 rounded px-2 py-1">
           ⚠ Resultados {row.earnings_days === 0 ? "HOY" : row.earnings_days === 1 ? "mañana" : `en ${row.earnings_days} días`} — riesgo binario
         </p>
       )}
 
-      <div className="grid grid-cols-3 gap-1 text-center mb-3 text-[10px] font-mono">
+      <div className="grid grid-cols-3 gap-1 text-center mb-3 text-etiqueta font-mono">
         <div className="bg-sube/10 border border-sube/30 rounded px-1 py-1.5">
-          <p className="text-tinta-3 uppercase text-[9px]">Ventas YoY</p>
+          <p className="text-tinta-3 uppercase text-etiqueta">Ventas YoY</p>
           <p className="text-sube font-semibold">{row.revenue_growth != null ? `+${row.revenue_growth}%` : "—"}</p>
         </div>
         <div className="bg-sube/10 border border-sube/30 rounded px-1 py-1.5">
-          <p className="text-tinta-3 uppercase text-[9px]">EPS YoY</p>
+          <p className="text-tinta-3 uppercase text-etiqueta">EPS YoY</p>
           <p className="text-sube font-semibold">{row.eps_growth != null ? `${row.eps_growth > 0 ? "+" : ""}${row.eps_growth}%` : "—"}</p>
         </div>
         <div className="bg-info/10 border border-info/30 rounded px-1 py-1.5">
-          <p className="text-tinta-3 uppercase text-[9px]">Vol. medio</p>
+          <p className="text-tinta-3 uppercase text-etiqueta">Vol. medio</p>
           <p className="text-info font-semibold">{fmtNum(row.avg_volume)}</p>
         </div>
       </div>
 
       <MiniChart symbol={row.symbol} />
 
-      <div className="flex items-center justify-between text-[10px] text-tinta-3 mt-2">
+      <div className="flex items-center justify-between text-etiqueta text-tinta-3 mt-2">
         <span className="truncate max-w-[150px]">{row.sector || "—"}</span>
         <span className="flex items-center gap-1 text-marca font-mono">
           Analizar <ArrowRight size={10} weight="bold" />
@@ -247,11 +247,11 @@ function MoversColumn({ title, icon: Icon, rows, color, onPick }) {
             >
               <div className="min-w-0">
                 <p className="font-mono font-semibold text-xs text-tinta">{r.symbol}</p>
-                <p className="text-[10px] text-tinta-3 truncate max-w-[130px]">{r.name}</p>
+                <p className="text-etiqueta text-tinta-3 truncate max-w-[130px]">{r.name}</p>
               </div>
               <div className="text-right shrink-0">
                 <p className="font-mono text-xs text-tinta">${fmtPrice(r.price)}</p>
-                <p className="font-mono text-[11px] font-semibold" style={{ color: `rgb(${color})` }}>
+                <p className="font-mono text-etiqueta font-semibold" style={{ color: `rgb(${color})` }}>
                   {pct != null ? `${pct >= 0 ? "+" : ""}${Number(pct).toFixed(2)}%` : "—"}
                 </p>
               </div>
@@ -400,7 +400,7 @@ export default function OpportunitiesView({ setSymbol }) {
               </Button>
             </div>
             {data?.generated_at && (
-              <p className="text-[10px] text-tinta-3 mt-2 font-mono">
+              <p className="text-etiqueta text-tinta-3 mt-2 font-mono">
                 Último escaneo: {new Date(data.generated_at).toLocaleString("es-ES")} · {data.opportunities_found} oportunidades detectadas
                 {isStale(data) && <span className="text-aviso"> · actualizando datos…</span>}
               </p>
@@ -511,7 +511,7 @@ export default function OpportunitiesView({ setSymbol }) {
                 <div className="flex items-center gap-2 mt-4 px-3 py-2 rounded-lg" style={{ background: `rgb(${c} / 0.08)`, border: `1px solid rgb(${c} / 0.25)` }}>
                   <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: `rgb(${c})` }} />
                   <span className="text-xs font-semibold" style={{ color: `rgb(${c})` }}>{rg.label}</span>
-                  <span className="text-[11px] text-tinta-3 hidden sm:inline">— {rg.advice}</span>
+                  <span className="text-etiqueta text-tinta-3 hidden sm:inline">— {rg.advice}</span>
                 </div>
               );
             })()}
@@ -520,7 +520,7 @@ export default function OpportunitiesView({ setSymbol }) {
             {screener?.filters && (
               <div className="flex flex-wrap gap-2 mt-4">
                 {screener.filters.map((f, i) => (
-                  <span key={i} className="text-[10px] font-mono px-2 py-1 rounded-full border border-marca/30 bg-marca/5 text-marca">
+                  <span key={i} className="text-etiqueta font-mono px-2 py-1 rounded-full border border-marca/30 bg-marca/5 text-marca">
                     {f}
                   </span>
                 ))}
@@ -528,7 +528,7 @@ export default function OpportunitiesView({ setSymbol }) {
             )}
 
             {screener?.generated_at && screener.status !== "warming" && (
-              <p className="text-[10px] text-tinta-3 mt-3 font-mono">
+              <p className="text-etiqueta text-tinta-3 mt-3 font-mono">
                 Último filtrado: {new Date(screener.generated_at).toLocaleString("es-ES")} · {screener.matches} resultados
                 {isStale(screener) && <span className="text-aviso"> · actualizando datos…</span>}
               </p>
@@ -547,25 +547,25 @@ export default function OpportunitiesView({ setSymbol }) {
             <>
               {(screener.sectores_calientes || []).length > 0 && (
                 <div className="iv-panel p-3 mb-3 border-l-4 border-aviso">
-                  <p className="text-[11px] text-tinta">
+                  <p className="text-etiqueta text-tinta">
                     🔥 <b>El dinero va hacia:</b>{" "}
                     {screener.sectores_calientes.slice(0, 4).map((s, i) => (
                       <span key={s.sector}>{i > 0 ? " · " : ""}{s.sector}</span>
                     ))}
                   </p>
-                  <p className="text-[10px] text-tinta-3 mt-0.5">Detectado en vivo (momentum + lo que dicen tus fuentes). Se actualiza solo; estos sectores pesan más en la Top Selección.</p>
+                  <p className="text-etiqueta text-tinta-3 mt-0.5">Detectado en vivo (momentum + lo que dicen tus fuentes). Se actualiza solo; estos sectores pesan más en la Top Selección.</p>
                 </div>
               )}
               {(screener.top_seleccion || []).length > 0 && (
                 <div className="iv-panel p-4 mb-3 border-l-4 border-sube">
-                  <p className="text-[11px] uppercase tracking-[0.15em] text-marca font-mono font-bold mb-2">⭐ Top Selección</p>
+                  <p className="text-etiqueta uppercase tracking-[0.15em] text-marca font-mono font-bold mb-2">⭐ Top Selección</p>
                   <div className="space-y-1.5">
                     {screener.top_seleccion.map((t) => (
                       <button key={t.symbol} onClick={() => handlePick(t.symbol)}
                         className="w-full flex items-center justify-between gap-2 text-left py-1">
                         <div className="min-w-0">
                           <span className="font-mono font-bold text-sm text-tinta">{t.symbol}</span>
-                          <span className="text-[11px] text-tinta-3 ml-2">{t.motivo}</span>
+                          <span className="text-etiqueta text-tinta-3 ml-2">{t.motivo}</span>
                         </div>
                         <span className="shrink-0 text-xs font-mono font-bold text-sube">{t.potential_score} pts</span>
                       </button>
@@ -574,7 +574,7 @@ export default function OpportunitiesView({ setSymbol }) {
                 </div>
               )}
               {(screener.con_fuentes || []).length > 0 && (
-                <p className="text-[11px] text-info bg-info/10 border border-info/20 rounded-md px-3 py-2 mb-3">
+                <p className="text-etiqueta text-info bg-info/10 border border-info/20 rounded-md px-3 py-2 mb-3">
                   📣 <b>{screener.con_fuentes.length}</b> de estas acciones las mencionan tus fuentes de pago — salen primero, marcadas.
                 </p>
               )}

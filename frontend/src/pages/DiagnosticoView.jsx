@@ -81,7 +81,7 @@ function VelocidadWeb() {
               ))}
             </tbody>
           </table>
-          <p className="text-[11px] text-tinta-3 mt-2 leading-snug">
+          <p className="text-etiqueta text-tinta-3 mt-2 leading-snug">
             Referencia: por debajo de 1.000 KB de JavaScript es sano; por encima de 2.000 KB
             la culpa de la lentitud es del tamaño. Si sale 0 KB, vino todo de caché: recarga
             con Ctrl+Shift+R y vuelve a medir.
@@ -157,7 +157,7 @@ function MantenimientoCerebro() {
       {resultado && (
         <div className="mt-3">
           <p className="text-xs text-tinta-3 mb-1">{resultado.accion}</p>
-          <pre className="text-[11px] bg-fondo p-2 rounded overflow-x-auto max-h-64">
+          <pre className="text-etiqueta bg-fondo p-2 rounded overflow-x-auto max-h-64">
             {JSON.stringify(resultado.datos, null, 2)}
           </pre>
         </div>
@@ -221,7 +221,7 @@ export default function DiagnosticoView() {
                 todo lo que consiste en dejar de repetir trabajo es invisible ahí. */}
             {carga.experiencia_real && (
               <div className="mb-3 p-3 rounded-md border border-linea bg-superficie-alt">
-                <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-1">
+                <p className="text-etiqueta uppercase tracking-[0.15em] text-tinta-3 font-mono mb-1">
                   Lo que tardas tú al elegir esta acción
                 </p>
                 <p className="text-sm">
@@ -233,7 +233,7 @@ export default function DiagnosticoView() {
                         : carga.experiencia_real.ms < 1500 ? "rápido" : "lento"}
                   </span>
                 </p>
-                <p className="text-[11px] text-tinta-3 mt-1">{carga.experiencia_real.nota}</p>
+                <p className="text-etiqueta text-tinta-3 mt-1">{carga.experiencia_real.nota}</p>
               </div>
             )}
             <p className="text-sm mb-2">
@@ -346,7 +346,7 @@ export default function DiagnosticoView() {
               </tbody>
             </table>
             {estudio.aviso_independencia && (
-              <p className="text-[11px] text-tinta-3 mt-2 leading-snug">{estudio.aviso_independencia}</p>
+              <p className="text-etiqueta text-tinta-3 mt-2 leading-snug">{estudio.aviso_independencia}</p>
             )}
           </div>
         )}

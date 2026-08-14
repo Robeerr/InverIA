@@ -1,27 +1,16 @@
 import React from "react";
-import { ChartLineUp, MagnifyingGlass, House, CalendarBlank, Lightning, Moon, Sun, TelegramLogo, List, X, Bell, SignOut, User, Brain, Coins } from "@phosphor-icons/react";
+import { MagnifyingGlass, Moon, Sun, TelegramLogo, List, SignOut, User } from "@phosphor-icons/react";
+import { RailCajon } from "./Rail";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
-import { Link, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { api } from "../lib/api";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
 
-// Cada entrada se llama como lo que hay dentro. "Dashboard" montaba la ficha de una
-// acción, "Cartera" vivía en /signals y "Ventas" era en realidad el libro de
-// operaciones completo, con compras incluidas.
-const NAV = [
-  { to: "/", label: "Hoy", icon: House, testId: "nav-hoy" },
-  { to: "/oportunidades", label: "Oportunidades", icon: Lightning, testId: "nav-opportunities" },
-  { to: "/calendario", label: "Calendario", icon: CalendarBlank, testId: "nav-calendar" },
-  { to: "/cartera", label: "Cartera", icon: Bell, testId: "nav-signals" },
-  { to: "/operaciones", label: "Operaciones", icon: Coins, testId: "nav-ventas" },
-  { to: "/track-record", label: "Track record", icon: ChartLineUp, testId: "nav-track-record" },
-  { to: "/cerebro", label: "Cerebro", icon: Brain, testId: "nav-brain" },
-  // Telegram: setup puntual (conectar / cambiar temas). Fuera del menú para no
-  // saturar; sigue accesible por URL directa /telegram cuando haga falta.
-];
-
+// La navegación ya no vive aquí: la tiene `Rail.jsx`, que es su dueño único. Esta
+// barra se queda con lo que de verdad es suyo —buscar, estado y cuenta— y con la
+// hamburguesa que abre el cajón en móvil.
 export default function Header({ symbol, setSymbol, onSearch, showSearch = true, darkMode, setDarkMode }) {
   const { user, logout } = useAuth();
   const [query, setQuery] = React.useState(symbol || "");
@@ -102,62 +91,21 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
   return (
     <header
       data-testid="app-header"
-      className="sticky top-0 z-50 bg-fondo/95 backdrop-blur border-b border-linea"
+      className="sticky top-0 z-30 bg-fondo/95 backdrop-blur border-b border-linea"
     >
-      {/* Main bar */}
-      <div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-3 flex items-center gap-3 sm:gap-6">
-        {/* Logo */}
-        <Link to="/" className="flex items-center gap-2 shrink-0">
-          <div className="w-9 h-9 rounded-md bg-marca flex items-center justify-center text-marca-tinta">
-            <ChartLineUp size={20} weight="bold" />
-          </div>
-          <div className="hidden sm:block">
-            <h1 className="font-heading font-bold text-lg leading-none tracking-tight text-tinta">InverIA</h1>
-            {/* La coletilla mide ~155px por el `tracking` ancho y es lo que menos
-                aporta de toda la barra. Se reserva para 2xl, donde sobra sitio. */}
-            <p className="hidden 2xl:block text-[10px] uppercase tracking-[0.2em] text-tinta-3 mt-0.5">Análisis bursátil en vivo</p>
-          </div>
-          <span className="sm:hidden font-heading font-bold text-lg text-tinta">InverIA</span>
-        </Link>
-
-        {/* Desktop nav ─────────────────────────────────────────────────────────
-            Las etiquetas vuelven, pero la nav va COMPRIMIDA para que quepan. Con
-            el espaciado original (px-3, gap-1.5, 12px) las siete entradas miden
-            ~790px y, con el logo y las acciones, no dejaban sitio al buscador ni
-            en el ancho máximo del contenedor. Apretando el relleno y bajando el
-            texto a 11px —el suelo de legibilidad de la escala— bajan a ~675px,
-            que sí cabe.
-
-            El punto de corte es 1400px y no `2xl`: por debajo de ahí las
-            etiquetas volverían a comerse el buscador, y por encima de `2xl`
-            (1536) se habrían quedado ocultas justo en las pantallas donde
-            perfectamente caben. Es un ancho medido, no un escalón heredado.
-
-            Debajo de 1400 quedan los iconos solos, y ahí `title` no es
-            decoración: es la única forma de saber a dónde lleva cada uno.
-            `aria-label` mantiene el nombre para lectores de pantalla siempre.
-            `shrink-0` impide que la nav se comprima y parta un icono. */}
-        <nav className="hidden lg:flex shrink-0 items-center gap-0.5 bg-superficie border border-linea rounded-md p-1">
-          {NAV.map((n) => {
-            const Icon = n.icon;
-            const active = location.pathname === n.to;
-            return (
-              <Link
-                key={n.to}
-                to={n.to}
-                data-testid={n.testId}
-                title={n.label}
-                aria-label={n.label}
-                className={`flex items-center gap-1 px-2 py-1.5 rounded text-[11px] font-mono whitespace-nowrap transition-colors ${
-                  active ? "bg-marca text-marca-tinta" : "text-tinta-3 hover:text-tinta"
-                }`}
-              >
-                <Icon size={13} weight="bold" />
-                <span className="hidden min-[1400px]:inline">{n.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
+      {/* Barra superior. Ya no lleva navegación ni marca: las dos viven en el rail.
+          Se queda con lo único que es suyo —buscar, estado y cuenta— y con la
+          hamburguesa, que en móvil abre el cajón con las MISMAS etiquetas. */}
+      <div className="mx-auto px-4 sm:px-5 py-2.5 flex items-center gap-3">
+        <Button
+          onClick={() => setMenuOpen(true)}
+          variant="outline"
+          size="icon"
+          aria-label="Abrir menú"
+          className="lg:hidden h-9 w-9 border-linea hover:bg-superficie-alt shrink-0"
+        >
+          <List size={16} />
+        </Button>
 
         {/* Search + autocompletado.
             Sin techo, a propósito. Un `max-w` dejaba un hueco muerto entre el
@@ -241,50 +189,12 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
               <SignOut size={13} />
             </button>
           </div>
-          {/* Hamburger */}
-          <Button
-            onClick={() => setMenuOpen(!menuOpen)}
-            variant="outline"
-            size="icon"
-            className="lg:hidden h-9 w-9 border-linea hover:bg-linea"
-          >
-            {menuOpen ? <X size={16} /> : <List size={16} />}
-          </Button>
         </div>
       </div>
 
-      {/* Mobile menu */}
-      {menuOpen && (
-        <div className="lg:hidden border-t border-linea bg-fondo px-4 py-3 space-y-1">
-          {NAV.map((n) => {
-            const Icon = n.icon;
-            const active = location.pathname === n.to;
-            return (
-              <Link
-                key={n.to}
-                to={n.to}
-                data-testid={n.testId}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-mono transition-colors ${
-                  active ? "bg-marca text-marca-tinta" : "text-tinta-3 hover:bg-superficie hover:text-tinta"
-                }`}
-              >
-                <Icon size={16} weight="bold" />
-                {n.label}
-              </Link>
-            );
-          })}
-          <div className="pt-2 border-t border-linea flex items-center gap-2 flex-wrap">
-            <Button onClick={testTelegram} variant="outline" size="icon" className="h-9 w-9 border-linea" title="Probar Telegram">
-              <TelegramLogo size={15} />
-            </Button>
-            {/* Status mobile */}
-            <div className="flex items-center gap-1.5 px-2 h-9 rounded-md border border-linea bg-superficie text-xs font-mono">
-              <span className={`w-2 h-2 rounded-full ${backendOk === null ? "bg-yellow-400 animate-pulse" : backendOk ? "bg-green-500" : "bg-red-500 animate-pulse"}`} />
-              <span className="text-tinta-3">{backendOk === null ? "Comprobando..." : backendOk ? "Backend online" : "Backend offline"}</span>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* El menú móvil ya no se reimplementa aquí: es el MISMO rail, en cajón.
+          Antes eran dos listas de navegación que había que mantener a la vez. */}
+      <RailCajon abierto={menuOpen} cerrar={() => setMenuOpen(false)} />
     </header>
   );
 }

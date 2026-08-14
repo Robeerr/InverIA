@@ -50,7 +50,7 @@ export default function InfoDot({ term, text }) {
         // El globo es oscuro en los DOS temas, así que declara el ámbito `iv-oscuro`
         // y dentro los tokens resuelven a la paleta oscura. Antes lo conseguía con
         // hex fijos que ningún remapeo tocaba: salía bien de casualidad, no por regla.
-        <span className="iv-oscuro absolute z-30 left-0 top-5 w-60 p-2.5 rounded-lg bg-fondo text-tinta text-[11px] leading-snug shadow-lg">
+        <span className="iv-oscuro absolute z-30 left-0 top-5 w-60 p-2.5 rounded-lg bg-fondo text-tinta text-etiqueta leading-snug shadow-lg">
           {term && <b className="block mb-0.5 text-marca">{term}</b>}
           {body}
         </span>

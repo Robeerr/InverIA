@@ -49,7 +49,7 @@ export default function Confluencia({ confluencia, compacto = false, className =
       <span
         title={confluencia.texto || estilo.etiqueta}
         data-testid={`confluencia-${confluencia.estado.toLowerCase()}`}
-        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9.5px] font-mono
+        className={`inline-flex items-center rounded-full px-2 py-0.5 text-etiqueta font-mono
           font-bold uppercase tracking-wider shrink-0 border
           ${estilo.fondo} ${estilo.texto} ${estilo.borde} ${className}`}
       >
@@ -64,15 +64,15 @@ export default function Confluencia({ confluencia, compacto = false, className =
       className={`rounded-md border px-3 py-2 ${estilo.fondo} ${estilo.borde} ${className}`}
     >
       <div className="flex items-baseline gap-2 flex-wrap">
-        <span className={`text-[9.5px] font-mono font-bold uppercase tracking-wider ${estilo.texto}`}>
+        <span className={`text-etiqueta font-mono font-bold uppercase tracking-wider ${estilo.texto}`}>
           {estilo.etiqueta}
         </span>
-        <span className="text-[9.5px] font-mono uppercase tracking-wider text-tinta-3">
+        <span className="text-etiqueta font-mono uppercase tracking-wider text-tinta-3">
           tendencia ↔ fuentes
         </span>
       </div>
       {confluencia.texto && (
-        <p className="text-[12px] text-tinta leading-snug mt-1">{confluencia.texto}</p>
+        <p className="text-apoyo text-tinta leading-snug mt-1">{confluencia.texto}</p>
       )}
     </div>
   );

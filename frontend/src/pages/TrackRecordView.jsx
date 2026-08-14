@@ -16,9 +16,9 @@ const RES = {
 function Stat({ label, value, sub, color }) {
   return (
     <div className="iv-panel p-4 text-center">
-      <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-1">{label}</p>
+      <p className="text-etiqueta uppercase tracking-[0.15em] text-tinta-3 font-mono mb-1">{label}</p>
       <p className="text-2xl font-bold font-mono" style={{ color: color || "rgb(var(--iv-tinta))" }}>{value}</p>
-      {sub && <p className="text-[10px] text-tinta-3 mt-0.5">{sub}</p>}
+      {sub && <p className="text-etiqueta text-tinta-3 mt-0.5">{sub}</p>}
     </div>
   );
 }
@@ -47,7 +47,7 @@ export default function TrackRecordView() {
           <ChartLineUp size={22} weight="bold" className="text-marca shrink-0" />
           <div className="min-w-0">
             <h1 className="font-heading font-bold text-lg text-tinta leading-tight">Track record del sistema</h1>
-            <p className="text-[11px] text-tinta-3">¿Funcionan las señales de COMPRA del motor? Sin autoengaño.</p>
+            <p className="text-etiqueta text-tinta-3">¿Funcionan las señales de COMPRA del motor? Sin autoengaño.</p>
           </div>
         </div>
         <button onClick={() => load(days, true)} className="shrink-0 p-2 rounded-md border border-linea text-marca" title="Recargar (datos frescos)">
@@ -102,7 +102,7 @@ export default function TrackRecordView() {
           {/* Benchmark: ¿bate el motor a comprar y mantener el índice? */}
           {s.benchmark && (
             <div className="iv-panel p-4" style={{ borderLeft: `3px solid ${s.benchmark.alpha >= 0 ? "rgb(var(--iv-sube))" : "rgb(var(--iv-baja))"}` }}>
-              <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-3">
+              <p className="text-etiqueta uppercase tracking-[0.15em] text-tinta-3 font-mono mb-3">
                 ¿Bate al índice? (vs comprar S&P 500)
               </p>
               <div className="grid grid-cols-3 gap-2.5">
@@ -114,7 +114,7 @@ export default function TrackRecordView() {
                   sub={s.benchmark.alpha >= 0 ? "de más 🎯" : "de menos"}
                   color={s.benchmark.alpha >= 0 ? "rgb(var(--iv-sube))" : "rgb(var(--iv-baja))"} />
               </div>
-              <p className="text-[11px] text-tinta-3 leading-relaxed mt-3">
+              <p className="text-etiqueta text-tinta-3 leading-relaxed mt-3">
                 {s.benchmark.alpha >= 0
                   ? `Tu motor bate al índice por ${s.benchmark.alpha}% de media. ${s.benchmark.baten_spy_pct}% de las señales lo superan. Todo esto aporta valor sobre comprar SPY y esperar.`
                   : `Tu motor rinde ${Math.abs(s.benchmark.alpha)}% MENOS que comprar el índice y esperar. Solo ${s.benchmark.baten_spy_pct}% de las señales lo baten. Dato honesto a vigilar.`}
@@ -126,7 +126,7 @@ export default function TrackRecordView() {
           {/* Escenario TP2: qué pasa si aguantas hasta el objetivo mayor */}
           {s.tp2 && (
             <div className="iv-panel p-4">
-              <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-3">
+              <p className="text-etiqueta uppercase tracking-[0.15em] text-tinta-3 font-mono mb-3">
                 Si aguantas hasta TP2 (objetivo mayor)
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -141,7 +141,7 @@ export default function TrackRecordView() {
                   color={s.tp2.ratio_rr == null ? "rgb(var(--iv-tinta-3))" : s.tp2.ratio_rr >= 1.5 ? "rgb(var(--iv-sube))" : s.tp2.ratio_rr >= 1 ? "rgb(var(--iv-aviso))" : "rgb(var(--iv-baja))"} />
                 <Stat label="Ganancia media" value={s.tp2.ganancia_media != null ? `+${s.tp2.ganancia_media}%` : "—"} sub="cuando acierta" color="rgb(var(--iv-sube))" />
               </div>
-              <p className="text-[11px] text-tinta-3 leading-relaxed mt-3">
+              <p className="text-etiqueta text-tinta-3 leading-relaxed mt-3">
                 Mismo motor, pero cerrando en el <b>segundo objetivo</b> en vez del primero. Aciertas
                 menos veces (cuesta más llegar) pero ganas más por acierto — compara la esperanza y el R/R
                 con los de arriba (TP1) para ver qué salida te renta más.
@@ -150,7 +150,7 @@ export default function TrackRecordView() {
           )}
 
           {/* Nota honesta */}
-          <p className="text-[11px] text-tinta-3 leading-relaxed px-1">
+          <p className="text-etiqueta text-tinta-3 leading-relaxed px-1">
             La <b>esperanza por operación</b> es lo que importa: cuánto ganas de media por señal cerrada
             (pondera aciertos y fallos). Si es positiva, el motor gana dinero aunque falle a veces.
             El <b>ratio R/R</b> ideal es ≥1.5:1. Acierto = tocó <b>take-profit</b> antes que el stop; el stop se
@@ -167,11 +167,11 @@ export default function TrackRecordView() {
                     <meta.Icon size={18} weight="fill" style={{ color: meta.c }} className="shrink-0" />
                     <div className="min-w-0">
                       <p className="font-mono font-bold text-sm text-tinta">{r.symbol}</p>
-                      <p className="text-[10px] text-tinta-3">{r.fecha} · entrada ${r.entrada}</p>
+                      <p className="text-etiqueta text-tinta-3">{r.fecha} · entrada ${r.entrada}</p>
                     </div>
                   </div>
                   <div className="text-right shrink-0">
-                    <span className="text-[10px] font-semibold" style={{ color: meta.c }}>{meta.label}</span>
+                    <span className="text-etiqueta font-semibold" style={{ color: meta.c }}>{meta.label}</span>
                     {r.retorno != null && (
                       <p className="text-sm font-mono font-semibold"
                         style={{ color: r.retorno > 0 ? "rgb(var(--iv-sube))" : r.retorno < 0 ? "rgb(var(--iv-baja))" : "rgb(var(--iv-tinta-3))" }}>

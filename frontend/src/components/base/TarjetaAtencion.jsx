@@ -97,15 +97,13 @@ export default function TarjetaAtencion({ tarjeta, orden }) {
     <article
       className={cn(
         "iv-panel px-4 py-3 relative",
-        // El borde izquierdo es del color del tipo: deja leer la naturaleza del aviso
+        // LEY 4 · el filo ámbar marca LA decisión, y solo hay una por pantalla. Antes
+        // cada tipo traía su color y las cinco tarjetas competían entre sí: seis colores
+        // de filo convertían la lista en un semáforo, y cuando todo destaca no destaca
+        // nada. El tipo lo sigue diciendo el chip, que es su sitio.
         // antes de leer el texto, que es lo que permite barrer cinco tarjetas de un vistazo.
         "border-l-[3px]",
-        meta.tono === "baja" && "border-l-baja",
-        meta.tono === "aviso" && "border-l-aviso",
-        meta.tono === "marca" && "border-l-marca",
-        meta.tono === "sube" && "border-l-sube",
-        meta.tono === "info" && "border-l-info",
-        meta.tono === "neutro" && "border-l-neutro"
+        orden === 1 ? "border-l-marca" : "border-l-linea-fuerte"
       )}
       data-testid={`tarjeta-hoy-${tarjeta.symbol}`}
     >

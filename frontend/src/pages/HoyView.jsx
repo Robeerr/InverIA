@@ -30,6 +30,46 @@ import { MarketFuturesBar, FearGreedBar, SectorHeatmap } from "@/components/Cont
 
 const CLAVE_ULTIMA_VISITA = "inveria-ultima-visita-hoy";
 
+/* El titular de la portada · LEY 6
+   ───────────────────────────────────────────────────────────────────────────────
+   La primera línea tiene que RESPONDER la pregunta con la que se abre la app —
+   «¿qué hago hoy?»— antes de leer nada más. Hasta ahora lo primero era un saludo
+   pequeño y una rejilla de tarjetas del mismo peso: la respuesta había que
+   deducirla recorriéndolas.
+
+   NO INVENTA NADA. Cuenta las tarjetas que el backend ya ha decidido enviar y las
+   nombra por su tipo. Si mañana el backend deja de mandar un tipo, aquí desaparece
+   solo. El orden de las ramas es el de urgencia, el mismo que ya ordena la lista. */
+const NOMBRES = {
+  nivel: ["ha llegado a tu nivel", "han llegado a tu nivel"],
+  ruptura: ["ha roto su nivel", "han roto su nivel"],
+  alerta: ["ha cruzado tu alerta", "han cruzado tus alertas"],
+  divergencia: ["choca con tus fuentes", "chocan con tus fuentes"],
+  confluencia: ["coincide con tus fuentes", "coinciden con tus fuentes"],
+  resultados: ["presenta resultados", "presentan resultados"],
+};
+const CANTIDAD = ["Ninguna", "Una", "Dos", "Tres", "Cuatro", "Cinco"];
+
+function titularDe(tarjetas) {
+  if (!tarjetas?.length) return null;
+  // Se agrupa por tipo conservando el orden de urgencia en que llegaron.
+  const porTipo = [];
+  for (const t of tarjetas) {
+    const fila = porTipo.find((x) => x.tipo === t.tipo);
+    if (fila) fila.n += 1;
+    else porTipo.push({ tipo: t.tipo, n: 1 });
+  }
+  const principal = porTipo[0];
+  const nombre = NOMBRES[principal.tipo];
+  if (!nombre) return null;
+  const cuantas = CANTIDAD[principal.n] || String(principal.n);
+  const sujeto = principal.n === 1 ? "acción" : "acciones";
+  return {
+    frase: `${cuantas} ${sujeto} ${nombre[principal.n === 1 ? 0 : 1]}`,
+    resto: tarjetas.length - principal.n,
+  };
+}
+
 function leerUltimaVisita() {
   try {
     return localStorage.getItem(CLAVE_ULTIMA_VISITA) || undefined;
@@ -63,6 +103,7 @@ export default function HoyView() {
   }, [data]);
 
   const importa = data?.importa_hoy || [];
+  const titular = titularDe(importa);
   const cartera = data?.cartera || {};
   const cerebro = data?.cerebro || {};
   const mercado = data?.mercado;
@@ -92,7 +133,6 @@ export default function HoyView() {
 
   return (
     <PageShell
-      titulo="Hoy"
       descripcion={
         data?.generado_en
           ? `Calculado ${fmtHace(data.generado_en)}. Se actualiza al volver a la pestaña.`
@@ -104,17 +144,35 @@ export default function HoyView() {
         </Boton>
       }
     >
-      {/* ── Franja de saludo: el índice de todo lo que hay debajo ── */}
-      {data?.saludo?.piezas?.length > 0 && (
-        <p className="text-cuerpo text-tinta-2 mb-5 -mt-1">
-          Hoy:{" "}
-          {data.saludo.piezas.map((p, i) => (
-            <React.Fragment key={p}>
-              {i > 0 && <span className="text-tinta-3"> · </span>}
-              <span className="text-tinta font-medium">{p}</span>
-            </React.Fragment>
-          ))}
-        </p>
+      {/* ── EL TITULAR · ley 6 ──────────────────────────────────────────────
+          Antes esto era «Hoy: pieza · pieza · pieza» en cuerpo: un índice de lo
+          que venía debajo, no una respuesta. Ahora la primera línea DICE qué
+          pasa, en el tamaño mayor de la escala, y el índice baja a apoyo.
+          Es el <h1> de la pantalla: tener además un «Hoy» genérico eran dos
+          títulos peleándose, y ganaba el genérico por posición. */}
+      {!isLoading && !error && (
+        <div className="mb-6 -mt-1">
+          <h1 className="font-heading text-cifra font-bold text-tinta text-balance leading-[1.15]">
+            {titular ? (
+              <>
+                {titular.frase}
+                {titular.resto > 0 && (
+                  <span className="text-tinta-3 font-semibold">
+                    {" "}y {titular.resto} {titular.resto === 1 ? "cosa" : "cosas"} más
+                  </span>
+                )}
+                <span className="text-marca">.</span>
+              </>
+            ) : (
+              <>Hoy no hay nada que requiera tu atención<span className="text-tinta-3">.</span></>
+            )}
+          </h1>
+          {data?.saludo?.piezas?.length > 0 && (
+            <p className="text-apoyo text-tinta-3 mt-1.5">
+              {data.saludo.piezas.join(" · ")}
+            </p>
+          )}
+        </div>
       )}
 
       {/* ── Lo que importa hoy ── */}

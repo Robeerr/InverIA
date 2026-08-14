@@ -35,11 +35,11 @@ const ADX_CON_FUERZA = 25;   // el mismo umbral que usa indicators.market_regime
 function Dato({ etiqueta, children, tono, testId, info }) {
   return (
     <div className="flex flex-col gap-0.5 min-w-0" data-testid={testId}>
-      <span className="text-[9.5px] uppercase tracking-[0.14em] text-tinta-3 font-mono flex items-center gap-1">
+      <span className="text-etiqueta uppercase tracking-[0.14em] text-tinta-3 font-mono flex items-center gap-1">
         {etiqueta}
         {info && <InfoDot term={info} />}
       </span>
-      <span className={`text-[13px] font-medium leading-tight ${tono || "text-tinta"}`}>
+      <span className={`text-apoyo font-medium leading-tight ${tono || "text-tinta"}`}>
         {children}
       </span>
     </div>
@@ -139,7 +139,7 @@ export default function EstadoTecnico({ indicators, quote, marketRegime }) {
           de esta franja que pide una decisión hoy, y hasta ahora no existía en pantalla. */}
       {salida?.recien_perdida && (
         <p
-          className="mt-3 pt-3 border-t border-linea text-[12.5px] text-baja font-medium flex gap-1.5"
+          className="mt-3 pt-3 border-t border-linea text-apoyo text-baja font-medium flex gap-1.5"
           data-testid="et-recien-perdida"
         >
           <span aria-hidden="true">⚠️</span>

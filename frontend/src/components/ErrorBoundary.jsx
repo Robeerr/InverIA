@@ -53,10 +53,10 @@ export default class ErrorBoundary extends React.Component {
               recargar, y seleccionable para poder copiarlo y pegarlo. */}
           {this.state.error && (
             <details className="mt-6 text-left">
-              <summary className="text-[11px] font-mono text-tinta-3 cursor-pointer select-none">
+              <summary className="text-etiqueta font-mono text-tinta-3 cursor-pointer select-none">
                 Detalle técnico
               </summary>
-              <pre className="mt-2 p-3 rounded-md bg-superficie-alt text-tinta text-[10px] font-mono whitespace-pre-wrap break-words select-all max-h-48 overflow-auto">
+              <pre className="mt-2 p-3 rounded-md bg-superficie-alt text-tinta text-etiqueta font-mono whitespace-pre-wrap break-words select-all max-h-48 overflow-auto">
                 {String(this.state.error?.message || this.state.error)}
               </pre>
             </details>

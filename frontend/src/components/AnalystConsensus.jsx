@@ -5,7 +5,7 @@ function Bar({ label, value, total, color }) {
   const pct = total > 0 ? (value / total) * 100 : 0;
   return (
     <div className="flex items-center gap-2">
-      <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-tinta-3 w-24">{label}</span>
+      <span className="font-mono text-etiqueta uppercase tracking-[0.15em] text-tinta-3 w-24">{label}</span>
       <div className="flex-1 h-3 bg-fondo rounded overflow-hidden">
         <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
       </div>
@@ -40,7 +40,7 @@ export default function AnalystConsensusCard({ data }) {
           <Users size={18} weight="bold" className="text-marca" />
           <h3 className="font-heading font-semibold text-lg text-tinta">Consenso Wall Street</h3>
         </div>
-        <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-tinta-3">
+        <span className="font-mono text-etiqueta uppercase tracking-[0.2em] text-tinta-3">
           {c.period ? new Date(c.period + "T00:00:00").toLocaleDateString("es-ES", { month: "short", year: "numeric" }) : ""} · {total} analistas
         </span>
       </div>

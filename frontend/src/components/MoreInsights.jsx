@@ -30,7 +30,7 @@ export function AlternativePanel({ symbol, onPick }) {
         <ArrowFatRight size={18} weight="fill" className="text-aviso" />
         <h3 className="font-heading font-semibold text-base text-tinta">Alternativa en {d.grupo || d.sector}</h3>
       </div>
-      <p className="text-[11px] text-tinta-3 mb-3">
+      <p className="text-etiqueta text-tinta-3 mb-3">
         {d.industry && d.grupo === d.industry
           ? `Del mismo sector (${d.industry}) con mejor potencial que ${d.symbol}:`
           : `Del mismo sector con mejor potencial que ${d.symbol}:`}
@@ -50,7 +50,7 @@ export function AlternativePanel({ symbol, onPick }) {
               className="flex-1 min-w-0 self-stretch text-left group cursor-pointer"
               title={`Ver el análisis de ${a.symbol}`}>
               <span className="block font-mono font-bold text-sm text-tinta group-hover:text-marca transition-colors">{a.symbol}</span>
-              <span className="block text-[10px] text-tinta-3 truncate max-w-[160px]">{a.name}</span>
+              <span className="block text-etiqueta text-tinta-3 truncate max-w-[160px]">{a.name}</span>
             </button>
             {/* Mismo componente que en Oportunidades, así que el rótulo «ver desglose ▾»
                 y el desglose salen idénticos. El verde es fijo aquí a propósito: una
@@ -58,7 +58,7 @@ export function AlternativePanel({ symbol, onPick }) {
             <Score symbol={a.symbol}>
               <span className="text-sm font-mono font-bold text-sube">{a.potential_score} pts</span>
               {typeof a.revenue_growth === "number" && (
-                <span className="block text-[10px] text-tinta-3 text-right">ventas +{Math.round(a.revenue_growth)}%</span>
+                <span className="block text-etiqueta text-tinta-3 text-right">ventas +{Math.round(a.revenue_growth)}%</span>
               )}
             </Score>
           </div>

@@ -93,7 +93,7 @@ export default function TelegramConnectView() {
 
   const Field = ({ label, ...p }) => (
     <label className="block mb-3">
-      <span className="text-[11px] uppercase tracking-wider text-tinta-3 font-mono">{label}</span>
+      <span className="text-etiqueta uppercase tracking-wider text-tinta-3 font-mono">{label}</span>
       <input {...p} className="w-full mt-1 px-3 py-2 rounded-md border border-linea bg-superficie text-tinta text-sm" />
     </label>
   );
@@ -110,7 +110,7 @@ export default function TelegramConnectView() {
         <TelegramLogo size={24} weight="fill" className="text-[#229ED9]" />
         <div>
           <h1 className="font-heading font-bold text-lg text-tinta leading-tight">Conectar Telegram</h1>
-          <p className="text-[11px] text-tinta-3">Lee los canales de tu grupo de pago para alimentar el cerebro (solo lectura).</p>
+          <p className="text-etiqueta text-tinta-3">Lee los canales de tu grupo de pago para alimentar el cerebro (solo lectura).</p>
         </div>
       </div>
 
@@ -156,7 +156,7 @@ export default function TelegramConnectView() {
               <ArrowClockwise size={14} weight="bold" className={busy ? "animate-spin" : ""} />
             </button>
           </div>
-          <p className="text-[11px] text-tinta-3 mb-3">Marca los canales de los <b>dueños</b> (señal). Deja sin marcar los chats de miembros (ruido).</p>
+          <p className="text-etiqueta text-tinta-3 mb-3">Marca los canales de los <b>dueños</b> (señal). Deja sin marcar los chats de miembros (ruido).</p>
           <div className="space-y-1.5 max-h-[50vh] overflow-y-auto mb-4">
             {dialogs.length === 0 && !busy && <p className="text-xs text-tinta-3">No hay canales o aún cargando…</p>}
             {dialogs.map((c) => (
@@ -173,7 +173,7 @@ export default function TelegramConnectView() {
                 }}>
                 <div className="min-w-0">
                   <p className="text-sm text-tinta truncate">{c.nombre}</p>
-                  <p className="text-[10px] text-tinta-3">{c.tipo} · {c.id}</p>
+                  <p className="text-etiqueta text-tinta-3">{c.tipo} · {c.id}</p>
                 </div>
                 {selected.has(c.id) && <CheckCircle size={18} weight="fill" className="text-sube shrink-0" />}
               </button>
@@ -189,7 +189,7 @@ export default function TelegramConnectView() {
       )}
 
       {status && (
-        <p className="text-[10px] text-tinta-3 text-center">
+        <p className="text-etiqueta text-tinta-3 text-center">
           Sesión: {status.sesion_guardada ? "✅ conectada" : "—"} · Capturando: {status.canales_capturando?.length || 0} canal(es)
         </p>
       )}

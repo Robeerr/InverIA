@@ -120,17 +120,17 @@ export default function CalendarView({ setSymbol }) {
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <p className="font-mono font-semibold text-sm text-tinta">{it.symbol}</p>
                     {symGroup[it.symbol?.toUpperCase()] && (
-                      <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-marca/10 text-marca">
+                      <span className="text-etiqueta font-semibold px-1.5 py-0.5 rounded-full bg-marca/10 text-marca">
                         {symGroup[it.symbol.toUpperCase()]}
                       </span>
                     )}
                   </div>
-                  <p className="text-[10px] text-tinta-3 truncate">
+                  <p className="text-etiqueta text-tinta-3 truncate">
                     Q{it.quarter} {it.year} · {hourLabel(it.hour)}
                   </p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="font-mono text-[9px] uppercase text-tinta-3">EPS est.</p>
+                  <p className="font-mono text-etiqueta uppercase text-tinta-3">EPS est.</p>
                   <p className="font-mono text-sm text-tinta">{it.eps_estimate ?? "—"}</p>
                 </div>
                 <ArrowRight size={14} className="text-tinta-3 shrink-0" />

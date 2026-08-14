@@ -12,8 +12,8 @@ const RECO = {
 function Chip({ label, value, color }) {
   return (
     <div className="flex flex-col leading-tight shrink-0">
-      <span className="text-[8px] uppercase tracking-wider text-tinta-3">{label}</span>
-      <span className="text-[11px] font-mono font-semibold" style={{ color: color || "rgb(var(--iv-tinta))" }}>{value}</span>
+      <span className="text-etiqueta uppercase tracking-wider text-tinta-3">{label}</span>
+      <span className="text-etiqueta font-mono font-semibold" style={{ color: color || "rgb(var(--iv-tinta))" }}>{value}</span>
     </div>
   );
 }
@@ -33,7 +33,7 @@ export default function BottomSignalBar({ symbol, quote, indicators, analysis })
       <div className="max-w-[1480px] mx-auto flex items-center gap-4 px-3 py-2 overflow-x-auto no-scrollbar">
         <div className="flex flex-col leading-tight shrink-0">
           <span className="text-xs font-mono font-bold text-tinta">{symbol}</span>
-          <span className="text-[11px] font-mono" style={{ color: chg == null ? "rgb(var(--iv-tinta-3))" : chg >= 0 ? "rgb(var(--iv-sube))" : "rgb(var(--iv-baja))" }}>
+          <span className="text-etiqueta font-mono" style={{ color: chg == null ? "rgb(var(--iv-tinta-3))" : chg >= 0 ? "rgb(var(--iv-sube))" : "rgb(var(--iv-baja))" }}>
             ${fmtPrice(quote.price)} {chg != null ? `${chg >= 0 ? "+" : ""}${chg}%` : ""}
           </span>
         </div>

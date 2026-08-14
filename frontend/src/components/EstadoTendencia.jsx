@@ -51,8 +51,8 @@ export default function EstadoTendencia({ estado, motivo, soportes }) {
           <h3 className="font-heading font-bold text-xl text-tinta">
             {bloqueada ? "No comprar" : "En seguimiento"}
           </h3>
-          <p className="text-sm text-tinta-2 mt-1.5 leading-relaxed">{motivo}</p>
-          <p className="text-[13px] text-tinta-3 mt-3 leading-relaxed">
+          <p className="text-cuerpo text-tinta-2 mt-1.5 leading-relaxed">{motivo}</p>
+          <p className="text-apoyo text-tinta-3 mt-3 leading-relaxed">
             No se muestran zonas de compra porque un soporte, por sí solo, no es una
             oportunidad: indica dónde podría pararse el precio, no que convenga comprar
             ahí.
@@ -67,7 +67,7 @@ export default function EstadoTendencia({ estado, motivo, soportes }) {
                 {soportes.slice(0, 4).map((s) => (
                   <span
                     key={s}
-                    className="font-mono text-[12px] text-tinta-2 bg-superficie-alt border border-linea rounded px-2 py-0.5"
+                    className="iv-cifra text-apoyo text-tinta-2 bg-superficie-alt border border-linea rounded-iv-sm px-2 py-0.5"
                   >
                     ${typeof s === "number" ? s.toFixed(2) : s}
                   </span>

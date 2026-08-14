@@ -14,7 +14,7 @@ function StockCard({ row, onPick }) {
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="min-w-0">
           <p className="font-mono font-bold text-base text-tinta">{row.ticker}</p>
-          {row.nombre && <p className="text-[10px] text-tinta-3 truncate max-w-[150px]">{row.nombre}</p>}
+          {row.nombre && <p className="text-etiqueta text-tinta-3 truncate max-w-[150px]">{row.nombre}</p>}
         </div>
       </div>
 
@@ -25,24 +25,24 @@ function StockCard({ row, onPick }) {
 
       {/* Cuántas fuentes lo mencionan = fuerza del consenso */}
       <div className="flex items-center gap-1.5 mb-1">
-        <span className="text-[11px] font-semibold text-marca">
+        <span className="text-etiqueta font-semibold text-marca">
           {row.n_fuentes} {row.n_fuentes === 1 ? "fuente" : "fuentes"}
         </span>
-        <span className="text-[10px] text-tinta-3 truncate">· {row.fuentes.join(", ")}</span>
+        <span className="text-etiqueta text-tinta-3 truncate">· {row.fuentes.join(", ")}</span>
       </div>
       {/* Sentimiento de las fuentes: hablan bien/mal de la empresa */}
       {(row.positivos > 0 || row.negativos > 0) && (
-        <div className="flex items-center gap-2 mb-1.5 text-[10px] font-semibold">
+        <div className="flex items-center gap-2 mb-1.5 text-etiqueta font-semibold">
           {row.positivos > 0 && <span className="text-sube">👍 {row.positivos} la ven bien</span>}
           {row.negativos > 0 && <span className="text-baja">👎 {row.negativos} la ven mal</span>}
         </div>
       )}
 
       {row.angulos?.length > 0 && (
-        <p className="text-[11px] text-tinta-3 leading-snug line-clamp-2">{row.angulos[0]}</p>
+        <p className="text-etiqueta text-tinta-3 leading-snug line-clamp-2">{row.angulos[0]}</p>
       )}
 
-      <div className="flex items-center justify-end text-[10px] text-marca font-mono mt-2">
+      <div className="flex items-center justify-end text-etiqueta text-marca font-mono mt-2">
         Analizar <ArrowRight size={10} weight="bold" className="ml-1" />
       </div>
     </div>
@@ -56,14 +56,14 @@ function InfoRow({ item }) {
       <button onClick={() => setOpen((v) => !v)} className="w-full flex items-start justify-between gap-3 text-left">
         <div className="min-w-0">
           <p className="font-semibold text-sm text-tinta leading-snug">{item.titulo}</p>
-          {!open && <p className="text-[11px] text-tinta-3 mt-0.5 line-clamp-1">{item.resumen}</p>}
+          {!open && <p className="text-etiqueta text-tinta-3 mt-0.5 line-clamp-1">{item.resumen}</p>}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-[9px] font-mono uppercase tracking-wider text-tinta-3 hidden sm:inline">{item.fuente}</span>
+          <span className="text-etiqueta font-mono uppercase tracking-wider text-tinta-3 hidden sm:inline">{item.fuente}</span>
           <CaretDown size={14} className={`text-tinta-3 transition-transform ${open ? "rotate-180" : ""}`} />
         </div>
       </button>
-      {open && <p className="text-[13px] text-tinta leading-relaxed mt-2">{item.resumen}</p>}
+      {open && <p className="text-apoyo text-tinta leading-relaxed mt-2">{item.resumen}</p>}
     </div>
   );
 }

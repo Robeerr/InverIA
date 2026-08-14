@@ -87,7 +87,7 @@ export default function WatchlistStrip({ symbol, setSymbol, vertical = false, cl
 
   return (
     <div className={wrapCls}>
-      {vertical && <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-1 px-1">Watchlist</p>}
+      {vertical && <p className="text-etiqueta uppercase tracking-[0.15em] text-tinta-3 font-mono mb-1 px-1">Watchlist</p>}
       {entries.map((e) => {
         const s = (e.symbol || "").toUpperCase();
         const active = s === (symbol || "").toUpperCase();
@@ -125,26 +125,26 @@ export default function WatchlistStrip({ symbol, setSymbol, vertical = false, cl
           >
             <p className="font-mono font-bold text-xs" style={{ color: v("symbol") }}>{s}</p>
             <div className="flex items-baseline gap-1.5">
-              <span className="font-mono text-[11px]" style={{ color: v("muted") }}>
+              <span className="font-mono text-etiqueta" style={{ color: v("muted") }}>
                 {e.last_price != null ? `$${fmtPrice(e.last_price)}` : "—"}
               </span>
               {chg != null && (
-                <span className="font-mono text-[10px] font-semibold" style={{ color: chgColor }}>
+                <span className="font-mono text-etiqueta font-semibold" style={{ color: chgColor }}>
                   {chg >= 0 ? "+" : ""}{chg}%
                 </span>
               )}
             </div>
             {extPrecio != null && (
               <div className="flex items-baseline gap-1 mt-0.5" title={estado === "PRE" ? "Pre-apertura" : "Después del cierre"}>
-                <span className="font-mono text-[8px] uppercase tracking-wider px-1 rounded"
+                <span className="font-mono text-etiqueta uppercase tracking-wider px-1 rounded"
                       style={{ color: v("badge-text"), background: v("badge-bg") }}>
                   {estado === "PRE" ? "PRE" : "POST"}
                 </span>
-                <span className="font-mono text-[10px]" style={{ color: v("muted") }}>
+                <span className="font-mono text-etiqueta" style={{ color: v("muted") }}>
                   ${fmtPrice(extPrecio)}
                 </span>
                 {extChg != null && (
-                  <span className="font-mono text-[9px] font-semibold" style={{ color: extCol }}>
+                  <span className="font-mono text-etiqueta font-semibold" style={{ color: extCol }}>
                     {extChg >= 0 ? "+" : ""}{extChg}%
                   </span>
                 )}
