@@ -6,6 +6,7 @@ import Score from "../components/Score";
 import { fmtPrice, fmtPct, fmtNum } from "../lib/format";
 import MiniChart from "../components/MiniChart";
 import RadarView from "./RadarView";
+import { useSearchParams } from "react-router-dom";
 
 const CATEGORY_META = {
   OVERSOLD: { label: "Sobrevendidas (RSI<30)", icon: TrendDown, color: "var(--iv-sube)", desc: "RSI muy bajo, posible rebote técnico" },
@@ -263,8 +264,28 @@ function MoversColumn({ title, icon: Icon, rows, color, onPick }) {
   );
 }
 
+// Los cuatro modos, en el orden en que se pintan. Fuera del componente porque
+// también los valida la lectura de la URL.
+const MODOS = ["signals", "screener", "movers", "fuentes"];
+
 export default function OpportunitiesView({ setSymbol }) {
-  const [mode, setMode] = React.useState("signals"); // "signals" | "screener"
+  /* El modo vive en la URL, no en estado local.
+     ─────────────────────────────────────────────────────────────────────────
+     Con `useState` esta pantalla tenía cuatro vistas y una sola dirección: no se
+     podía enlazar a ninguna, ni marcarla, ni volver con el botón atrás. Y el
+     enlace «Screener» del rail apuntaba aquí con `?modo=screener` sin que nadie
+     leyera ese parámetro, así que navegaba y no pasaba nada.
+
+     `signals` no se escribe en la URL: es el modo por defecto, y ensuciarla con
+     el caso normal hace que compartir la dirección corriente parezca compartir
+     un filtro. `replace` para que alternar pestañas no llene el historial. */
+  const [params, setParams] = useSearchParams();
+  const pedido = params.get("modo");
+  const mode = MODOS.includes(pedido) ? pedido : "signals";
+  const setMode = React.useCallback(
+    (id) => setParams(id === "signals" ? {} : { modo: id }, { replace: true }),
+    [setParams]
+  );
 
   // --- Signals mode state ---
   const [data, setData] = React.useState(null);
