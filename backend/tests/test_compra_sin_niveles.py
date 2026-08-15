@@ -47,6 +47,19 @@ def sin_red(monkeypatch):
 NIVELES = ("nivel1", "nivel2", "nivel3", "nivel4", "nivel5")
 
 
+@pytest.fixture(autouse=True)
+def sin_cotizacion(monkeypatch):
+    """Por defecto, sin red: la fila nace sin precio. Los tests que miran la cotización
+    inicial la ponen ellos, para que se vea que es esa llamada y no otra cosa."""
+    monkeypatch.setattr(signal_table.market_data, "get_quote_fast", lambda s: None)
+    monkeypatch.setattr(signal_table.market_data, "get_quote", lambda s: None)
+
+
+def _con_cotizacion(monkeypatch, precio, previous_close=None, change=None):
+    q = {"price": precio, "previous_close": previous_close, "change_percent": change}
+    monkeypatch.setattr(signal_table.market_data, "get_quote_fast", lambda s: q)
+
+
 # ── La fila se crea ──────────────────────────────────────────────────────────
 
 def test_comprar_algo_que_no_esta_en_cartera_crea_su_fila():
@@ -96,6 +109,56 @@ def test_si_la_fila_ya_existe_no_se_crea_otra_ni_se_tocan_sus_niveles():
     filas = [e for e in db.signal_entries.docs if e["symbol"] == "MU"]
     assert len(filas) == 1, "una compra no puede duplicar la fila de la Cartera"
     assert filas[0]["nivel1"] == 180.0, "los niveles que ya existían no se pisan"
+
+
+# ── Precio desde el primer segundo ───────────────────────────────────────────
+
+def test_la_fila_nace_con_precio(monkeypatch):
+    """Sin esto hay que esperar al worker, que no gira ni de noche ni en fin de semana:
+    una compra registrada un sábado se quedaba con "—" hasta el lunes."""
+    _con_cotizacion(monkeypatch, 191.25, previous_close=188.0, change=1.73)
+    db = _DB()
+    _correr(cartera_api.registrar_compra(db, "AEM", 10, 180.0, comision=0))
+    fila = db.signal_entries.docs[0]
+    assert fila["last_price"] == 191.25
+    assert fila["previous_close"] == 188.0
+    assert fila["daily_change_percent"] == 1.73
+
+
+def test_si_no_hay_cotizacion_la_compra_se_guarda_igual(monkeypatch):
+    """La compra ya ocurrió. Negarla porque no se pudo leer el precio sería perder el
+    apunte por lo de menos."""
+    def _revienta(s):
+        raise RuntimeError("Finnhub 503")
+
+    monkeypatch.setattr(signal_table.market_data, "get_quote_fast", _revienta)
+    monkeypatch.setattr(signal_table.market_data, "get_quote", _revienta)
+    db = _DB()
+    c = _correr(cartera_api.registrar_compra(db, "AEM", 10, 180.0, comision=0))
+    assert c["precio"] == 180.0
+    assert len(db.compras.docs) == 1
+    assert db.signal_entries.docs[0]["last_price"] is None
+
+
+def test_un_precio_de_cero_no_se_guarda(monkeypatch):
+    """Un 0 en la Cartera se lee como "vale nada", que es una afirmación distinta de "no
+    se sabe" y encima cuadra el latente con una cifra falsa."""
+    _con_cotizacion(monkeypatch, 0)
+    db = _DB()
+    _correr(cartera_api.registrar_compra(db, "AEM", 10, 180.0, comision=0))
+    assert db.signal_entries.docs[0]["last_price"] is None
+
+
+def test_la_cotizacion_no_se_pide_si_la_fila_ya_existia(monkeypatch):
+    """Pedirla en cada compra gastaría cuota para pisar lo que el worker ya mantiene."""
+    llamadas = []
+    monkeypatch.setattr(signal_table.market_data, "get_quote_fast",
+                        lambda s: llamadas.append(s) or {"price": 999.0})
+    db = _DB([{"id": "x", "symbol": "MU", "nivel1": 180.0, "active": True,
+               "last_price": 921.0}])
+    _correr(cartera_api.registrar_compra(db, "MU", 1, 921.0, comision=0))
+    assert llamadas == []
+    assert db.signal_entries.docs[0]["last_price"] == 921.0
 
 
 # ── El worker: precio sí, alertas no ─────────────────────────────────────────

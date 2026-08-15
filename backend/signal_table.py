@@ -153,6 +153,39 @@ async def create_entry(db, data: dict) -> dict:
     return entry
 
 
+async def cotizacion_inicial(db, entry: dict) -> dict:
+    """Pone precio a una fila RECIÉN creada, sin esperar al worker.
+
+    El worker solo trabaja en sesión extendida (L-V 4:00-20:00 ET), así que un valor dado
+    de alta un sábado se quedaba con "—" en toda la fila hasta el lunes. Pasó con UBER al
+    añadirlo desde el Chartista, y volvía a pasar con las compras registradas en
+    Operaciones, que ahora también crean su fila.
+
+    Una sola llamada, y solo al crear. Si falla no se propaga: el alta y la compra ya han
+    ocurrido, y negarlas porque el precio no se pudo leer sería perder el apunte por lo de
+    menos. El worker lo rellena igual en cuanto abra el mercado.
+    """
+    sym = (entry or {}).get("symbol")
+    if not sym:
+        return entry
+    try:
+        q = (await asyncio.to_thread(market_data.get_quote_fast, sym)
+             or await asyncio.to_thread(market_data.get_quote, sym))
+        precio = float((q or {}).get("price") or 0)
+        if precio <= 0:
+            return entry
+        upd = {"last_price": precio, "updated_at": _now()}
+        if q.get("previous_close"):
+            upd["previous_close"] = round(float(q["previous_close"]), 2)
+        if q.get("change_percent") is not None:
+            upd["daily_change_percent"] = round(float(q["change_percent"]), 2)
+        await db.signal_entries.update_one({"id": entry["id"]}, {"$set": upd})
+        entry.update(upd)
+    except Exception as e:
+        logger.info("Sin cotización inicial para %s: %s", sym, e)
+    return entry
+
+
 async def update_entry(db, entry_id: str, data: dict) -> Optional[dict]:
     update_data = {k: v for k, v in data.items() if k in ALLOWED_UPDATE}
     update_data["updated_at"] = _now()
