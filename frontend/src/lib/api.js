@@ -113,7 +113,14 @@ export const api = {
     fusionarPrincipiosIA: () => client.post(`/inbound/newsletter/dedupe-knowledge-llm`, null, { timeout: 120000 }).then((r) => r.data),
     repararAcentos: () => client.post(`/inbound/newsletter/fix-encoding`, null, { timeout: 120000 }).then((r) => r.data),
     ingerirNoticias: () => client.post(`/inbound/news/ingest`, null, { timeout: 180000 }).then((r) => r.data),
+    // El aviso normal llega por Telegram, una vez por modelo. Esto es para preguntarlo
+    // cuando te acuerdas, que es justo cuando no vas a mirar el histórico del bot.
+    comprobarModelo: () => client.post(`/modelos/comprobar`, null, { timeout: 30000 }).then((r) => r.data),
   },
+  // Nombres REALES de los modelos elegibles. Las etiquetas no se escriben en el
+  // frontend porque la clave ("gemini-2.5-flash") es de routing y el modelo al que
+  // enruta se cambia con una variable de entorno, sin desplegar.
+  modelos: () => client.get(`/models`).then((r) => r.data),
   signals: () => client.get(`/signals`).then((r) => r.data),
   signalsCreate: (payload) => client.post(`/signals`, payload).then((r) => r.data),
   portfolioCorrelation: () => client.get(`/portfolio/correlation`, { timeout: 60000 }).then((r) => r.data),

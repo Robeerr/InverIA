@@ -1,22 +1,49 @@
 import React from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Brain, ArrowUpRight, ArrowDownRight, Minus, Target, Shield, TrendUp, Lightning } from "@phosphor-icons/react";
 import { Button } from "../components/ui/button";
 import { fmtPrice } from "../lib/format";
+import { api } from "../lib/api";
 import { TierBadge } from "./ChartistPanel";
 
-// El id "gemini-2.5-flash" es la clave INTERNA de routing (el backend la enruta a
-// GEMINI_MODEL = gemini-3.6-flash); solo actualizamos la etiqueta visible.
+// El id "gemini-2.5-flash" es la clave INTERNA de routing: el backend la enruta a
+// GEMINI_MODEL, que se cambia con una variable de entorno y sin desplegar. Por eso estas
+// etiquetas son solo el RESPALDO para cuando /models no ha contestado todavía: escritas
+// aquí, se quedan diciendo una versión vieja en cuanto alguien cambia esa variable.
 const FREE_MODELS = [
-  { id: "gemini-2.5-flash", label: "Gemini 3.6 Flash (Recomendado)" },
+  { id: "gemini-2.5-flash", label: "Gemini (Recomendado)" },
   { id: "gpt-oss-120b", label: "GPT-OSS 120B" },
   { id: "llama-3.3-70b", label: "Llama 3.3 70B" },
 ];
 
-function modelLabel(id) {
-  return (FREE_MODELS.find((m) => m.id === id) || {}).label || id;
+// Nombres reales, servidos por el backend. Es el único que sabe a qué modelo enruta cada
+// clave. Cae al respaldo de arriba si la petición falla: quedarse sin selector por no
+// poder poner el nombre exacto sería peor que enseñar uno genérico.
+let _etiquetas = {};
+export function useEtiquetasModelo() {
+  const { data } = useQuery({
+    queryKey: ["modelos"],
+    queryFn: api.modelos,
+    staleTime: 60 * 60_000,
+    retry: false,
+  });
+  const etiquetas = React.useMemo(() => {
+    const m = {};
+    for (const x of data?.models || []) if (x?.value) m[x.value] = x.label;
+    return m;
+  }, [data]);
+  // Fuera del render: `modelLabel` se llama desde un callback (el aviso tras analizar),
+  // donde no hay hook que valga. Escribirlo en el render sería un efecto colateral.
+  React.useEffect(() => { _etiquetas = etiquetas; }, [etiquetas]);
+  return etiquetas;
+}
+
+export function modelLabel(id) {
+  return _etiquetas[id] || (FREE_MODELS.find((m) => m.id === id) || {}).label || id;
 }
 
 function ModelSelector({ model, setModel, disabled }) {
+  const etiquetas = useEtiquetasModelo();
   if (!setModel) return null;
   return (
     <div className="mb-3">
@@ -29,7 +56,7 @@ function ModelSelector({ model, setModel, disabled }) {
         className="w-full bg-fondo border border-linea rounded-md px-3 py-2 font-mono text-sm text-tinta focus:outline-none focus:border-marca disabled:opacity-50"
       >
         {FREE_MODELS.map((m) => (
-          <option key={m.id} value={m.id}>{m.label}</option>
+          <option key={m.id} value={m.id}>{etiquetas[m.id] || m.label}</option>
         ))}
       </select>
     </div>

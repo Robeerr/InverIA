@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import QuoteHeader from "../components/QuoteHeader";
 import ChartistPanel from "../components/ChartistPanel";
-import RecommendationPanel from "../components/RecommendationPanel";
+import RecommendationPanel, { modelLabel } from "../components/RecommendationPanel";
 import SourcesPanel from "../components/SourcesPanel";
 import { AlternativePanel } from "../components/MoreInsights";
 import WatchlistStrip from "../components/WatchlistStrip";
@@ -275,10 +275,13 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       // Una sola escritura: antes eran hasta siete setState seguidos, o sea siete pasadas
       // de render con el panel a medio rellenar.
       parchear(nuevo);
+      // Los `_label` y no `res.model`: ese es la clave INTERNA de routing, y decía
+      // "gemini-2.5-flash" cuando el análisis lo había hecho gemini-3.6-flash. El nombre
+      // legible lo da el backend, que es el único que sabe a qué modelo enruta cada clave.
       if (res.fellback) {
-        toast.warning(`${res.requested_model} no disponible (límite o error) — análisis hecho con ${res.model}`);
+        toast.warning(`${res.requested_model_label || modelLabel(res.requested_model)} no disponible (límite o error) — análisis hecho con ${res.model_label || modelLabel(res.model)}`);
       } else {
-        toast.success(`Análisis completado (${res.model || model})`);
+        toast.success(`Análisis completado (${res.model_label || modelLabel(res.model || model)})`);
       }
     } catch (e) {
       const msg = e?.response?.data?.detail || "Error al generar análisis IA";

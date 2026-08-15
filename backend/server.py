@@ -34,6 +34,7 @@ import backtest
 import signal_table
 import daily_analyst
 import sp500_rsi_watch
+import vigia_modelo
 import ventas as ventas_mod
 import cartera_api
 import degiro_csv
@@ -389,6 +390,11 @@ async def lifespan(app: FastAPI):
     # Vigía del RSI del S&P 500: avisa por Telegram cuando el ÍNDICE entra en sobreventa.
     # Coste ínfimo: una comprobación por hora sobre el histórico de SPY que ya está cacheado.
     asyncio.create_task(sp500_rsi_watch.worker_loop(db))
+
+    # Vigía de modelos: avisa por Telegram cuando Google publica un Gemini más nuevo que
+    # el que estás usando. AVISA, no cambia nada — ver la cabecera de vigia_modelo.py.
+    # Una llamada a la semana, gratis (listar modelos no gasta tokens).
+    asyncio.create_task(vigia_modelo.worker_loop(db))
 
     # Pre-warm daily opportunities so the first user request hits a warm cache —
     # PERO solo si el snapshot hidratado desde Mongo ya está caducado. En la mayoría
@@ -1035,29 +1041,33 @@ async def me(current_user: str = Depends(auth.get_current_user)):
     return {"username": current_user, "authenticated": True}
 
 
-def _etiqueta_gemini() -> str:
-    """Nombre legible del Gemini que se está usando DE VERDAD.
+@api_router.post("/modelos/comprobar")
+async def comprobar_modelo_nuevo(_user: str = Depends(auth.get_current_user)):
+    """Mira ya si hay un Gemini más nuevo, sin esperar al vigía semanal.
 
-    Estaba escrito a mano como "Gemini 2.5 Flash" mientras `GEMINI_MODEL` valía
-    `gemini-3.6-flash`: dos modelos distintos, y el texto no se movía al cambiar la
-    variable de entorno. El modelo es overridable sin desplegar (justamente para poder
-    cambiarlo el día que Google retire uno), así que cualquier nombre escrito a mano
-    caduca solo. Se deriva del valor real y deja de haber dos versiones de la verdad.
+    El aviso normal llega por Telegram. Esto existe para poder preguntarlo cuando te
+    acuerdas, que es justo cuando no vas a mirar el histórico del bot.
     """
-    crudo = (ai_analysis.GEMINI_MODEL or "").strip()
-    if not crudo:
-        return "Gemini"
-    return " ".join(t.capitalize() if not t[0].isdigit() else t
-                    for t in crudo.split("-"))
+    return await vigia_modelo.comprobar(db)
 
 
 @api_router.get("/models")
 async def available_models(_user: str = Depends(auth.get_current_user)):
+    """Los modelos que se pueden elegir, con su nombre REAL.
+
+    Las etiquetas salen de `ai_analysis.nombre_visible` y no escritas a mano: la clave
+    "gemini-2.5-flash" es de ROUTING y enruta a GEMINI_MODEL, así que un nombre fijo aquí
+    caducaría en cuanto se cambiara la variable de entorno. Ya pasó.
+    """
+    def _etiqueta(clave, sufijo):
+        return f"{ai_analysis.nombre_visible(clave)} ({sufijo})"
+
     return {
         "models": [
-            {"value": "gemini-2.5-flash", "label": f"{_etiqueta_gemini()} (Gratis · Recomendado)", "free": True, "available": True},
-            {"value": "gpt-oss-120b", "label": "GPT-OSS 120B (Gratis)", "free": True, "available": True},
-            {"value": "gpt-5.2", "label": "GPT-5.2 (Premium)", "free": False, "available": ai_analysis.EMERGENT_AVAILABLE},
+            {"value": "gemini-2.5-flash", "label": _etiqueta("gemini-2.5-flash", "Gratis · Recomendado"), "free": True, "available": True},
+            {"value": "gpt-oss-120b", "label": _etiqueta("gpt-oss-120b", "Gratis"), "free": True, "available": True},
+            {"value": "llama-3.3-70b", "label": _etiqueta("llama-3.3-70b", "Gratis"), "free": True, "available": True},
+            {"value": "gpt-5.2", "label": _etiqueta("gpt-5.2", "Premium"), "free": False, "available": ai_analysis.EMERGENT_AVAILABLE},
         ],
         "premium_available": ai_analysis.EMERGENT_AVAILABLE,
     }
@@ -2201,6 +2211,12 @@ async def analyze(req: AnalyzeRequest, _user: str = Depends(auth.get_current_use
         "symbol": symbol,
         "model": used_model,
         "requested_model": requested_model,
+        # Los dos de arriba son claves de ROUTING y no se pueden renombrar (están en el
+        # localStorage de la gente). Estos son para ENSEÑAR: el aviso de "Análisis
+        # completado (…)" soltaba la clave cruda y decía "gemini-2.5-flash" cuando lo
+        # había hecho gemini-3.6-flash.
+        "model_label": ai_analysis.nombre_visible(used_model),
+        "requested_model_label": ai_analysis.nombre_visible(requested_model),
         "fellback": used_model != requested_model,
         # Tier de Gemini que sirvió el análisis (free/paid) para el badge de la UI.
         "ai_tier": (result.get("_ai_tier") if isinstance(result, dict) else None),
