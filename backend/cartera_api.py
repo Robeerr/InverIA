@@ -241,13 +241,17 @@ async def _asegurar_entry(db, symbol: str, divisa: str) -> dict:
     de una donde el nivel sí se decidió— y mientras estén vacíos no puede saltar ninguna
     alerta: el worker recorre nivel1..5 y no hay ninguno que cruzar.
     """
-    return await signal_table.create_entry(db, {
+    entry = await signal_table.create_entry(db, {
         "symbol": symbol,
         "grupo": "ideas_javi",
         "divisa": divisa,
         "active": True,
         "notes": "Creada al registrar una compra en Operaciones. Niveles pendientes.",
     })
+    # Y el precio ya, sin esperar al worker: registrar una compra un sábado o de noche
+    # dejaba la posición con "—" hasta la sesión siguiente. Si no se puede leer, la compra
+    # se guarda igual y el worker lo rellena al abrir.
+    return await signal_table.cotizacion_inicial(db, entry)
 
 
 async def registrar_compra(db, symbol: str, acciones: float, precio: float,

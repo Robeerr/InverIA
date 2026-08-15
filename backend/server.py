@@ -4566,24 +4566,9 @@ async def create_signal(item: SignalEntryCreate, _user: str = Depends(auth.get_c
     # fallar de todos modos.
     await _puerta_de_tendencia(sym, datos, item.forzar)
     entry = await signal_table.create_entry(db, datos)
-    # Una cotización AL MOMENTO, aunque el mercado esté cerrado. El worker solo trabaja en
-    # sesión, así que un valor añadido el sábado se quedaba sin precio ("—" en toda la fila)
-    # hasta el lunes a las 15:30 — pasó con UBER. Una única llamada; si falla, el worker lo
-    # rellenará igualmente al abrir.
-    try:
-        q = (await asyncio.to_thread(market_data.get_quote_fast, sym)
-             or await asyncio.to_thread(market_data.get_quote, sym))
-        precio = float((q or {}).get("price") or 0)
-        if precio > 0:
-            upd = {"last_price": precio, "updated_at": datetime.now(timezone.utc).isoformat()}
-            if q.get("previous_close"):
-                upd["previous_close"] = round(float(q["previous_close"]), 2)
-            if q.get("change_percent") is not None:
-                upd["daily_change_percent"] = round(float(q["change_percent"]), 2)
-            await db.signal_entries.update_one({"id": entry["id"]}, {"$set": upd})
-            entry.update(upd)
-    except Exception as e:
-        logger.info("Sin cotización inicial para %s: %s", sym, e)
+    # Una cotización AL MOMENTO, aunque el mercado esté cerrado. Vive en signal_table
+    # porque la comparte con las compras de Operaciones, que también crean su fila.
+    entry = await signal_table.cotizacion_inicial(db, entry)
     _cache._store.pop("signals_list", None)
     _invalidar_signals_hot()
     return entry
