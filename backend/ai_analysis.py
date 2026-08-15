@@ -42,6 +42,37 @@ MODEL_MAP = {
 
 DEFAULT_MODEL = "gemini-2.5-flash"
 
+# Las claves de MODEL_MAP son de ROUTING, no nombres. "gemini-2.5-flash" enruta a
+# GEMINI_MODEL, que hoy vale `gemini-3.6-flash`: la clave dice 2.5 y se ejecuta 3.6.
+#
+# La clave no se puede renombrar —está guardada en el localStorage de la gente y en las
+# respuestas ya cacheadas—, así que lo que hay que arreglar es que NUNCA se enseñe. Eso
+# pasaba en el aviso de "Análisis completado (…)", que soltaba la clave cruda y hacía
+# creer que el análisis lo había hecho un modelo de hace dos versiones.
+#
+# `nombre_visible` es el único sitio donde una clave se convierte en algo legible. Sale del
+# model_id REAL, así que cambiar GEMINI_MODEL cambia también lo que se lee, sin tocar nada.
+_NOMBRES_CRUDOS = {
+    "openai/gpt-oss-120b": "GPT-OSS 120B",
+    "llama-3.3-70b-versatile": "Llama 3.3 70B",
+}
+
+
+def nombre_visible(clave: str) -> str:
+    """Nombre legible del modelo que sirve `clave`. Nunca devuelve la clave de routing."""
+    entrada = MODEL_MAP.get((clave or "").strip())
+    if not entrada:
+        return (clave or "").strip()
+    crudo = (entrada[1] or "").strip()
+    if not crudo:
+        return (clave or "").strip()
+    if crudo in _NOMBRES_CRUDOS:
+        return _NOMBRES_CRUDOS[crudo]
+    # gemini-3.6-flash → "Gemini 3.6 Flash". Los tramos que empiezan por dígito se dejan
+    # como están: capitalizar "3.6" no haría nada y "4o" pasaría a "4O".
+    return " ".join(t if t[:1].isdigit() else t.capitalize()
+                    for t in crudo.split("/")[-1].split("-") if t)
+
 # Límite del free tier de Groq: tokens por minuto contando entrada + salida.
 GROQ_TPM_LIMIT = int(os.environ.get("GROQ_TPM_LIMIT", "8000"))
 # Por debajo de esto la respuesta saldría cortada igualmente: mejor fallar y pasar al
