@@ -1035,11 +1035,27 @@ async def me(current_user: str = Depends(auth.get_current_user)):
     return {"username": current_user, "authenticated": True}
 
 
+def _etiqueta_gemini() -> str:
+    """Nombre legible del Gemini que se está usando DE VERDAD.
+
+    Estaba escrito a mano como "Gemini 2.5 Flash" mientras `GEMINI_MODEL` valía
+    `gemini-3.6-flash`: dos modelos distintos, y el texto no se movía al cambiar la
+    variable de entorno. El modelo es overridable sin desplegar (justamente para poder
+    cambiarlo el día que Google retire uno), así que cualquier nombre escrito a mano
+    caduca solo. Se deriva del valor real y deja de haber dos versiones de la verdad.
+    """
+    crudo = (ai_analysis.GEMINI_MODEL or "").strip()
+    if not crudo:
+        return "Gemini"
+    return " ".join(t.capitalize() if not t[0].isdigit() else t
+                    for t in crudo.split("-"))
+
+
 @api_router.get("/models")
 async def available_models(_user: str = Depends(auth.get_current_user)):
     return {
         "models": [
-            {"value": "gemini-2.5-flash", "label": "Gemini 2.5 Flash (Gratis · Recomendado)", "free": True, "available": True},
+            {"value": "gemini-2.5-flash", "label": f"{_etiqueta_gemini()} (Gratis · Recomendado)", "free": True, "available": True},
             {"value": "gpt-oss-120b", "label": "GPT-OSS 120B (Gratis)", "free": True, "available": True},
             {"value": "gpt-5.2", "label": "GPT-5.2 (Premium)", "free": False, "available": ai_analysis.EMERGENT_AVAILABLE},
         ],
