@@ -2,6 +2,23 @@ import React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "../lib/api";
+import { useSignals } from "../hooks/useSignals";
+
+// Símbolos que están en la Cartera pero todavía SIN ningún nivel definido.
+//
+// Comprar algo que no estaba en la Cartera crea ahora su fila sola (para que coja precio
+// de mercado), pero deliberadamente sin niveles: el precio de compra y los niveles de
+// estrategia son cosas distintas. Sin decirlo en la pantalla, esa posición se ve igual que
+// una a la que se le olvidó asignar el nivel, y parece un fallo.
+const NIVELES = ["nivel1", "nivel2", "nivel3", "nivel4", "nivel5"];
+export function simbolosSinNiveles(entries) {
+  const out = new Set();
+  for (const e of entries || []) {
+    if (!e?.symbol) continue;
+    if (NIVELES.every((n) => e[n] == null)) out.add(e.symbol.toUpperCase());
+  }
+  return out;
+}
 
 // ── Formato ──────────────────────────────────────────────────────────────────
 // Todo el dinero pasa por aquí para que no haya dos formatos distintos en la misma
@@ -1187,6 +1204,10 @@ export default function VentasView() {
     staleTime: 60_000,
   });
   const metodo = ajustes?.metodo_gestion || "lifo";
+  // Para distinguir "esta compra no cae en ningún nivel" de "esta acción aún no tiene
+  // niveles". Reutiliza el caché compartido de /signals, no pide nada nuevo.
+  const { data: entradas } = useSignals();
+  const sinNiveles = React.useMemo(() => simbolosSinNiveles(entradas), [entradas]);
   const cambiarMetodo = useMutation({
     mutationFn: (m) => api.cartera.guardarMetodo(m.toUpperCase()),
     onSuccess: (r) => {
@@ -1664,6 +1685,11 @@ export default function VentasView() {
                         {p.niveles_comprados?.map((n) => (
                           <Chip key={n} tono="nivel">{NIVEL_ETIQUETA[n] || n}</Chip>
                         ))}
+                        {sinNiveles.has(p.symbol) && (
+                          <Chip title="Esta acción está en la Cartera pero todavía no tiene niveles. Se creó sola al registrar la compra, para que coja precio de mercado; el precio al que compraste NO es un nivel. Ponle los niveles en la Cartera cuando los tengas.">
+                            niveles pendientes
+                          </Chip>
+                        )}
                       </div>
                       <div className="text-right shrink-0">
                         <div className={`font-mono font-semibold text-sm ${tono(g.pnl_eur)}`}>{eur(g.pnl_eur)}</div>
@@ -1800,6 +1826,11 @@ export default function VentasView() {
                             <Chip key={n} tono="nivel">{NIVEL_ETIQUETA[n] || n}</Chip>
                           ))}
                         </span>
+                      )}
+                      {sinNiveles.has(p.symbol) && (
+                        <Chip title="Esta acción está en la Cartera pero todavía no tiene niveles. Se creó sola al registrar la compra, para que coja precio de mercado; el precio al que compraste NO es un nivel. Ponle los niveles en la Cartera cuando los tengas.">
+                          niveles pendientes
+                        </Chip>
                       )}
                     </td>
                     <td className="py-2 text-right font-mono">{p.acciones}</td>

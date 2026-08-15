@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 import comisiones
 import fx
 import lotes
+import signal_table
 
 logger = logging.getLogger(__name__)
 
@@ -226,6 +227,29 @@ async def _comision_o_estimada(comision, importe, divisa, tasa, fx_manual=False)
 
 # ── Compras ──────────────────────────────────────────────────────────────────
 
+async def _asegurar_entry(db, symbol: str, divisa: str) -> dict:
+    """Crea la fila de Cartera de un valor que aún no la tiene, SIN niveles.
+
+    El precio de mercado de una posición no lo trae la Cartera: lo escribe el worker de
+    señales, que recorre `db.signal_entries` (`active: True`) y les pone `last_price`.
+    Comprar algo que no estaba en la Cartera dejaba la posición sin fila y, por tanto, sin
+    precio: había que teclearlo a mano o inventarse unos niveles solo para que cotizara.
+
+    Así que la compra crea la fila. Lo que NO crea son los niveles: nivel1..5 quedan a
+    None. El precio de compra y los niveles de estrategia son cosas distintas —poner la
+    compra como nivel1 haría que la posición se etiquetara "NIVEL 1" y sería indistinguible
+    de una donde el nivel sí se decidió— y mientras estén vacíos no puede saltar ninguna
+    alerta: el worker recorre nivel1..5 y no hay ninguno que cruzar.
+    """
+    return await signal_table.create_entry(db, {
+        "symbol": symbol,
+        "grupo": "ideas_javi",
+        "divisa": divisa,
+        "active": True,
+        "notes": "Creada al registrar una compra en Operaciones. Niveles pendientes.",
+    })
+
+
 async def registrar_compra(db, symbol: str, acciones: float, precio: float,
                            fecha: str = None, comision: float = None,
                            divisa: str = None, tasa: float = None,
@@ -234,6 +258,8 @@ async def registrar_compra(db, symbol: str, acciones: float, precio: float,
     symbol = (symbol or "").strip().upper()
     entry = await db.signal_entries.find_one({"symbol": symbol}, {"_id": 0})
     divisa = _divisa_de(divisa, entry)
+    if entry is None:
+        entry = await _asegurar_entry(db, symbol, divisa)
 
     compra = lotes.nueva_compra(symbol, acciones, precio, fecha=fecha, comision=0.0,
                                 divisa=divisa, tasa=tasa, nivel=nivel, notas=notas)
