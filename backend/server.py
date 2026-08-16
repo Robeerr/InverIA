@@ -1041,6 +1041,19 @@ async def me(current_user: str = Depends(auth.get_current_user)):
     return {"username": current_user, "authenticated": True}
 
 
+@api_router.post("/signals/completar-fichas")
+async def completar_fichas(_user: str = Depends(auth.get_current_user)):
+    """Rellena nombre, mercado y sector de las filas que los tengan vacíos.
+
+    Solo huecos: nunca pisa lo que ya hay. El riesgo no se toca — es tu clasificación, no
+    un dato de mercado.
+    """
+    r = await signal_table.completar_fichas(db)
+    _cache._store.pop("signals_list", None)
+    _invalidar_signals_hot()
+    return r
+
+
 @api_router.post("/modelos/comprobar")
 async def comprobar_modelo_nuevo(_user: str = Depends(auth.get_current_user)):
     """Mira ya si hay un Gemini más nuevo, sin esperar al vigía semanal.
@@ -4569,6 +4582,8 @@ async def create_signal(item: SignalEntryCreate, _user: str = Depends(auth.get_c
     # Una cotización AL MOMENTO, aunque el mercado esté cerrado. Vive en signal_table
     # porque la comparte con las compras de Operaciones, que también crean su fila.
     entry = await signal_table.cotizacion_inicial(db, entry)
+    # Nombre, mercado y sector solo si vienen vacíos: lo que hayas escrito tú manda.
+    entry = await signal_table.completar_ficha(db, entry)
     _cache._store.pop("signals_list", None)
     _invalidar_signals_hot()
     return entry

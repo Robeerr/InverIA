@@ -251,7 +251,9 @@ async def _asegurar_entry(db, symbol: str, divisa: str) -> dict:
     # Y el precio ya, sin esperar al worker: registrar una compra un sábado o de noche
     # dejaba la posición con "—" hasta la sesión siguiente. Si no se puede leer, la compra
     # se guarda igual y el worker lo rellena al abrir.
-    return await signal_table.cotizacion_inicial(db, entry)
+    entry = await signal_table.cotizacion_inicial(db, entry)
+    # Nombre, mercado y sector, que son datos públicos. El riesgo NO: ese lo pones tú.
+    return await signal_table.completar_ficha(db, entry)
 
 
 async def registrar_compra(db, symbol: str, acciones: float, precio: float,

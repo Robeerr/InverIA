@@ -97,24 +97,6 @@ const nextNivelKey = (e) => {
   }
   return best;
 };
-// Objetivos de venta: están POR ENCIMA del precio (positivo = cuánto ha de subir para vender).
-const ventaDist = (e, n) => {
-  const px = Number(e.last_price), lv = Number(e[`venta${n}`]);
-  if (!px || !lv) return null;
-  return ((lv - px) / px) * 100;
-};
-// Próxima venta en tocarse al subir = la más baja que aún está por encima del precio.
-const nextVentaKey = (e) => {
-  const px = Number(e.last_price);
-  if (!px) return null;
-  let best = null, gap = Infinity;
-  for (let n = 1; n <= 3; n++) {
-    const lv = Number(e[`venta${n}`]);
-    if (!lv || lv < px) continue;
-    if (lv - px < gap) { gap = lv - px; best = n; }
-  }
-  return best;
-};
 
 // Muestra el P&L en EUROS cuando el libro de operaciones lo sabe, y en la divisa original
 // si no. Los euros son la cifra que de verdad importa: es lo que entra o sale de la cuenta.
@@ -510,9 +492,6 @@ const ADD_FIELDS = {
     { key: "nivel3",   label: "Nivel 3",     placeholder: "160" },
     { key: "nivel4",   label: "Nivel 4",     placeholder: "150" },
     { key: "nivel5",   label: "Nivel 5 Extra", placeholder: "140" },
-    { key: "venta1",   label: "Venta 1",     placeholder: "210" },
-    { key: "venta2",   label: "Venta 2",     placeholder: "230" },
-    { key: "venta3",   label: "Venta 3",     placeholder: "250" },
     { key: "compra",   label: "Precio compra", placeholder: "155.20" },
     { key: "acciones", label: "Nº acciones",   placeholder: "10" },
     // Sin esto no se puede saber el tipo de cambio del día que compraste, y la ganancia
@@ -1018,29 +997,6 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
 <BellToggle active={e.alert_deseado !== false} onClick={() => updateField(e.id, "alert_deseado", e.alert_deseado === false)} />
               </div>
             </div>
-            {/* Venta escalonada (objetivos por encima del precio) */}
-            {[1,2,3].some((n) => e[`venta${n}`] != null) && (
-              <div className="grid grid-cols-3 gap-2">
-                {(() => { const nextV = nextVentaKey(e); return [1,2,3].map((n) => {
-                  const val = e[`venta${n}`];
-                  const alertKey = `alert_venta${n}`;
-                  const alertOn = e[alertKey] !== false;
-                  if (val == null) return null;
-                  const d = ventaDist(e, n);
-                  const isNext = n === nextV;
-                  return (
-                    <div key={`v${n}`} className={`bg-blue-50 dark:bg-blue-900/20 rounded-lg p-2 ${isNext ? "border-2 border-aviso" : "border border-blue-200 dark:border-blue-800"}`}>
-                      <div className="flex items-center justify-between mb-0.5">
-                        <p className="text-[9px] text-blue-500 uppercase font-mono font-bold">Venta {n}{isNext ? " ◀" : ""}</p>
-                        <BellToggle active={alertOn} onClick={() => updateField(e.id, alertKey, !alertOn)} />
-                      </div>
-                      <EditableCell value={val} onChange={(v) => updateField(e.id, `venta${n}`, v)} className="font-mono font-bold text-blue-700 dark:text-blue-300 text-sm" />
-                      {d != null && <p className={`text-[9px] font-mono mt-0.5 ${d < 0 ? "text-green-600" : "text-neutral-400"}`}>{d < 0 ? `✓ superado ${d.toFixed(1)}%` : `+${d.toFixed(1)}%`}</p>}
-                    </div>
-                  );
-                }); })()}
-              </div>
-            )}
             <div className="grid grid-cols-3 gap-2">
               {(() => { const nextN = nextNivelKey(e); return [1,2,3,4,5].map((n) => {
                 const val = e[`nivel${n}`];
@@ -1079,9 +1035,6 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
               <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Nº acc.</th>
               <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">P&amp;L</th>
               <th className="px-3 py-3 text-xs whitespace-nowrap text-right bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 font-bold border-l border-blue-200 dark:border-blue-800">🎯 Deseado / Venta</th>
-              {[1,2,3].map((n) => (
-                <th key={`v${n}`} className="px-3 py-3 text-xs whitespace-nowrap text-right bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-bold">Venta {n}</th>
-              ))}
               {[1,2,3,4,5].map((n) => (
                 <th key={n} className="px-3 py-3 text-xs whitespace-nowrap text-right bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 font-bold border-l border-green-200 dark:border-green-800">Nivel {n}{n === 5 ? " ⭐" : ""}</th>
               ))}
@@ -1129,22 +1082,6 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
 <BellToggle active={e.alert_deseado !== false} onClick={() => updateField(e.id, "alert_deseado", e.alert_deseado === false)} />
                   </div>
                 </td>
-                {(() => { const nextV = nextVentaKey(e); return [1,2,3].map((n) => {
-                  const val = e[`venta${n}`];
-                  const alertKey = `alert_venta${n}`;
-                  const alertOn = e[alertKey] !== false;
-                  const d = ventaDist(e, n);
-                  const isNext = n === nextV;
-                  return (
-                    <td key={`v${n}`} className={`px-3 py-2.5 ${isNext ? "bg-aviso/15" : "bg-blue-50 dark:bg-blue-900/10"}`}>
-                      <div className="flex items-center justify-end gap-1">
-                        <EditableCell value={val} onChange={(v) => updateField(e.id, `venta${n}`, v)} className="font-mono text-sm font-semibold text-blue-800 dark:text-blue-300" />
-                        <BellToggle active={alertOn} onClick={() => updateField(e.id, alertKey, !alertOn)} />
-                      </div>
-                      {d != null && <p className={`text-[9px] font-mono text-right mt-0.5 ${isNext ? "text-aviso font-bold" : d < 0 ? "text-green-600" : "text-neutral-400"}`}>{isNext ? "◀ " : ""}{d < 0 ? `✓ superado ${d.toFixed(1)}%` : `+${d.toFixed(1)}%`}</p>}
-                    </td>
-                  );
-                }); })()}
                 {(() => { const nextN = nextNivelKey(e); return [1,2,3,4,5].map((n) => {
                   const val = e[`nivel${n}`];
                   const alertKey = `alert_nivel${n}`;
