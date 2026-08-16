@@ -116,6 +116,9 @@ export const api = {
     // El aviso normal llega por Telegram, una vez por modelo. Esto es para preguntarlo
     // cuando te acuerdas, que es justo cuando no vas a mirar el histórico del bot.
     comprobarModelo: () => client.post(`/modelos/comprobar`, null, { timeout: 30000 }).then((r) => r.data),
+    // Nombre, mercado y sector de las filas que los tengan vacíos. Solo huecos: lo que
+    // hayas escrito tú no se toca, y el riesgo no se rellena solo (es tu clasificación).
+    completarFichas: () => client.post(`/signals/completar-fichas`, null, { timeout: 180000 }).then((r) => r.data),
   },
   // Nombres REALES de los modelos elegibles. Las etiquetas no se escriben en el
   // frontend porque la clave ("gemini-2.5-flash") es de routing y el modelo al que

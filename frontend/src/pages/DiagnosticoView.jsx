@@ -114,6 +114,8 @@ function MantenimientoCerebro() {
     // Sin confirmación: solo lee el catálogo de Google. No cambia el modelo — cambiarlo
     // es poner GEMINI_MODEL en el entorno, a mano y a propósito.
     { id: "modelo", texto: "¿Hay un Gemini más nuevo?", fn: api.mantenimiento.comprobarModelo },
+    // Sin confirmación: solo RELLENA huecos, nunca pisa lo que ya está escrito.
+    { id: "fichas", texto: "Completar fichas de la Cartera", fn: api.mantenimiento.completarFichas },
     { id: "reprocesar", texto: "Reprocesar correos guardados", fn: () => api.mantenimiento.reprocesar(200),
       confirmar: "Reprocesará los últimos 200 correos con una llamada al modelo por cada uno. Tarda minutos y consume cuota. ¿Seguir?" },
     { id: "acentos", texto: "Reparar acentos", fn: api.mantenimiento.repararAcentos,

@@ -186,6 +186,112 @@ async def cotizacion_inicial(db, entry: dict) -> dict:
     return entry
 
 
+# Códigos de mercado que devuelve yfinance → el nombre que se lee en la Cartera.
+#
+# yfinance no dice "NASDAQ": dice "NMS" (Nasdaq Global Select), "NYQ" (NYSE) o "PCX"
+# (NYSE Arca). Escribir el código crudo en la columna Mdo. sería cambiar un hueco por un
+# jeroglífico. Lo que no está en esta tabla se deja VACÍO a propósito: una casilla vacía
+# se ve y se corrige; un mercado equivocado se cuela y se queda, y encima `_DIVISA_POR_MERCADO`
+# deduce la divisa a partir de él — un mercado mal puesto convierte mal el coste en euros.
+_MERCADO_POR_CODIGO = {
+    "NMS": "NASDAQ", "NGM": "NASDAQ", "NCM": "NASDAQ", "NAS": "NASDAQ",
+    "NASDAQGS": "NASDAQ", "NASDAQGM": "NASDAQ", "NASDAQCM": "NASDAQ", "NASDAQ": "NASDAQ",
+    "NYQ": "NYSE", "NYSE": "NYSE",
+    "ASE": "AMEX", "AMX": "AMEX", "AMEX": "AMEX",
+    "PCX": "NYSEARCA", "ARCA": "NYSEARCA", "BTS": "BATS",
+    "MCE": "MAD", "MAD": "MAD", "BME": "MAD",
+    "GER": "ETR", "FRA": "FRA", "ETR": "ETR",
+    "PAR": "PAR", "AMS": "AMS", "BRU": "BRU", "LIS": "LIS", "MIL": "MIL",
+    "LSE": "LON", "LON": "LON",
+    "TOR": "TSX", "TSX": "TSX", "VAN": "TSXV",
+    "EBS": "SWX", "SWX": "SWX",
+    "STO": "STO", "CPH": "CPH", "OSL": "OSL", "HEL": "HEL", "VIE": "VIE",
+}
+
+
+def mercado_legible(codigo) -> str:
+    """Nombre de mercado a partir del código de yfinance. "" si no se reconoce."""
+    return _MERCADO_POR_CODIGO.get((codigo or "").strip().upper().replace(" ", ""), "")
+
+
+# Lo que se rellena solo, y lo que NO.
+#
+# Nombre, mercado y sector son HECHOS: los publica el mercado y se pueden consultar. El
+# RIESGO no está aquí a propósito. "ALTO/MEDIO/BAJO" es la clasificación de tu inversor, y
+# ninguna API la devuelve. Derivarlo de la beta o de la volatilidad daría un número con
+# pinta de criterio, escrito justo en la casilla donde lees el criterio de otra persona.
+# Prefiere quedarse vacío: un hueco se ve, y una etiqueta inventada no.
+_CAMPOS_FICHA = ("name", "mercado", "sector")
+
+
+async def completar_ficha(db, entry: dict) -> dict:
+    """Rellena nombre, mercado y sector de una fila que los tenga vacíos.
+
+    SOLO rellena huecos. Nunca pisa lo que ya hay: el sector que tú escribiste ("TECH
+    GROWTH", "Viajes") es tu taxonomía y dice algo que "Technology" no dice; sustituirlo
+    por lo que devuelve el proveedor sería perder información con cara de mejorarla.
+
+    Si la consulta falla no se propaga: la fila ya existe y sirve, solo le faltan rótulos.
+    """
+    sym = (entry or {}).get("symbol")
+    if not sym:
+        return entry
+    faltan = [c for c in _CAMPOS_FICHA if not (entry.get(c) or "").strip()]
+    if not faltan:
+        return entry
+    try:
+        q = await asyncio.to_thread(market_data.get_quote, sym)
+        if not q:
+            return entry
+        candidatos = {
+            "name": (q.get("name") or "").strip(),
+            "mercado": mercado_legible(q.get("exchange")),
+            "sector": (q.get("sector") or "").strip(),
+        }
+        # El nombre que devuelven los proveedores cuando no saben nada es el propio
+        # símbolo. Guardarlo dejaría "AEM · AEM", que no informa de nada.
+        if candidatos["name"].upper() == sym.upper():
+            candidatos["name"] = ""
+        upd = {c: candidatos[c] for c in faltan if candidatos[c]}
+        if not upd:
+            return entry
+        upd["updated_at"] = _now()
+        await db.signal_entries.update_one({"id": entry["id"]}, {"$set": upd})
+        entry.update(upd)
+    except Exception as e:
+        logger.info("Sin ficha para %s: %s", sym, e)
+    return entry
+
+
+async def completar_fichas(db, limite: int = 200) -> dict:
+    """Repasa la Cartera entera y completa las fichas incompletas.
+
+    Existe porque las filas creadas antes de esto —y las que crearon las compras de
+    Operaciones— se quedaron sin nombre ni mercado, y arreglarlas una a una a mano es
+    justo lo que no se debe pedir.
+    """
+    entries = await db.signal_entries.find({}, {"_id": 0}).to_list(500)
+    pendientes = [e for e in entries
+                  if any(not (e.get(c) or "").strip() for c in _CAMPOS_FICHA)][:limite]
+    completadas, sin_datos = [], []
+    for e in pendientes:
+        antes = {c: e.get(c) for c in _CAMPOS_FICHA}
+        despues = await completar_ficha(db, dict(e))
+        cambios = {c: despues.get(c) for c in _CAMPOS_FICHA
+                   if (despues.get(c) or "") != (antes.get(c) or "")}
+        (completadas if cambios else sin_datos).append(
+            {"symbol": e.get("symbol"), **cambios} if cambios else e.get("symbol"))
+    return {
+        "revisadas": len(pendientes),
+        "completadas": completadas,
+        # Los que no se pudieron completar se DICEN. Un recuento que solo cuenta los
+        # éxitos deja creer que ya está todo, y esas filas se quedan vacías para siempre.
+        "sin_datos": sin_datos,
+        "nota": "El riesgo no se rellena solo: es la clasificación de tu inversor, no un "
+                "dato de mercado.",
+    }
+
+
 async def update_entry(db, entry_id: str, data: dict) -> Optional[dict]:
     update_data = {k: v for k, v in data.items() if k in ALLOWED_UPDATE}
     update_data["updated_at"] = _now()
