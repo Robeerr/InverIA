@@ -1,4 +1,5 @@
 import React from "react";
+import { createPortal } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
 import {
   House, Lightning, MagnifyingGlass, Bell, Coins, CalendarBlank,
@@ -139,10 +140,42 @@ export default function Rail() {
   );
 }
 
-/** Cajón móvil. MISMAS etiquetas: aquí nunca se cae a iconos sueltos. */
+/** Cajón móvil. MISMAS etiquetas: aquí nunca se cae a iconos sueltos.
+ *
+ * VA EN UN PORTAL, Y NO ES UN DETALLE DE IMPLEMENTACIÓN
+ *
+ * Se pinta desde dentro de la cabecera, que lleva `backdrop-blur`. Un backdrop-filter
+ * crea BLOQUE CONTENEDOR para los descendientes `fixed`: el cajón dejaba de medirse
+ * contra la pantalla y pasaba a medirse contra la cabecera. `inset-0` le daba la altura
+ * de la cabecera —unos 60px—, así que el fondo sólido llegaba hasta el logo y el resto de
+ * los enlaces se desbordaba SIN fondo, escrito encima del contenido de la página. En el
+ * móvil el menú era ilegible.
+ *
+ * Sacándolo a `document.body` no hay ancestro que pueda atraparlo: ni éste ni ningún
+ * `transform`, `filter` o `contain` que aparezca mañana en la cabecera.
+ */
 export function RailCajon({ abierto, cerrar }) {
+  // Con el cajón abierto, el fondo no debe poder desplazarse: en el móvil, arrastrar
+  // sobre el velo movía la página de detrás y al cerrar habías perdido el sitio.
+  // `cerrar` llega como función nueva en cada render de la cabecera. En las dependencias
+  // haría que el efecto se deshiciera y se rehiciera continuamente mientras el cajón está
+  // abierto; en una ref, el efecto depende solo de si está abierto.
+  const cerrarRef = React.useRef(cerrar);
+  cerrarRef.current = cerrar;
+  React.useEffect(() => {
+    if (!abierto) return undefined;
+    const previo = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const alPulsar = (e) => { if (e.key === "Escape") cerrarRef.current(); };
+    document.addEventListener("keydown", alPulsar);
+    return () => {
+      document.body.style.overflow = previo;
+      document.removeEventListener("keydown", alPulsar);
+    };
+  }, [abierto]);
+
   if (!abierto) return null;
-  return (
+  return createPortal(
     <div className="lg:hidden fixed inset-0 z-50" role="dialog" aria-modal="true">
       <button
         aria-label="Cerrar menú"
@@ -160,6 +193,7 @@ export function RailCajon({ abierto, cerrar }) {
         </button>
         <RailContenido onNavigate={cerrar} />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
