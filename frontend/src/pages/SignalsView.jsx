@@ -3,6 +3,7 @@ import { Bell, BellSlash, Trash, Plus, X, UploadSimple, ArrowClockwise, Lightnin
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
+import { aNumero } from "../lib/format";
 
 const API = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
 const authHeaders = () => {
@@ -377,7 +378,9 @@ function EditableCell({ value, onChange, isNumber = true, placeholder = "—", c
 
   const commit = () => {
     setEditing(false);
-    const parsed = isNumber ? (draft === "" ? null : parseFloat(draft)) : draft;
+    // `aNumero` y no parseFloat: en el móvil se teclea 560,67 y parseFloat corta en la
+    // coma y devuelve 560 — un nivel equivocado guardado sin decir nada.
+    const parsed = isNumber ? aNumero(draft) : draft;
     if (parsed !== value) onChange(parsed);
   };
 
@@ -385,8 +388,11 @@ function EditableCell({ value, onChange, isNumber = true, placeholder = "—", c
     <input
       ref={inputRef}
       className={`w-full bg-white dark:bg-neutral-800 border border-blue-400 rounded px-1 py-0.5 text-sm outline-none ${className}`}
-      type={isNumber ? "number" : "text"}
-      step="0.01"
+      // NUNCA type="number": el teclado numérico de un teléfono en español ofrece coma, y
+      // ese campo la descarta —el valor llega vacío y el nivel no se puede escribir—.
+      // `inputMode="decimal"` da el mismo teclado sin la validación del navegador.
+      type="text"
+      inputMode={isNumber ? "decimal" : "text"}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
