@@ -178,3 +178,37 @@ export const tono = (v) => {
   if (n < 0) return "baja";
   return "neutro";
 };
+
+/** Un número escrito A MANO, con la coma decimal española.
+ *
+ *  En el móvil el teclado numérico de un teléfono en español ofrece COMA, no punto. Y
+ *  `<input type="number">` no acepta la coma: el navegador descarta la tecla y el valor
+ *  llega vacío. Con `Number("560,67")` sale NaN, así que registrar una compra a 560,67 $
+ *  contestaba "el precio debe ser mayor que cero" sin más explicación. Escribir un precio
+ *  es lo más básico que hace esta aplicación y desde el móvil era imposible.
+ *
+ *  Cuando aparecen los dos separadores, el ÚLTIMO manda: es el decimal, y el otro son los
+ *  miles. Así "1.234,56" y "1,234.56" dan lo mismo, que es lo que se espera al pegar una
+ *  cifra copiada del bróker.
+ *
+ *  Una coma sola SIEMPRE es decimal. "1,000" se lee como 1 y no como mil: aquí se teclean
+ *  precios, no cantidades con separador de miles, y la lectura contraria convertiría
+ *  "0,5 acciones" en un número absurdo. El punto solo ya se comportaba así.
+ *
+ *  Devuelve null —nunca NaN— cuando no hay número: quien llama distingue "vacío" de "cero"
+ *  sin tener que acordarse de comprobar isNaN. */
+export const aNumero = (v) => {
+  if (esNulo(v) || v === "") return null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  let s = String(v).trim().replace(/\s/g, "");
+  if (!s) return null;
+  const coma = s.lastIndexOf(",");
+  const punto = s.lastIndexOf(".");
+  if (coma !== -1 && punto !== -1) {
+    const miles = coma > punto ? "." : ",";
+    s = s.split(miles).join("");
+  }
+  s = s.replace(",", ".");
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+};

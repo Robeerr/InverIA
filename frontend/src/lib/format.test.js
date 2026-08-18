@@ -12,7 +12,7 @@
  */
 import {
   fmtPrice, fmtPct, fmtPctPlano, fmtNum, fmtEur, fmtDinero,
-  fmtDate, fmtHace, fmtEnDias, distanciaPct, tono, SIN_DATO,
+  fmtDate, fmtHace, fmtEnDias, distanciaPct, tono, aNumero, SIN_DATO,
 } from "./format";
 
 describe("datos ausentes", () => {
@@ -125,4 +125,46 @@ describe("tono por signo", () => {
   test.each([[2.4, "sube"], [-1.1, "baja"], [0, "neutro"], [null, "neutro"]])(
     "%s → %s", (valor, esperado) => expect(tono(valor)).toBe(esperado)
   );
+});
+
+// El bug: en el móvil, el teclado numérico de un teléfono en español ofrece COMA. Con
+// `<input type="number">` el navegador la descartaba y el valor llegaba vacío; con
+// `Number("560,67")` salía NaN y la pantalla contestaba "el precio debe ser mayor que
+// cero". Registrar una compra a 560,67 $ desde el móvil era imposible.
+describe("números escritos a mano", () => {
+  test("la coma decimal española", () => {
+    expect(aNumero("560,67")).toBe(560.67);
+    expect(aNumero("0,5")).toBe(0.5);
+  });
+
+  test("el punto decimal sigue funcionando", () => {
+    expect(aNumero("560.67")).toBe(560.67);
+    expect(aNumero("1234")).toBe(1234);
+    expect(aNumero(560.67)).toBe(560.67);
+  });
+
+  test("con los dos separadores manda el ÚLTIMO", () => {
+    // Es lo que se espera al pegar una cifra copiada del bróker, en cualquiera de los
+    // dos formatos.
+    expect(aNumero("1.234,56")).toBe(1234.56);
+    expect(aNumero("1,234.56")).toBe(1234.56);
+    expect(aNumero("1.234.567,89")).toBe(1234567.89);
+  });
+
+  test("los negativos y los espacios sobrantes", () => {
+    expect(aNumero("-3,5")).toBe(-3.5);
+    expect(aNumero("  12,25  ")).toBe(12.25);
+  });
+
+  test("sin número devuelve null y NUNCA NaN", () => {
+    // Quien llama distingue "vacío" de "cero" sin acordarse de comprobar isNaN.
+    for (const vacio of ["", "   ", null, undefined, "abc", NaN]) {
+      expect(aNumero(vacio)).toBeNull();
+    }
+  });
+
+  test("el cero es un valor, no un hueco", () => {
+    expect(aNumero("0")).toBe(0);
+    expect(aNumero("0,00")).toBe(0);
+  });
 });

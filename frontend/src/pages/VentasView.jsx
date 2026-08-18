@@ -2,6 +2,7 @@ import React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "../lib/api";
+import { aNumero } from "../lib/format";
 import { useSignals } from "../hooks/useSignals";
 
 // Símbolos que están en la Cartera pero todavía SIN ningún nivel definido.
@@ -677,7 +678,7 @@ function useTicker(valor, ms = 400) {
 
 function VistaPreviaVenta({ symbol, acciones }) {
   const sym = useTicker(symbol);
-  const n = Number(acciones);
+  const n = aNumero(acciones);
   const { data } = useQuery({
     queryKey: ["cartera", "posicion", sym],
     queryFn: () => api.cartera.posicion(sym),
@@ -792,12 +793,12 @@ function FormularioPorNiveles({ onCerrar }) {
 
   const aplicarIguales = (v) => {
     setIguales(v);
-    const n = Number(v);
+    const n = aNumero(v);
     if (n > 0) setPorNivel(Object.fromEntries(niveles.map((x) => [x.nivel, v])));
   };
 
   const filas = niveles
-    .map((n) => ({ ...n, acciones: Number(porNivel[n.nivel]) || 0,
+    .map((n) => ({ ...n, acciones: aNumero(porNivel[n.nivel]) || 0,
                    fecha: fechaPorNivel[n.nivel] || fecha }))
     .filter((n) => n.acciones > 0);
   const totalAcciones = filas.reduce((s, f) => s + f.acciones, 0);
@@ -961,11 +962,11 @@ function AvisoComision({ comision, acciones, precio }) {
     retry: false,
   });
   if (comision !== "" && comision != null) {
-    return Number(comision) === 0
+    return aNumero(comision) === 0
       ? <p className="text-[11px] text-tinta-3">Sin comisión: se registrará tal cual.</p>
       : null;
   }
-  const bruto = (Number(acciones) || 0) * (Number(precio) || 0);
+  const bruto = (aNumero(acciones) || 0) * (aNumero(precio) || 0);
   const tasa = tasas?.tasas?.USD;
   if (!bruto || !tasa) {
     return (
@@ -1040,8 +1041,8 @@ function CeldaValorHoy({ p }) {
         <input value={precio} onChange={(e) => setPrecio(e.target.value)} inputMode="decimal"
                placeholder={`precio en ${p.divisa === "EUR" ? "€" : "$"}`}
                className="w-24 text-[11px] bg-transparent border border-linea rounded px-1.5 py-0.5 text-right font-mono" />
-        <button disabled={mut.isPending || !(Number(precio) > 0)}
-                onClick={() => mut.mutate({ symbol: p.symbol, valor: Number(precio) })}
+        <button disabled={mut.isPending || !(aNumero(precio) > 0)}
+                onClick={() => mut.mutate({ symbol: p.symbol, valor: aNumero(precio) })}
                 className="text-[11px] underline text-tinta-3 disabled:opacity-50">
           poner
         </button>
@@ -1059,7 +1060,7 @@ function CeldaValorHoy({ p }) {
                const nuevo = window.prompt(
                  `Precio manual de ${p.symbol} (ahora ${p.precio_actual}). `
                  + "Pon el nuevo, o déjalo vacío para quitarlo:", p.precio_actual);
-               if (nuevo !== null) mut.mutate({ symbol: p.symbol, valor: Number(nuevo) || 0 });
+               if (nuevo !== null) mut.mutate({ symbol: p.symbol, valor: aNumero(nuevo) || 0 });
              }}>
           precio manual · cambiar
         </div>
@@ -1110,13 +1111,15 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
   const enviar = (e) => {
     e.preventDefault();
     const sym = f.symbol.trim().toUpperCase();
-    const n = Number(f.acciones), p = Number(f.precio);
+    // aNumero: en el móvil se teclea con COMA. Con Number, "560,67" era NaN y la
+    // pantalla contestaba "el precio debe ser mayor que cero", que no es lo que pasaba.
+    const n = aNumero(f.acciones), p = aNumero(f.precio);
     if (!sym) return toast.error("Falta el ticker");
     if (!(n > 0)) return toast.error("El número de acciones debe ser mayor que cero");
     if (!(p > 0)) return toast.error("El precio debe ser mayor que cero");
     mut.mutate({
       symbol: sym, acciones: n, precio: p,
-      comision: Number(f.comision) || 0,
+      comision: aNumero(f.comision) || 0,
       fecha: f.fecha || hoy, notas: f.notas || "",
       ...(tipo === "compra" && f.nivel ? { nivel: f.nivel } : {}),
     });
