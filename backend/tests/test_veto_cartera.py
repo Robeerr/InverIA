@@ -16,11 +16,28 @@ acción todavía bajista, para cuando gire, es un caso legítimo. Por eso `forza
 existe, y por eso hay tests de que el Chartista NO lo envía — un escape que un automatismo
 puede activar solo no es un escape, es un agujero.
 
-TRES FRONTERAS QUE NO SE CRUZAN
+INCORPORAR NO ES MANTENER  (cambio de alcance, decidido por el usuario)
+
+La puerta estaba también en el PATCH, y cortaba editar el nivel 3 de META —una acción que
+YA está en la Cartera, con posición abierta— porque su tendencia era bajista. Eso no es lo
+que el veto persigue: la decisión de entrar en META ya se había tomado, y mantener el plan
+de una posición viva no autoriza ninguna compra. Encima el nivel quedaba imposible de
+corregir justo cuando más falta hace corregirlo.
+
+La línea pasa a ser "ya la tienes" frente a "la estás incorporando":
+
+  · POST /signals  → VETADO. Dar de alta una acción nueva CON niveles es incorporarla.
+  · PATCH          → libre. Es una fila que ya existe.
+
+Lo que autoriza comprar de verdad sigue vetado igual: el alta, las alertas de COMPRA al
+cruzar un soporte, y el plan de entrada del análisis y del Chartista.
+
+CUATRO FRONTERAS QUE NO SE CRUZAN
 
   · `deseado` y `venta1..3` son objetivos de VENTA. El veto es sobre comprar.
   · El Excel y la foto son contabilidad propia del usuario, no una recomendación.
   · Registrar el precio real de una compra YA EJECUTADA es un hecho, no un plan.
+  · Editar una fila que ya existe es mantener, no incorporar.
 """
 import os
 import re
@@ -148,6 +165,12 @@ def entorno(monkeypatch):
         return {**data, "id": "nuevo"}
 
     async def _update_entry(db, entry_id, data):
+        # Devuelve None si no hay fila, como el de verdad (`matched_count == 0`). Antes el
+        # doble devolvía siempre un dict y el 404 salía de la comprobación que hacía la
+        # puerta de tendencia; al quitar la puerta del PATCH, el 404 pasó a depender de
+        # esto y el doble dejó de parecerse al original.
+        if db.signal_entries.documento is None:
+            return None
         await db.signal_entries.update_one({"id": entry_id}, {"$set": data})
         return {"id": entry_id, **data}
 
@@ -302,35 +325,40 @@ async def test_forzar_permite_el_alta_vetada(entorno, monkeypatch):
     assert estado["consultas"] == []
 
 
-# ── 14-19 · PATCH ───────────────────────────────────────────────────────────
+# ── 14-19 · PATCH: editar una fila que YA existe no pasa por la puerta ──────
+#
+# Estos tests decían lo contrario hasta que el usuario cambió el alcance: la puerta
+# cortaba corregir el nivel de una posición abierta, que es mantenimiento y no una
+# compra. Se reescriben para fijar la línea nueva; no se borran, porque la
+# responsabilidad —"qué puede y qué no puede escribir un PATCH"— sigue viva.
 
 @pytest.mark.anyio
-async def test_patch_vetado_409_y_cero_escrituras(entorno, monkeypatch):
+async def test_editar_un_nivel_de_algo_que_ya_tienes_no_consulta_la_tendencia(entorno, monkeypatch):
+    """El caso real: META en NO_COMPRAR, ya en la Cartera, y el nivel 3 hay que ajustarlo."""
     server, estado = entorno
     estado["tendencia"] = "BAJISTA"
-    db = _DB({"symbol": "GUARDADO"})
+    db = _DB({"symbol": "META"})
+    await _editar(server, db, "id-1", server.SignalEntryUpdate(nivel2=90.0), monkeypatch)
+    assert estado["consultas"] == [], "editar no autoriza comprar: no se pregunta"
+    assert [e[0] for e in db.signal_entries.escrituras] == ["update_one"]
+
+
+@pytest.mark.anyio
+async def test_el_alta_sigue_vetada(entorno, monkeypatch):
+    """La otra mitad de la línea. Si esto cayera, el cambio de alcance se habría comido
+    el veto entero en vez de acotarlo."""
+    server, estado = entorno
+    estado["tendencia"] = "BAJISTA"
+    db = _DB()
     with pytest.raises(server.HTTPException) as exc:
-        await _editar(server, db, "id-1",
-                      server.SignalEntryUpdate(nivel2=90.0), monkeypatch)
+        await _crear(server, db, _alta(server, nivel1=180.0), monkeypatch)
     assert exc.value.status_code == 409
     assert exc.value.detail["error"] == "vetado_por_tendencia"
     assert db.signal_entries.escrituras == []
 
 
 @pytest.mark.anyio
-async def test_el_simbolo_sale_de_la_entrada_y_no_del_payload(entorno, monkeypatch):
-    """Fiarse de un símbolo enviado por el cliente permitiría pedir la tendencia de uno
-    alcista para escribir los niveles de otro."""
-    server, estado = entorno
-    estado["tendencia"] = "ALCISTA"
-    db = _DB({"symbol": "GUARDADO"})
-    await _editar(server, db, "id-1", server.SignalEntryUpdate(nivel1=10.0), monkeypatch)
-    assert estado["consultas"] == ["GUARDADO"]
-
-
-@pytest.mark.anyio
-async def test_entrada_inexistente_da_404_sin_consultar_tendencia(entorno, monkeypatch):
-    """Si la entrada no existe, el problema no es la tendencia."""
+async def test_entrada_inexistente_sigue_dando_404(entorno, monkeypatch):
     server, estado = entorno
     estado["tendencia"] = "BAJISTA"
     db = _DB(None)
@@ -339,11 +367,10 @@ async def test_entrada_inexistente_da_404_sin_consultar_tendencia(entorno, monke
                       server.SignalEntryUpdate(nivel1=10.0), monkeypatch)
     assert exc.value.status_code == 404
     assert estado["consultas"] == []
-    assert db.signal_entries.escrituras == []
 
 
 @pytest.mark.anyio
-async def test_editar_un_campo_que_no_es_nivel_no_consulta_la_tendencia(entorno, monkeypatch):
+async def test_editar_un_campo_que_no_es_nivel_tampoco_consulta_la_tendencia(entorno, monkeypatch):
     server, estado = entorno
     estado["tendencia"] = "BAJISTA"
     db = _DB({"symbol": "GUARDADO"})
@@ -354,7 +381,7 @@ async def test_editar_un_campo_que_no_es_nivel_no_consulta_la_tendencia(entorno,
 
 
 @pytest.mark.anyio
-async def test_borrar_un_nivel_esta_permitido_aunque_haya_veto(entorno, monkeypatch):
+async def test_borrar_un_nivel_sigue_permitido(entorno, monkeypatch):
     server, estado = entorno
     estado["tendencia"] = "BAJISTA"
     db = _DB({"symbol": "GUARDADO"})
@@ -365,13 +392,16 @@ async def test_borrar_un_nivel_esta_permitido_aunque_haya_veto(entorno, monkeypa
 
 
 @pytest.mark.anyio
-async def test_forzar_permite_la_edicion_vetada(entorno, monkeypatch):
+async def test_el_patch_no_consulta_la_tendencia_en_ningun_caso(entorno, monkeypatch):
+    """Ni con niveles, ni sin ellos, ni con la acción más bajista del mundo. Una consulta
+    de tendencia en el PATCH sería la puerta volviendo por la puerta de atrás."""
     server, estado = entorno
     estado["tendencia"] = "BAJISTA"
-    db = _DB({"symbol": "GUARDADO"})
-    await _editar(server, db, "id-1",
-                  server.SignalEntryUpdate(nivel2=90.0, forzar=True), monkeypatch)
-    assert [e[0] for e in db.signal_entries.escrituras] == ["update_one"]
+    for campos in ({"nivel1": 10.0}, {"nivel1": 10.0, "nivel5": 5.0},
+                   {"deseado": 300.0}, {"acciones": 3}):
+        db = _DB({"symbol": "GUARDADO"})
+        await _editar(server, db, "id-1",
+                      server.SignalEntryUpdate(**campos), monkeypatch)
     assert estado["consultas"] == []
 
 
@@ -397,8 +427,10 @@ def test_en_el_alta_el_duplicado_se_comprueba_antes_del_veto():
 def test_la_puerta_va_antes_de_cualquier_escritura():
     alta = _cuerpo("create_signal")
     assert alta.index("_puerta_de_tendencia") < alta.index("signal_table.create_entry")
+    # En `update_signal` ya no hay puerta que ordenar: editar una fila que ya existe es
+    # mantenimiento. Lo que se exige es que no vuelva a colarse.
     edicion = _cuerpo("update_signal")
-    assert edicion.index("_puerta_de_tendencia") < edicion.index("signal_table.update_entry")
+    assert "_puerta_de_tendencia" not in edicion
 
 
 def test_signal_table_no_conoce_el_veto():

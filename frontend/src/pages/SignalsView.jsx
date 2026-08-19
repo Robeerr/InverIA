@@ -585,17 +585,13 @@ export default function SignalsView({ setSymbol }) {
 
   // Guarda un campo y CUENTA por qué no se pudo, si no se pudo.
   //
-  // Antes cualquier fallo se convertía en "Error al guardar", a secas. El caso frecuente
-  // ni siquiera es un error: escribir un nivel de compra pasa por la puerta de tendencia,
-  // y sobre una acción vetada el servidor responde 409 con el motivo dentro. Ese motivo se
-  // tiraba a la basura, así que el usuario veía un mensaje que no decía nada sobre algo
-  // que no estaba roto, y no tenía forma de averiguar qué pasaba.
+  // Antes cualquier fallo se convertía en "Error al guardar", a secas: el servidor
+  // explicaba y la pantalla tiraba la explicación. Ahora sale lo que diga el servidor y el
+  // genérico solo queda para cuando no dice nada.
   //
-  // Lo que NO se hace aquí es ofrecer el escape que el servidor admite para saltarse el
-  // veto. Existe, pero es del usuario y no de la pantalla: hay una frontera en
-  // tests/test_veto_cartera.py que exige que ningún cliente lo mande. Un botón "guardar
-  // igualmente" junto al aviso convertiría el veto en un trámite de un clic, que es justo
-  // lo que ese límite evita.
+  // Editar un nivel ya NO pasa por la puerta de tendencia: mantener el plan de una acción
+  // que ya está en tu Cartera no autoriza ninguna compra. El veto sigue en el alta, que es
+  // donde se incorpora una acción nueva — ver addEntry.
   const updateField = async (id, field, value) => {
     setSaving((s) => ({ ...s, [id]: true }));
     try {
@@ -607,14 +603,6 @@ export default function SignalsView({ setSymbol }) {
       if (!r.ok) {
         const cuerpo = await r.json().catch(() => null);
         const detalle = cuerpo?.detail;
-        // El veto llega ESTRUCTURADO justamente para no tener que distinguirlo por prosa.
-        if (r.status === 409 && detalle?.error === "vetado_por_tendencia") {
-          toast.warning(
-            `${detalle.symbol}: no se ha guardado el nivel. ${detalle.mensaje}`,
-            { duration: 12000 });
-          return;
-        }
-        // Cualquier otro fallo: lo que diga el servidor. El genérico solo si no dice nada.
         throw new Error(typeof detalle === "string" ? detalle : detalle?.mensaje || "");
       }
       const updated = await r.json();
@@ -625,6 +613,7 @@ export default function SignalsView({ setSymbol }) {
     }
     finally { setSaving((s) => ({ ...s, [id]: false })); }
   };
+
   const deleteEntry = async (id) => {
     if (!window.confirm("¿Eliminar esta entrada?")) return;
     try {
@@ -647,21 +636,36 @@ export default function SignalsView({ setSymbol }) {
     }
     try {
       const r = await fetch(`${API}/api/signals`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(payload) });
-      // El backend devuelve 409 si el símbolo ya está en la Cartera (evita duplicados y
-      // P&L contado dos veces). Sin este caso, el alta manual mostraba "Error al añadir"
-      // y no había forma de saber que ya estaba: el ChartistPanel sí lo trataba, esta no.
+      // HAY DOS 409 DISTINTOS y confundirlos es el peor final posible.
+      //
+      // Uno es el duplicado: el símbolo ya está en la Cartera. El otro es el VETO de
+      // tendencia sobre un alta con niveles de compra. Tratarlos igual —como se hacía—
+      // cerraba el formulario diciendo "ya estaba en tu Cartera" cuando en realidad el
+      // alta se había RECHAZADO: un rechazo leído como éxito, y la acción sin dar de alta
+      // sin que nadie se enterara. Por eso el servidor manda el del veto estructurado.
       if (r.status === 409) {
+        const cuerpo = await r.json().catch(() => null);
+        const detalle = cuerpo?.detail;
+        if (detalle?.error === "vetado_por_tendencia") {
+          toast.warning(`${detalle.symbol}: no se ha dado de alta. ${detalle.mensaje}`,
+                        { duration: 12000 });
+          return;   // el formulario se queda abierto: no se ha guardado nada
+        }
         toast(`${payload.symbol} ya estaba en tu Cartera`);
         setShowAdd(false); setNewEntry(EMPTY);
         return;
       }
-      if (!r.ok) throw new Error();
+      if (!r.ok) {
+        const cuerpo = await r.json().catch(() => null);
+        const detalle = cuerpo?.detail;
+        throw new Error(typeof detalle === "string" ? detalle : detalle?.mensaje || "");
+      }
       const created = await r.json();
       lastLocalEditRef.current = Date.now();
       setEntries((prev) => [...prev, created]);
       setShowAdd(false); setNewEntry(EMPTY);
       toast.success(`${created.symbol} añadido`);
-    } catch { toast.error("Error al añadir"); }
+    } catch (e) { toast.error(e?.message || "Error al añadir"); }
   };
 
   const doImport = async () => {
