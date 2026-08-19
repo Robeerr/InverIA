@@ -4594,15 +4594,22 @@ async def update_signal(entry_id: str, item: SignalEntryUpdate, _user: str = Dep
     # exclude_unset: distingue "no enviado" de "enviado como null". Antes se filtraban todos
     # los None, así que era IMPOSIBLE borrar compra/acciones/venta1-3: el valor viejo volvía.
     data = item.model_dump(exclude_unset=True)
-    # El simbolo NO viaja en el payload de un PATCH: sale de la entrada guardada. Fiarse de
-    # uno enviado por el cliente permitiria pedir la tendencia de un simbolo alcista para
-    # escribir los niveles de otro.
-    if veto_compra.niveles_de_compra_en(data) and not item.forzar:
-        existente = await db.signal_entries.find_one({"id": entry_id}, {"_id": 0, "symbol": 1})
-        if not existente:
-            # 404 antes que 409: si la entrada no existe, el problema no es la tendencia.
-            raise HTTPException(404, "Señal no encontrada")
-        await _puerta_de_tendencia(existente.get("symbol"), data, False)
+    # SIN puerta de tendencia, y es deliberado.
+    #
+    # El contrato dice que la IA no puede autorizar una COMPRA que la estructura ha vetado.
+    # Editar el nivel 3 de una acción que ya está en tu Cartera no autoriza ninguna compra:
+    # es mantener el plan de una posición cuya decisión de entrar ya se tomó. La puerta
+    # estaba aquí y cortaba justo eso — META en NO_COMPRAR y el nivel imposible de
+    # corregir—, que no es lo que el veto persigue.
+    #
+    # Lo que SIGUE vetado, que es donde de verdad se autoriza comprar:
+    #   · POST /signals — incorporar una acción nueva CON niveles (la puerta sigue ahí)
+    #   · las alertas de COMPRA al cruzar un soporte (signal_table._contexto_alerta)
+    #   · el plan de entrada del análisis y del Chartista (veto_compra.degradar_*)
+    #
+    # La línea es "ya la tienes" frente a "la estás incorporando", que es la misma que
+    # separa mantener de comprar. Registrar una compra ya ejecutada tampoco se veta, por el
+    # mismo motivo, desde antes (ver cartera_api).
     updated = await signal_table.update_entry(db, entry_id, data)
     if not updated:
         raise HTTPException(404, "Señal no encontrada")
