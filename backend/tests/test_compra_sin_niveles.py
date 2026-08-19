@@ -230,3 +230,47 @@ def test_una_posicion_sin_niveles_no_dispara_ninguna_alerta(monkeypatch):
     disparos = _un_ciclo(db, monkeypatch, 120.0)      # y se desploma
     assert disparos == [], "una fila sin niveles no puede generar alertas de nivel"
     assert db.alert_cooldowns.docs == [], "ni siquiera debe quemar un cooldown"
+
+
+# ── Manda el precio de compra ────────────────────────────────────────────────
+
+def test_elegir_nivel_a_mano_fija_ese_nivel_a_tu_precio_de_compra():
+    """Lo que pidió el usuario, literal: "manda el precio que yo he comprado y yo elijo
+    qué nivel es". El nivel estaba VACÍO y queda fijado con la compra."""
+    db = _DB()
+    _correr(cartera_api.registrar_compra(db, "AEM", 10, 180.04, comision=0,
+                                         nivel="nivel1"))
+    fila = db.signal_entries.docs[0]
+    assert fila["nivel1"] == 180.04
+    assert fila["nivel2"] is None, "solo se toca el nivel que has elegido"
+    compra = db.compras.docs[0]
+    assert compra["nivel"] == "nivel1"
+    assert compra["nivel_etiqueta"] == "Nivel 1"
+
+
+def test_el_precio_de_compra_pisa_el_precio_planeado_del_nivel():
+    """El nivel valía 175 (lo planeado) y compraste a 180,04. Manda lo que pagaste: si no,
+    la siguiente compra ya no casa con ningún nivel y el lote sale "fuera de niveles"."""
+    db = _DB([{"id": "x", "symbol": "AEM", "nivel1": 175.0, "nivel2": None,
+               "nivel3": None, "nivel4": None, "nivel5": None, "active": True}])
+    _correr(cartera_api.registrar_compra(db, "AEM", 10, 180.04, comision=0,
+                                         nivel="nivel1"))
+    assert db.signal_entries.docs[0]["nivel1"] == 180.04
+
+
+def test_asignar_el_nivel_despues_hace_lo_mismo():
+    """El otro camino: la compra ya estaba metida y el nivel se asigna desde la lista."""
+    db = _DB()
+    c = _correr(cartera_api.registrar_compra(db, "AEM", 10, 180.04, comision=0))
+    assert c["nivel"] is None, "sin niveles no hay nada que detectar"
+    _correr(cartera_api.asignar_nivel_compra(db, c["id"], "nivel2"))
+    assert db.signal_entries.docs[0]["nivel2"] == 180.04
+
+
+def test_el_deseado_no_lo_mueve_una_compra():
+    """`deseado` es el objetivo de VENTA. Una compra no puede tocarlo."""
+    db = _DB([{"id": "x", "symbol": "AEM", "deseado": 300.0, "nivel1": None,
+               "nivel2": None, "nivel3": None, "nivel4": None, "nivel5": None}])
+    _correr(cartera_api.registrar_compra(db, "AEM", 10, 180.04, comision=0,
+                                         nivel="nivel1"))
+    assert db.signal_entries.docs[0]["deseado"] == 300.0

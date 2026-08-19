@@ -596,17 +596,24 @@ function LotesAbiertos({ symbol, metodo }) {
               <span className="inline-flex items-center gap-1.5">
                 {l.nivel
                   ? <Chip tono="nivel">{NIVEL_ETIQUETA[l.nivel] || l.nivel}</Chip>
-                  : <Chip title="Esta compra no cae a menos del 1,5% de ninguno de tus niveles. Si en realidad ES la compra de un nivel, asígnaselo aquí y su campanita se apagará.">fuera de niveles</Chip>}
+                  : <Chip title="Esta compra no cae a menos del 1,5% de ninguno de tus niveles con precio. Si en realidad ES la compra de un nivel, asígnaselo aquí: ese nivel pasará a valer tu precio de compra y su campanita se apagará.">fuera de niveles</Chip>}
                 <select value={l.nivel || ""} disabled={asignar.isPending}
                         onChange={(e) => asignar.mutate({ id: l.id, nivel: e.target.value || null })}
                         title="Cambiar el nivel de esta compra. El precio del nivel en la Cartera se actualizará al precio real de la compra, y las campanitas se recalcularán."
                         className="text-[10px] bg-transparent border border-linea rounded px-1 py-0.5 text-tinta-3">
                   <option value="">{l.nivel ? "sin nivel" : "asignar nivel…"}</option>
-                  {(data?.niveles || []).map((n) => (
-                    <option key={n.nivel} value={n.nivel}>
-                      {n.etiqueta} · {n.precio} {divisa === "EUR" ? "€" : "$"}
-                    </option>
-                  ))}
+                  {/* Los cinco, con precio o sin él: en una acción sin niveles esta
+                      lista salía vacía y "asignar nivel…" no ofrecía nada que asignar. */}
+                  {[1, 2, 3, 4, 5].map((i) => {
+                    const clave = `nivel${i}`;
+                    const puesto = (data?.niveles || []).find((n) => n.nivel === clave);
+                    return (
+                      <option key={clave} value={clave}>
+                        Nivel {i}
+                        {puesto ? ` · ${puesto.precio} ${divisa === "EUR" ? "€" : "$"}` : " · sin precio"}
+                      </option>
+                    );
+                  })}
                 </select>
               </span>
               {l.comision_estimada && (
@@ -1156,16 +1163,31 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
         <Campo label="Notas">
           <input value={f.notas} onChange={set("notas")} placeholder="opcional" className={inputCls} />
         </Campo>
-        {tipo === "compra" && !!pos?.niveles?.length && (
+        {/* Los CINCO niveles, siempre, tengan precio o no.
+            Antes esta lista salía de `pos.niveles`, que solo trae los que ya tienen un
+            precio puesto. En una acción recién comprada están los cinco vacíos, así que
+            la lista venía vacía y el desplegable NO se dibujaba: no había forma de decir
+            "esta compra es mi Nivel 1", que es justo cuando más falta hace.
+            Manda el precio al que compraste: al elegir nivel, ese nivel de la Cartera
+            pasa a valer tu precio de compra —lo escribas o no estuviera antes—. */}
+        {tipo === "compra" && (
           <Campo label="¿De qué nivel es?"
-                 ayuda="Elige el nivel y el precio de ese nivel en la Cartera se actualizará al precio real de esta compra, con su campanita apagada. En automático solo se detecta si el precio cae a menos del 1,5% del nivel.">
+                 ayuda="Elige el nivel y el precio de ese nivel en la Cartera pasará a ser tu precio real de compra, con su campanita apagada. Si el nivel estaba vacío, queda fijado con tu compra. En automático solo se detecta si el precio cae a menos del 1,5% de un nivel que YA tenga precio.">
             <select value={f.nivel} onChange={set("nivel")} className={inputCls}>
               <option value="">detectar solo (±1,5%)</option>
-              {pos.niveles.map((n) => (
-                <option key={n.nivel} value={n.nivel}>
-                  {n.etiqueta} · ahora {n.precio} {pos.divisa === "EUR" ? "€" : "$"}{n.comprado ? " · ya comprado" : ""}
-                </option>
-              ))}
+              {[1, 2, 3, 4, 5].map((i) => {
+                const clave = `nivel${i}`;
+                const puesto = (pos?.niveles || []).find((n) => n.nivel === clave);
+                const moneda = pos?.divisa === "EUR" ? "€" : "$";
+                return (
+                  <option key={clave} value={clave}>
+                    Nivel {i}
+                    {puesto
+                      ? ` · ahora ${puesto.precio} ${moneda}${puesto.comprado ? " · ya comprado" : ""}`
+                      : " · sin precio todavía"}
+                  </option>
+                );
+              })}
             </select>
           </Campo>
         )}
@@ -1174,7 +1196,7 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
       {tipo === "compra" && (
         <p className="text-[11px] text-tinta-3">
           {f.nivel
-            ? `El precio del ${NIVEL_ETIQUETA[f.nivel] || f.nivel} en la Cartera se actualizará a tu precio real de compra y su campanita se apagará sola.`
+            ? `El ${NIVEL_ETIQUETA[f.nivel] || f.nivel} de la Cartera pasará a valer tu precio real de compra${f.precio ? ` (${f.precio})` : ""}, y su campanita se apagará sola.`
             : "El nivel se detecta solo si el precio cae a menos del 1,5% de alguno de tus niveles; si compraste algo desviado, elígelo arriba y el precio del nivel en la Cartera se actualizará al tuyo."}
         </p>
       )}
