@@ -583,6 +583,19 @@ export default function SignalsView({ setSymbol }) {
     setNewEntry(EMPTY);
   };
 
+  // Guarda un campo y CUENTA por qué no se pudo, si no se pudo.
+  //
+  // Antes cualquier fallo se convertía en "Error al guardar", a secas. El caso frecuente
+  // ni siquiera es un error: escribir un nivel de compra pasa por la puerta de tendencia,
+  // y sobre una acción vetada el servidor responde 409 con el motivo dentro. Ese motivo se
+  // tiraba a la basura, así que el usuario veía un mensaje que no decía nada sobre algo
+  // que no estaba roto, y no tenía forma de averiguar qué pasaba.
+  //
+  // Lo que NO se hace aquí es ofrecer el escape que el servidor admite para saltarse el
+  // veto. Existe, pero es del usuario y no de la pantalla: hay una frontera en
+  // tests/test_veto_cartera.py que exige que ningún cliente lo mande. Un botón "guardar
+  // igualmente" junto al aviso convertiría el veto en un trámite de un clic, que es justo
+  // lo que ese límite evita.
   const updateField = async (id, field, value) => {
     setSaving((s) => ({ ...s, [id]: true }));
     try {
@@ -591,14 +604,27 @@ export default function SignalsView({ setSymbol }) {
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ [field]: value }),
       });
-      if (!r.ok) throw new Error();
+      if (!r.ok) {
+        const cuerpo = await r.json().catch(() => null);
+        const detalle = cuerpo?.detail;
+        // El veto llega ESTRUCTURADO justamente para no tener que distinguirlo por prosa.
+        if (r.status === 409 && detalle?.error === "vetado_por_tendencia") {
+          toast.warning(
+            `${detalle.symbol}: no se ha guardado el nivel. ${detalle.mensaje}`,
+            { duration: 12000 });
+          return;
+        }
+        // Cualquier otro fallo: lo que diga el servidor. El genérico solo si no dice nada.
+        throw new Error(typeof detalle === "string" ? detalle : detalle?.mensaje || "");
+      }
       const updated = await r.json();
       lastLocalEditRef.current = Date.now();
       setEntries((prev) => prev.map((e) => e.id === id ? { ...e, ...updated } : e));
-    } catch { toast.error("Error al guardar"); }
+    } catch (e) {
+      toast.error(e?.message || "Error al guardar");
+    }
     finally { setSaving((s) => ({ ...s, [id]: false })); }
   };
-
   const deleteEntry = async (id) => {
     if (!window.confirm("¿Eliminar esta entrada?")) return;
     try {
