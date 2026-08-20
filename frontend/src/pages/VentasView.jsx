@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import { aNumero } from "../lib/format";
+import RiesgoVenta from "../components/RiesgoVenta";
 import { useSignals } from "../hooks/useSignals";
 
 // Símbolos que están en la Cartera pero todavía SIN ningún nivel definido.
@@ -1202,6 +1203,9 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
       )}
 
       {tipo === "venta" && <VistaPreviaVenta symbol={f.symbol} acciones={f.acciones} />}
+      {/* ANTES de confirmar, no después: la pregunta que resuelve —"¿esto me libera
+          margen o no?"— solo sirve mientras la venta todavía se puede no hacer. */}
+      {tipo === "venta" && f.symbol.trim() && <RiesgoVenta symbol={f.symbol} />}
 
       <AvisoComision comision={f.comision} acciones={f.acciones} precio={f.precio} />
 

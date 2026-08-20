@@ -35,6 +35,7 @@ import signal_table
 import daily_analyst
 import sp500_rsi_watch
 import vigia_modelo
+import riesgo_cartera
 import ventas as ventas_mod
 import cartera_api
 import degiro_csv
@@ -3004,6 +3005,34 @@ async def resumen_cartera(_user: str = Depends(auth.get_current_user)):
     except Exception as exc:
         logger.warning("No se pudieron leer los precios para el resumen: %s", exc)
     return await cartera_api.resumen_cartera(db, precios)
+
+
+@api_router.get("/cartera/riesgo-venta/{symbol}")
+async def riesgo_de_vender(symbol: str, _user: str = Depends(auth.get_current_user)):
+    """Cuánto RIESGO DE CARTERA retiraría vender este valor. No el margen de DEGIRO.
+
+    El sector no viaja en `resumen_cartera` —vive en la ficha de la Cartera—, así que se
+    une aquí. Es la única razón de que esto no esté dentro de `cartera_api`: ese módulo es
+    el libro de operaciones y no tiene por qué saber de `signal_entries`.
+    """
+    sym = (symbol or "").strip().upper()
+    precios, sectores = {}, {}
+    try:
+        for e in await signal_table.list_entries(db):
+            s = (e.get("symbol") or "").upper()
+            if not s:
+                continue
+            if e.get("last_price") is not None:
+                precios[s] = e["last_price"]
+            sectores[s] = (e.get("sector") or "").strip()
+    except Exception as exc:
+        logger.warning("No se pudieron leer las fichas para el riesgo de venta: %s", exc)
+    resumen = await cartera_api.resumen_cartera(db, precios)
+    posiciones = [{"symbol": p.get("symbol"),
+                   "valor_eur": p.get("valor_eur"),
+                   "sector": sectores.get((p.get("symbol") or "").upper(), "")}
+                  for p in (resumen.get("posiciones") or [])]
+    return riesgo_cartera.estimar(posiciones, sym)
 
 
 class PrecioManual(BaseModel):

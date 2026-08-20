@@ -135,6 +135,10 @@ export const api = {
   // DERIVAN de estos apuntes; no hay ningún saldo que actualizar por separado.
   cartera: {
     resumen: () => client.get(`/cartera/resumen`).then((r) => r.data),
+    // Cuánto RIESGO de cartera retira vender un valor. No es el margen libre de DEGIRO:
+    // sin la categoría A-D del instrumento ni el efectivo de la cuenta, eso no se puede
+    // calcular. Devuelve una clase (ALTO/MEDIO/BAJO) y el desglose que la produce.
+    riesgoVenta: (symbol) => client.get(`/cartera/riesgo-venta/${symbol}`).then((r) => r.data),
     ajustes: () => client.get(`/cartera/ajustes`).then((r) => r.data),
     // Cambia el metodo con el que se emparejan las ventas y RECALCULA todas las posiciones.
     // No altera ningun apunte: cambia como se emparejan, no lo que ocurrio.
