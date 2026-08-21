@@ -126,6 +126,24 @@ function DetalleLotes({ lotes, divisa }) {
   if (!lotes?.length) return null;
   return (
     <div className="bg-superficie-alt px-4 py-3 border-t border-linea">
+      {/* Tú compras y vendes POR NIVELES, pero el método de cálculo empareja por FECHA.
+          Leer qué niveles se han consumido obligaba a recorrer la lista lote a lote; esto
+          lo dice en una frase, en el idioma en el que operas. */}
+      {(() => {
+        const porNivel = {};
+        for (const l of lotes) {
+          const k = l.nivel || "sin";
+          porNivel[k] = (porNivel[k] || 0) + (Number(l.acciones) || 0);
+        }
+        const partes = Object.entries(porNivel)
+          .sort((a, b) => (a[0] === "sin" ? 1 : b[0] === "sin" ? -1 : a[0].localeCompare(b[0])))
+          .map(([k, n]) => `${n} ${k === "sin" ? "sin nivel" : NIVEL_ETIQUETA[k] || k}`);
+        return partes.length ? (
+          <p className="text-apoyo text-tinta-2 mb-2">
+            Has vendido <b className="text-tinta">{partes.join(" y ")}</b>.
+          </p>
+        ) : null;
+      })()}
       <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-2">
         Estas acciones salieron de
       </p>
@@ -1483,6 +1501,21 @@ export default function VentasView() {
       {/* Ventas de la contabilidad VIEJA (el diálogo Vender de la Cartera antes de que
           escribiera en el libro). Si quedan, ni sus acciones ni su ganancia están en
           ninguna cifra de esta pantalla, y hay que meterlas como ventas normales. */}
+      {/* Una venta sin comisión infla la ganancia entre 6 y 10 €, y esa cifra acaba en
+          una declaración. Con cien ventas deja de ser calderilla, así que se dice cuánto
+          falta en total en vez de dejarlo a que alguien sume. */}
+      {!!hist?.ventas_sin_comision && (
+        <div className="iv-panel px-4 py-2.5 border border-aviso/40 bg-aviso/[0.06]">
+          <p className="text-apoyo text-aviso leading-snug">
+            ⚠ <b>{hist.ventas_sin_comision} venta(s) registradas sin comisión.</b> DEGIRO
+            cobra 2 € por operación más el 0,25% de AutoFX, así que tu ganancia realizada
+            está inflada en unos{" "}
+            <b className="font-mono">{eur(hist.comision_no_contada_eur)}</b>. Si vinieron
+            del CSV, vuelve a importarlo comprobando que trae las columnas de comisión.
+          </p>
+        </div>
+      )}
+
       {!!hist?.ventas_antiguas && (
         <div className="iv-panel px-4 py-3 border-l-4 border-l-amber-500">
           <p className="text-sm font-semibold mb-1">

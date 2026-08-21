@@ -52,7 +52,11 @@ _ALIAS = {
     "precio": ("price", "precio"),
     "importe_local": ("local value", "valor local"),
     "tasa": ("exchange rate", "tipo de cambio"),
-    "fee_fx": ("autofx fee", "comisión autofx", "comision autofx"),
+    # OJO con "tasa de cambio": en el CSV español ese es el nombre de la comisión de
+    # AUTOFX, no del tipo de cambio (que se llama "tipo de cambio", justo la columna de al
+    # lado). Sin este alias, la comisión de conversión —el 0,25%— se perdía en silencio en
+    # cada operación importada, y la ganancia realizada salía inflada.
+    "fee_fx": ("autofx fee", "comisión autofx", "comision autofx", "tasa de cambio"),
     "fee_op": ("transaction and/or third party fees", "transaction and/or third",
                "costes de transacción", "costes de transaccion",
                "transaction costs", "costes de transacción y/o externos"),
@@ -159,6 +163,11 @@ def leer(contenido: bytes) -> dict:
                 "errores": [f"No parece el CSV de Transacciones de DEGIRO: faltan las "
                             f"columnas {', '.join(faltan)}."]}
 
+    # Las columnas de comisión NO son obligatorias para poder importar, pero si faltan
+    # todas las operaciones entran con comisión CERO y nadie se entera: el realizado sale
+    # inflado y esa cifra acaba en una declaración. Se avisa en vez de callarlo.
+    sin_comisiones = [c for c in ("fee_fx", "fee_op") if c not in idx]
+
     operaciones, errores, productos = [], [], {}
     for n, fila in enumerate(filas[1:], start=2):
         if not any((c or "").strip() for c in fila):
@@ -190,12 +199,36 @@ def leer(contenido: bytes) -> dict:
     operaciones.sort(key=lambda o: (o["fecha"], o.get("hora") or ""))
     return {"operaciones": operaciones,
             "productos": sorted(productos.values(), key=lambda p: p["producto"]),
-            "errores": errores}
+            "errores": errores + _aviso_comisiones(sin_comisiones, operaciones)}
 
 
 def _celda(fila, idx, campo):
     i = idx.get(campo)
     return fila[i] if i is not None and i < len(fila) else None
+
+
+def _aviso_comisiones(sin_columnas, operaciones) -> list:
+    """Avisa si las operaciones vienen sin comisión. Dos formas de que pase, dos mensajes.
+
+    La cabecera del CSV cambia entre versiones e idiomas de DEGIRO. Si las columnas de
+    comisión no se reconocen, cada operación entra con comisión 0: la ganancia realizada
+    sale inflada en 2 € + el 0,25% de AutoFX POR OPERACIÓN, y con cien ventas eso es dinero
+    de verdad en una declaración de la renta. Callarlo es lo peor que se puede hacer con un
+    dato que nadie va a ir a comprobar a mano.
+    """
+    # Sin operaciones no hay nada que avisar: un fichero de ruido no tiene comisiones que
+    # perder, y el aviso solo sería ruido encima de ruido.
+    if not operaciones:
+        return []
+    if sin_columnas:
+        return [f"No se han reconocido las columnas de comisión ({', '.join(sin_columnas)}): "
+                f"las {len(operaciones)} operaciones se importarían SIN comisión y tu "
+                f"ganancia saldría inflada. Comprueba la cabecera del CSV."]
+    if operaciones and not any(o.get("comision") for o in operaciones):
+        return [f"Las {len(operaciones)} operaciones vienen con comisión 0. Puede ser "
+                f"correcto, pero DEGIRO cobra 2 € por operación más el 0,25% de AutoFX: "
+                f"si el fichero las trae, no se están leyendo."]
+    return []
 
 
 def _fila_a_operacion(fila, idx):

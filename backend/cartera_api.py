@@ -546,8 +546,28 @@ async def historial(db, limite: int = 1000) -> dict:
                 dudosas.append({"symbol": sym, "fecha": fch, "acciones": acc,
                                 "ids_manuales": [g["id"] for g in grupo if not g.get("huella")]})
 
+    # Ventas registradas SIN comisión. DEGIRO cobra 2 € por operación más el 0,25% de
+    # AutoFX, así que una venta a coste cero es casi siempre un dato que no llegó —del CSV
+    # con las columnas sin reconocer, o tecleada dejando el campo vacío—. Cada una infla la
+    # ganancia entre 6 y 10 €, y con cien ventas eso es dinero de verdad en una declaración.
+    #
+    # Se cuenta y se ESTIMA lo que falta, en vez de corregirlo solo: el apunte es del
+    # usuario y una comisión inventada sería otro dato falso, solo que en la otra dirección.
+    sin_comision, coste_no_contado = 0, 0.0
+    for libro in por_symbol.values():
+        for v in libro["ventas"]:
+            if float(v.get("comision") or 0) > 0.01:
+                continue
+            sin_comision += 1
+            bruto = float(v.get("acciones") or 0) * float(v.get("precio") or 0)
+            tasa = v.get("tasa") or 1.0
+            # La tarifa de DEGIRO: 2 € fijos + 0,25% de conversión, en euros.
+            coste_no_contado += 2.0 + (bruto / tasa) * 0.0025
+
     return {
         "posibles_duplicadas": dudosas,
+        "ventas_sin_comision": sin_comision,
+        "comision_no_contada_eur": round(coste_no_contado, 2) if sin_comision else None,
         "items": filas[:limite],
         "por_symbol": resumen_symbol,
         "resumen": _totales(filas),
