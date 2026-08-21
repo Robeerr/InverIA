@@ -331,3 +331,40 @@ def test_a_partir_de_un_mes_el_extracto_caduca():
 def test_dentro_del_mes_sigue_valiendo():
     cal = rc.calibrar(CARTERA, EXTRACTO_COMPLETO, hoy="2026-09-15")
     assert cal["estado"] == rc.OK and cal["dias"] == 25
+
+
+# ── El diagnóstico manda al sitio correcto ───────────────────────────────────
+# Sin categoría se asume la más baja, así que faltar categorías hace que el modelo se quede
+# CORTO de forma sistemática. Decir "vuelve a copiar el extracto" en ese caso manda a
+# arreglar lo que no está roto: el extracto está bien, lo que falta es la letra A-D.
+
+SIN_CATS = [{**p, "categoria": ""} for p in CARTERA]
+
+
+def test_si_faltan_categorias_el_mensaje_lo_dice():
+    e = rc.estimar(SIN_CATS, "MRVL", extracto=EXTRACTO)
+    assert e["estado"] == rc.NO_CUADRA
+    assert "Faltan las categorías" in e["motivo"]
+    assert "columna «Cat.»" in e["motivo"]
+    assert "16 de 16" in e["motivo"]
+
+
+def test_sin_categorias_el_modelo_se_queda_corto_y_no_largo():
+    """La dirección del error importa: es lo que permite distinguir 'faltan datos' de
+    'las categorías han cambiado'."""
+    con, _, _ = rc.riesgo(CARTERA)
+    sin, _, _ = rc.riesgo(SIN_CATS)
+    assert sin < con
+
+
+def test_con_las_categorias_puestas_vuelve_a_cuadrar():
+    """El bloque de categoría D vale ~2.000 € de riesgo: es toda la diferencia."""
+    cal = rc.calibrar(CARTERA, EXTRACTO)
+    assert cal["estado"] == rc.OK and cal["sin_categoria"] == 0
+
+
+def test_si_se_pasa_por_arriba_no_culpa_a_las_categorias():
+    """Quedarse LARGO no lo explica una categoría vacía, así que el mensaje es el otro."""
+    e = rc.estimar(SIN_CATS, "MRVL", extracto={"riesgo_eur": 3000.0, "fecha": "2026-08-21"})
+    assert "Faltan las categorías" not in e["motivo"]
+    assert "Vuelve a copiar el extracto" in e["motivo"]
