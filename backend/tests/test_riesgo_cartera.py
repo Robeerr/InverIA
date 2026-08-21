@@ -238,3 +238,54 @@ def test_las_dos_ventas_reales_caben_en_la_banda():
     """El test que reconcilia los dos únicos datos que tenemos del mundo real."""
     mrvl = rc.estimar(CARTERA, "MRVL", extracto=EXTRACTO)
     assert abs(mrvl["margen_eur"] - 1202.12) <= mrvl["incertidumbre_eur"]
+
+
+# ── El simulador: comprar también mueve el margen ────────────────────────────
+# `estimar` vive dentro del formulario de venta, donde ya has decidido. El simulador
+# contesta antes, y en los dos sentidos: con una cuenta apalancada, COMPRAR mueve el margen
+# en la dirección peligrosa y eso no estaba cubierto por ninguna pantalla.
+
+def test_vender_devuelve_margen_y_comprar_lo_quita():
+    """El signo es el dato que no conviene tener que deducir del contexto."""
+    v = rc.simular(CARTERA, "MRVL", rc.VENDER, importe=3216.90, extracto=EXTRACTO)
+    c = rc.simular(CARTERA, "MRVL", rc.COMPRAR, importe=1000, extracto=EXTRACTO)
+    assert v["margen_eur"] > 0
+    assert c["margen_eur"] < 0
+
+
+def test_comprar_categoria_D_cuesta_todo_lo_que_inviertes():
+    c = rc.simular(CARTERA, "NUEVA", rc.COMPRAR, importe=1000, categoria="D",
+                   sector="Materiales", extracto=EXTRACTO)
+    assert c["estado"] == rc.OK
+    assert abs(c["margen_eur"]) == pytest.approx(1000, rel=0.05)
+    assert "categoría D" in c["motivo"]
+
+
+def test_sin_categoria_se_da_el_RANGO_y_no_una_letra_inventada():
+    """Mil euros de una A y de una D no cuestan lo mismo ni de lejos. Elegir por el
+    usuario sería inventarse el dato que más pesa."""
+    c = rc.simular(CARTERA, "NUEVA", rc.COMPRAR, importe=1000, sector="Materiales",
+                   extracto=EXTRACTO)
+    assert c["estado"] == rc.FALTA_CATEGORIA
+    assert "margen_eur" not in c
+    assert set(c["rango"]) == {"A", "B", "C", "D"}
+    assert abs(c["rango_max_eur"]) > abs(c["rango_min_eur"])
+    assert "la pantalla de la orden" in c["motivo"]
+
+
+def test_una_venta_parcial_por_importe():
+    entera = rc.simular(CARTERA, "MRVL", rc.VENDER, importe=99999, extracto=EXTRACTO)
+    media = rc.simular(CARTERA, "MRVL", rc.VENDER, importe=1608.45, extracto=EXTRACTO)
+    assert entera["importe_eur"] == pytest.approx(3216.90)   # no vende más de lo que hay
+    assert media["margen_eur"] < entera["margen_eur"]
+
+
+def test_comprar_algo_que_ya_tienes_usa_su_categoria():
+    """AAOI ya está en la cartera y es D: no hace falta preguntarla otra vez."""
+    c = rc.simular(CARTERA, "AAOI", rc.COMPRAR, importe=500, extracto=EXTRACTO)
+    assert c["estado"] == rc.OK and c["categoria"] == "D"
+
+
+def test_el_simulador_tambien_se_calla_sin_extracto():
+    c = rc.simular(CARTERA, "MRVL", rc.COMPRAR, importe=1000, extracto=None)
+    assert c["estado"] == rc.SIN_CALIBRAR and "margen_eur" not in c

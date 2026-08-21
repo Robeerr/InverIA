@@ -3090,6 +3090,39 @@ async def riesgo_de_vender(symbol: str, acciones: Optional[float] = None,
                                   acciones=acciones, extracto=extracto)
 
 
+@api_router.get("/cartera/simular-margen/{symbol}")
+async def simular_margen(symbol: str, accion: str, importe: float,
+                         categoria: Optional[str] = None,
+                         _user: str = Depends(auth.get_current_user)):
+    """Qué le pasa a tu margen si compras o vendes esto. ANTES de decidir.
+
+    Para comprar algo que no tienes hace falta su sector, que sí se puede consultar. Su
+    categoría A-D no: sin ella `simular` devuelve el rango entre la más barata y la más
+    cara en vez de elegir una, porque esa letra decide casi todo el resultado.
+    """
+    sym = (symbol or "").strip().upper()
+    posiciones = await _posiciones_con_riesgo()
+    extracto = await db.margen_degiro.find_one({"id": "actual"}, {"_id": 0})
+
+    sector = None
+    if not any(p["symbol"] == sym for p in posiciones):
+        # No está en la cartera: hay que averiguar en qué sector cae, porque comprarla
+        # engorda ese sector y puede ser justo el que marca el máximo.
+        ficha = await db.signal_entries.find_one({"symbol": sym}, {"_id": 0})
+        sector = (ficha or {}).get("sector") or None
+        if not sector:
+            try:
+                q = await asyncio.to_thread(market_data.get_quote, sym)
+                sector = (q or {}).get("sector") or None
+            except Exception as exc:
+                logger.info("Sin sector para simular %s: %s", sym, exc)
+        if not categoria:
+            categoria = ((ficha or {}).get("categoria_degiro") or "").strip().upper() or None
+
+    return riesgo_cartera.simular(posiciones, sym, accion, importe,
+                                  categoria=categoria, sector=sector, extracto=extracto)
+
+
 @api_router.get("/cartera/riesgo-ranking")
 async def ranking_de_riesgo(_user: str = Depends(auth.get_current_user)):
     """Todas las posiciones ordenadas por cuánto margen libera vender cada una.

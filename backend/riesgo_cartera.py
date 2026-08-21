@@ -302,3 +302,164 @@ def _motivo_calibracion(cal: dict) -> str:
             f"{cal['nuestro_eur']:,.0f} € y DEGIRO dice {cal['degiro_eur']:,.0f} € "
             f"({cal['error']:.1%} de diferencia). Puede que hayan cambiado categorías o "
             f"sectores. Vuelve a copiar el extracto de margen.")
+
+
+# ── Simulador: comprar o vender, antes de decidir ────────────────────────────
+#
+# `estimar` contesta "si vendo esto, cuánto margen recupero", y vive dentro de los
+# formularios de venta. Pero ahí ya has decidido. La pregunta útil es anterior y va en los
+# dos sentidos, porque COMPRAR también mueve el margen —y con una cuenta apalancada lo
+# mueve en la dirección peligrosa.
+
+COMPRAR, VENDER = "comprar", "vender"
+FALTA_CATEGORIA = "FALTA_CATEGORIA"
+
+
+def _resultado(r0, r1, dom0, dom1, comps0, comps1, importe, cal, contexto):
+    """El bloque común de una simulación, en los dos sentidos.
+
+    `margen_eur` va CON SIGNO: positivo si la operación te devuelve margen (vender),
+    negativo si te lo quita (comprar). Sin signo habría que deducirlo del contexto, y es
+    exactamente el dato que no conviene tener que deducir.
+    """
+    cambio = r0 - r1
+    banda = max(cal.get("error") or 0.0, ERROR_MINIMO) * max(r0, r1)
+    return {
+        "estado": OK,
+        "margen_eur": round(cambio, 2),
+        "incertidumbre_eur": round(banda, 2),
+        "distinguible": abs(cambio) >= 2 * banda,
+        "importe_eur": round(importe, 2),
+        "pct_del_importe": round(cambio / importe, 4) if importe else 0.0,
+        "riesgo_antes_eur": round(r0, 2),
+        "riesgo_despues_eur": round(r1, 2),
+        "dominante_antes": dom0,
+        "dominante_despues": dom1,
+        "componentes_antes": {k: round(v, 2) for k, v in comps0.items()},
+        "componentes_despues": {k: round(v, 2) for k, v in comps1.items()},
+        "calibracion": {"error": cal.get("error"), "fecha": cal.get("fecha"),
+                        "degiro_eur": cal.get("degiro_eur")},
+        **contexto,
+    }
+
+
+def simular(posiciones: List[dict], symbol: str, accion: str, importe: float,
+            categoria: Optional[str] = None, sector: Optional[str] = None,
+            extracto: Optional[dict] = None) -> dict:
+    """Qué le pasa a tu margen libre si compras o vendes `importe` euros de `symbol`.
+
+    Al COMPRAR algo que no tienes hace falta su categoría A-D, y esa letra decide casi
+    todo: mil euros de una categoría A cuestan ~314 € de margen y de una categoría D
+    cuestan los mil. Si no se sabe, se devuelve el RANGO en vez de elegir una por el
+    usuario — un rango honesto sirve para decidir; una letra inventada, no.
+    """
+    sym = (symbol or "").strip().upper()
+    accion = (accion or "").strip().lower()
+    if accion not in (COMPRAR, VENDER):
+        return {"estado": FALTAN_DATOS, "motivo": "La operación debe ser comprar o vender."}
+    try:
+        importe = float(importe or 0)
+    except (TypeError, ValueError):
+        importe = 0.0
+    if importe <= 0:
+        return {"estado": FALTAN_DATOS, "symbol": sym,
+                "motivo": "Falta el importe de la operación."}
+
+    posiciones = [dict(p) for p in (posiciones or []) if (p.get("symbol") or "").strip()]
+    sin_valor = [p["symbol"] for p in posiciones if p.get("valor_eur") is None]
+    if sin_valor:
+        return {"estado": FALTAN_DATOS, "symbol": sym,
+                "motivo": (f"No se puede simular: {len(sin_valor)} posición"
+                           f"{'es' if len(sin_valor) != 1 else ''} sin valorar "
+                           f"({', '.join(sorted(sin_valor))}).")}
+
+    cal = calibrar(posiciones, extracto)
+    if cal["estado"] != OK:
+        return {**cal, "symbol": sym, "motivo": _motivo_calibracion(cal)}
+
+    actual = next((p for p in posiciones if p["symbol"].strip().upper() == sym), None)
+    r0, dom0, comps0 = riesgo(posiciones)
+
+    if accion == VENDER:
+        if actual is None or float(actual["valor_eur"]) <= 0:
+            return {"estado": FALTAN_DATOS, "symbol": sym,
+                    "motivo": f"{sym} no está entre tus posiciones abiertas."}
+        vendido = min(importe, float(actual["valor_eur"]))
+        resto = []
+        for p in posiciones:
+            if p is actual:
+                queda = float(p["valor_eur"]) - vendido
+                if queda <= 0:
+                    continue
+                p = {**p, "valor_eur": queda}
+            resto.append(p)
+        r1, dom1, comps1 = (riesgo(resto) if resto else (0.0, None, componentes([])))
+        res = _resultado(r0, r1, dom0, dom1, comps0, comps1, vendido, cal,
+                         {"symbol": sym, "accion": VENDER,
+                          "categoria": (actual.get("categoria") or "").upper() or None})
+        res["motivo"] = _motivo(dom0, dom1, res["pct_del_importe"], _es_d(actual),
+                                res["distinguible"])
+        return res
+
+    # ── COMPRAR ──────────────────────────────────────────────────────────────
+    cat = (categoria or (actual or {}).get("categoria") or "").strip().upper()[:1]
+    sec = (sector or (actual or {}).get("sector") or "").strip()
+
+    def _con_categoria(c):
+        nuevas = []
+        visto = False
+        for p in posiciones:
+            if p is actual:
+                visto = True
+                p = {**p, "valor_eur": float(p["valor_eur"]) + importe, "categoria": c}
+            nuevas.append(p)
+        if not visto:
+            nuevas.append({"symbol": sym, "valor_eur": importe, "sector": sec,
+                           "categoria": c, "divisa": "USD"})
+        return riesgo(nuevas)
+
+    if cat in ("A", "B", "C", "D"):
+        r1, dom1, comps1 = _con_categoria(cat)
+        res = _resultado(r0, r1, dom0, dom1, comps0, comps1, importe, cal,
+                         {"symbol": sym, "accion": COMPRAR, "categoria": cat,
+                          "sector": sec})
+        res["motivo"] = _motivo_compra(cat, res["pct_del_importe"], dom1, sec)
+        return res
+
+    # Sin categoría: el rango entre la más barata y la más cara, sin elegir por el usuario.
+    coste = {}
+    for c in ("A", "B", "C", "D"):
+        r1, dom1, comps1 = _con_categoria(c)
+        coste[c] = r0 - r1
+    barata, cara = min(coste, key=lambda c: abs(coste[c])), max(coste, key=lambda c: abs(coste[c]))
+    r1, dom1, comps1 = _con_categoria(cara)
+    banda = max(cal.get("error") or 0.0, ERROR_MINIMO) * max(r0, r1)
+    return {
+        "estado": FALTA_CATEGORIA,
+        "symbol": sym, "accion": COMPRAR, "sector": sec,
+        "importe_eur": round(importe, 2),
+        "incertidumbre_eur": round(banda, 2),
+        "rango": {c: round(coste[c], 2) for c in ("A", "B", "C", "D")},
+        "rango_min_eur": round(coste[barata], 2), "rango_min_cat": barata,
+        "rango_max_eur": round(coste[cara], 2), "rango_max_cat": cara,
+        "calibracion": {"error": cal.get("error"), "fecha": cal.get("fecha")},
+        "motivo": (f"Falta la categoría de riesgo de {sym}, y esa letra decide casi todo: "
+                   f"comprar {importe:,.0f} € te costaría entre "
+                   f"{abs(coste[barata]):,.0f} € (categoría {barata}) y "
+                   f"{abs(coste[cara]):,.0f} € (categoría {cara}) de margen. La letra sale "
+                   f"en DEGIRO junto al nombre del producto, en la pantalla de la orden."),
+    }
+
+
+def _motivo_compra(cat: str, pct: float, dom_despues: Optional[str], sector: str) -> str:
+    """Por qué esta compra cuesta mucho o poco margen."""
+    if cat == "D":
+        return ("DEGIRO clasifica esta acción en categoría D: le asigna el 100% de su "
+                "valor como riesgo, así que comprarla te cuesta en margen todo lo que "
+                "inviertas.")
+    if abs(pct) > 0.5:
+        return (f"Con esta compra pasa a mandar {NOMBRES.get(dom_despues, dom_despues)}, "
+                f"y por eso se lleva buena parte de lo que inviertes.")
+    return (f"Categoría {cat}. Lo que manda después es "
+            f"{NOMBRES.get(dom_despues, dom_despues)}"
+            + (f", y esta compra engorda {sector}." if sector else "."))
