@@ -44,7 +44,13 @@ export default function ExtractoMargen() {
   const enviar = (e) => {
     e.preventDefault();
     const riesgo = aNumero(f?.riesgo_eur);
+    const cartera = aNumero(f?.valor_cartera_eur);
     if (!(riesgo > 0)) return toast.error("Falta el «Portfolio Risk» del extracto");
+    // Sin el valor de cartera solo se pueden comparar euros contra euros, y entonces el
+    // extracto caduca con cualquier día verde: la cartera sube, el riesgo sube con ella y
+    // el modelo cree que ha dejado de acertar. Con los dos se compara la PROPORCIÓN, que
+    // no se inmuta ante una subida general, y el extracto vale semanas.
+    if (!(cartera > 0)) return toast.error("Falta el «Value of portfolio»: sin él el extracto caduca en un día");
     guardar.mutate({
       riesgo_eur: riesgo,
       valor_cartera_eur: aNumero(f?.valor_cartera_eur),
@@ -56,7 +62,7 @@ export default function ExtractoMargen() {
 
   const campos = [
     ["riesgo_eur", "Portfolio Risk *", "11645,14"],
-    ["valor_cartera_eur", "Value of portfolio", "30440,28"],
+    ["valor_cartera_eur", "Value of portfolio *", "30440,28"],
     ["saldo_eur", "Cash balance", "-18616,99"],
     ["margen_eur", "Margin (surplus)", "196,37"],
   ];
@@ -71,7 +77,9 @@ export default function ExtractoMargen() {
       <p className="text-apoyo text-tinta-3 mt-1 leading-snug">
         Cópialo de «Available to trade → Margin statement». Sin él, InverIA no estima
         cuánto margen libera una venta: prefiere callarse a dar un número que no puede
-        comprobar.
+        comprobar. <b>Vale un mes</b> — se compara la proporción riesgo/cartera, que no se
+        mueve con el vaivén diario de los precios, y DEGIRO recategoriza los instrumentos
+        mensualmente. Cuando caduque te avisa por Telegram.
       </p>
 
       {data?.riesgo_eur && !f && (
