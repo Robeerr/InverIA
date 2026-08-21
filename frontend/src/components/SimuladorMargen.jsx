@@ -176,13 +176,27 @@ export default function SimuladorMargen({ symbol }) {
         <p className="text-apoyo text-tinta-2 mt-3 leading-snug">{data.motivo}</p>
       )}
 
+      {/* El lado de COMPRAR no está validado y hay que decirlo donde se lee.
+          Las dos medidas reales —MRVL y HOOD— son ventas. De comprar solo existe el
+          ticket de DEGIRO, que en la venta de MRVL se equivocó un 99,6%: dijo 5 € donde
+          hubo 1.202 €. Para 3 CBRS ese ticket dice el doble que este modelo. Encaja que
+          sea conservador en los dos sentidos, pero es una hipótesis sin medir, así que se
+          da el número y se avisa de que puede quedarse corto. */}
+      {accion === "comprar" && data?.estado === "OK" && (
+        <p className="text-etiqueta text-aviso mt-2 leading-snug">
+          El coste de comprar no se ha contrastado nunca contra una operación real: las dos
+          medidas que tenemos son ventas. DEGIRO puede mostrarte en su pantalla de la orden
+          un coste bastante mayor. Si vas justo de margen, hazle caso a él.
+        </p>
+      )}
+
       {data?.calibracion?.error != null && (
         <p className="text-etiqueta text-tinta-3 mt-2 leading-snug">
           Calibrado con tu extracto de DEGIRO
           {data.calibracion.fecha ? ` del ${data.calibracion.fecha}` : ""}: reproduce tu
           riesgo real con un{" "}
           <b className="font-mono">{(data.calibracion.error * 100).toFixed(1)}%</b> de
-          desviación. Medido contra dos ventas reales, falló por 3 € y por 41 €.
+          desviación. Medido contra dos VENTAS reales, falló por 3 € y por 41 €.
         </p>
       )}
     </div>
