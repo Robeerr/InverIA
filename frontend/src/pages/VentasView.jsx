@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { api } from "../lib/api";
 import { aNumero } from "../lib/format";
 import RiesgoVenta from "../components/RiesgoVenta";
+import ExtractoMargen from "../components/ExtractoMargen";
 import { useSignals } from "../hooks/useSignals";
 
 // Símbolos que están en la Cartera pero todavía SIN ningún nivel definido.
@@ -1205,7 +1206,9 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
       {tipo === "venta" && <VistaPreviaVenta symbol={f.symbol} acciones={f.acciones} />}
       {/* ANTES de confirmar, no después: la pregunta que resuelve —"¿esto me libera
           margen o no?"— solo sirve mientras la venta todavía se puede no hacer. */}
-      {tipo === "venta" && f.symbol.trim() && <RiesgoVenta symbol={f.symbol} />}
+      {tipo === "venta" && f.symbol.trim() && (
+        <RiesgoVenta symbol={f.symbol} acciones={aNumero(f.acciones) || undefined} />
+      )}
 
       <AvisoComision comision={f.comision} acciones={f.acciones} precio={f.precio} />
 
@@ -1616,6 +1619,10 @@ export default function VentasView() {
           ))}
         </Plegable>
       )}
+
+      {/* El extracto de DEGIRO va ANTES de las posiciones: es lo que decide si los
+          avisos de margen de cada venta pueden dar una cifra o tienen que callarse. */}
+      <ExtractoMargen />
 
       {/* Posiciones abiertas, en euros */}
       {!!resumen?.posiciones?.length && (

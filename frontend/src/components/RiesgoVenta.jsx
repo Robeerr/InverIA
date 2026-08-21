@@ -3,38 +3,35 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 
 /**
- * Qué le pasa al RIESGO de tu cartera si vendes esto. Antes de confirmar la venta.
+ * Cuánto margen libre devuelve esta venta. Antes de confirmarla.
  *
- * QUÉ PREGUNTA CONTESTA Y QUÉ NO
+ * POR QUÉ NO BASTA CON LO QUE DICE DEGIRO
  *
- * Con perfil Trader, el "Margen libre" de DEGIRO no es un contador de caja: es garantía
- * menos el RIESGO que su modelo asigna a la cartera. Vender mueve dinero de cartera a
- * efectivo dentro de la misma ecuación, así que lo único que mueve el margen es cuánto
- * baja el riesgo. Por eso vender 1.000 € de una acción dispara el margen y vender 1.000 €
- * de otra no lo mueve.
+ * DEGIRO enseña un "Margin impact" en su pantalla de la orden. Está mal. Medido contra una
+ * venta real de 15 MRVL el 21-08-2026: su ticket predijo 5,36 €, este modelo predijo
+ * 1.199 €, y ocurrieron 1.202,12 €. Un error del 99,6% frente a uno del 0,3%.
  *
- * Esto estima ESO: el riesgo retirado. NO el margen que DEGIRO devolverá. Faltan la
- * categoría A-D del instrumento, la taxonomía sectorial del bróker y el efectivo de la
- * cuenta, y sin las tres una cifra en euros de margen sería una afirmación que no se puede
- * sostener. De ahí que aquí no haya ni una: solo una clase y el desglose que la produce.
+ * La causa es que el riesgo de cartera es el MÁXIMO de cuatro componentes, no la suma: si
+ * vendes algo que no marcaba el máximo, el máximo se queda donde estaba y el margen no se
+ * mueve; si vendes justo lo que lo marcaba, se desploma. De ahí que la misma cantidad de
+ * dinero libere 1.200 € o 5 € según qué vendas.
  *
- * El aviso no es letra pequeña de descargo: es la diferencia entre una estimación y una
- * promesa, y va donde se lee.
+ * CUÁNDO SE CALLA
+ *
+ * Las categorías A-D y la taxonomía sectorial del bróker no se pueden consultar por API, y
+ * DEGIRO las revisa cada mes. Así que la cifra solo sale si el modelo ha demostrado antes
+ * que reproduce el riesgo del último extracto de margen. Si no cuadra, aquí no aparece un
+ * número: aparece el motivo. La diferencia entre una estimación y una promesa es
+ * exactamente esa, y va donde se lee.
  */
-
-const TONO = {
-  ALTO: "text-sube",
-  MEDIO: "text-tinta",
-  BAJO: "text-tinta-3",
-};
 
 const EUR = (v) =>
   v == null ? "—" : `${Math.round(v).toLocaleString("es-ES")} €`;
 
-const ORDEN = ["evento", "neto_categoria", "sector", "bruto"];
+const ORDEN = ["evento", "neto", "sector", "bruto"];
 const ETIQUETA = {
   evento: "Mayor posición",
-  neto_categoria: "Peso total",
+  neto: "Peso total",
   sector: "Sector mayor",
   bruto: "Bruto",
 };
@@ -44,119 +41,107 @@ function Desglose({ datos }) {
   const despues = datos.componentes_despues || {};
   return (
     <div className="mt-2 pt-2 border-t border-linea">
-      <p className="iv-etiqueta mb-1.5">Riesgo de cartera, por componente</p>
-      <table className="w-full text-apoyo">
+      <table className="w-full text-etiqueta">
         <thead>
           <tr className="text-tinta-3">
-            <th className="text-left font-normal py-1">Componente</th>
+            <th className="text-left font-normal py-0.5">Componente</th>
             <th className="text-right font-normal">Ahora</th>
-            <th className="text-right font-normal">Tras vender</th>
+            <th className="text-right font-normal">Después</th>
           </tr>
         </thead>
-        <tbody className="iv-cifra">
-          {ORDEN.filter((k) => k in antes).map((k) => {
-            const mandaAntes = datos.dominante_antes === k;
-            const mandaDespues = datos.dominante_despues === k;
+        <tbody className="font-mono tabular-nums">
+          {ORDEN.map((k) => {
+            const manda = datos.dominante_antes === k;
             return (
-              <tr key={k} className="border-t border-linea/60">
-                <td className="py-1 font-sans">
+              <tr key={k} className={manda ? "text-tinta font-semibold" : "text-tinta-3"}>
+                <td className="py-0.5">
                   {ETIQUETA[k]}
-                  {mandaAntes && <span className="text-tinta-3"> · manda ahora</span>}
+                  {manda && <span className="ml-1 text-marca">← manda</span>}
                 </td>
-                <td className={`text-right ${mandaAntes ? "font-semibold" : "text-tinta-3"}`}>
-                  {EUR(antes[k])}
-                </td>
-                <td className={`text-right ${mandaDespues ? "font-semibold" : "text-tinta-3"}`}>
-                  {EUR(despues[k])}
-                </td>
+                <td className="text-right">{EUR(antes[k])}</td>
+                <td className="text-right">{EUR(despues[k])}</td>
               </tr>
             );
           })}
         </tbody>
       </table>
-      {/* El máximo, y no la suma, es la pieza que explica todo lo raro: si vendes algo que
-          no marcaba el máximo, el máximo lo sigue fijando otra cosa y no baja nada. */}
       <p className="text-etiqueta text-tinta-3 mt-2 leading-snug">
-        El riesgo de la cartera es el <b>mayor</b> de estos cuatro, no su suma. Ahora mismo
-        manda {datos.dominante_antes_texto}
-        {datos.dominante_despues_texto
-          ? <>, y tras la venta mandaría {datos.dominante_despues_texto}</>
-          : null}.
+        Tu riesgo es el <b>mayor</b> de los cuatro, no su suma. Por eso vender algo que no
+        marca el máximo no mueve el margen, por mucho dinero que sea.
       </p>
-      <p className="text-etiqueta text-tinta-3 mt-1 leading-snug">
-        Retira <span className="iv-cifra">{EUR(datos.riesgo_retirado_eur)}</span> de riesgo,
-        que es <span className="iv-cifra">{datos.indice?.toFixed(2)}</span> veces lo que
-        retiraría una venta cualquiera del mismo importe. Por debajo de{" "}
-        {datos.umbrales?.medio} es BAJO; a partir de {datos.umbrales?.alto}, ALTO.
-      </p>
-      <p className="text-etiqueta text-tinta-3 mt-1 leading-snug">
-        No se conoce la categoría de riesgo (A-D) que DEGIRO asigna a cada acción, así que
-        todas cuentan igual en «mayor posición». Una acción de categoría peor retiraría más
-        riesgo del que aquí se ve.
-      </p>
+      {datos.calibracion?.error != null && (
+        <p className="text-etiqueta text-tinta-3 mt-1.5 leading-snug">
+          Calibrado con tu extracto de DEGIRO
+          {datos.calibracion.fecha ? ` del ${datos.calibracion.fecha}` : ""}: el modelo
+          reproduce tu riesgo real con un{" "}
+          <b className="font-mono">{(datos.calibracion.error * 100).toFixed(1)}%</b> de
+          desviación.
+        </p>
+      )}
     </div>
   );
 }
 
-export default function RiesgoVenta({ symbol }) {
+export default function RiesgoVenta({ symbol, acciones }) {
   const [abierto, setAbierto] = React.useState(false);
   const sym = (symbol || "").trim().toUpperCase();
-
-  const { data, isPending, isError } = useQuery({
-    queryKey: ["cartera", "riesgo-venta", sym],
-    queryFn: () => api.cartera.riesgoVenta(sym),
+  const { data, isPending } = useQuery({
+    queryKey: ["cartera", "riesgo-venta", sym, acciones || null],
+    queryFn: () => api.cartera.riesgoVenta(sym, acciones),
     enabled: sym.length >= 1,
-    staleTime: 60_000,
+    staleTime: 30_000,
     retry: false,
   });
 
   if (!sym) return null;
+  if (isPending) {
+    return (
+      <div className="iv-panel p-3">
+        <p className="text-apoyo text-tinta-3">Calculando el impacto en tu margen…</p>
+      </div>
+    );
+  }
+  if (!data) return null;
 
+  // Sin cifra: se dice por qué. Nunca un número a medias.
+  if (data.estado !== "OK") {
+    return (
+      <div className="iv-panel p-3 border-l-[3px] border-l-linea-fuerte">
+        <p className="iv-etiqueta mb-1">Impacto en tu margen libre</p>
+        <p className="text-apoyo text-tinta-2 leading-snug">{data.motivo}</p>
+      </div>
+    );
+  }
+
+  const pct = (data.pct_del_importe || 0) * 100;
   return (
-    <div className="iv-panel p-3 bg-superficie-alt">
-      <p className="text-apoyo text-tinta-2 leading-snug">
-        Si vendo esto, ¿qué impacto tendrá probablemente sobre mi margen libre?
+    <div className="iv-panel p-3 border-l-[3px] border-l-marca">
+      <p className="iv-etiqueta mb-1">Si vendes esto, tu margen libre</p>
+      <p className="iv-cifra text-cifra text-sube leading-none">
+        +{EUR(data.margen_eur)}
       </p>
+      <p className="text-apoyo text-tinta-3 mt-1">
+        sobre <span className="iv-cifra">{EUR(data.importe_eur)}</span> vendidos ·{" "}
+        <span className="iv-cifra">{pct.toFixed(0)}%</span> del importe
+      </p>
+      <p className="text-apoyo text-tinta-2 mt-2 leading-snug">{data.motivo}</p>
 
-      {isPending && <p className="text-apoyo text-tinta-3 mt-1.5">Calculando…</p>}
-
-      {isError && (
-        <p className="text-apoyo text-tinta-3 mt-1.5">
-          No se ha podido estimar ahora mismo.
-        </p>
-      )}
-
-      {data && data.clase === "SIN_ESTIMACION" && (
-        <p className="text-apoyo text-aviso mt-1.5 leading-snug">{data.motivo}</p>
-      )}
-
-      {data && data.clase !== "SIN_ESTIMACION" && (
-        <>
-          <p className="mt-1.5">
-            <span className="iv-etiqueta">Riesgo eliminado estimado</span>{" "}
-            <span className={`font-mono font-bold text-titulo ${TONO[data.clase] || ""}`}>
-              {data.clase}
-            </span>
-          </p>
-          <p className="text-apoyo text-tinta-2 mt-1 leading-snug">{data.motivo}</p>
-          <button
-            type="button"
-            onClick={() => setAbierto((a) => !a)}
-            aria-expanded={abierto}
-            className="text-apoyo text-tinta-3 underline mt-1.5"
-          >
-            {abierto ? "Ocultar el cálculo" : "Ver el cálculo"}
-          </button>
-          {abierto && <Desglose datos={data} />}
-        </>
-      )}
-
-      {/* Va SIEMPRE, también cuando no se puede estimar: quien lee esto tiene que saber
-          qué está leyendo, y no solo cuando el número le gusta. */}
+      {/* El aviso no es letra pequeña de descargo: DEGIRO enseña su propio número en la
+          pantalla de la orden y a veces discrepa muchísimo. Que no sorprenda. */}
       <p className="text-etiqueta text-tinta-3 mt-2 leading-snug">
-        Estimación de InverIA. No representa el margen libre que DEGIRO liberará
-        exactamente.
+        Estimación de InverIA con el modelo de riesgo de DEGIRO. El «Margin impact» que
+        muestra el bróker en su pantalla de la orden puede decir algo muy distinto: el
+        21-08-2026 dijo 5 € en una venta que devolvió 1.202 €.
       </p>
+
+      <button
+        type="button"
+        onClick={() => setAbierto((v) => !v)}
+        className="text-etiqueta text-tinta-3 underline mt-1.5"
+      >
+        {abierto ? "Ocultar el cálculo" : "Ver el cálculo"}
+      </button>
+      {abierto && <Desglose datos={data} />}
     </div>
   );
 }

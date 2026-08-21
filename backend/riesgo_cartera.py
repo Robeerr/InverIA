@@ -1,218 +1,280 @@
-"""Cuánto RIESGO DE CARTERA retira una venta. No cuánto margen devuelve DEGIRO.
+"""Cuánto RIESGO DE CARTERA retira una venta, según el modelo de margen de DEGIRO.
 
-POR QUÉ EXISTE
+QUÉ PROBLEMA RESUELVE
 
-Con perfil Trader, el "Margen libre" de DEGIRO no es un contador de caja: es el valor de
-garantía menos el RIESGO que su modelo asigna a la cartera. Vender mueve dinero de
-"cartera" a "efectivo" dentro de la misma ecuación, así que ese movimiento por sí solo no
-explica nada: lo que mueve el margen libre es cuánto baja el riesgo. De ahí que vender
-1.000 € de una acción dispare el margen y vender 1.000 € de otra no lo mueva —y que la
-propia ayuda de DEGIRO tenga una página dedicada a explicar que, si la operación "no tiene
-un impacto suficiente en el riesgo de su cartera", el margen no cambiará o apenas lo hará.
+Con perfil Trader, el «Margen libre» de DEGIRO no es caja: es el valor neto de liquidación
+menos el RIESGO que su modelo asigna a la cartera. Vender mueve dinero de «cartera» a
+«saldo» dentro del mismo lado de la resta, así que el movimiento en sí no explica nada: lo
+único que mueve el margen es cuánto baja el riesgo. De ahí que vender 3.000 € de una acción
+dispare el margen y vender 3.000 € de otra no lo mueva.
 
-EL MODELO, Y POR QUÉ EL MÁXIMO LO CAMBIA TODO
+POR QUÉ ESTO NO ES REDUNDANTE CON DEGIRO
 
-DEGIRO calcula cuatro componentes y se queda con el MAYOR, no con la suma. Eso es lo que
-produce el comportamiento que desconcierta: si vendes algo que NO era el componente que
-marcaba el máximo, el máximo lo sigue fijando otra cosa y el riesgo no baja nada.
+DEGIRO enseña un «Margin impact» en la pantalla de la orden. **Está mal.** Medido contra
+una venta real de 15 MRVL el 21-08-2026:
 
-LO QUE ESTO NO ES
+    lo que predijo el ticket de DEGIRO ....       5,36 €   (error 99,6%)
+    lo que predijo este modelo ............   1.199,00 €   (error  0,3%)
+    lo que ocurrió de verdad .............   1.202,12 €
 
-Una reproducción del margen libre de DEGIRO. Faltan tres piezas y ninguna es obtenible:
+El usuario avisó dos veces de que ese preview no le cuadraba, y tenía razón. Ese caso está
+congelado como test de regresión en tests/test_riesgo_cartera.py.
 
-  · la CATEGORÍA A-D del instrumento, que fija su porcentaje de riesgo de evento. No está
-    en ninguna API ni en ningún CSV. Aquí se aplica el mismo porcentaje a todas, así que
-    el componente de evento ordena SOLO por tamaño. Una acción en categoría C o D lleva
-    mucho más riesgo del que este cálculo ve, y ahí la estimación se queda corta.
-  · la TAXONOMÍA sectorial de DEGIRO, que no coincide con la de yfinance ni con la que el
-    usuario escribe a mano.
-  · el EFECTIVO y la deuda de la cuenta, sin los cuales no hay cifra absoluta posible.
+EL MODELO (Investment Portfolio Risk Handbook, 30-04-2024, perfil Trader)
 
-Por eso este módulo devuelve una CLASE (ALTO/MEDIO/BAJO) y un índice relativo, nunca euros
-de margen. La diferencia no es de precisión: es que una cifra en euros afirmaría algo que
-no podemos sostener.
+    riesgo = MAX(evento, neto, sector, bruto)
 
-Aritmética pura: sin red, sin base de datos, sin fechas. Se prueba entera con listas.
+    evento = máx sobre posiciones de  pct(categoría) × valor
+    neto   = 25% × (V − D) + D + otros
+    sector = 40% × mayor sector (sin D) + D + otros
+    bruto  = 10% × (V − D) + D + otros
+    otros  = 6,36% × (V − D)      ← riesgo de divisa de lo que no cotiza en euros
+
+`D` es la suma de las posiciones en categoría D: el manual les añade el 100% de su valor a
+los componentes neto, sectorial y bruto (no al de evento). Que sea un MÁXIMO y no una suma
+es lo que produce el comportamiento que desconcierta: vender algo que NO marcaba el máximo
+deja el máximo donde estaba y el margen no se mueve.
+
+LO QUE NO SE SABE, Y CÓMO NO SE MIENTE CON ELLO
+
+La categoría A-D la publica DEGIRO junto a cada producto, pero no hay API que la sirva, y
+DEGIRO la revisa cada mes. Su taxonomía sectorial tampoco coincide con la de yfinance.
+
+Por eso este módulo NO se cree a sí mismo: `calibrar()` compara su propio riesgo con el que
+DEGIRO publica en el extracto de margen, y si no lo reproduce dentro de `TOLERANCIA` la
+estimación se retira. Se prefiere un hueco visible a una cifra que ya no cuadra.
+
+Aritmética pura: sin red, sin base de datos, sin fechas.
 """
 
 from typing import List, Optional
 
-# Porcentajes del modelo de riesgo de DEGIRO, perfil TRADER.
-#
-# El de evento es el publicado para una acción de categoría A (62,50% en Trader; en Active
-# sería 83,75%). Como la categoría real de cada acción no se puede saber, se aplica el
-# mismo a todas: eso mantiene el ORDEN entre posiciones, que es lo único que esta
-# estimación afirma.
-P_EVENTO = 0.625          # sobre la posición individual mayor
-P_NETO_CATEGORIA = 0.20   # sobre el neto de la categoría de inversión
-P_SECTOR = 0.30           # sobre el neto del sector mayor
-P_BRUTO = 0.07            # sobre el bruto de la cartera
+# ── Parámetros del manual, perfil Trader, posiciones LARGAS ──────────────────
+# Tabla «Trader / Long» del Investment Portfolio Risk Handbook.
+PCT_CATEGORIA = {
+    "A": 0.6250, "B": 0.8125, "C": 0.9900, "D": 1.0000,
+    # E-I son bonos del Estado y fondos; J y «sin categoría», al 100%.
+    "E": 0.0625, "F": 0.1250, "G": 0.1875, "H": 0.2500, "I": 0.3125,
+    "J": 1.0000, "": 1.0000,
+}
+CATEGORIA_DESCONOCIDA = "A"   # ver `_pct`: solo se usa cuando la ficha no la tiene
 
-# UMBRALES — se recalibran con operaciones reales, por eso están aquí y con nombre.
-#
-# El índice `r` se mide contra una venta GENÉRICA del mismo importe: el componente del 20%
-# siempre baja en esa proporción, así que r = 1,0 es "una venta normal". Los cortes son
-# una banda de ±50% alrededor de esa referencia, no un umbral por importe.
-UMBRAL_MEDIO = 0.5        # por debajo: retira menos de la mitad que una venta normal
-UMBRAL_ALTO = 1.5         # por encima: retira vez y media o más
+P_NETO = 0.25       # sobre el neto de la categoría de inversión
+P_SECTOR = 0.40     # sobre el neto del sector mayor
+P_BRUTO = 0.10      # sobre el bruto de la cartera
+P_DIVISA = 0.0636   # riesgo de divisa de lo que no cotiza en euros
 
-ALTO, MEDIO, BAJO = "ALTO", "MEDIO", "BAJO"
-SIN_ESTIMACION = "SIN_ESTIMACION"
+# Hasta dónde puede desviarse nuestro riesgo del que publica DEGIRO para seguir dando una
+# cifra. El 2% es holgado respecto a lo medido (0,83% con el extracto real) y estrecho
+# respecto a lo que importa: un error del 2% sobre una venta de 3.000 € son 60 €, que no
+# cambia ninguna decisión. Por encima, la estimación se retira.
+TOLERANCIA = 0.02
 
-# Nombres legibles de cada componente, para poder enseñar cuál manda sin traducir en la
-# pantalla —que es donde una traducción a mano se queda vieja.
+# A partir de aquí la calibración se considera vieja: DEGIRO recategoriza los instrumentos
+# una vez al mes, así que un extracto de hace más de eso puede describir otra cartera.
+DIAS_CALIBRACION = 31
+
+# Los que compiten por el máximo. `divisa` va aparte: es informativo y ya está
+# sumado dentro de neto, sector y bruto.
+COMPONENTES = ("evento", "neto", "sector", "bruto")
 NOMBRES = {
-    "evento": "mayor posición individual",
-    "neto_categoria": "peso total de la cartera",
-    "sector": "concentración sectorial",
-    "bruto": "bruto de la cartera",
+    "evento": "tu mayor posición individual",
+    "neto": "el peso total de la cartera",
+    "sector": "tu concentración sectorial",
+    "bruto": "el bruto de la cartera",
 }
 
+SIN_CALIBRAR = "SIN_CALIBRAR"
+CALIBRACION_VIEJA = "CALIBRACION_VIEJA"
+NO_CUADRA = "NO_CUADRA"
+FALTAN_DATOS = "FALTAN_DATOS"
+OK = "OK"
 
-def _valida(posiciones: List[dict]):
-    """Qué le falta a la cartera para poder estimar. Lista vacía = se puede.
 
-    Una posición sin sector o sin valorar no se puede "estimar igualmente": entraría en
-    los totales como si valiera cero y hundiría el componente que quizá manda. Un hueco
-    que se ve es mejor que una clase que parece calculada.
+def _pct(pos: dict) -> float:
+    """Porcentaje de riesgo de evento de una posición.
+
+    Sin categoría se usa la A, que es la MÁS BAJA de las cuatro de acciones. Es deliberado:
+    equivocarse por abajo hace que el componente de evento no mande cuando debería, y eso
+    se detecta en la calibración; equivocarse por arriba inflaría el riesgo en silencio.
     """
-    sin_sector = [p.get("symbol") for p in posiciones
-                  if not (p.get("sector") or "").strip()]
-    sin_valor = [p.get("symbol") for p in posiciones if p.get("valor_eur") is None]
-    faltas = []
-    if sin_sector:
-        faltas.append(("sector", sorted(s for s in sin_sector if s)))
-    if sin_valor:
-        faltas.append(("valor", sorted(s for s in sin_valor if s)))
-    return faltas
+    cat = (pos.get("categoria") or CATEGORIA_DESCONOCIDA).strip().upper()[:1]
+    return PCT_CATEGORIA.get(cat, PCT_CATEGORIA[CATEGORIA_DESCONOCIDA])
+
+
+def _es_d(pos: dict) -> bool:
+    return (pos.get("categoria") or "").strip().upper()[:1] == "D"
 
 
 def componentes(posiciones: List[dict]) -> dict:
-    """Los cuatro componentes de riesgo de una cartera, en euros."""
-    valores = [float(p["valor_eur"]) for p in posiciones if p.get("valor_eur") is not None]
-    if not valores:
-        return {"evento": 0.0, "neto_categoria": 0.0, "sector": 0.0, "bruto": 0.0}
-    total = sum(valores)
-    por_sector: dict = {}
-    for p in posiciones:
-        if p.get("valor_eur") is None:
+    """Los cuatro componentes de riesgo, en euros, más el desglose que los explica."""
+    vivas = [p for p in posiciones if (p.get("valor_eur") or 0) > 0]
+    if not vivas:
+        return {**{c: 0.0 for c in COMPONENTES}, "divisa": 0.0}
+
+    total = sum(float(p["valor_eur"]) for p in vivas)
+    d = sum(float(p["valor_eur"]) for p in vivas if _es_d(p))
+    resto = total - d
+
+    # Riesgo de divisa: solo lo que NO cotiza en euros. Las posiciones en categoría D ya
+    # entran al 100% por otra vía; volver a cargarles la divisa sería contarlas dos veces.
+    extranjero = sum(float(p["valor_eur"]) for p in vivas
+                     if not _es_d(p) and (p.get("divisa") or "USD").upper() != "EUR")
+    otros = P_DIVISA * extranjero
+
+    por_sector = {}
+    for p in vivas:
+        if _es_d(p):
             continue
         s = (p.get("sector") or "").strip().upper()
         por_sector[s] = por_sector.get(s, 0.0) + float(p["valor_eur"])
+
+    # El riesgo de divisa se suma a los tres componentes de cartera, no al evento.
+    #
+    # El manual lo PRESENTA de otra forma —lista los componentes desnudos y suma la divisa
+    # al final— pero da el mismo resultado, porque max(a,b,c)+k == max(a+k, b+k, c+k). Se
+    # hace así porque es como lo desglosa la propia aplicación de DEGIRO, que rotula las
+    # líneas «Net investment, derivative risk AND OTHER RISKS». Cuadrar con lo que el
+    # usuario ve en su pantalla vale más que cuadrar con la maquetación del PDF.
     return {
-        # Todas las posiciones son LARGAS: el neto de la categoría de inversión coincide
-        # con el bruto. Por eso el componente del 7% nunca puede mandar sobre el del 20%
-        # —se deja calculado igual, para que el desglose no mienta por omisión.
-        "evento": P_EVENTO * max(valores),
-        "neto_categoria": P_NETO_CATEGORIA * total,
-        "sector": P_SECTOR * max(por_sector.values()),
-        "bruto": P_BRUTO * total,
+        "evento": max(_pct(p) * float(p["valor_eur"]) for p in vivas),
+        "neto": P_NETO * resto + d + otros,
+        "sector": (P_SECTOR * max(por_sector.values()) if por_sector else 0.0) + d + otros,
+        "bruto": P_BRUTO * resto + d + otros,
+        # Informativo, para poder enseñar el desglose: ya está DENTRO de los tres de
+        # arriba, así que no se suma otra vez ni entra en el máximo.
+        "divisa": otros,
     }
 
 
 def riesgo(posiciones: List[dict]) -> tuple:
     """(riesgo, componente que manda, todos los componentes).
 
-    El riesgo es el MÁXIMO, no la suma. Es la pieza que explica el comportamiento raro.
+    El riesgo es el MÁXIMO, no la suma. Es la pieza que explica todo lo demás.
     """
     comps = componentes(posiciones)
-    dominante = max(comps, key=comps.get)
-    return comps[dominante], dominante, comps
+    compiten = {k: v for k, v in comps.items() if k in COMPONENTES}
+    dominante = max(compiten, key=compiten.get)
+    return compiten[dominante], dominante, comps
 
 
-def _motivo(clase: str, dom_antes: str, dom_despues: str, es_dominante: bool) -> str:
-    """Por qué esta venta retira poco, medio o mucho riesgo. En una frase."""
-    if clase == BAJO and not es_dominante:
+def calibrar(posiciones: List[dict], extracto: Optional[dict]) -> dict:
+    """Compara nuestro riesgo con el que publica DEGIRO. Es el permiso para dar cifras.
+
+    `extracto` es {"riesgo_eur": …, "fecha": "YYYY-MM-DD"} copiado del «Margin statement».
+    Sin extracto no se estima: el modelo necesita categorías y sectores que no podemos
+    consultar, y sin nada contra lo que contrastarlo no hay forma de saber si acierta.
+    """
+    nuestro, dominante, comps = riesgo(posiciones)
+    if not extracto or not extracto.get("riesgo_eur"):
+        return {"estado": SIN_CALIBRAR, "nuestro_eur": round(nuestro, 2),
+                "dominante": dominante, "componentes": comps}
+    suyo = float(extracto["riesgo_eur"])
+    if suyo <= 0:
+        return {"estado": SIN_CALIBRAR, "nuestro_eur": round(nuestro, 2),
+                "dominante": dominante, "componentes": comps}
+    error = abs(nuestro - suyo) / suyo
+    estado = OK if error <= TOLERANCIA else NO_CUADRA
+    return {"estado": estado, "error": round(error, 4),
+            "nuestro_eur": round(nuestro, 2), "degiro_eur": round(suyo, 2),
+            "dominante": dominante, "componentes": comps,
+            "fecha": extracto.get("fecha")}
+
+
+def _motivo(clase_dominante: str, dom_despues: Optional[str], pct: float,
+            es_d: bool) -> str:
+    """Por qué esta venta libera mucho o poco. Una frase, con la causa concreta."""
+    if es_d:
+        return ("DEGIRO clasifica esta acción en categoría D: le asigna el 100% de su "
+                "valor como riesgo, así que venderla retira todo lo que vale.")
+    if pct < 0.10:
         return (f"Esta posición no es lo que marca el riesgo de tu cartera: lo marca "
-                f"{NOMBRES[dom_antes]}. Al venderla, ese factor sigue igual, así que el "
-                f"riesgo apenas baja.")
-    if clase == BAJO:
-        return (f"Aunque {NOMBRES[dom_antes]} sea hoy el factor que manda, al venderla "
-                f"toma el relevo {NOMBRES[dom_despues]}, que estaba casi igual de alto. "
-                f"El riesgo baja poco.")
-    if clase == ALTO:
-        return (f"Esta venta retira justo lo que marca el riesgo de tu cartera "
-                f"({NOMBRES[dom_antes]}). Al quitarla, el factor que manda pasa a ser "
-                f"{NOMBRES[dom_despues]}, mucho más bajo.")
-    return (f"Hoy manda {NOMBRES[dom_antes]}; después de la venta mandaría "
-            f"{NOMBRES[dom_despues]}. La venta retira riesgo en una proporción parecida "
-            f"a la de cualquier otra venta del mismo importe.")
+                f"{NOMBRES[clase_dominante]}. Al venderla ese factor sigue igual, así que "
+                f"el margen apenas se mueve.")
+    if dom_despues and dom_despues != clase_dominante:
+        return (f"Hoy tu riesgo lo marca {NOMBRES[clase_dominante]}, y esta venta lo "
+                f"reduce hasta que pasa a mandar {NOMBRES[dom_despues]}.")
+    return (f"Tu riesgo lo marca {NOMBRES[clase_dominante]}, y esta posición forma parte "
+            f"de él: venderla lo reduce en proporción.")
 
 
-def estimar(posiciones: List[dict], symbol: str) -> dict:
-    """Cuánto riesgo de cartera retira vender `symbol`.
+def estimar(posiciones: List[dict], symbol: str, acciones: Optional[float] = None,
+            extracto: Optional[dict] = None) -> dict:
+    """Cuánto margen libre debería devolver vender `acciones` de `symbol`.
 
-    `posiciones` es [{"symbol", "valor_eur", "sector"}]. Devuelve la clase, el índice `r`
-    y el desglose antes/después, para que el cálculo se pueda auditar en pantalla.
-
-    NUNCA devuelve euros de margen: el único euro que aparece es el riesgo de cartera de
-    cada componente, que es una magnitud del modelo y no dinero disponible.
+    `acciones` a None = vender la posición entera. Devuelve euros SOLO si la calibración
+    contra el extracto de DEGIRO cuadra; si no, devuelve el motivo por el que no se puede.
     """
     sym = (symbol or "").strip().upper()
-    posiciones = [p for p in (posiciones or []) if (p.get("symbol") or "").strip()]
-    faltas = _valida(posiciones)
-    if faltas:
-        return {"clase": SIN_ESTIMACION, "faltas": faltas,
-                "motivo": _texto_faltas(faltas)}
+    posiciones = [dict(p) for p in (posiciones or []) if (p.get("symbol") or "").strip()]
 
-    vendida = next((p for p in posiciones
-                    if (p["symbol"] or "").strip().upper() == sym), None)
-    if vendida is None:
-        return {"clase": SIN_ESTIMACION, "faltas": [("posicion", [sym])],
+    sin_valor = [p["symbol"] for p in posiciones if p.get("valor_eur") is None]
+    if sin_valor:
+        return {"estado": FALTAN_DATOS, "symbol": sym,
+                "motivo": (f"No se puede estimar: {len(sin_valor)} posición"
+                           f"{'es' if len(sin_valor) != 1 else ''} sin valorar "
+                           f"({', '.join(sorted(sin_valor))}).")}
+
+    cal = calibrar(posiciones, extracto)
+    if cal["estado"] != OK:
+        return {**cal, "symbol": sym, "motivo": _motivo_calibracion(cal)}
+
+    vendida = next((p for p in posiciones if p["symbol"].strip().upper() == sym), None)
+    if vendida is None or float(vendida["valor_eur"]) <= 0:
+        return {"estado": FALTAN_DATOS, "symbol": sym,
                 "motivo": f"{sym} no está entre tus posiciones abiertas."}
 
-    importe = float(vendida["valor_eur"])
-    if importe <= 0:
-        return {"clase": SIN_ESTIMACION, "faltas": [("valor", [sym])],
-                "motivo": f"{sym} no tiene un valor con el que calcular nada."}
-
-    r_antes, dom_antes, comps_antes = riesgo(posiciones)
-    resto = [p for p in posiciones if p is not vendida]
-    if resto:
-        r_despues, dom_despues, comps_despues = riesgo(resto)
+    valor = float(vendida["valor_eur"])
+    total_acc = float(vendida.get("acciones") or 0)
+    if acciones and total_acc > 0:
+        # Venta PARCIAL: la posición encoge, no desaparece. Importa porque el máximo puede
+        # no moverse hasta que la venta es lo bastante grande.
+        parte = min(float(acciones), total_acc) / total_acc
     else:
-        # Vender lo último deja la cartera vacía: riesgo cero y ningún componente que
-        # mande. Se dice así en vez de inventar un dominante.
-        r_despues, dom_despues, comps_despues = 0.0, None, componentes([])
+        parte = 1.0
+    importe = valor * parte
 
-    retirado = r_antes - r_despues
-    # El denominador es lo que retiraría una venta CUALQUIERA del mismo importe: el
-    # componente del 20% siempre baja en esa proporción. Así `r` se lee como "veces una
-    # venta normal" y no depende del tamaño de la cartera.
-    generico = P_NETO_CATEGORIA * importe
-    r = retirado / generico if generico else 0.0
+    r0, dom0, _ = riesgo(posiciones)
+    resto = []
+    for p in posiciones:
+        if p is vendida:
+            if parte >= 1.0:
+                continue
+            p = {**p, "valor_eur": valor - importe,
+                 "acciones": total_acc * (1 - parte) if total_acc else None}
+        resto.append(p)
+    r1, dom1, _ = (riesgo(resto) if resto else (0.0, None, {}))
 
-    clase = ALTO if r >= UMBRAL_ALTO else (MEDIO if r >= UMBRAL_MEDIO else BAJO)
-    es_dominante = (dom_antes == "evento"
-                    and abs(comps_antes["evento"] - P_EVENTO * importe) < 1e-6)
-
+    retirado = r0 - r1
+    pct = retirado / importe if importe else 0.0
     return {
-        "clase": clase,
+        "estado": OK,
         "symbol": sym,
-        "indice": round(r, 3),
-        "riesgo_retirado_eur": round(retirado, 2),
-        "riesgo_antes_eur": round(r_antes, 2),
-        "riesgo_despues_eur": round(r_despues, 2),
-        "dominante_antes": dom_antes,
-        "dominante_despues": dom_despues,
-        "dominante_antes_texto": NOMBRES.get(dom_antes, dom_antes),
-        "dominante_despues_texto": NOMBRES.get(dom_despues) if dom_despues else None,
-        "componentes_antes": {k: round(v, 2) for k, v in comps_antes.items()},
-        "componentes_despues": {k: round(v, 2) for k, v in comps_despues.items()},
-        "motivo": _motivo(clase, dom_antes, dom_despues or dom_antes, es_dominante),
-        "umbrales": {"medio": UMBRAL_MEDIO, "alto": UMBRAL_ALTO},
+        "importe_eur": round(importe, 2),
+        "acciones": round(total_acc * parte, 6) if total_acc else None,
+        "margen_eur": round(retirado, 2),
+        "pct_del_importe": round(pct, 4),
+        "riesgo_antes_eur": round(r0, 2),
+        "riesgo_despues_eur": round(r1, 2),
+        "dominante_antes": dom0,
+        "dominante_despues": dom1,
+        "componentes_antes": {k: round(v, 2) for k, v in componentes(posiciones).items()},
+        "componentes_despues": {k: round(v, 2) for k, v in componentes(resto).items()},
+        "motivo": _motivo(dom0, dom1, pct, _es_d(vendida)),
+        "calibracion": {"error": cal.get("error"), "fecha": cal.get("fecha"),
+                        "degiro_eur": cal.get("degiro_eur")},
     }
 
 
-def _texto_faltas(faltas) -> str:
-    partes = []
-    for que, simbolos in faltas:
-        if que == "sector":
-            partes.append(f"faltan datos de sector en {len(simbolos)} "
-                          f"posición{'es' if len(simbolos) != 1 else ''} "
-                          f"({', '.join(simbolos)})")
-        elif que == "valor":
-            partes.append(f"{len(simbolos)} posición"
-                          f"{'es' if len(simbolos) != 1 else ''} sin valorar "
-                          f"({', '.join(simbolos)})")
-    return "No se puede estimar — " + "; ".join(partes) + "."
+def _motivo_calibracion(cal: dict) -> str:
+    if cal["estado"] == SIN_CALIBRAR:
+        return ("No se puede estimar todavía: falta el extracto de margen de DEGIRO. "
+                "Cópialo desde «Available to trade» y se podrá comprobar si el modelo "
+                "reproduce tu riesgo real.")
+    if cal["estado"] == CALIBRACION_VIEJA:
+        return ("La calibración es de hace más de un mes y DEGIRO recategoriza los "
+                "instrumentos mensualmente. Vuelve a copiar el extracto de margen.")
+    return (f"El modelo ya no reproduce tu riesgo real: calcula "
+            f"{cal['nuestro_eur']:,.0f} € y DEGIRO dice {cal['degiro_eur']:,.0f} € "
+            f"({cal['error']:.1%} de diferencia). Puede que hayan cambiado categorías o "
+            f"sectores. Vuelve a copiar el extracto de margen.")

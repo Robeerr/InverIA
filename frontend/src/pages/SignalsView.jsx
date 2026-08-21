@@ -929,7 +929,7 @@ function DialogoVenta({ entry, onClose, onHecho }) {
             {/* ANTES del botón: la pregunta que resuelve solo sirve mientras la venta
                 todavía se puede no hacer. Después ya no es una decisión, es un apunte. */}
             <div className="mt-3">
-              <RiesgoVenta symbol={entry.symbol} />
+              <RiesgoVenta symbol={entry.symbol} acciones={aNumero(acciones) || undefined} />
             </div>
             <button onClick={enviar} disabled={enviando}
                     className="w-full mt-4 bg-marca text-marca-tinta rounded-lg py-2 font-semibold disabled:opacity-60">
