@@ -216,6 +216,14 @@ def calibrar(posiciones: List[dict], extracto: Optional[dict],
     if dias is not None and dias > DIAS_CALIBRACION:
         return {"estado": CALIBRACION_VIEJA, **base}
 
+    # Cuántas posiciones no tienen categoría. Importa para el diagnóstico: sin ella se
+    # asume la más baja, así que el modelo se queda CORTO de forma sistemática — y el
+    # mensaje debe mandar a rellenarlas, no a repegar un extracto que está bien.
+    base["sin_categoria"] = sum(1 for p in posiciones
+                                if not (p.get("categoria") or "").strip()
+                                and (p.get("valor_eur") or 0) > 0)
+    base["posiciones"] = sum(1 for p in posiciones if (p.get("valor_eur") or 0) > 0)
+
     nuestra_cartera = sum(float(p["valor_eur"]) for p in posiciones
                           if (p.get("valor_eur") or 0) > 0)
     su_cartera = float(extracto.get("valor_cartera_eur") or 0)
@@ -338,10 +346,20 @@ def _motivo_calibracion(cal: dict) -> str:
                 f"instrumentos una vez al mes. Vuelve a copiarlo para seguir dando cifras."
                 if dias else
                 "Tu extracto de margen ha caducado. Vuelve a copiarlo.")
-    return (f"El modelo ya no reproduce tu riesgo real: calcula "
-            f"{cal['nuestro_eur']:,.0f} € y DEGIRO dice {cal['degiro_eur']:,.0f} € "
-            f"({cal['error']:.1%} de diferencia). Puede que hayan cambiado categorías o "
-            f"sectores. Vuelve a copiar el extracto de margen.")
+    faltan, total = cal.get("sin_categoria") or 0, cal.get("posiciones") or 0
+    corto = (cal.get("nuestro_eur") or 0) < (cal.get("degiro_eur") or 0)
+    diferencia = (f"calcula {cal['nuestro_eur']:,.0f} € y DEGIRO dice "
+                  f"{cal['degiro_eur']:,.0f} € ({cal['error']:.1%} de diferencia)")
+    # Quedarse CORTO con categorías sin rellenar tiene una explicación concreta, y mandar a
+    # repegar el extracto en ese caso es mandar al sitio equivocado: el extracto está bien.
+    if faltan and corto:
+        return (f"Faltan las categorías de riesgo de DEGIRO: {faltan} de {total} "
+                f"posiciones no la tienen. Sin ellas el modelo no sabe cuáles computan al "
+                f"100% y se queda corto — {diferencia}. Ponlas en la Cartera, en la "
+                f"columna «Cat.»: la letra sale junto al nombre del producto en la "
+                f"pantalla de la orden de DEGIRO.")
+    return (f"El modelo ya no reproduce tu riesgo real: {diferencia}. Puede que hayan "
+            f"cambiado categorías o sectores. Vuelve a copiar el extracto de margen.")
 
 
 # ── Simulador: comprar o vender, antes de decidir ────────────────────────────
