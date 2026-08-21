@@ -40,6 +40,11 @@ ALLOWED_CREATE = (
     "alert_deseado", "alert_nivel1", "alert_nivel2", "alert_nivel3", "alert_nivel4", "alert_nivel5",
     "alert_venta1", "alert_venta2", "alert_venta3",
     "riesgo", "sector", "posibles_ganancias", "notes", "active",
+    # La letra A-D del modelo de MARGEN de DEGIRO. No es el campo `riesgo`, que es la
+    # clasificación del inversor del usuario: esta la publica el bróker junto a cada
+    # producto y determina cuánto riesgo le asigna su modelo. Sin API que la sirva y
+    # revisada mensualmente, se teclea a mano.
+    "categoria_degiro",
     "divisa", "bz", "objetivo_5a",
     "compra", "acciones",  # posición real (precio medio de compra y nº de acciones) para el P&L
     "fecha_compra",        # fecha de la compra: fija el tipo de cambio para la ganancia en EUR
@@ -52,6 +57,11 @@ ALLOWED_UPDATE = (
     "alert_deseado", "alert_nivel1", "alert_nivel2", "alert_nivel3", "alert_nivel4", "alert_nivel5",
     "alert_venta1", "alert_venta2", "alert_venta3",
     "riesgo", "sector", "posibles_ganancias", "notes", "active",
+    # La letra A-D del modelo de MARGEN de DEGIRO. No es el campo `riesgo`, que es la
+    # clasificación del inversor del usuario: esta la publica el bróker junto a cada
+    # producto y determina cuánto riesgo le asigna su modelo. Sin API que la sirva y
+    # revisada mensualmente, se teclea a mano.
+    "categoria_degiro",
     "divisa", "bz", "objetivo_5a",
     "compra", "acciones",
     "fecha_compra",   # para el tipo de cambio del dia de la compra (ganancia real en EUR)
@@ -82,6 +92,7 @@ def _make_entry(
     alert_venta2: bool = True,
     alert_venta3: bool = True,
     riesgo: str = "",
+    categoria_degiro: str = "",
     sector: str = "",
     posibles_ganancias: Optional[float] = None,
     notes: str = "",
@@ -118,6 +129,7 @@ def _make_entry(
         "alert_venta2": alert_venta2,
         "alert_venta3": alert_venta3,
         "riesgo": (riesgo or "").strip().upper(),
+        "categoria_degiro": (categoria_degiro or "").strip().upper()[:1],
         "sector": (sector or "").strip(),
         "posibles_ganancias": posibles_ganancias,
         "notes": (notes or "").strip(),

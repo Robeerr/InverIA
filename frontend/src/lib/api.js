@@ -135,6 +135,20 @@ export const api = {
   // DERIVAN de estos apuntes; no hay ningún saldo que actualizar por separado.
   cartera: {
     resumen: () => client.get(`/cartera/resumen`).then((r) => r.data),
+    // Cuánto RIESGO de cartera retira vender un valor. No es el margen libre de DEGIRO:
+    // sin la categoría A-D del instrumento ni el efectivo de la cuenta, eso no se puede
+    // calcular. Devuelve una clase (ALTO/MEDIO/BAJO) y el desglose que la produce.
+    // `acciones` para las ventas PARCIALES: el impacto no es proporcional, porque el
+    // máximo puede no moverse hasta que la venta es lo bastante grande.
+    riesgoVenta: (symbol, acciones) =>
+      client.get(`/cartera/riesgo-venta/${symbol}`,
+                 { params: acciones ? { acciones } : {} }).then((r) => r.data),
+    // Todas las posiciones ordenadas por cuánto margen libera vender cada una. Es lo que
+    // DEGIRO no da: su pantalla solo calcula la orden que ya estás componiendo.
+    riesgoRanking: () => client.get(`/cartera/riesgo-ranking`).then((r) => r.data),
+    // El «Margin statement» del bróker, copiado a mano. Sin él no se estima nada.
+    margen: () => client.get(`/cartera/margen`).then((r) => r.data),
+    guardarMargen: (datos) => client.put(`/cartera/margen`, datos).then((r) => r.data),
     ajustes: () => client.get(`/cartera/ajustes`).then((r) => r.data),
     // Cambia el metodo con el que se emparejan las ventas y RECALCULA todas las posiciones.
     // No altera ningun apunte: cambia como se emparejan, no lo que ocurrio.

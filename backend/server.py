@@ -35,6 +35,7 @@ import signal_table
 import daily_analyst
 import sp500_rsi_watch
 import vigia_modelo
+import riesgo_cartera
 import ventas as ventas_mod
 import cartera_api
 import degiro_csv
@@ -3004,6 +3005,109 @@ async def resumen_cartera(_user: str = Depends(auth.get_current_user)):
     except Exception as exc:
         logger.warning("No se pudieron leer los precios para el resumen: %s", exc)
     return await cartera_api.resumen_cartera(db, precios)
+
+
+class ExtractoMargen(BaseModel):
+    """El «Margin statement» de DEGIRO, copiado a mano.
+
+    Es lo que permite comprobar si el modelo reproduce el riesgo real. Sin esto no se da
+    ninguna cifra: las categorías A-D y la taxonomía sectorial del bróker no se pueden
+    consultar por API, así que la única forma honesta de dar euros es demostrar antes que
+    los números salen.
+    """
+    riesgo_eur: float
+    valor_cartera_eur: Optional[float] = None
+    saldo_eur: Optional[float] = None
+    margen_eur: Optional[float] = None
+    fecha: Optional[str] = None          # YYYY-MM-DD; vacío = hoy
+
+
+@api_router.get("/cartera/margen")
+async def leer_extracto_margen(_user: str = Depends(auth.get_current_user)):
+    doc = await db.margen_degiro.find_one({"id": "actual"}, {"_id": 0})
+    return doc or {}
+
+
+@api_router.put("/cartera/margen")
+async def guardar_extracto_margen(item: ExtractoMargen,
+                                  _user: str = Depends(auth.get_current_user)):
+    datos = item.model_dump()
+    datos["fecha"] = ((datos.get("fecha") or "")[:10]
+                      or datetime.now(timezone.utc).date().isoformat())
+    datos["id"] = "actual"
+    await db.margen_degiro.update_one({"id": "actual"}, {"$set": datos}, upsert=True)
+    return datos
+
+
+async def _posiciones_con_riesgo():
+    """Las posiciones abiertas con lo que el modelo de margen necesita.
+
+    El sector y la categoría no viajan en `resumen_cartera` —viven en la ficha de la
+    Cartera—, así que se unen aquí. Es la única razón de que esto no esté dentro de
+    `cartera_api`: ese módulo es el libro de operaciones y no sabe de `signal_entries`.
+    """
+    precios, fichas = {}, {}
+    try:
+        for e in await signal_table.list_entries(db):
+            s = (e.get("symbol") or "").upper()
+            if not s:
+                continue
+            if e.get("last_price") is not None:
+                precios[s] = e["last_price"]
+            fichas[s] = e
+    except Exception as exc:
+        logger.warning("No se pudieron leer las fichas para el riesgo de venta: %s", exc)
+    resumen = await cartera_api.resumen_cartera(db, precios)
+    posiciones = []
+    for p in (resumen.get("posiciones") or []):
+        sym = (p.get("symbol") or "").upper()
+        f = fichas.get(sym, {})
+        posiciones.append({
+            "symbol": sym,
+            "valor_eur": p.get("valor_eur"),
+            "acciones": p.get("acciones"),
+            "sector": (f.get("sector") or "").strip(),
+            # La letra que DEGIRO enseña junto al producto. Se teclea a mano porque no hay
+            # API que la sirva; sin ella se asume la categoría más baja y la calibración
+            # se encarga de delatarlo.
+            "categoria": (f.get("categoria_degiro") or "").strip().upper(),
+            "divisa": (p.get("divisa") or "USD").upper(),
+        })
+    return posiciones
+
+
+@api_router.get("/cartera/riesgo-venta/{symbol}")
+async def riesgo_de_vender(symbol: str, acciones: Optional[float] = None,
+                           _user: str = Depends(auth.get_current_user)):
+    """Cuánto margen libre debería devolver vender esto.
+
+    Da euros SOLO si el modelo reproduce el riesgo del último extracto de margen dentro de
+    su tolerancia. Si no, devuelve el motivo por el que se calla.
+    """
+    posiciones = await _posiciones_con_riesgo()
+    extracto = await db.margen_degiro.find_one({"id": "actual"}, {"_id": 0})
+    return riesgo_cartera.estimar(posiciones, (symbol or "").strip().upper(),
+                                  acciones=acciones, extracto=extracto)
+
+
+@api_router.get("/cartera/riesgo-ranking")
+async def ranking_de_riesgo(_user: str = Depends(auth.get_current_user)):
+    """Todas las posiciones ordenadas por cuánto margen libera vender cada una.
+
+    Es lo que DEGIRO no da: su pantalla solo calcula el impacto de la orden que ya estás
+    componiendo, una a una.
+    """
+    posiciones = await _posiciones_con_riesgo()
+    extracto = await db.margen_degiro.find_one({"id": "actual"}, {"_id": 0})
+    filas = [riesgo_cartera.estimar(posiciones, p["symbol"], extracto=extracto)
+             for p in posiciones]
+    validas = [f for f in filas if f.get("estado") == riesgo_cartera.OK]
+    if not validas:
+        return {"estado": (filas[0]["estado"] if filas else riesgo_cartera.FALTAN_DATOS),
+                "motivo": (filas[0].get("motivo") if filas else None), "posiciones": []}
+    validas.sort(key=lambda f: f.get("pct_del_importe") or 0, reverse=True)
+    return {"estado": riesgo_cartera.OK, "posiciones": validas,
+            "calibracion": validas[0].get("calibracion")}
 
 
 class PrecioManual(BaseModel):
