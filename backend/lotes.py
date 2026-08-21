@@ -630,11 +630,32 @@ def media_ponderada(compras: list, ventas: list) -> dict:
             usadas = min(n, cantidad)
             ganancia = n * precio - comision - usadas * media
             realizado += ganancia
+            # La misma cuenta EN EUROS. Antes solo salía en dólares, y esta es justo la
+            # cifra que el bróker enseña para que cuadres: comparar "420,14 $" con los
+            # "~300 €" de DEGIRO obliga a convertir a mano cada vez, que es exactamente lo
+            # que hace que parezca que uno de los dos miente.
+            #
+            # El coste va al cambio de CADA compra (dentro de `media_eur`) y el ingreso al
+            # del día de la venta: la diferencia entre las dos es el efecto del euro, y
+            # borrarla usando un solo cambio daría un número que no es de nadie.
+            ingreso_eur = _a_eur(n * precio - comision, op.get("tasa"))
+            coste_eur_v = (usadas * media_eur) if eur_completo else None
+            ganancia_eur = (round(ingreso_eur - coste_eur_v, 2)
+                            if ingreso_eur is not None and coste_eur_v is not None
+                            else None)
             ventas_pmp.append({"id": op.get("id"), "fecha": op.get("fecha"),
                                "acciones": n, "coste_divisa": round(usadas * media, 2),
                                "ganancia_divisa": round(ganancia, 2),
                                "pct": (round(ganancia / (usadas * media) * 100, 2)
-                                       if usadas * media else None)})
+                                       if usadas * media else None),
+                               "coste_eur": (round(coste_eur_v, 2)
+                                             if coste_eur_v is not None else None),
+                               "ingreso_eur": (round(ingreso_eur, 2)
+                                               if ingreso_eur is not None else None),
+                               "ganancia_eur": ganancia_eur,
+                               "pct_eur": (round(ganancia_eur / coste_eur_v * 100, 2)
+                                           if ganancia_eur is not None and coste_eur_v
+                                           else None)})
             cantidad = max(0.0, cantidad - n)
             # La media NO se toca: es lo que define al método y lo que hace que la cifra del
             # bróker no se mueva al vender.

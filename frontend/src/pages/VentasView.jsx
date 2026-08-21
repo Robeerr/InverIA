@@ -280,9 +280,17 @@ function FilaVenta({ v, metodo, onBorrar }) {
                         title="Media ponderada: el método que usa tu bróker para su pantalla. Todas tus acciones cuestan lo mismo (la media), así que no distingue niveles. Sirve para cuadrar con DEGIRO, no para la declaración.">
                     Por <b>media ponderada</b> (como tu bróker) ⓘ
                   </span>
-                  <span className="font-mono text-tinta-3">
-                    {usd(v.ponderada.ganancia_divisa, v.divisa)}
-                    {v.ponderada.pct != null && ` · ${pct(v.ponderada.pct)}`}
+                  {/* En EUROS lo primero: es la cifra que enseña DEGIRO y con la que se
+                      compara. En dólares al lado, para cuadrar con la línea de arriba. */}
+                  <span className="font-mono text-tinta-3 text-right">
+                    {v.ponderada.ganancia_eur != null && (
+                      <b className="text-tinta">{eur(v.ponderada.ganancia_eur)}</b>
+                    )}
+                    {v.ponderada.pct_eur != null && ` · ${pct(v.ponderada.pct_eur)}`}
+                    <span className="block text-[10px]">
+                      {usd(v.ponderada.ganancia_divisa, v.divisa)}
+                      {v.ponderada.pct != null && ` · ${pct(v.ponderada.pct)}`}
+                    </span>
                   </span>
                 </div>
               )}

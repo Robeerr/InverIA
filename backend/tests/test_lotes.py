@@ -697,3 +697,36 @@ def test_sin_el_cambio_de_una_compra_no_se_inventa_la_media_en_euros():
     assert pmp["precio_medio"] == 110.0
     assert pmp["precio_medio_eur"] is None and pmp["coste_eur"] is None
     assert lotes.valorar_ponderado(pmp, 130.0, 1.12)["pnl_eur"] is None
+
+
+# ── La media ponderada, en euros ─────────────────────────────────────────────
+# Es la cifra que enseña el bróker, y solo se calculaba en DÓLARES. Comparar "420,14 $" con
+# los "+300 €" que muestra DEGIRO obliga a convertir a mano en cada venta, y esa fricción
+# es justo lo que hace pensar que uno de los dos está mal.
+
+def test_la_media_ponderada_da_la_ganancia_en_euros():
+    compras = [_compra("2026-01-10", 10, 100.0, tasa=1.10)]
+    ventas = [_venta("2026-06-10", 10, 120.0, tasa=1.20)]
+    v = lotes.media_ponderada(compras, ventas)["ventas"][0]
+    assert v["ganancia_divisa"] is not None
+    assert v["ganancia_eur"] is not None
+    assert v["pct_eur"] is not None
+
+
+def test_el_coste_va_al_cambio_de_la_compra_y_el_ingreso_al_de_la_venta():
+    """Usar un solo cambio para los dos lados borraría el efecto del euro, que es la
+    diferencia entre lo que enseña el bróker y un número inventado."""
+    compras = [_compra("2026-01-10", 10, 100.0, tasa=1.10)]
+    ventas = [_venta("2026-06-10", 10, 100.0, tasa=1.30)]   # mismo precio, otro cambio
+    v = lotes.media_ponderada(compras, ventas)["ventas"][0]
+    assert v["ganancia_divisa"] == pytest.approx(0.0, abs=0.01), "en dólares no ganó nada"
+    assert v["ganancia_eur"] < 0, "en euros perdió, porque el euro se fortaleció"
+
+
+def test_sin_el_cambio_de_una_compra_no_se_inventa_la_cifra_en_euros():
+    """Un euro aproximado en una declaración es peor que un hueco."""
+    compras = [_compra("2026-01-10", 10, 100.0, tasa=None)]
+    ventas = [_venta("2026-06-10", 10, 120.0, tasa=1.20)]
+    v = lotes.media_ponderada(compras, ventas)["ventas"][0]
+    assert v["ganancia_divisa"] is not None
+    assert v["ganancia_eur"] is None and v["pct_eur"] is None
