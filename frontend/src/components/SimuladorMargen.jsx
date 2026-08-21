@@ -167,7 +167,7 @@ export default function SimuladorMargen({ symbol }) {
         </div>
       )}
 
-      {isFetching && eur > 0 && (
+      {isFetching && n > 0 && (
         <p className="text-apoyo text-tinta-3 mt-3">Calculando…</p>
       )}
       {!isFetching && data && data.estado === "OK" && <Resultado d={data} />}
