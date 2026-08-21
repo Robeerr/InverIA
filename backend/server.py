@@ -943,6 +943,9 @@ class SignalEntryCreate(BaseModel):
     alert_venta2: Optional[bool] = True
     alert_venta3: Optional[bool] = True
     riesgo: Optional[str] = ""
+    # La letra A-D del modelo de MARGEN de DEGIRO. Sin declararla aquí, Pydantic la
+    # descarta en silencio y el desplegable de la Cartera no guarda nada.
+    categoria_degiro: Optional[str] = ""
     sector: Optional[str] = ""
     posibles_ganancias: Optional[float] = None
     notes: Optional[str] = ""
@@ -986,6 +989,9 @@ class SignalEntryUpdate(BaseModel):
     alert_venta2: Optional[bool] = None
     alert_venta3: Optional[bool] = None
     riesgo: Optional[str] = None
+    # La letra A-D del modelo de MARGEN de DEGIRO. Sin declararla aquí, Pydantic la
+    # descarta en silencio y el desplegable de la Cartera no guarda nada.
+    categoria_degiro: Optional[str] = None
     sector: Optional[str] = None
     posibles_ganancias: Optional[float] = None
     notes: Optional[str] = None
