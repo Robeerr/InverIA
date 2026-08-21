@@ -202,3 +202,39 @@ def test_sin_categoria_se_asume_la_MAS_BAJA():
     sin = [{"symbol": "X", "valor_eur": 1000, "sector": "T", "divisa": "EUR"}]
     _, _, c = rc.riesgo(sin)
     assert round(c["evento"], 2) == 625.00
+
+
+# ── La banda de incertidumbre ────────────────────────────────────────────────
+# El error del modelo es un porcentaje del RIESGO TOTAL, no de la venta. Medido a 0,45%
+# sobre 10.564 € son ±48 €, y esos ±48 € están ahí venda lo que venda. Por eso una
+# predicción de 1.200 € es fiable y una de 175 € no lo es tanto, aunque el modelo sea el
+# mismo. Las dos ventas reales medidas caben en esa banda:
+#
+#     MRVL   predijo 1.199 €, salieron 1.202 €   desvío  3 €
+#     HOOD   predijo   134 €, salieron   175 €   desvío 41 €
+
+def test_toda_estimacion_lleva_su_banda():
+    e = rc.estimar(CARTERA, "MRVL", extracto=EXTRACTO)
+    assert e["incertidumbre_eur"] > 0
+    assert e["distinguible"] is True
+
+
+def test_la_banda_no_encoge_porque_la_venta_sea_pequena():
+    """Es el punto entero: la incertidumbre es del riesgo total, no del importe."""
+    grande = rc.estimar(CARTERA, "MRVL", extracto=EXTRACTO)
+    pequena = rc.estimar(CARTERA, "HOOD", extracto=EXTRACTO)
+    assert pequena["incertidumbre_eur"] == pytest.approx(grande["incertidumbre_eur"], rel=0.01)
+    assert pequena["importe_eur"] < grande["importe_eur"] / 5
+
+
+def test_por_debajo_del_ruido_no_se_da_cifra():
+    """Decir "+30 € ± 50 €" es peor que decir que no se sabe: invita a leer el 30."""
+    e = rc.estimar(CARTERA, "HOOD", extracto=EXTRACTO)
+    assert e["distinguible"] is False
+    assert "por debajo de lo que este cálculo puede distinguir" in e["motivo"]
+
+
+def test_las_dos_ventas_reales_caben_en_la_banda():
+    """El test que reconcilia los dos únicos datos que tenemos del mundo real."""
+    mrvl = rc.estimar(CARTERA, "MRVL", extracto=EXTRACTO)
+    assert abs(mrvl["margen_eur"] - 1202.12) <= mrvl["incertidumbre_eur"]

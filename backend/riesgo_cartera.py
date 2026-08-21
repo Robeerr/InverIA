@@ -70,6 +70,18 @@ P_DIVISA = 0.0636   # riesgo de divisa de lo que no cotiza en euros
 # cambia ninguna decisión. Por encima, la estimación se retira.
 TOLERANCIA = 0.02
 
+# Suelo de incertidumbre. El error del modelo es un porcentaje del RIESGO TOTAL, no de la
+# venta: medido a 0,45% sobre 10.564 € son ±48 €, y esos ±48 € están ahí tanto si la venta
+# libera 1.200 € como si libera 175 €. Por eso el error RELATIVO de una estimación depende
+# del tamaño de lo que se vende:
+#
+#     venta de MRVL   predijo 1.199 €, salieron 1.202 €   desvío   3 €   ( 0,3%)
+#     venta de HOOD   predijo   134 €, salieron   175 €   desvío  41 €   (23,7%)
+#
+# Los dos casos caben en la misma banda absoluta. Dar el número sin la banda fue el error:
+# parecía que el modelo había fallado en HOOD y no había fallado más que en MRVL.
+ERROR_MINIMO = 0.005   # ni con una calibración perfecta se afina más que esto
+
 # A partir de aquí la calibración se considera vieja: DEGIRO recategoriza los instrumentos
 # una vez al mes, así que un extracto de hace más de eso puede describir otra cartera.
 DIAS_CALIBRACION = 31
@@ -182,8 +194,12 @@ def calibrar(posiciones: List[dict], extracto: Optional[dict]) -> dict:
 
 
 def _motivo(clase_dominante: str, dom_despues: Optional[str], pct: float,
-            es_d: bool) -> str:
+            es_d: bool, distinguible: bool = True) -> str:
     """Por qué esta venta libera mucho o poco. Una frase, con la causa concreta."""
+    if not distinguible:
+        return (f"Lo que marca tu riesgo es {NOMBRES[clase_dominante]}, y esta posición "
+                f"apenas influye. Lo que liberaría queda por debajo de lo que este "
+                f"cálculo puede distinguir, así que no se da una cifra.")
     if es_d:
         return ("DEGIRO clasifica esta acción en categoría D: le asigna el 100% de su "
                 "valor como riesgo, así que venderla retira todo lo que vale.")
@@ -247,12 +263,20 @@ def estimar(posiciones: List[dict], symbol: str, acciones: Optional[float] = Non
 
     retirado = r0 - r1
     pct = retirado / importe if importe else 0.0
+    # La banda sale del error medido contra el extracto, aplicado al riesgo TOTAL: es la
+    # incertidumbre en euros, y no encoge porque la venta sea pequeña.
+    banda = max(cal.get("error") or 0.0, ERROR_MINIMO) * r0
+    # Por debajo del doble de la banda, la cifra no distingue de cero. Decir "+30 € ± 50 €"
+    # es peor que decir que no se sabe: invita a leer el 30.
+    distinguible = retirado >= 2 * banda
     return {
         "estado": OK,
         "symbol": sym,
         "importe_eur": round(importe, 2),
         "acciones": round(total_acc * parte, 6) if total_acc else None,
         "margen_eur": round(retirado, 2),
+        "incertidumbre_eur": round(banda, 2),
+        "distinguible": distinguible,
         "pct_del_importe": round(pct, 4),
         "riesgo_antes_eur": round(r0, 2),
         "riesgo_despues_eur": round(r1, 2),
@@ -260,7 +284,7 @@ def estimar(posiciones: List[dict], symbol: str, acciones: Optional[float] = Non
         "dominante_despues": dom1,
         "componentes_antes": {k: round(v, 2) for k, v in componentes(posiciones).items()},
         "componentes_despues": {k: round(v, 2) for k, v in componentes(resto).items()},
-        "motivo": _motivo(dom0, dom1, pct, _es_d(vendida)),
+        "motivo": _motivo(dom0, dom1, pct, _es_d(vendida), distinguible),
         "calibracion": {"error": cal.get("error"), "fecha": cal.get("fecha"),
                         "degiro_eur": cal.get("degiro_eur")},
     }

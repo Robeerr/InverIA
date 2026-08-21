@@ -16,6 +16,15 @@ import { api } from "../lib/api";
  * mueve; si vendes justo lo que lo marcaba, se desploma. De ahí que la misma cantidad de
  * dinero libere 1.200 € o 5 € según qué vendas.
  *
+ * LA BANDA NO ES ADORNO
+ *
+ * El error del modelo es un porcentaje del RIESGO TOTAL, no de la venta: 0,45% sobre
+ * 10.564 € son ±48 €, y esos ±48 € están ahí venda lo que venda. De ahí que predecir
+ * 1.200 € sea fiable y predecir 175 € no lo sea tanto. Las dos ventas reales medidas caben
+ * en esa banda —MRVL falló por 3 €, HOOD por 41 €— y sin enseñarla parecía que el modelo
+ * había acertado una y fallado la otra. Por debajo del doble de la banda no se da cifra:
+ * "+30 € ± 50 €" es peor que "no se sabe", porque invita a leer el 30.
+ *
  * CUÁNDO SE CALLA
  *
  * Las categorías A-D y la taxonomía sectorial del bróker no se pueden consultar por API, y
@@ -114,11 +123,34 @@ export default function RiesgoVenta({ symbol, acciones }) {
   }
 
   const pct = (data.pct_del_importe || 0) * 100;
+
+  // Por debajo del ruido no se pinta un número: se dice que no se distingue de cero.
+  if (data.distinguible === false) {
+    return (
+      <div className="iv-panel p-3 border-l-[3px] border-l-linea-fuerte">
+        <p className="iv-etiqueta mb-1">Si vendes esto, tu margen libre</p>
+        <p className="text-cuerpo text-tinta">Apenas se moverá.</p>
+        <p className="text-apoyo text-tinta-2 mt-2 leading-snug">{data.motivo}</p>
+        <button
+          type="button"
+          onClick={() => setAbierto((v) => !v)}
+          className="text-etiqueta text-tinta-3 underline mt-1.5"
+        >
+          {abierto ? "Ocultar el cálculo" : "Ver el cálculo"}
+        </button>
+        {abierto && <Desglose datos={data} />}
+      </div>
+    );
+  }
+
   return (
     <div className="iv-panel p-3 border-l-[3px] border-l-marca">
       <p className="iv-etiqueta mb-1">Si vendes esto, tu margen libre</p>
       <p className="iv-cifra text-cifra text-sube leading-none">
         +{EUR(data.margen_eur)}
+        {data.incertidumbre_eur ? (
+          <span className="text-cuerpo text-tinta-3"> ± {EUR(data.incertidumbre_eur)}</span>
+        ) : null}
       </p>
       <p className="text-apoyo text-tinta-3 mt-1">
         sobre <span className="iv-cifra">{EUR(data.importe_eur)}</span> vendidos ·{" "}
@@ -129,8 +161,9 @@ export default function RiesgoVenta({ symbol, acciones }) {
       {/* El aviso no es letra pequeña de descargo: DEGIRO enseña su propio número en la
           pantalla de la orden y a veces discrepa muchísimo. Que no sorprenda. */}
       <p className="text-etiqueta text-tinta-3 mt-2 leading-snug">
-        Estimación de InverIA con el modelo de riesgo de DEGIRO. El «Margin impact» que
-        muestra el bróker en su pantalla de la orden puede decir algo muy distinto: el
+        Estimación de InverIA con el modelo de riesgo de DEGIRO, contrastada contra tu
+        extracto. Medida contra dos ventas reales, falló por 3 € y por 41 € — de ahí la
+        banda. El «Margin impact» del propio bróker puede decir algo muy distinto: el
         21-08-2026 dijo 5 € en una venta que devolvió 1.202 €.
       </p>
 
