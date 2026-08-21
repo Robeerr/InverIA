@@ -3093,8 +3093,39 @@ async def riesgo_de_vender(symbol: str, acciones: Optional[float] = None,
                                   acciones=acciones, extracto=extracto, hoy=_hoy())
 
 
+async def _importe_de_acciones(sym: str, acciones: float, posiciones: list):
+    """Cuántos euros son `acciones` de `sym`. None si no se puede saber el precio.
+
+    Si el valor está en la cartera se divide `valor_eur` entre las acciones: así el precio
+    unitario es EXACTAMENTE el que usa el modelo, y 15 acciones simuladas valen lo mismo
+    que 15 acciones vendidas. Cualquier otra fuente introduciría una segunda verdad sobre
+    el mismo número.
+    """
+    for p in posiciones:
+        if p["symbol"] == sym and (p.get("acciones") or 0) > 0 and p.get("valor_eur"):
+            return float(p["valor_eur"]) / float(p["acciones"]) * acciones
+    # No está en la cartera: hay que cotizarlo y pasarlo a euros.
+    try:
+        q = await asyncio.to_thread(market_data.get_quote, sym)
+        precio = float((q or {}).get("price") or 0)
+        divisa = ((q or {}).get("currency") or "USD").upper()
+    except Exception as exc:
+        logger.info("Sin cotización para simular %s: %s", sym, exc)
+        return None
+    if precio <= 0:
+        return None
+    if divisa == "EUR":
+        return precio * acciones
+    try:
+        tasa = await asyncio.to_thread(fx.tasa_actual, divisa)
+    except Exception:
+        tasa = None
+    return (precio * acciones / tasa) if tasa else None
+
+
 @api_router.get("/cartera/simular-margen/{symbol}")
-async def simular_margen(symbol: str, accion: str, importe: float,
+async def simular_margen(symbol: str, accion: str, importe: Optional[float] = None,
+                         acciones: Optional[float] = None,
                          categoria: Optional[str] = None,
                          _user: str = Depends(auth.get_current_user)):
     """Qué le pasa a tu margen si compras o vendes esto. ANTES de decidir.
@@ -3122,9 +3153,23 @@ async def simular_margen(symbol: str, accion: str, importe: float,
         if not categoria:
             categoria = ((ficha or {}).get("categoria_degiro") or "").strip().upper() or None
 
-    return riesgo_cartera.simular(posiciones, sym, accion, importe,
-                                  categoria=categoria, sector=sector, extracto=extracto,
-                                  hoy=_hoy())
+    # En acciones, que es como se teclea una orden. El importe se deriva aquí para que no
+    # haya dos precios distintos para el mismo número.
+    if importe is None and acciones:
+        importe = await _importe_de_acciones(sym, float(acciones), posiciones)
+        if importe is None:
+            return {"estado": riesgo_cartera.FALTAN_DATOS, "symbol": sym,
+                    "motivo": (f"No se ha podido saber a cuánto cotiza {sym}, así que no "
+                               f"se puede pasar de acciones a euros.")}
+
+    r = riesgo_cartera.simular(posiciones, sym, accion, importe,
+                               categoria=categoria, sector=sector, extracto=extracto,
+                               hoy=_hoy())
+    if acciones and r.get("importe_eur"):
+        # Lo que se simula puede ser MENOS de lo pedido: vender no puede pasar de lo que
+        # tienes. Se devuelven las acciones que corresponden al importe realmente simulado.
+        r["acciones"] = round(float(acciones) * r["importe_eur"] / importe, 6) if importe else None
+    return r
 
 
 @api_router.get("/cartera/riesgo-ranking")

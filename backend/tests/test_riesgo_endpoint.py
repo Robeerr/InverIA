@@ -145,3 +145,38 @@ async def test_el_ranking_ordena_por_lo_que_libera_cada_euro(entorno, monkeypatc
     pcts = [p["pct_del_importe"] for p in r["posiciones"]]
     assert pcts == sorted(pcts, reverse=True)
     assert r["posiciones"][0]["symbol"] == "AAOI", "la de categoría D libera más por euro"
+
+
+# ── Acciones en vez de euros ─────────────────────────────────────────────────
+# Una orden se teclea en ACCIONES, no en euros. El importe se deriva en el servidor, con el
+# mismo precio que usa el modelo: si se cotizara aparte habría dos verdades sobre el mismo
+# número y 15 acciones simuladas no valdrían lo mismo que 15 acciones vendidas.
+
+@pytest.mark.anyio
+async def test_simular_en_acciones_usa_el_precio_del_propio_modelo(entorno, monkeypatch):
+    monkeypatch.setattr(entorno, "db", _DB(FICHAS, _extracto_coherente()))
+    # AAOI: 992,71 € en 9 acciones. Tres acciones tienen que ser exactamente un tercio.
+    r = await entorno.simular_margen("AAOI", accion="vender", acciones=3, _user="test")
+    assert r["estado"] == rc.OK
+    # abs=0.01 porque `importe_eur` se devuelve redondeado a céntimos.
+    assert r["importe_eur"] == pytest.approx(992.71 / 3, abs=0.01)
+    assert r["acciones"] == pytest.approx(3, rel=1e-4)
+
+
+@pytest.mark.anyio
+async def test_no_se_puede_vender_mas_de_lo_que_tienes(entorno, monkeypatch):
+    """Y las acciones devueltas son las REALMENTE simuladas, no las pedidas."""
+    monkeypatch.setattr(entorno, "db", _DB(FICHAS, _extracto_coherente()))
+    r = await entorno.simular_margen("AAOI", accion="vender", acciones=999, _user="test")
+    assert r["importe_eur"] == pytest.approx(992.71, abs=0.01)
+    assert r["acciones"] == pytest.approx(9, rel=1e-3)
+
+
+@pytest.mark.anyio
+async def test_sin_cotizacion_no_se_inventa_la_conversion(entorno, monkeypatch):
+    """Comprar algo que no tienes y que no cotiza: mejor decirlo que estimar el precio."""
+    monkeypatch.setattr(entorno, "db", _DB(FICHAS, _extracto_coherente()))
+    monkeypatch.setattr(entorno.market_data, "get_quote", lambda s: None)
+    r = await entorno.simular_margen("TSLA", accion="comprar", acciones=10, _user="test")
+    assert r["estado"] == rc.FALTAN_DATOS
+    assert "acciones a euros" in r["motivo"]
