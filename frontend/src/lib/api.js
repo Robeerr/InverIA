@@ -146,6 +146,12 @@ export const api = {
     // Todas las posiciones ordenadas por cuánto margen libera vender cada una. Es lo que
     // DEGIRO no da: su pantalla solo calcula la orden que ya estás componiendo.
     riesgoRanking: () => client.get(`/cartera/riesgo-ranking`).then((r) => r.data),
+    // Comprar o vender, ANTES de decidir. `categoria` es la letra A-D de DEGIRO: sin ella
+    // el servidor devuelve el rango entre las cuatro en vez de elegir una, porque esa
+    // letra decide casi todo el coste de una compra.
+    simularMargen: (symbol, accion, importe, categoria) =>
+      client.get(`/cartera/simular-margen/${symbol}`,
+                 { params: { accion, importe, categoria } }).then((r) => r.data),
     // El «Margin statement» del bróker, copiado a mano. Sin él no se estima nada.
     margen: () => client.get(`/cartera/margen`).then((r) => r.data),
     guardarMargen: (datos) => client.put(`/cartera/margen`, datos).then((r) => r.data),
