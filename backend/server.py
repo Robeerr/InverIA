@@ -3007,6 +3007,10 @@ async def resumen_cartera(_user: str = Depends(auth.get_current_user)):
     return await cartera_api.resumen_cartera(db, precios)
 
 
+def _hoy() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
+
 class ExtractoMargen(BaseModel):
     """El «Margin statement» de DEGIRO, copiado a mano.
 
@@ -3032,8 +3036,7 @@ async def leer_extracto_margen(_user: str = Depends(auth.get_current_user)):
 async def guardar_extracto_margen(item: ExtractoMargen,
                                   _user: str = Depends(auth.get_current_user)):
     datos = item.model_dump()
-    datos["fecha"] = ((datos.get("fecha") or "")[:10]
-                      or datetime.now(timezone.utc).date().isoformat())
+    datos["fecha"] = (datos.get("fecha") or "")[:10] or _hoy()
     datos["id"] = "actual"
     await db.margen_degiro.update_one({"id": "actual"}, {"$set": datos}, upsert=True)
     return datos
@@ -3087,7 +3090,7 @@ async def riesgo_de_vender(symbol: str, acciones: Optional[float] = None,
     posiciones = await _posiciones_con_riesgo()
     extracto = await db.margen_degiro.find_one({"id": "actual"}, {"_id": 0})
     return riesgo_cartera.estimar(posiciones, (symbol or "").strip().upper(),
-                                  acciones=acciones, extracto=extracto)
+                                  acciones=acciones, extracto=extracto, hoy=_hoy())
 
 
 @api_router.get("/cartera/simular-margen/{symbol}")
@@ -3120,7 +3123,8 @@ async def simular_margen(symbol: str, accion: str, importe: float,
             categoria = ((ficha or {}).get("categoria_degiro") or "").strip().upper() or None
 
     return riesgo_cartera.simular(posiciones, sym, accion, importe,
-                                  categoria=categoria, sector=sector, extracto=extracto)
+                                  categoria=categoria, sector=sector, extracto=extracto,
+                                  hoy=_hoy())
 
 
 @api_router.get("/cartera/riesgo-ranking")
@@ -3132,7 +3136,7 @@ async def ranking_de_riesgo(_user: str = Depends(auth.get_current_user)):
     """
     posiciones = await _posiciones_con_riesgo()
     extracto = await db.margen_degiro.find_one({"id": "actual"}, {"_id": 0})
-    filas = [riesgo_cartera.estimar(posiciones, p["symbol"], extracto=extracto)
+    filas = [riesgo_cartera.estimar(posiciones, p["symbol"], extracto=extracto, hoy=_hoy())
              for p in posiciones]
     validas = [f for f in filas if f.get("estado") == riesgo_cartera.OK]
     if not validas:

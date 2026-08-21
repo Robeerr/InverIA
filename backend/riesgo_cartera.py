@@ -170,27 +170,64 @@ def riesgo(posiciones: List[dict]) -> tuple:
     return compiten[dominante], dominante, comps
 
 
-def calibrar(posiciones: List[dict], extracto: Optional[dict]) -> dict:
+def _dias_entre(desde: Optional[str], hasta: Optional[str]) -> Optional[int]:
+    """Días entre dos fechas ISO. None si falta alguna o no se entienden."""
+    from datetime import date
+    try:
+        a = date.fromisoformat((desde or "")[:10])
+        b = date.fromisoformat((hasta or "")[:10])
+    except (TypeError, ValueError):
+        return None
+    return (b - a).days
+
+
+def calibrar(posiciones: List[dict], extracto: Optional[dict],
+             hoy: Optional[str] = None) -> dict:
     """Compara nuestro riesgo con el que publica DEGIRO. Es el permiso para dar cifras.
 
-    `extracto` es {"riesgo_eur": …, "fecha": "YYYY-MM-DD"} copiado del «Margin statement».
-    Sin extracto no se estima: el modelo necesita categorías y sectores que no podemos
-    consultar, y sin nada contra lo que contrastarlo no hay forma de saber si acierta.
+    SE COMPARA LA PROPORCIÓN, NO LOS EUROS
+
+    Comparar `riesgo_modelo` con `riesgo_degiro` en euros parece lo natural y obliga a
+    volver a pegar el extracto casi a diario: la cartera se mueve con el mercado, el riesgo
+    se mueve con ella, y el modelo declararía "ya no cuadro" cuando lo único que ha pasado
+    es que era otro día.
+
+    Lo que de verdad se está validando no son los euros: son las CATEGORÍAS y los SECTORES
+    que el modelo supone. Eso se ve en la proporción riesgo/cartera, que no se inmuta ante
+    una subida general de precios y solo cambia cuando cambia la composición o cuando
+    DEGIRO recategoriza —una vez al mes—. Con la proporción, un extracto vale semanas.
+
+    Hace falta que el extracto traiga también el valor de cartera; si no, se cae a comparar
+    euros, que es peor pero mejor que no comparar nada.
     """
     nuestro, dominante, comps = riesgo(posiciones)
+    vacio = {"estado": SIN_CALIBRAR, "nuestro_eur": round(nuestro, 2),
+             "dominante": dominante, "componentes": comps}
     if not extracto or not extracto.get("riesgo_eur"):
-        return {"estado": SIN_CALIBRAR, "nuestro_eur": round(nuestro, 2),
-                "dominante": dominante, "componentes": comps}
-    suyo = float(extracto["riesgo_eur"])
+        return vacio
+    suyo = float(extracto["riesgo_eur"] or 0)
     if suyo <= 0:
-        return {"estado": SIN_CALIBRAR, "nuestro_eur": round(nuestro, 2),
-                "dominante": dominante, "componentes": comps}
-    error = abs(nuestro - suyo) / suyo
-    estado = OK if error <= TOLERANCIA else NO_CUADRA
-    return {"estado": estado, "error": round(error, 4),
-            "nuestro_eur": round(nuestro, 2), "degiro_eur": round(suyo, 2),
+        return vacio
+
+    dias = _dias_entre(extracto.get("fecha"), hoy) if hoy else None
+    base = {"nuestro_eur": round(nuestro, 2), "degiro_eur": round(suyo, 2),
             "dominante": dominante, "componentes": comps,
-            "fecha": extracto.get("fecha")}
+            "fecha": extracto.get("fecha"), "dias": dias}
+    if dias is not None and dias > DIAS_CALIBRACION:
+        return {"estado": CALIBRACION_VIEJA, **base}
+
+    nuestra_cartera = sum(float(p["valor_eur"]) for p in posiciones
+                          if (p.get("valor_eur") or 0) > 0)
+    su_cartera = float(extracto.get("valor_cartera_eur") or 0)
+    if su_cartera > 0 and nuestra_cartera > 0:
+        # Proporción contra proporción: inmune al vaivén diario de los precios.
+        error = abs((nuestro / nuestra_cartera) - (suyo / su_cartera)) / (suyo / su_cartera)
+        base["comparacion"] = "proporcion"
+    else:
+        error = abs(nuestro - suyo) / suyo
+        base["comparacion"] = "euros"
+    estado = OK if error <= TOLERANCIA else NO_CUADRA
+    return {"estado": estado, "error": round(error, 4), **base}
 
 
 def _motivo(clase_dominante: str, dom_despues: Optional[str], pct: float,
@@ -215,7 +252,7 @@ def _motivo(clase_dominante: str, dom_despues: Optional[str], pct: float,
 
 
 def estimar(posiciones: List[dict], symbol: str, acciones: Optional[float] = None,
-            extracto: Optional[dict] = None) -> dict:
+            extracto: Optional[dict] = None, hoy: Optional[str] = None) -> dict:
     """Cuánto margen libre debería devolver vender `acciones` de `symbol`.
 
     `acciones` a None = vender la posición entera. Devuelve euros SOLO si la calibración
@@ -231,7 +268,7 @@ def estimar(posiciones: List[dict], symbol: str, acciones: Optional[float] = Non
                            f"{'es' if len(sin_valor) != 1 else ''} sin valorar "
                            f"({', '.join(sorted(sin_valor))}).")}
 
-    cal = calibrar(posiciones, extracto)
+    cal = calibrar(posiciones, extracto, hoy)
     if cal["estado"] != OK:
         return {**cal, "symbol": sym, "motivo": _motivo_calibracion(cal)}
 
@@ -296,8 +333,11 @@ def _motivo_calibracion(cal: dict) -> str:
                 "Cópialo desde «Available to trade» y se podrá comprobar si el modelo "
                 "reproduce tu riesgo real.")
     if cal["estado"] == CALIBRACION_VIEJA:
-        return ("La calibración es de hace más de un mes y DEGIRO recategoriza los "
-                "instrumentos mensualmente. Vuelve a copiar el extracto de margen.")
+        dias = cal.get("dias")
+        return (f"Tu extracto de margen es de hace {dias} días y DEGIRO recategoriza los "
+                f"instrumentos una vez al mes. Vuelve a copiarlo para seguir dando cifras."
+                if dias else
+                "Tu extracto de margen ha caducado. Vuelve a copiarlo.")
     return (f"El modelo ya no reproduce tu riesgo real: calcula "
             f"{cal['nuestro_eur']:,.0f} € y DEGIRO dice {cal['degiro_eur']:,.0f} € "
             f"({cal['error']:.1%} de diferencia). Puede que hayan cambiado categorías o "
@@ -345,7 +385,7 @@ def _resultado(r0, r1, dom0, dom1, comps0, comps1, importe, cal, contexto):
 
 def simular(posiciones: List[dict], symbol: str, accion: str, importe: float,
             categoria: Optional[str] = None, sector: Optional[str] = None,
-            extracto: Optional[dict] = None) -> dict:
+            extracto: Optional[dict] = None, hoy: Optional[str] = None) -> dict:
     """Qué le pasa a tu margen libre si compras o vendes `importe` euros de `symbol`.
 
     Al COMPRAR algo que no tienes hace falta su categoría A-D, y esa letra decide casi
@@ -373,7 +413,7 @@ def simular(posiciones: List[dict], symbol: str, accion: str, importe: float,
                            f"{'es' if len(sin_valor) != 1 else ''} sin valorar "
                            f"({', '.join(sorted(sin_valor))}).")}
 
-    cal = calibrar(posiciones, extracto)
+    cal = calibrar(posiciones, extracto, hoy)
     if cal["estado"] != OK:
         return {**cal, "symbol": sym, "motivo": _motivo_calibracion(cal)}
 

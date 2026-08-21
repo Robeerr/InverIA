@@ -289,3 +289,45 @@ def test_comprar_algo_que_ya_tienes_usa_su_categoria():
 def test_el_simulador_tambien_se_calla_sin_extracto():
     c = rc.simular(CARTERA, "MRVL", rc.COMPRAR, importe=1000, extracto=None)
     assert c["estado"] == rc.SIN_CALIBRAR and "margen_eur" not in c
+
+
+# ── Cada cuánto hay que volver a pegar el extracto ───────────────────────────
+# Comparar euros contra euros obligaría a repegarlo casi a diario: la cartera se mueve con
+# el mercado y el riesgo con ella. Lo que se valida no son los euros, son las CATEGORÍAS y
+# los SECTORES supuestos, y eso se ve en la proporción riesgo/cartera.
+
+EXTRACTO_COMPLETO = {"riesgo_eur": 11645.14, "valor_cartera_eur": 30357.07,
+                     "fecha": "2026-08-21"}
+
+
+def test_una_subida_general_de_precios_no_descalibra():
+    """Todo sube un 6%: el riesgo sube un 6% y la proporción no se mueve. Sin esto, el
+    extracto caducaba con cualquier día verde."""
+    cara = [{**p, "valor_eur": p["valor_eur"] * 1.06} for p in CARTERA]
+    cal = rc.calibrar(cara, EXTRACTO_COMPLETO)
+    assert cal["estado"] == rc.OK
+    assert cal["comparacion"] == "proporcion"
+    assert cal["error"] < 0.01
+
+
+def test_comparando_euros_esa_misma_subida_SI_descalibraria():
+    """La prueba de que el cambio hacía falta: sin el valor de cartera en el extracto no
+    queda más remedio que comparar euros, y entonces un +6% rompe la calibración."""
+    cara = [{**p, "valor_eur": p["valor_eur"] * 1.06} for p in CARTERA]
+    cal = rc.calibrar(cara, {"riesgo_eur": 11645.14, "fecha": "2026-08-21"})
+    assert cal["comparacion"] == "euros"
+    assert cal["estado"] == rc.NO_CUADRA
+
+
+def test_a_partir_de_un_mes_el_extracto_caduca():
+    """DEGIRO revisa las categorías mensualmente: pasado ese plazo, lo que el modelo
+    supone sobre cada acción puede haber dejado de ser cierto."""
+    cal = rc.calibrar(CARTERA, EXTRACTO_COMPLETO, hoy="2026-10-01")
+    assert cal["estado"] == rc.CALIBRACION_VIEJA
+    e = rc.estimar(CARTERA, "MRVL", extracto=EXTRACTO_COMPLETO, hoy="2026-10-01")
+    assert "margen_eur" not in e and "41 días" in e["motivo"]
+
+
+def test_dentro_del_mes_sigue_valiendo():
+    cal = rc.calibrar(CARTERA, EXTRACTO_COMPLETO, hoy="2026-09-15")
+    assert cal["estado"] == rc.OK and cal["dias"] == 25
