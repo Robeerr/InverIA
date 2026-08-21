@@ -149,9 +149,14 @@ export const api = {
     // Comprar o vender, ANTES de decidir. `categoria` es la letra A-D de DEGIRO: sin ella
     // el servidor devuelve el rango entre las cuatro en vez de elegir una, porque esa
     // letra decide casi todo el coste de una compra.
-    simularMargen: (symbol, accion, importe, categoria) =>
+    // `acciones` o `importe`: una orden se teclea en acciones, así que es lo normal, y el
+    // servidor deriva los euros con el mismo precio que usa el modelo.
+    simularMargen: (symbol, accion, cantidad, unidad, categoria) =>
       client.get(`/cartera/simular-margen/${symbol}`,
-                 { params: { accion, importe, categoria } }).then((r) => r.data),
+                 { params: { accion, categoria,
+                             ...(unidad === "acciones" ? { acciones: cantidad }
+                                                       : { importe: cantidad }) } })
+        .then((r) => r.data),
     // El «Margin statement» del bróker, copiado a mano. Sin él no se estima nada.
     margen: () => client.get(`/cartera/margen`).then((r) => r.data),
     guardarMargen: (datos) => client.put(`/cartera/margen`, datos).then((r) => r.data),

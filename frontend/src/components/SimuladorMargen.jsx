@@ -75,14 +75,17 @@ function Rango({ d }) {
 export default function SimuladorMargen({ symbol }) {
   const sym = (symbol || "").trim().toUpperCase();
   const [accion, setAccion] = React.useState("comprar");
-  const [importe, setImporte] = React.useState("");
+  const [cantidad, setCantidad] = React.useState("");
+  // Acciones por defecto: es la unidad en la que se teclea una orden en el bróker. El
+  // importe en euros se deriva en el servidor y se enseña debajo como comprobación.
+  const [unidad, setUnidad] = React.useState("acciones");
   const [cat, setCat] = React.useState("");
 
-  const eur = aNumero(importe);
+  const n = aNumero(cantidad);
   const { data, isFetching } = useQuery({
-    queryKey: ["cartera", "simular", sym, accion, eur, cat],
-    queryFn: () => api.cartera.simularMargen(sym, accion, eur, cat || undefined),
-    enabled: !!sym && eur > 0,
+    queryKey: ["cartera", "simular", sym, accion, n, unidad, cat],
+    queryFn: () => api.cartera.simularMargen(sym, accion, n, unidad, cat || undefined),
+    enabled: !!sym && n > 0,
     staleTime: 30_000,
     retry: false,
   });
@@ -114,15 +117,35 @@ export default function SimuladorMargen({ symbol }) {
       <div className="flex items-center gap-2 mt-3 flex-wrap">
         {btn("comprar", "Voy a comprar")}
         {btn("vender", "Voy a vender")}
-        <input
-          value={importe}
-          onChange={(e) => setImporte(e.target.value)}
-          inputMode="decimal"
-          placeholder="importe en €"
-          aria-label="Importe en euros"
-          className="flex-1 min-w-[120px] bg-fondo border border-linea rounded px-2 py-1.5 font-mono text-apoyo"
-        />
+        <div className="flex-1 min-w-[150px] flex items-center gap-1">
+          <input
+            value={cantidad}
+            onChange={(e) => setCantidad(e.target.value)}
+            inputMode="decimal"
+            placeholder={unidad === "acciones" ? "nº de acciones" : "importe en €"}
+            aria-label={unidad === "acciones" ? "Número de acciones" : "Importe en euros"}
+            className="flex-1 min-w-0 bg-fondo border border-linea rounded px-2 py-1.5 font-mono text-apoyo"
+          />
+          <button
+            type="button"
+            onClick={() => setUnidad((u) => (u === "acciones" ? "euros" : "acciones"))}
+            title="Cambiar entre acciones y euros"
+            className="px-2 py-1.5 rounded-iv-sm text-apoyo font-mono text-tinta-3 border border-linea shrink-0"
+          >
+            {unidad === "acciones" ? "acc." : "€"}
+          </button>
+        </div>
       </div>
+
+      {/* La otra unidad, derivada. Es la comprobación de que se ha entendido bien lo que
+          se está simulando: 15 acciones y 3.217 € tienen que ser lo mismo. */}
+      {data?.importe_eur > 0 && (
+        <p className="text-apoyo text-tinta-3 mt-1.5">
+          {unidad === "acciones"
+            ? <>{data.acciones ? `${data.acciones} acciones` : "Eso"} ≈ <span className="iv-cifra">{EUR(data.importe_eur)}</span></>
+            : <>{EUR(data.importe_eur)}{data.acciones ? <> ≈ <span className="iv-cifra">{data.acciones}</span> acciones</> : null}</>}
+        </p>
+      )}
 
       {/* El selector solo aparece cuando hace falta: si la acción ya está en tu cartera,
           su categoría se sabe y preguntarla otra vez sería ruido. */}
