@@ -388,12 +388,20 @@ function ImportarDegiro({ onCerrar }) {
         ? ` · ${r.actualizadas} corregidas`
           + (r.comision_recuperada ? ` (${eur(r.comision_recuperada)} de comisión recuperada)` : "")
         : "";
+      // Tres finales distintos, y antes los tres decían lo mismo. "Ya estaba todo
+      // importado" tanto si no se pidió reparar como si se pidió y no había nada que
+      // reparar deja al usuario sin saber si la casilla funcionó.
+      const nadaQueCorregir = r.actualizar_pedido && !r.actualizadas;
       toast.success(r.importadas
         ? `${r.importadas} operación(es) importadas`
           + (r.saltadas ? ` · ${r.saltadas} ya estaban` : "") + reparadas
         : reparadas
           ? `No había nada nuevo, pero${reparadas.replace(" · ", " ")}.`
-          : `Ya estaba todo importado (${r.saltadas} operaciones). No hacía falta nada.`,
+          : nadaQueCorregir
+            ? `Nada que corregir: las ${r.saltadas} operaciones ya tienen la misma `
+              + "comisión que el fichero."
+            : `Ya estaba todo importado (${r.saltadas} operaciones). Si querías corregir `
+              + "las comisiones, marca la casilla y vuelve a importar.",
         { duration: 10000 });
       // Una compra descartada es una venta futura SIN COSTE: su ganancia saldrá hinchada.
       // Pasó con OHLA y CRWV (filas a precio 0 de ampliaciones/splits) y desde el log del

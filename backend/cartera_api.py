@@ -1056,6 +1056,10 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None,
     await _sincronizar_varias(db, tocados)
 
     return {**prep, "importadas": importadas, "saltadas": saltadas,
+            # Se devuelve si se PIDIÓ reparar, no solo cuántas se repararon. Sin esto el
+            # cliente no puede distinguir "no lo pediste" de "no había nada que corregir",
+            # y las dos acaban en el mismo mensaje: "ya estaba todo importado".
+            "actualizar_pedido": bool(actualizar),
             "actualizadas": actualizadas,
             "comision_recuperada": round(comision_recuperada, 2) if actualizadas else None,
             "descartadas": descartadas, "simbolos": sorted(tocados)}
