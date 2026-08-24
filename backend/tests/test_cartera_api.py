@@ -1577,3 +1577,16 @@ def test_si_la_comision_ya_estaba_bien_no_se_reescribe():
     r = _correr(cartera_api.importar_degiro(db, [_op("h1")], {"US5738741041": "MRVL"},
                                             actualizar=True))
     assert r["actualizadas"] == 0 and r["comision_recuperada"] is None
+
+
+def test_se_distingue_no_pedirlo_de_no_haber_nada_que_corregir():
+    """Los dos casos acababan en el mismo mensaje —"ya estaba todo importado"— y dejaban
+    al usuario sin saber si la casilla había funcionado. Costó una ronda entera."""
+    db = _db_con_venta_sin_comision()
+    db.ventas.docs[0]["comision"] = 10.04          # ya correcta
+    sin = _correr(cartera_api.importar_degiro(db, [_op("h1")], {"US5738741041": "MRVL"}))
+    con = _correr(cartera_api.importar_degiro(db, [_op("h1")], {"US5738741041": "MRVL"},
+                                              actualizar=True))
+    assert sin["actualizar_pedido"] is False
+    assert con["actualizar_pedido"] is True
+    assert sin["actualizadas"] == con["actualizadas"] == 0
