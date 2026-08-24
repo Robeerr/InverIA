@@ -553,20 +553,30 @@ async def historial(db, limite: int = 1000) -> dict:
     #
     # Se cuenta y se ESTIMA lo que falta, en vez de corregirlo solo: el apunte es del
     # usuario y una comisión inventada sería otro dato falso, solo que en la otra dirección.
-    sin_comision, coste_no_contado = 0, 0.0
-    for libro in por_symbol.values():
+    sin_comision, coste_no_contado = [], 0.0
+    for sym, libro in por_symbol.items():
         for v in libro["ventas"]:
             if float(v.get("comision") or 0) > 0.01:
                 continue
-            sin_comision += 1
             bruto = float(v.get("acciones") or 0) * float(v.get("precio") or 0)
             tasa = v.get("tasa") or 1.0
             # La tarifa de DEGIRO: 2 € fijos + 0,25% de conversión, en euros.
             coste_no_contado += 2.0 + (bruto / tasa) * 0.0025
+            # CUÁLES, no solo cuántas. Casi siempre son ventas tecleadas a mano, y esas no
+            # se arreglan reimportando: sin huella no hay nada que emparejar, y encima el
+            # apunte manual TAPA la fila del CSV, que sí trae la comisión buena. Se
+            # arreglan borrándolas y volviendo a importar, así que hay que poder
+            # encontrarlas — con el símbolo y la fecha delante se tarda un minuto.
+            sin_comision.append({"symbol": sym, "fecha": str(v.get("fecha") or "")[:10],
+                                 "acciones": v.get("acciones"), "id": v.get("id"),
+                                 "manual": not v.get("huella")})
+    sin_comision.sort(key=lambda x: x["fecha"], reverse=True)
 
     return {
         "posibles_duplicadas": dudosas,
-        "ventas_sin_comision": sin_comision,
+        "ventas_sin_comision": len(sin_comision),
+        "ventas_sin_comision_detalle": sin_comision[:30],
+        "ventas_sin_comision_manuales": sum(1 for v in sin_comision if v["manual"]),
         "comision_no_contada_eur": round(coste_no_contado, 2) if sin_comision else None,
         "items": filas[:limite],
         "por_symbol": resumen_symbol,

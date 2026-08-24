@@ -1590,3 +1590,39 @@ def test_se_distingue_no_pedirlo_de_no_haber_nada_que_corregir():
     assert sin["actualizar_pedido"] is False
     assert con["actualizar_pedido"] is True
     assert sin["actualizadas"] == con["actualizadas"] == 0
+
+
+# ── El aviso de comisiones dice CUÁLES ───────────────────────────────────────
+
+def test_el_aviso_identifica_cada_venta_sin_comision():
+    """«10 ventas» sin decir cuáles obliga a rebuscarlas entre cientos de filas."""
+    db = _DB([{"id": "e1", "symbol": "FN"}])
+    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_venta(db, "FN", 2, 130.0, fecha="2026-06-01", comision=0))
+
+    h = _correr(cartera_api.historial(db))
+    assert h["ventas_sin_comision"] == 1
+    d = h["ventas_sin_comision_detalle"][0]
+    assert d["symbol"] == "FN" and d["fecha"] == "2026-06-01" and d["acciones"] == 2
+    assert d["id"]
+
+
+def test_el_aviso_distingue_lo_tecleado_a_mano_de_lo_venido_del_csv():
+    """Solo lo del CSV se arregla reimportando; lo manual no tiene huella que emparejar."""
+    db = _db_con_venta_sin_comision()           # esa venta SÍ tiene huella
+    db.ventas.docs.append({"id": "v2", "tipo": "venta", "symbol": "MRVL",
+                           "fecha": "2026-08-22", "acciones": 1, "precio": 250.0,
+                           "comision": 0.0, "divisa": "USD", "tasa": 1.17})
+    h = _correr(cartera_api.historial(db))
+    assert h["ventas_sin_comision"] == 2
+    assert h["ventas_sin_comision_manuales"] == 1
+    assert {d["fecha"]: d["manual"] for d in h["ventas_sin_comision_detalle"]} \
+        == {"2026-08-21": False, "2026-08-22": True}
+
+
+def test_una_venta_con_comision_no_sale_en_el_aviso():
+    db = _db_con_venta_sin_comision()
+    db.ventas.docs[0]["comision"] = 10.04
+    h = _correr(cartera_api.historial(db))
+    assert h["ventas_sin_comision"] == 0 and h["comision_no_contada_eur"] is None
+    assert h["ventas_sin_comision_detalle"] == []

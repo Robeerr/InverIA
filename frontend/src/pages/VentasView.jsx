@@ -1544,9 +1544,28 @@ export default function VentasView() {
             ⚠ <b>{hist.ventas_sin_comision} venta(s) registradas sin comisión.</b> DEGIRO
             cobra 2 € por operación más el 0,25% de AutoFX, así que tu ganancia realizada
             está inflada en unos{" "}
-            <b className="font-mono">{eur(hist.comision_no_contada_eur)}</b>. Si vinieron
-            del CSV, vuelve a importarlo comprobando que trae las columnas de comisión.
+            <b className="font-mono">{eur(hist.comision_no_contada_eur)}</b>.
+            {hist.ventas_sin_comision_manuales === hist.ventas_sin_comision
+              ? " Todas están tecleadas a mano, así que reimportar el CSV no las toca:"
+                + " no tienen huella que emparejar, y encima tapan la fila del fichero,"
+                + " que sí trae la comisión buena. Se arreglan borrándolas aquí abajo y"
+                + " volviendo a importar el CSV."
+              : " Las que vinieron del CSV se corrigen reimportándolo con la casilla de"
+                + " corregir comisiones marcada; las tecleadas a mano hay que borrarlas y"
+                + " reimportar, porque no tienen huella que emparejar."}
           </p>
+          {/* CUÁLES. Sin el símbolo y la fecha delante, «10 ventas» es un dato que no se
+              puede accionar: hay que rebuscarlas una a una entre cientos de filas. */}
+          {!!hist.ventas_sin_comision_detalle?.length && (
+            <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-etiqueta text-tinta-3">
+              {hist.ventas_sin_comision_detalle.map((v) => (
+                <li key={v.id} className="font-mono">
+                  {v.symbol} · {v.fecha} · {v.acciones} acc.
+                  {v.manual ? " · a mano" : " · del CSV"}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
