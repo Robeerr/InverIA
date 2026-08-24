@@ -333,6 +333,9 @@ function FilaVenta({ v, metodo, onBorrar }) {
 // acción por ISIN y nombre, no por ticker, y meter operaciones en la posición equivocada
 // es peor que no importarlas.
 function ImportarDegiro({ onCerrar }) {
+  // Reparar las que ya estaban. Apagado por defecto: reescribe apuntes existentes y
+  // eso solo debe pasar cuando se pide, no como efecto secundario de reimportar.
+  const [actualizar, setActualizar] = React.useState(false);
   const IGNORAR = "__IGNORAR__";
   const [archivo, setArchivo] = React.useState(null);
   const [previo, setPrevio] = React.useState(null);
@@ -363,7 +366,7 @@ function ImportarDegiro({ onCerrar }) {
   });
 
   const confirmar = useMutation({
-    mutationFn: () => api.cartera.importarDegiro(archivo, mapeo, true),
+    mutationFn: () => api.cartera.importarDegiro(archivo, mapeo, true, actualizar),
     onSuccess: (r) => {
       if (r.pendientes?.length) {
         toast.error("Faltan productos por emparejar");
@@ -381,11 +384,17 @@ function ImportarDegiro({ onCerrar }) {
         onCerrar();
         return;
       }
+      const reparadas = r.actualizadas
+        ? ` · ${r.actualizadas} corregidas`
+          + (r.comision_recuperada ? ` (${eur(r.comision_recuperada)} de comisión recuperada)` : "")
+        : "";
       toast.success(r.importadas
         ? `${r.importadas} operación(es) importadas`
-          + (r.saltadas ? ` · ${r.saltadas} ya estaban` : "")
-        : `Ya estaba todo importado (${r.saltadas} operaciones). No hacía falta nada.`,
-        { duration: 8000 });
+          + (r.saltadas ? ` · ${r.saltadas} ya estaban` : "") + reparadas
+        : reparadas
+          ? `No había nada nuevo, pero${reparadas.replace(" · ", " ")}.`
+          : `Ya estaba todo importado (${r.saltadas} operaciones). No hacía falta nada.`,
+        { duration: 10000 });
       // Una compra descartada es una venta futura SIN COSTE: su ganancia saldrá hinchada.
       // Pasó con OHLA y CRWV (filas a precio 0 de ampliaciones/splits) y desde el log del
       // servidor nadie se entera. Aquí se cuenta cuáles y por qué, para meterlas a mano.
@@ -522,6 +531,23 @@ function ImportarDegiro({ onCerrar }) {
               </p>
             )}
           </div>
+
+          {/* Reparar lo que ya está. Apagado por defecto y con el efecto escrito: reescribe
+              apuntes existentes, y eso solo debe pasar cuando se pide. Hace falta porque
+              saltar las repetidas —correcto para no duplicar— dejaba intacto lo que se
+              importó mal: cuando el lector no reconocía la columna de AutoFX, cientos de
+              operaciones entraron con comisión cero y reimportar no las arreglaba. */}
+          <label className="flex items-start gap-2 mb-3 cursor-pointer">
+            <input type="checkbox" checked={actualizar}
+                   onChange={(e) => setActualizar(e.target.checked)}
+                   className="mt-0.5 w-4 h-4 accent-marca shrink-0" />
+            <span className="text-apoyo text-tinta-2 leading-snug">
+              <b>Corregir las comisiones de las operaciones que ya estaban.</b> Reescribe la
+              comisión de los apuntes que ya tienes con la del fichero. No toca precios,
+              fechas ni acciones. Márcalo si tu realizado está inflado porque se importaron
+              sin comisión.
+            </span>
+          </label>
 
           <button onClick={() => confirmar.mutate()}
                   disabled={confirmar.isPending || !!pendientes.length}

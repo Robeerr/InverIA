@@ -187,11 +187,14 @@ export const api = {
     // ventas registradas.
     // CSV de Transacciones de DEGIRO. Dos pasos: sin `confirmar` solo LEE y devuelve que
     // productos no se sabe a que accion corresponden; con el mapeo resuelto, guarda.
-    importarDegiro: (archivo, mapeo = null, confirmar = false) => {
+    // `actualizar` repara las operaciones que YA estaban (solo la comisión). Sin él
+    // se saltan, que es lo correcto para no duplicar pero deja intacto lo mal importado.
+    importarDegiro: (archivo, mapeo = null, confirmar = false, actualizar = false) => {
       const fd = new FormData();
       fd.append("archivo", archivo);
       return client.post(`/cartera/importar-degiro`, fd, {
-        params: { confirmar, mapeo: mapeo ? JSON.stringify(mapeo) : undefined },
+        params: { confirmar, actualizar: actualizar || undefined,
+                  mapeo: mapeo ? JSON.stringify(mapeo) : undefined },
         timeout: 120000,
       }).then((r) => r.data);
     },

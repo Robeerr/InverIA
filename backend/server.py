@@ -3243,6 +3243,11 @@ async def guardar_ajustes(item: AjusteMetodo, _user: str = Depends(auth.get_curr
 async def importar_degiro(archivo: UploadFile = File(...),
                           mapeo: Optional[str] = None,
                           confirmar: bool = False,
+                          # Repara las que ya estaban en vez de solo saltarlas. Existe
+                          # porque saltarlas —correcto para no duplicar— dejaba intacto lo
+                          # que se importó mal: cientos de operaciones con comisión cero
+                          # que reimportar no arreglaba.
+                          actualizar: bool = False,
                           _user: str = Depends(auth.get_current_user)):
     """Importa el CSV de Transacciones de DEGIRO.
 
@@ -3282,7 +3287,8 @@ async def importar_degiro(archivo: UploadFile = File(...),
         return {**prep, "resumen": degiro_csv.resumen(leido["operaciones"]),
                 "errores": leido["errores"], "confirmado": False}
 
-    r = await cartera_api.importar_degiro(db, leido["operaciones"], mapa)
+    r = await cartera_api.importar_degiro(db, leido["operaciones"], mapa,
+                                          actualizar=actualizar)
     for k in ("signals_list", "signals_hot"):
         _cache._store.pop(k, None)
     return {**r, "resumen": degiro_csv.resumen(leido["operaciones"]),
