@@ -1520,3 +1520,60 @@ def test_el_resumen_dice_cuanto_hace_que_se_consulto_el_cambio():
     r = _correr(cartera_api.resumen_cartera(db, {"AAPL": 210.0}))
     assert "tasas_edad_s" in r
     assert set(r["tasas_edad_s"]) == set(r["tasas"])
+
+
+# ── Reparar lo que ya estaba importado ───────────────────────────────────────
+# Saltar las operaciones repetidas es correcto —evita duplicar— pero deja INTACTO lo que se
+# importó mal. Cuando el lector no reconocía "Tasa de cambio" (la comisión de AutoFX del CSV
+# español), cientos de operaciones entraron con comisión cero y volver a subir el fichero no
+# las arreglaba: salían como "ya estaban" y se quedaban igual. `actualizar` repara eso.
+
+def _op(huella, tipo="venta", comision=10.04):
+    return {"huella": huella, "tipo": tipo, "symbol": "MRVL", "isin": "US5738741041",
+            "producto": "MARVELL TECHNOLOGY",
+            "fecha": "2026-08-21", "hora": "15:30", "acciones": 15, "precio": 250.56,
+            "comision": comision, "divisa": "USD", "tasa": 1.1684, "orden": "X"}
+
+
+def _db_con_venta_sin_comision():
+    db = _DB([{"id": "e1", "symbol": "MRVL", "isin": "US5738741041"}])
+    db.ventas.docs.append({"id": "v1", "tipo": "venta", "symbol": "MRVL",
+                           "fecha": "2026-08-21", "acciones": 15, "precio": 250.56,
+                           "comision": 0.0, "divisa": "USD", "tasa": 1.1684,
+                           "huella": "h1"})
+    return db
+
+
+def test_sin_actualizar_la_repetida_se_salta_y_NO_se_toca():
+    db = _db_con_venta_sin_comision()
+    r = _correr(cartera_api.importar_degiro(db, [_op("h1")], {"US5738741041": "MRVL"}))
+    assert r["importadas"] == 0 and r["saltadas"] == 1
+    assert r["actualizadas"] == 0
+    assert db.ventas.docs[0]["comision"] == 0.0, "sin pedirlo, no se reescribe nada"
+
+
+def test_con_actualizar_se_recupera_la_comision():
+    db = _db_con_venta_sin_comision()
+    r = _correr(cartera_api.importar_degiro(db, [_op("h1")], {"US5738741041": "MRVL"},
+                                            actualizar=True))
+    assert r["importadas"] == 0 and r["actualizadas"] == 1
+    assert db.ventas.docs[0]["comision"] == pytest.approx(10.04)
+    assert r["comision_recuperada"] == pytest.approx(10.04)
+
+
+def test_actualizar_NO_toca_el_precio_ni_las_acciones():
+    """Ahí no había ningún fallo; reescribirlos sería arriesgar datos buenos."""
+    db = _db_con_venta_sin_comision()
+    _correr(cartera_api.importar_degiro(db, [{**_op("h1"), "precio": 999.0, "acciones": 1}],
+                                        {"US5738741041": "MRVL"}, actualizar=True))
+    v = db.ventas.docs[0]
+    assert v["precio"] == 250.56 and v["acciones"] == 15
+
+
+def test_si_la_comision_ya_estaba_bien_no_se_reescribe():
+    """Escribir por escribir haría imposible ver qué tocó de verdad la importación."""
+    db = _db_con_venta_sin_comision()
+    db.ventas.docs[0]["comision"] = 10.04
+    r = _correr(cartera_api.importar_degiro(db, [_op("h1")], {"US5738741041": "MRVL"},
+                                            actualizar=True))
+    assert r["actualizadas"] == 0 and r["comision_recuperada"] is None

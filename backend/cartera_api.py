@@ -898,12 +898,20 @@ async def preparar_importacion_degiro(db, operaciones: list, mapeo: dict = None)
             "simbolos_conocidos": conocidos}
 
 
-async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
+async def importar_degiro(db, operaciones: list, mapeo: dict = None,
+                          actualizar: bool = False) -> dict:
     """Guarda las operaciones del CSV como compras y ventas del libro.
 
     Se salta las que ya estén (por huella), así que subir el mismo fichero dos veces —o uno
     nuevo que solape con el anterior— no duplica nada. Es la diferencia entre poder
     reexportar tranquilamente cada mes y tener que llevar la cuenta de lo ya subido.
+
+    `actualizar` REPARA las que ya estaban. Hace falta porque saltarlas es correcto para no
+    duplicar, pero deja intacto lo que se importó mal: cuando el lector no reconocía la
+    columna "Tasa de cambio" —la comisión de AutoFX del CSV español— cientos de operaciones
+    entraron con comisión cero, y volver a subir el fichero no las arreglaba. Se toca SOLO
+    la comisión: precio, fecha y acciones se quedan como están, porque ahí no había ningún
+    fallo y reescribirlos sería arriesgar datos buenos para arreglar uno malo.
     """
     # Se recuerda ANTES de comprobar si falta algo: así emparejar diez y dejarse dos no
     # tira por la borda los diez. Con un fichero de años, volver a teclearlo todo es lo que
@@ -965,7 +973,7 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
     entradas = {e["symbol"].upper(): e for e in await db.signal_entries.find(
         {}, {"_id": 0}).to_list(500) if e.get("symbol")}
 
-    nuevas_compras, nuevas_ventas, descartadas = [], [], []
+    nuevas_compras, nuevas_ventas, descartadas, reparables = [], [], [], []
     importadas, saltadas, tocados = 0, 0, set()
     for op in sorted(operaciones, key=lambda o: (o["fecha"], o.get("hora") or "")):
         sym = mapa.get(op["isin"])
@@ -974,6 +982,8 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
             continue
         if op["huella"] in ya:
             saltadas += 1
+            if actualizar:
+                reparables.append(op)
             continue
         km = _clave({**op, "symbol": sym}, op["tipo"])
         if ya_manual.get(km, 0) > 0:
@@ -1016,9 +1026,38 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
     if nuevas_ventas:
         await db.ventas.insert_many(nuevas_ventas)
 
+    # Reparación de las que ya estaban: solo la comisión, y solo si CAMBIA. Escribir por
+    # escribir dejaría un `updated_at` nuevo en cientos de apuntes intactos y haría
+    # imposible ver, mirando la base de datos, qué tocó de verdad esta importación.
+    actualizadas, comision_recuperada = 0, 0.0
+    por_huella = {}
+    if reparables:
+        for col, docs in (("compras", compras_db), ("ventas", ventas_db)):
+            for d in docs:
+                if d.get("huella"):
+                    por_huella[d["huella"]] = (col, d)
+    for op in reparables:
+        destino = por_huella.get(op["huella"])
+        if not destino:
+            continue
+        col, doc = destino
+        nueva = round(float(op.get("comision") or 0), 4)
+        vieja = round(float(doc.get("comision") or 0), 4)
+        if abs(nueva - vieja) < 0.005:
+            continue
+        # `getattr` y no `db[col]`: todo el módulo accede a las colecciones por
+        # atributo, y el doble de Mongo de los tests solo implementa esa forma.
+        await getattr(db, col).update_one({"id": doc["id"]},
+                                          {"$set": {"comision": nueva}})
+        actualizadas += 1
+        comision_recuperada += nueva - vieja
+        tocados.add((doc.get("symbol") or "").upper())
+
     await _sincronizar_varias(db, tocados)
 
     return {**prep, "importadas": importadas, "saltadas": saltadas,
+            "actualizadas": actualizadas,
+            "comision_recuperada": round(comision_recuperada, 2) if actualizadas else None,
             "descartadas": descartadas, "simbolos": sorted(tocados)}
 
 
