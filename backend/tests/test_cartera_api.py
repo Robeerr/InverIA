@@ -1661,3 +1661,78 @@ def test_la_ponderada_trae_la_ganancia_en_euros():
     _correr(cartera_api.registrar_venta(db, "X", 10, 120.0, fecha="2026-06-01", comision=2.0))
     p = _correr(cartera_api.historial(db))["items"][0]["ponderada"]
     assert p["ganancia_eur"] is not None and p["pct_eur"] is not None
+
+
+# ── Coste y valor no van en la misma moneda ──────────────────────────────────
+
+def test_una_ficha_de_nasdaq_mal_etiquetada_EUR_no_inventa_ganancia():
+    """El fallo de NVDA, exacto. Compra de 5 a 210,656 $ (1.053,28 $ = 903,71 € al 1,1655)
+    con la ficha marcada "EUR" por error (aquí al cambio 1,20 del entorno de pruebas, en su
+    cartera 1,1655). El valor tomaba el precio de NASDAQ —dólares— y
+    lo dividía entre el cambio del EURO, o sea entre 1: enseñaba 1.054,30 € sobre 903,71 €
+    de coste, +150,59 € y +16,66% en una posición comprada esa misma mañana.
+
+    Ahora el valor se convierte con el cambio de la moneda en la que COTIZA, así que las
+    dos cifras están en euros de verdad y la posición sale plana, como en el bróker.
+    """
+    db = _DB([{"id": "e1", "symbol": "NVDA", "mercado": "NASDAQ", "divisa": "EUR"}])
+    _correr(cartera_api.registrar_compra(db, "NVDA", 5, 210.656, fecha="2026-08-26",
+                                         divisa="USD", tasa=1.2, comision=0))
+    r = _correr(cartera_api.resumen_cartera(db, {"NVDA": 211.0}))
+    p = [x for x in r["posiciones"] if x["symbol"] == "NVDA"][0]
+    assert p["coste_eur"] == pytest.approx(877.73, abs=0.02)   # 1.053,28 $ / 1,20
+    assert p["valor_eur"] == pytest.approx(879.17, abs=0.02)   # 5 × 211 $ / 1,20
+    assert abs(p["pnl_eur"]) < 5, "la posición está plana; +150 € era el cambio mal aplicado"
+
+
+def test_el_mercado_manda_sobre_una_divisa_tecleada_a_mano():
+    """El mercado lo rellena el proveedor: es un hecho. El campo `divisa` se teclea."""
+    assert cartera_api.divisa_de_cotizacion(
+        {"mercado": "NASDAQ", "divisa": "EUR"}) == "USD"
+    assert cartera_api._divisa_de(None, {"mercado": "NASDAQ", "divisa": "EUR"}) == "USD"
+    # Sin mercado no hay hecho que oponer: se respeta lo tecleado.
+    assert cartera_api._divisa_de(None, {"divisa": "EUR"}) == "EUR"
+    # Y lo que venga explícito en la operación (el CSV del bróker) sigue mandando.
+    assert cartera_api._divisa_de("USD", {"mercado": "MAD"}) == "USD"
+
+
+def test_se_avisa_cuando_la_operacion_y_el_mercado_no_dicen_lo_mismo():
+    """Las cifras en euros ya salen bien, pero el precio medio "en divisa" mezcla monedas."""
+    db = _DB([{"id": "e1", "symbol": "NVDA", "mercado": "NASDAQ"}])
+    _correr(cartera_api.registrar_compra(db, "NVDA", 5, 210.0, fecha="2026-08-26",
+                                         divisa="EUR", comision=0))
+    p = [x for x in _correr(cartera_api.resumen_cartera(db, {"NVDA": 211.0}))["posiciones"]
+         if x["symbol"] == "NVDA"][0]
+    assert p["divisa_cotizacion"] == "USD" and p["divisa"] == "EUR"
+    assert p["divisa_incoherente"] is True
+
+
+# ── Por qué el latente no coincide con el del bróker ─────────────────────────
+
+def test_se_dice_a_que_cambio_medio_se_convirtio_el_coste():
+    """El caso NFLX: mismo precio y mismas acciones que el bróker, 131 € de diferencia en
+    la ganancia, y toda la diferencia estaba en el cambio con el que se pasó a euros."""
+    db = _DB([{"id": "e1", "symbol": "NFLX", "mercado": "NASDAQ"}])
+    _correr(cartera_api.registrar_compra(db, "NFLX", 40, 76.33, fecha="2026-01-10",
+                                         divisa="USD", tasa=1.05, comision=0))
+    _correr(cartera_api.registrar_compra(db, "NFLX", 40, 76.33, fecha="2026-03-10",
+                                         divisa="USD", tasa=1.25, comision=0))
+    r = _correr(cartera_api.estado_simbolo(db, "NFLX", precio_actual=80.0))
+    # Ponderada POR COSTE, no la media de los dos cambios (1,15), que sería otra cifra:
+    # el lote convertido a 1,05 pesa más en euros que el convertido a 1,25. Las comisiones
+    # entran en el coste por los dos lados, así que no mueven el cociente casi nada.
+    assert r["cambio_medio_compras"] == pytest.approx(1.1413, abs=0.001)
+    assert r["cambio_hoy"] is not None
+
+
+def test_se_dice_cuantas_acciones_NO_vienen_del_csv():
+    """Son las sospechosas: su fecha es la del alta, no la de la compra, así que su cambio
+    tampoco es el del día en que compraste."""
+    db = _DB([{"id": "e1", "symbol": "NFLX", "mercado": "NASDAQ"}])
+    _correr(cartera_api.registrar_compra(db, "NFLX", 10, 76.33, fecha="2026-01-10",
+                                         divisa="USD", tasa=1.05, comision=0))
+    db.compras.docs[0]["huella"] = "h1"          # esta vino del CSV
+    _correr(cartera_api.registrar_compra(db, "NFLX", 30, 76.33, fecha="2026-03-10",
+                                         divisa="USD", tasa=1.25, comision=0))
+    r = _correr(cartera_api.estado_simbolo(db, "NFLX", precio_actual=80.0))
+    assert r["acciones_abiertas_total"] == 40 and r["acciones_sin_csv"] == 30

@@ -90,7 +90,41 @@ _DIVISA_POR_MERCADO = {
     "LON": "GBP", "LSE": "GBP", "SWX": "CHF", "SIX": "CHF",
     "STO": "SEK", "CPH": "DKK", "OSL": "NOK", "TSX": "CAD", "TOR": "CAD",
 }
+# Los mercados de EE. UU. están AQUÍ y no en el "si no lo conozco, dólares" de abajo. La
+# diferencia importa: como hecho conocido, NASDAQ manda sobre un campo `divisa` tecleado a
+# mano; como caída por defecto, no mandaría sobre nada.
+_DIVISA_POR_MERCADO.update({"NASDAQ": "USD", "NYSE": "USD", "AMEX": "USD",
+                            "NYSEARCA": "USD", "BATS": "USD"})
 _PAIS_ISIN_EUR = {"ES", "DE", "FR", "NL", "IT", "PT", "BE", "IE", "AT", "FI", "LU", "GR"}
+
+
+def divisa_de_cotizacion(entry) -> str:
+    """En qué moneda COTIZA el valor, según su mercado.
+
+    No es lo mismo que la divisa de la operación, y confundirlas es lo que rompía NVDA: el
+    coste iba bien (dólares al cambio del día) mientras el valor de hoy tomaba el precio de
+    NASDAQ —dólares— y lo convertía con el cambio del EURO, o sea por 1. Salían dólares con
+    el símbolo €: una posición recién comprada, plana, aparecía con +150 € y +16%.
+
+    El mercado lo rellena el proveedor de datos, así que es un hecho comprobable; el campo
+    `divisa` de la ficha se teclea a mano. Cuando se contradicen gana el mercado.
+    """
+    e = entry or {}
+    porm = _DIVISA_POR_MERCADO.get((e.get("mercado") or "").strip().upper())
+    if porm:
+        return porm
+    d = (e.get("divisa") or "").strip().upper()
+    if d:
+        return d
+    isin = (e.get("isin") or "").strip().upper()
+    if len(isin) >= 2:
+        if isin[:2] in _PAIS_ISIN_EUR:
+            return "EUR"
+        if isin[:2] == "GB":
+            return "GBP"
+        if isin[:2] == "CH":
+            return "CHF"
+    return "USD"
 
 
 def _divisa_de(divisa, entry) -> str:
@@ -99,6 +133,11 @@ def _divisa_de(divisa, entry) -> str:
     if d:
         return d
     e = entry or {}
+    # El mercado, que viene del proveedor, por delante del campo tecleado a mano: una ficha
+    # de NASDAQ marcada "EUR" es una errata, y esa errata acababa dentro de cada compra.
+    porm = _DIVISA_POR_MERCADO.get((e.get("mercado") or "").strip().upper())
+    if porm:
+        return porm
     d = (e.get("divisa") or "").strip().upper()
     if d:
         return d
@@ -473,6 +512,38 @@ async def estado_simbolo(db, symbol: str, precio_actual=None) -> dict:
         "ponderada": lotes.media_ponderada(compras, ventas),
         "latente": lotes.valorar_abierto(comp[gestion], precio_actual, tasa_hoy),
         "tasa_hoy": round(tasa_hoy, 4) if tasa_hoy else None,
+        **_cambio_de_la_posicion(comp[gestion], tasa_hoy),
+    }
+
+
+def _cambio_de_la_posicion(estado: dict, tasa_hoy) -> dict:
+    """Al cambio de qué se convirtió el coste de la posición, y cuánto se fía uno de él.
+
+    Es la explicación de por qué el latente de InverIA y el del bróker no coinciden aunque
+    el precio y las acciones sean idénticos. El coste en euros de cada lote sale del cambio
+    de SU día; si ese día no es el día real de la compra —lotes metidos a mano, o traídos
+    de una foto de posiciones en vez del CSV de operaciones— el cambio es el del día en que
+    se dieron de alta, y el coste en euros sale desviado aunque las acciones y el precio en
+    dólares estén perfectos.
+
+    En NFLX salía así: 6.106,40 $ convertidos a 1,1554 de media (5.285 €) cuando el bróker
+    los tenía a 1,1273 (5.417 €). Mismo valor de hoy, 131 € de diferencia en la ganancia,
+    y ninguna de las dos pantallas equivocada en el precio. Se enseña el cambio medio para
+    poder compararlo, y se dice cuántas acciones NO vienen del CSV, que son las sospechosas:
+    su fecha es la de importación, no la de la compra.
+    """
+    abiertos = estado.get("abiertos") or []
+    coste_div = estado.get("coste_abierto_divisa") or 0.0
+    coste_eur = estado.get("coste_abierto_eur")
+    medio = round(coste_div / coste_eur, 4) if coste_eur else None
+    sin_csv = [l for l in abiertos if not l.get("huella")]
+    return {
+        "cambio_medio_compras": medio,
+        # Con el de hoy al lado: un cambio medio pegado al de hoy en una posición vieja es
+        # justo la señal de que las fechas de los lotes no son las de las compras.
+        "cambio_hoy": round(tasa_hoy, 4) if tasa_hoy else None,
+        "acciones_sin_csv": round(sum(l.get("acciones_abiertas") or 0 for l in sin_csv), 6),
+        "acciones_abiertas_total": estado.get("acciones_abiertas"),
     }
 
 
@@ -715,9 +786,17 @@ async def resumen_cartera(db, precios: dict) -> dict:
     for v in ventas:
         por_symbol[v.get("symbol")]["ventas"].append(v)
 
+    # Las fichas, para saber en qué moneda COTIZA cada valor. El coste sale de la moneda de
+    # cada operación; el valor de hoy, de la del mercado donde cotiza. Son dos preguntas
+    # distintas y usar la misma respuesta para las dos es lo que inventaba ganancias.
+    fichas = {(e.get("symbol") or "").upper(): e for e in await db.signal_entries.find(
+        {}, {"_id": 0, "symbol": 1, "mercado": 1, "divisa": 1, "isin": 1}).to_list(1000)}
+    cotiza = {sym: divisa_de_cotizacion(fichas.get(sym)) for sym in por_symbol}
+
     # Un solo tipo de cambio por divisa para toda la cartera: pedirlo por posición sería la
     # misma llamada repetida, y encima podría dar cifras distintas dentro de la misma tabla.
-    divisas = {(op.get("divisa") or "USD") for op in compras + ventas} or {"USD"}
+    divisas = ({(op.get("divisa") or "USD") for op in compras + ventas}
+               | set(cotiza.values())) or {"USD"}
     tasas = {}
     for d in divisas:
         try:
@@ -746,10 +825,20 @@ async def resumen_cartera(db, precios: dict) -> dict:
         # se convierte con su propia tasa.
         divisas_lote = {(o.get("divisa") or divisa) for o in libro["compras"] + libro["ventas"]}
         mezcla = sorted(divisas_lote) if len(divisas_lote) > 1 else None
-        val = lotes.valorar_abierto(estado, precios.get(sym), tasas.get(divisa))
+        # El precio de hoy viene del mercado donde cotiza, así que se convierte con el
+        # cambio de ESA moneda. Antes se usaba el de la operación: con una ficha de NASDAQ
+        # etiquetada "EUR", el precio en dólares se dividía entre 1 y se enseñaba como
+        # euros. El coste, en cambio, sigue saliendo del cambio propio de cada lote.
+        divisa_cot = cotiza.get(sym, divisa)
+        val = lotes.valorar_abierto(estado, precios.get(sym), tasas.get(divisa_cot))
         pmp = lotes.media_ponderada(libro["compras"], libro["ventas"])
         posiciones.append({
             "symbol": sym, "divisa": divisa, "divisas_mezcladas": mezcla,
+            # Cuando la operación dice una moneda y el mercado otra, una de las dos es una
+            # errata. Se dice cuál es cada una en vez de elegir en silencio: las cifras en
+            # euros ya salen bien, pero el precio medio "en divisa" mezcla peras y manzanas.
+            "divisa_cotizacion": divisa_cot,
+            "divisa_incoherente": divisa_cot != divisa,
             **val,
             # Para cuadrar con el bróker. Va aparte del precio_medio y etiquetado: son dos
             # medidas distintas y mezclarlas haría pensar que una de las dos está mal.
@@ -757,7 +846,7 @@ async def resumen_cartera(db, precios: dict) -> dict:
             # La posición valorada COMO EL BRÓKER, para poder comparar fila a fila. Lo que
             # FIFO/LIFO se apuntan de más aquí ya se lo apuntaron en lo realizado: sumando
             # latente y realizado, los dos métodos dan el mismo total.
-            "ponderada": lotes.valorar_ponderado(pmp, precios.get(sym), tasas.get(divisa)),
+            "ponderada": lotes.valorar_ponderado(pmp, precios.get(sym), tasas.get(divisa_cot)),
             "acciones": estado["acciones_abiertas"],
             "precio_medio": estado["precio_medio"],
             "precio_actual": precios.get(sym),

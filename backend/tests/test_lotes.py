@@ -764,3 +764,45 @@ def test_reproducir_dice_cuantas_quedaron_abiertas_tras_cada_venta():
     r = lotes.reproducir(compras, ventas, lotes.FIFO)["ventas"]
     assert [x["abiertas_despues"] for x in r] == [15, 0]
     assert [x["cierra_posicion"] for x in r] == [False, True]
+
+
+# ── Un euro vale un euro ─────────────────────────────────────────────────────
+
+def test_una_compra_en_euros_no_se_divide_entre_el_dolar():
+    """El fallo de NVDA: 5 × 210,66 € se guardaron como 903,71 € en vez de 1.053,30 €,
+    porque el apunte llevaba el cambio EUR/USD del día pegado a un importe ya en euros.
+    Encogía el coste un 14% y pintaba +150 € de ganancia sobre una compra recién hecha."""
+    compra = {"id": "c1", "fecha": "2026-08-26", "acciones": 5, "precio": 210.66,
+              "comision": 0.0, "divisa": "EUR", "tasa": 1.1655}   # tasa incoherente
+    r = lotes.reproducir([compra], [], lotes.FIFO)
+    assert r["coste_abierto_eur"] == pytest.approx(1053.30, abs=0.01)
+
+
+def test_la_correccion_vale_para_lo_YA_guardado_sin_reescribir_nada():
+    """Se impone al leer, no solo al escribir: si solo se arreglara `nueva_compra`, las
+    posiciones que ya están en la base de datos seguirían enseñando la cifra falsa."""
+    assert lotes.tasa_de({"divisa": "EUR", "tasa": 1.1655}) == 1.0
+    assert lotes.tasa_de({"divisa": "eur", "tasa": None}) == 1.0
+    assert lotes.tasa_de({"divisa": "USD", "tasa": 1.1655}) == 1.1655
+
+
+def test_un_apunte_nuevo_en_euros_nace_con_cambio_1():
+    c = lotes.nueva_compra("NVDA", 5, 210.66, divisa="EUR", tasa=1.1655)
+    v = lotes.nueva_venta("NVDA", 5, 210.66, divisa="EUR", tasa=1.1655)
+    assert c["tasa"] == 1.0 and v["tasa"] == 1.0
+
+
+def test_en_dolares_el_cambio_que_venga_dado_sigue_mandando():
+    """El del banco lleva su margen y es el que de verdad te cobraron."""
+    c = lotes.nueva_compra("NVDA", 5, 210.66, divisa="USD", tasa=1.1655)
+    assert c["tasa"] == 1.1655
+
+
+def test_una_venta_en_euros_tampoco_se_convierte():
+    compras = [{"id": "c1", "fecha": "2026-01-10", "acciones": 5, "precio": 200.0,
+                "comision": 0.0, "divisa": "EUR", "tasa": 1.1655}]
+    ventas = [{"id": "v1", "fecha": "2026-08-26", "acciones": 5, "precio": 210.66,
+               "comision": 0.0, "divisa": "EUR", "tasa": 1.1655}]
+    v = lotes.reproducir(compras, ventas, lotes.FIFO)["ventas"][0]
+    assert v["ganancia_divisa"] == pytest.approx(53.30, abs=0.01)
+    assert v["ganancia_eur"] == pytest.approx(53.30, abs=0.01)   # misma cifra: es la misma moneda
