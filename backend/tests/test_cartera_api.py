@@ -1766,3 +1766,49 @@ def test_se_dice_con_que_precio_se_valoro_y_cual_era_el_cierre_anterior():
     assert r["precio_actual"] == 81.78
     assert r["cierre_anterior"] == 80.01
     assert r["estado_mercado"] == "REGULAR"
+
+
+# ── Compras duplicadas ───────────────────────────────────────────────────────
+
+def test_se_detecta_la_misma_compra_metida_a_mano_y_traida_del_csv():
+    """El caso NFLX: 30 acciones tecleadas a 76,00 $ el 13/08 y la MISMA compra importada
+    del CSV a 76,01. Un céntimo de diferencia, así que no se emparejan; en pantalla salían
+    80 acciones donde el bróker tenía 50 y unos +140 € de ganancia inexistente.
+
+    Una compra duplicada no descuadra nada contable —no deja ventas sin cubrir— así que
+    nadie la busca: solo infla la posición, y por eso hay que avisar."""
+    db = _DB([{"id": "e1", "symbol": "NFLX", "mercado": "NASDAQ"}])
+    _correr(cartera_api.registrar_compra(db, "NFLX", 30, 76.00, fecha="2026-08-13",
+                                         divisa="USD", tasa=1.15, comision=0))
+    _correr(cartera_api.registrar_compra(db, "NFLX", 30, 76.01, fecha="2026-08-13",
+                                         divisa="USD", tasa=1.15, comision=0))
+    db.compras.docs[1]["huella"] = "h1"          # esta vino del CSV
+    _correr(cartera_api.registrar_venta(db, "NFLX", 1, 80.0, fecha="2026-08-20", comision=0))
+
+    d = _correr(cartera_api.historial(db))["posibles_compras_duplicadas"]
+    assert len(d) == 1
+    assert d[0]["symbol"] == "NFLX" and d[0]["fecha"] == "2026-08-13"
+    assert d[0]["acciones_de_mas"] == 30
+    assert d[0]["precios"] == [76.0, 76.01], "los dos precios, para poder ver cuál tecleaste"
+    assert d[0]["ids_manuales"] == [db.compras.docs[0]["id"]], "solo se ofrece borrar la copia manual"
+
+
+def test_dos_compras_iguales_TODAS_del_csv_no_son_sospechosas():
+    """Comprar dos veces el mismo día es normal y el CSV no se duplica a sí mismo."""
+    db = _DB([{"id": "e1", "symbol": "NFLX", "mercado": "NASDAQ"}])
+    for i in range(2):
+        _correr(cartera_api.registrar_compra(db, "NFLX", 30, 76.0, fecha="2026-08-13",
+                                             divisa="USD", tasa=1.15, comision=0))
+        db.compras.docs[i]["huella"] = f"h{i}"
+    _correr(cartera_api.registrar_venta(db, "NFLX", 1, 80.0, fecha="2026-08-20", comision=0))
+    assert _correr(cartera_api.historial(db))["posibles_compras_duplicadas"] == []
+
+
+def test_dos_compras_a_mano_el_mismo_dia_tampoco_se_tocan():
+    """Sin ninguna del CSV no hay nada con qué comparar: podrían ser dos compras de verdad."""
+    db = _DB([{"id": "e1", "symbol": "NFLX", "mercado": "NASDAQ"}])
+    for _ in range(2):
+        _correr(cartera_api.registrar_compra(db, "NFLX", 30, 76.0, fecha="2026-08-13",
+                                             divisa="USD", tasa=1.15, comision=0))
+    _correr(cartera_api.registrar_venta(db, "NFLX", 1, 80.0, fecha="2026-08-20", comision=0))
+    assert _correr(cartera_api.historial(db))["posibles_compras_duplicadas"] == []

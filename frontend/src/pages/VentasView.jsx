@@ -1395,6 +1395,19 @@ export default function VentasView() {
     onError: () => toast.error("No se pudo cambiar el método"),
   });
   const setMetodo = (m) => cambiarMetodo.mutate(m);
+
+  // Borrar la copia manual de una compra duplicada. `forzar` porque la posición tiene
+  // ventas registradas y el borrado normal se niega para no dejarlas sin coste; aquí es
+  // justo lo contrario: son acciones que nunca existieron y estaban cubriendo ventas que
+  // no les correspondían.
+  const borrarDuplicada = useMutation({
+    mutationFn: (id) => api.cartera.borrarCompra(id, true),
+    onSuccess: () => {
+      toast.success("Copia borrada. La del CSV se queda con su precio y su comisión reales.");
+      qc.invalidateQueries({ queryKey: ["cartera"] });
+    },
+    onError: () => toast.error("No se pudo borrar la copia"),
+  });
   const [form, setForm] = React.useState(null);   // "compra" | "venta" | null
   const [abierta, setAbierta] = React.useState(null);   // símbolo desplegado en la tabla
   const [verTodas, setVerTodas] = React.useState(false);   // historial completo o últimas 15
@@ -1686,6 +1699,46 @@ export default function VentasView() {
             <p key={i} className="text-xs font-mono">
               {d.symbol} · {d.fecha} · {d.acciones} acciones
             </p>
+          ))}
+        </div>
+      )}
+
+      {/* Compras duplicadas. Al contrario que una venta repetida, una compra repetida no
+          descuadra nada contable —no deja ventas sin cubrir, no rompe ningún total— así que
+          nadie la busca: solo infla la posición y con ella el latente. En NFLX eran 30
+          acciones tecleadas a 76,00 $ y la misma compra del CSV a 76,01: 80 acciones en
+          pantalla donde el broker tenía 50, y unos +140 € de ganancia inexistente. Las otras
+          quince posiciones cuadraban al detalle, que es lo que hace que no se sospeche. */}
+      {!!hist?.posibles_compras_duplicadas?.length && (
+        <div className="iv-panel px-4 py-3 border-l-4 border-l-amber-500">
+          <p className="text-sm font-semibold mb-1">
+            ⚠ {hist.posibles_compras_duplicadas.length} compra(s) posiblemente contadas dos veces
+          </p>
+          <p className="text-xs text-tinta-3 mb-2">
+            Cada una está metida a mano y además traída del CSV de DEGIRO: misma acción,
+            misma fecha y mismas acciones, con los precios a un céntimo. Eso infla tu
+            posición y tu ganancia latente sin descuadrar ningún total, así que no salta
+            ningún otro aviso. Borra la copia manual — la del precio redondeado.
+          </p>
+          {hist.posibles_compras_duplicadas.map((d, i) => (
+            <div key={i} className="flex items-center gap-3 flex-wrap text-xs font-mono py-0.5">
+              <span className="font-semibold">{d.symbol}</span>
+              <span className="text-tinta-3">{fecha(d.fecha)}</span>
+              <span>{d.acciones} acciones</span>
+              <span className="text-tinta-3">
+                a {d.precios.map((x) => x.toFixed(2)).join(" y ")}
+              </span>
+              <span className="text-aviso">+{d.acciones_de_mas} de más</span>
+              <button onClick={() => window.confirm(
+                        `Se borra la copia MANUAL de ${d.acciones} ${d.symbol} del `
+                        + `${fecha(d.fecha)}. La que vino del CSV se queda, con su precio y `
+                        + "su comisión reales.\n\n¿Continuar?")
+                        && d.ids_manuales.forEach((id) => borrarDuplicada.mutate(id))}
+                      disabled={borrarDuplicada.isPending}
+                      className="text-baja underline disabled:opacity-60">
+                borrar la copia manual
+              </button>
+            </div>
           ))}
         </div>
       )}

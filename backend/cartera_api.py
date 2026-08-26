@@ -616,6 +616,33 @@ async def historial(db, limite: int = 1000) -> dict:
     # número de acciones, solo en que la ganancia se dispara. Se avisa de las parejas
     # sospechosas (misma acción, misma fecha, mismas acciones, y solo una con huella de CSV)
     # para poder borrar la copia manual con su botón.
+    # LO MISMO CON LAS COMPRAS, que era el hueco. Una compra duplicada no dispara ninguna
+    # alarma contable —no deja ventas sin cubrir, no descuadra nada— pero infla la posición
+    # y con ella el latente. Pasó de verdad en NFLX: 30 acciones tecleadas a 76,00 $ el
+    # 13/08 y la MISMA compra importada del CSV a 76,01. Un céntimo de diferencia, así que
+    # el emparejamiento exacto no las veía; en pantalla salían 80 acciones donde el bróker
+    # tenía 50, y unos +140 € de ganancia que no existían. Las otras quince posiciones
+    # cuadraban al detalle, que es justo lo que hace que un fallo así no se busque.
+    dudosas_compra = []
+    for sym, libro in por_symbol.items():
+        vistos = {}
+        for c in libro["compras"]:
+            k = (str(c.get("fecha") or "")[:10], round(float(c.get("acciones") or 0), 6))
+            vistos.setdefault(k, []).append(c)
+        for (fch, acc), grupo in vistos.items():
+            if len(grupo) > 1 and any(g.get("huella") for g in grupo) \
+                    and any(not g.get("huella") for g in grupo):
+                manuales = [g for g in grupo if not g.get("huella")]
+                dudosas_compra.append({
+                    "symbol": sym, "fecha": fch, "acciones": acc,
+                    "precios": sorted({round(float(g.get("precio") or 0), 4) for g in grupo}),
+                    "ids_manuales": [g["id"] for g in manuales],
+                    # Lo que se quita de la posición si se borran las copias manuales. Es la
+                    # cifra que dice si merece la pena mirarlo.
+                    "acciones_de_mas": round(sum(g.get("acciones") or 0 for g in manuales), 6),
+                })
+    dudosas_compra.sort(key=lambda d: d["acciones_de_mas"], reverse=True)
+
     dudosas = []
     for sym, libro in por_symbol.items():
         vistos = {}
@@ -656,6 +683,7 @@ async def historial(db, limite: int = 1000) -> dict:
 
     return {
         "posibles_duplicadas": dudosas,
+        "posibles_compras_duplicadas": dudosas_compra,
         "ventas_sin_comision": len(sin_comision),
         "ventas_sin_comision_detalle": sin_comision[:30],
         "ventas_sin_comision_manuales": sum(1 for v in sin_comision if v["manual"]),
