@@ -1736,3 +1736,19 @@ def test_se_dice_cuantas_acciones_NO_vienen_del_csv():
                                          divisa="USD", tasa=1.25, comision=0))
     r = _correr(cartera_api.estado_simbolo(db, "NFLX", precio_actual=80.0))
     assert r["acciones_abiertas_total"] == 40 and r["acciones_sin_csv"] == 30
+
+
+def test_el_resumen_dice_que_posiciones_arrastran_lotes_sin_csv():
+    """Para poder listarlas todas de una vez en vez de abrirlas una a una."""
+    db = _DB([{"id": "e1", "symbol": "NFLX", "mercado": "NASDAQ"},
+              {"id": "e2", "symbol": "META", "mercado": "NASDAQ"}])
+    _correr(cartera_api.registrar_compra(db, "NFLX", 10, 76.33, fecha="2026-01-10",
+                                         divisa="USD", tasa=1.05, comision=0))
+    _correr(cartera_api.registrar_compra(db, "META", 5, 558.54, fecha="2026-01-10",
+                                         divisa="USD", tasa=1.05, comision=0))
+    db.compras.docs[1]["huella"] = "h1"          # META sí vino del CSV
+    pos = {p["symbol"]: p for p in _correr(
+        cartera_api.resumen_cartera(db, {"NFLX": 80.0, "META": 560.0}))["posiciones"]}
+    assert pos["NFLX"]["acciones_sin_csv"] == 10
+    assert pos["META"]["acciones_sin_csv"] == 0
+    assert pos["NFLX"]["cambio_medio_compras"] is not None

@@ -1760,6 +1760,61 @@ export default function VentasView() {
 
       {/* Posiciones abiertas, en euros */}
       {!!resumen?.posiciones?.length && (
+        {/* Qué posiciones arrastran lotes que no vinieron del CSV. Son las que pueden no
+            cuadrar con el bróker: su fecha es la del alta, no la de la compra, así que el
+            coste se pasó a euros al cambio de un día que no es el tuyo. El precio y las
+            acciones sí están bien; lo que baila es la conversión. Se ordenan por dinero
+            afectado, que es el orden en que compensa arreglarlas. */}
+        {(() => {
+          const sospechosas = (resumen.posiciones || [])
+            .filter((p) => p.acciones_sin_csv > 0)
+            .sort((a, b) => (b.coste_eur || 0) - (a.coste_eur || 0));
+          if (!sospechosas.length) return null;
+          return (
+            <div className="iv-panel px-4 py-3 border border-aviso/40 bg-aviso/[0.06] mb-3">
+              <p className="text-apoyo text-aviso leading-snug mb-2">
+                ⚠ <b>{sospechosas.length} posición(es) con lotes que no vienen del CSV.</b>{" "}
+                Esos lotes llevan la fecha en que se dieron de alta, no la de tu compra, así
+                que su coste se pasó a euros al cambio de ese día. Por eso el latente puede
+                no cuadrar con DEGIRO teniendo el mismo precio y las mismas acciones. Se
+                arreglan borrando esos lotes y volviendo a importar el CSV.
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-etiqueta font-mono">
+                  <thead className="text-tinta-3">
+                    <tr className="text-left">
+                      <th className="pr-3 font-normal">Acción</th>
+                      <th className="pr-3 font-normal text-right">Sin CSV</th>
+                      <th className="pr-3 font-normal text-right">De</th>
+                      <th className="pr-3 font-normal text-right">Invertido</th>
+                      <th className="pr-3 font-normal text-right">Cambio usado</th>
+                      <th className="font-normal text-right">Hoy</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sospechosas.map((p) => (
+                      <tr key={p.symbol} className="border-t border-linea/60">
+                        <td className="pr-3 py-1 font-bold">{p.symbol}</td>
+                        <td className="pr-3 text-right">{p.acciones_sin_csv}</td>
+                        <td className="pr-3 text-right text-tinta-3">
+                          {p.acciones_abiertas_total}
+                        </td>
+                        <td className="pr-3 text-right">{eur(p.coste_eur)}</td>
+                        <td className="pr-3 text-right">{p.cambio_medio_compras ?? "—"}</td>
+                        <td className="text-right text-tinta-3">{p.cambio_hoy ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-[11px] text-tinta-3 mt-2 leading-snug">
+                Un «cambio usado» pegado al de hoy en una compra antigua es la señal: ese
+                lote se convirtió al cambio de hoy y no al del día en que compraste.
+              </p>
+            </div>
+          );
+        })()}
+
         <Plegable id="abierto" titulo={`Lo que tienes abierto (${resumen.posiciones.length})`}
                   cabeceraExtra={
             <div className="flex items-center gap-3 flex-wrap ml-auto">
