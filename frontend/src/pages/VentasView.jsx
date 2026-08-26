@@ -490,12 +490,29 @@ function ImportarDegiro({ onCerrar }) {
 
       {previo && (
         <div className="space-y-3">
-          <div className="text-[11px] text-tinta-3 border-t border-linea pt-2">
-            <b>{previo.resumen?.total}</b> operaciones ·{" "}
-            {previo.resumen?.compras} compras · {previo.resumen?.ventas} ventas ·{" "}
-            de {fecha(previo.resumen?.desde)} a {fecha(previo.resumen?.hasta)} ·{" "}
-            {usd(previo.resumen?.comisiones)} de comisiones reales
-          </div>
+          {/* QUÉ fichero es, antes que cuántas líneas trae. Los dos exports de DEGIRO se
+              llaman parecido y el de Cuenta (dividendos) se reconoce solo, pero esta
+              cabecera lo llamaba "operaciones" igual: salía "131 operaciones · compras ·
+              ventas · — de comisiones reales", con tres huecos donde iban los números,
+              porque el resumen de dividendos no tiene esos campos. Parecía un fichero de
+              transacciones raro y era otro fichero. */}
+          {previo.tipo === "dividendos" ? (
+            <div className="text-[11px] text-tinta-3 border-t border-linea pt-2">
+              Este es el fichero de <b>Cuenta</b> (Account.csv), el de los dividendos — no
+              el de Transacciones. <b>{previo.resumen?.total}</b> apunte(s) de{" "}
+              {fecha(previo.resumen?.desde)} a {fecha(previo.resumen?.hasta)}:{" "}
+              {previo.resumen?.cobros} cobro(s) y {previo.resumen?.retenciones} retención(es).
+              {" "}Si lo que querías era añadir compras y ventas, exporta{" "}
+              <b>Actividad → Transacciones</b>.
+            </div>
+          ) : (
+            <div className="text-[11px] text-tinta-3 border-t border-linea pt-2">
+              <b>{previo.resumen?.total}</b> operaciones ·{" "}
+              {previo.resumen?.compras} compras · {previo.resumen?.ventas} ventas ·{" "}
+              de {fecha(previo.resumen?.desde)} a {fecha(previo.resumen?.hasta)} ·{" "}
+              {usd(previo.resumen?.comisiones)} de comisiones reales
+            </div>
+          )}
 
           {!!previo.errores?.length && (
             <div className="text-[11px] text-aviso">
@@ -588,7 +605,9 @@ function ImportarDegiro({ onCerrar }) {
             {confirmar.isPending ? "Importando…"
               : ignorados.length
                 ? `Importar (ignorando ${ignorados.length} producto(s))`
-                : `Importar ${previo.resumen?.total || ""} operaciones`}
+                : previo.tipo === "dividendos"
+                  ? "Este fichero es el de dividendos, no el de transacciones"
+                  : `Importar ${previo.resumen?.total || ""} operaciones`}
           </button>
         </div>
       )}
