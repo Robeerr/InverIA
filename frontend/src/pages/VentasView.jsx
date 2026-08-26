@@ -666,6 +666,22 @@ function LotesAbiertos({ symbol, metodo }) {
           sean idénticos: el coste en euros sale del cambio del día de CADA compra, y si
           alguna no lleva su fecha real, ese cambio no es el que te aplicaron. Se enseña el
           cambio medio para poder compararlo con el del bróker en vez de adivinar. */}
+      {/* El precio con el que se ha valorado, y el cierre anterior al lado. Es la única
+          cifra de la fila que no sale de tus apuntes, y cuando el bróker enseña otra
+          ganancia suele ser esto: en NFLX eran 81,78 $ contra 80,01 $, o sea 121,80 € de
+          diferencia con el mismo coste, el mismo cambio y el mismo método. Si el precio de
+          aquí coincide con el cierre anterior, es que la sesión no ha abierto o el dato se
+          quedó atrás; si el del bróker coincide con él, el que va con retraso es el suyo. */}
+      {!!abiertos.length && data?.precio_actual != null && (
+        <p className="text-[11px] text-tinta-3 mb-1 leading-snug">
+          Valorado a <b className="font-mono">{usd(data.precio_actual, divisa)}</b>
+          {data.cierre_anterior != null && (
+            <> · cierre anterior <span className="font-mono">{usd(data.cierre_anterior, divisa)}</span></>
+          )}
+          {data.estado_mercado && <> · {data.estado_mercado.toLowerCase()}</>}
+        </p>
+      )}
+
       {!!abiertos.length && data?.cambio_medio_compras && divisa !== "EUR" && (
         <p className="text-[11px] text-tinta-3 mb-2 leading-snug">
           Tu coste se pasó a euros a <b className="font-mono">{data.cambio_medio_compras}</b>{" "}

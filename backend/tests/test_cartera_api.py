@@ -1752,3 +1752,17 @@ def test_el_resumen_dice_que_posiciones_arrastran_lotes_sin_csv():
     assert pos["NFLX"]["acciones_sin_csv"] == 10
     assert pos["META"]["acciones_sin_csv"] == 0
     assert pos["NFLX"]["cambio_medio_compras"] is not None
+
+
+def test_se_dice_con_que_precio_se_valoro_y_cual_era_el_cierre_anterior():
+    """Es la única cifra de la posición que no sale de tus apuntes. En NFLX el desvío con
+    DEGIRO —121,80 €— era exactamente esto: 81,78 $ aquí contra 80,01 $ allí, con el mismo
+    coste, el mismo cambio y el mismo método. Sin verlo, no había forma de saberlo."""
+    db = _DB([{"id": "e1", "symbol": "NFLX", "mercado": "NASDAQ",
+               "previous_close": 80.01, "market_state": "REGULAR"}])
+    _correr(cartera_api.registrar_compra(db, "NFLX", 80, 76.366, fecha="2026-08-13",
+                                         divisa="USD", tasa=1.1539, comision=0))
+    r = _correr(cartera_api.estado_simbolo(db, "NFLX", precio_actual=81.78))
+    assert r["precio_actual"] == 81.78
+    assert r["cierre_anterior"] == 80.01
+    assert r["estado_mercado"] == "REGULAR"

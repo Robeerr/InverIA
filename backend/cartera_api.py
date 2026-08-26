@@ -512,6 +512,13 @@ async def estado_simbolo(db, symbol: str, precio_actual=None) -> dict:
         "ponderada": lotes.media_ponderada(compras, ventas),
         "latente": lotes.valorar_abierto(comp[gestion], precio_actual, tasa_hoy),
         "tasa_hoy": round(tasa_hoy, 4) if tasa_hoy else None,
+        # Con qué precio se ha valorado, y el cierre anterior al lado. Es la única cifra de
+        # la posición que no sale de tus apuntes, y cuando el bróker enseña otra ganancia
+        # suele ser esto: en NFLX eran 81,78 $ aquí contra los 80,01 $ que implicaba DEGIRO
+        # —121,80 € de diferencia— con el mismo coste, el mismo cambio y el mismo método.
+        "precio_actual": precio_actual,
+        "cierre_anterior": entry.get("previous_close"),
+        "estado_mercado": entry.get("market_state"),
         **_cambio_de_la_posicion(comp[gestion], tasa_hoy),
     }
 
@@ -790,7 +797,8 @@ async def resumen_cartera(db, precios: dict) -> dict:
     # cada operación; el valor de hoy, de la del mercado donde cotiza. Son dos preguntas
     # distintas y usar la misma respuesta para las dos es lo que inventaba ganancias.
     fichas = {(e.get("symbol") or "").upper(): e for e in await db.signal_entries.find(
-        {}, {"_id": 0, "symbol": 1, "mercado": 1, "divisa": 1, "isin": 1}).to_list(1000)}
+        {}, {"_id": 0, "symbol": 1, "mercado": 1, "divisa": 1, "isin": 1,
+             "previous_close": 1, "market_state": 1, "updated_at": 1}).to_list(1000)}
     cotiza = {sym: divisa_de_cotizacion(fichas.get(sym)) for sym in por_symbol}
 
     # Un solo tipo de cambio por divisa para toda la cartera: pedirlo por posición sería la
@@ -857,6 +865,15 @@ async def resumen_cartera(db, precios: dict) -> dict:
             # Etiquetado siempre: un precio puesto a mano que pareciera de mercado haría
             # creer que la posición está valorada en vivo cuando no lo está.
             "precio_manual": sym in manuales,
+            # De dónde sale el "Valor hoy". Es la única cifra de la fila que no se puede
+            # comprobar mirando tus apuntes, y cuando el bróker enseña otro número suele
+            # ser esto y no el coste: en NFLX, 81,78 $ contra los 80,01 $ que implicaba
+            # DEGIRO daban 121,80 € de diferencia, exactamente el desvío que se veía.
+            # Con el cierre anterior al lado se distingue en un vistazo un precio en vivo
+            # de uno que se quedó en la sesión pasada, que es de lo que suele ir la cosa.
+            "cierre_anterior": (fichas.get(sym) or {}).get("previous_close"),
+            "estado_mercado": (fichas.get(sym) or {}).get("market_state"),
+            "precio_actualizado": (fichas.get(sym) or {}).get("updated_at"),
             # El coste se sabe siempre; el valor de hoy solo con precio. Se ponen DESPUÉS
             # de val para que no los pise cuando la posición no se puede valorar.
             "coste_divisa": estado["coste_abierto_divisa"],
