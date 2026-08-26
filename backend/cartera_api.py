@@ -848,6 +848,10 @@ async def resumen_cartera(db, precios: dict) -> dict:
             # latente y realizado, los dos métodos dan el mismo total.
             "ponderada": lotes.valorar_ponderado(pmp, precios.get(sym), tasas.get(divisa_cot)),
             "acciones": estado["acciones_abiertas"],
+            # A qué cambio se pasó a euros el coste de esta posición, y cuánto de ella no
+            # viene del CSV. Es lo que explica que el latente no cuadre con el del bróker
+            # teniendo el mismo precio y las mismas acciones.
+            **_cambio_de_la_posicion(estado, tasas.get(divisa_cot)),
             "precio_medio": estado["precio_medio"],
             "precio_actual": precios.get(sym),
             # Etiquetado siempre: un precio puesto a mano que pareciera de mercado haría
