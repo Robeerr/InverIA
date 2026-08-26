@@ -46,11 +46,21 @@ const tono = (v) => (v == null ? "text-tinta-3" : v >= 0 ? "text-sube" : "text-b
    precio medio o de dónde sale la ganancia, cambia en un solo sitio; con la regla
    copiada, la versión de móvil se quedaría atrás sin que nadie lo notara. */
 function datosPosicion(p, comoBroker) {
+  // La media ponderada se enseña ENTERA o no se enseña. Antes cada cifra caía por su
+  // cuenta: bastaba con que faltara el coste en euros —lo que ocurre en cuanto UNA compra
+  // de la historia no tiene tipo de cambio— para que la fila mezclara el precio medio del
+  // bróker con el coste y la ganancia de FIFO/LIFO, debajo de un botón que dice "✓ Como en
+  // DEGIRO". Esa fila no cuadra con ninguna de las dos pantallas, y lo peor es que no lo
+  // dice: parece la cifra del bróker y es otra cosa.
+  const pmpCompleta = p.ponderada?.pnl_eur != null && p.ponderada?.coste_eur != null
+    && p.precio_medio_ponderado != null;
+  const usaPmp = comoBroker && pmpCompleta;
   return {
-    // La ganancia ponderada solo manda si existe: no todas las posiciones la traen.
-    g: comoBroker && p.ponderada?.pnl_eur != null ? p.ponderada : p,
-    precioMedio: comoBroker ? (p.precio_medio_ponderado ?? p.precio_medio) : p.precio_medio,
-    invertido: comoBroker ? (p.ponderada?.coste_eur ?? p.coste_eur) : p.coste_eur,
+    g: usaPmp ? p.ponderada : p,
+    precioMedio: usaPmp ? p.precio_medio_ponderado : p.precio_medio,
+    invertido: usaPmp ? p.ponderada.coste_eur : p.coste_eur,
+    // Para poder decirlo en la fila en vez de dejar que el número mienta en silencio.
+    sinPmp: comoBroker && !pmpCompleta,
     // Solo se enseña el otro precio medio cuando difiere de verdad; por debajo de un
     // céntimo, dos cifras iguales una encima de otra parecen un fallo de la pantalla.
     hayOtroMedio: p.precio_medio_ponderado != null
@@ -1877,7 +1887,7 @@ export default function VentasView() {
               los mismos: esto es la MISMA fila, con otra disposición. */}
           <ul className="md:hidden divide-y divide-linea">
             {resumen.posiciones.map((p) => {
-              const { g, precioMedio, invertido, hayOtroMedio } = datosPosicion(p, comoBroker);
+              const { g, precioMedio, invertido, hayOtroMedio, sinPmp } = datosPosicion(p, comoBroker);
               const abiertaEsta = abierta === p.symbol;
               return (
                 <li key={p.symbol}>
@@ -1916,6 +1926,12 @@ export default function VentasView() {
                           <Chip tono="aviso"
                                 title={`Tus operaciones de ${p.symbol} están en ${p.divisa}, pero cotiza en ${p.divisa_cotizacion}. Las cifras en euros son correctas; revisa la divisa de la ficha o la de las compras.`}>
                             {p.divisa}≠{p.divisa_cotizacion}
+                          </Chip>
+                        )}
+                        {sinPmp && (
+                          <Chip tono="aviso"
+                                title="Esta fila NO está en media ponderada aunque el interruptor lo esté: falta el tipo de cambio de alguna compra de su historial y sin él no hay coste en euros que ponderar. Se enseña por tu método (FIFO/LIFO), que da otro número. No la compares con DEGIRO.">
+                            sin ponderada
                           </Chip>
                         )}
                         {p.niveles_comprados?.map((n) => (
@@ -2032,7 +2048,7 @@ export default function VentasView() {
               </thead>
               <tbody>
                 {resumen.posiciones.map((p) => {
-                  const { g, precioMedio, invertido, hayOtroMedio } = datosPosicion(p, comoBroker);
+                  const { g, precioMedio, invertido, hayOtroMedio, sinPmp } = datosPosicion(p, comoBroker);
                   return (
                   <React.Fragment key={p.symbol}>
                   <tr className="border-b border-linea cursor-pointer hover:bg-superficie-alt"
@@ -2064,6 +2080,12 @@ export default function VentasView() {
                         <Chip tono="aviso"
                               title={`Tus operaciones de ${p.symbol} están en ${p.divisa}, pero cotiza en ${p.divisa_cotizacion}. Las cifras en euros son correctas; revisa la divisa de la ficha o la de las compras.`}>
                           {p.divisa}≠{p.divisa_cotizacion}
+                        </Chip>
+                      )}
+                      {sinPmp && (
+                        <Chip tono="aviso"
+                              title="Esta fila NO está en media ponderada aunque el interruptor lo esté: falta el tipo de cambio de alguna compra de su historial y sin él no hay coste en euros que ponderar. Se enseña por tu método (FIFO/LIFO), que da otro número. No la compares con DEGIRO.">
+                          sin ponderada
                         </Chip>
                       )}
                       {!!p.niveles_comprados?.length && (
