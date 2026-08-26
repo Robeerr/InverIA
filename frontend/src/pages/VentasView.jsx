@@ -312,6 +312,21 @@ function FilaVenta({ v, metodo, onBorrar }) {
                   </span>
                 </div>
               )}
+              {/* Por qué unas ventas cuadran con el bróker y otras no. Sin esto, la
+                  diferencia se lee como un fallo de cálculo, y no lo es. */}
+              {v.ponderada && (difiere || v.ponderada.ganancia_eur != null) && (
+                <p className="text-[11px] text-tinta-3 pt-1 leading-snug">
+                  {v.cierra_posicion
+                    ? "Esta venta cerró la posición: se vendieron todos los lotes, así que "
+                      + "los tres métodos dan por fuerza el mismo número."
+                    : "Venta parcial" + (v.abiertas_despues
+                        ? ` — quedaron ${v.abiertas_despues} acciones abiertas`
+                        : "")
+                      + ". Los tres métodos difieren porque el resultado depende de qué lote "
+                      + "das por vendido, y eso no lo decide el cálculo. DEGIRO usa la media "
+                      + "ponderada; a tu declaración va el FIFO."}
+                </p>
+              )}
             </div>
             <div className="pt-2">
               <button onClick={() => onBorrar(v)}
@@ -637,6 +652,25 @@ function LotesAbiertos({ symbol, metodo }) {
         )}
       </p>
 
+      {/* Por qué el latente no coincide con el del bróker aunque el precio y las acciones
+          sean idénticos: el coste en euros sale del cambio del día de CADA compra, y si
+          alguna no lleva su fecha real, ese cambio no es el que te aplicaron. Se enseña el
+          cambio medio para poder compararlo con el del bróker en vez de adivinar. */}
+      {!!abiertos.length && data?.cambio_medio_compras && divisa !== "EUR" && (
+        <p className="text-[11px] text-tinta-3 mb-2 leading-snug">
+          Tu coste se pasó a euros a <b className="font-mono">{data.cambio_medio_compras}</b>{" "}
+          {divisa}/€ de media
+          {data.cambio_hoy && <> (hoy: <span className="font-mono">{data.cambio_hoy}</span>)</>}.
+          {!!data.acciones_sin_csv && (
+            <> De las {data.acciones_abiertas_total} acciones abiertas,{" "}
+              <b>{data.acciones_sin_csv} no vienen del CSV</b>: llevan la fecha en que se
+              dieron de alta, no la de la compra, así que su cambio tampoco es el de ese
+              día y el coste en euros puede salir desviado. El precio y las acciones sí
+              son correctos.</>
+          )}
+        </p>
+      )}
+
       {!abiertos.length ? (
         <p className="text-xs text-tinta-3">
           No queda nada abierto de {symbol}: se ha vendido la posición entera.
@@ -646,6 +680,12 @@ function LotesAbiertos({ symbol, metodo }) {
           {abiertos.map((l) => (
             <div key={l.id} className="flex items-center gap-3 flex-wrap text-xs">
               <span className="font-mono text-tinta-3 w-20 shrink-0">{fecha(l.fecha)}</span>
+              {!!l.tasa && divisa !== "EUR" && (
+                <span className="font-mono text-[10px] text-tinta-3"
+                      title={`Cambio con el que el coste de esta compra se pasó a euros. Es el del día de la fecha que tiene el lote; si esa fecha no es la de tu compra real, esta cifra tampoco lo es.`}>
+                  @{Math.round(l.tasa * 1e4) / 1e4}
+                </span>
+              )}
               <span className="font-mono font-semibold">
                 {l.acciones_abiertas} × {usd(l.precio, divisa)}
               </span>
@@ -1812,6 +1852,16 @@ export default function VentasView() {
                             {p.divisas_mezcladas.join("+")}
                           </Chip>
                         )}
+                        {/* La operación dice una moneda y el mercado otra: una de las dos es una
+                            errata. Las cifras en euros ya salen bien —el valor se convierte con el
+                            cambio del mercado donde cotiza— pero el precio medio "en divisa" mezcla
+                            monedas mientras la ficha siga mal. */}
+                        {p.divisa_incoherente && (
+                          <Chip tono="aviso"
+                                title={`Tus operaciones de ${p.symbol} están en ${p.divisa}, pero cotiza en ${p.divisa_cotizacion}. Las cifras en euros son correctas; revisa la divisa de la ficha o la de las compras.`}>
+                            {p.divisa}≠{p.divisa_cotizacion}
+                          </Chip>
+                        )}
                         {p.niveles_comprados?.map((n) => (
                           <Chip key={n} tono="nivel">{NIVEL_ETIQUETA[n] || n}</Chip>
                         ))}
@@ -1948,6 +1998,16 @@ export default function VentasView() {
                         <Chip tono="aviso"
                               title={`Esta posición tiene lotes en ${p.divisas_mezcladas.join(" y ")}. El precio medio y el invertido EN DIVISA suman monedas distintas y no significan nada; las cifras en euros sí son correctas, porque cada lote se convierte con su propia tasa. Revisa la divisa de cada compra.`}>
                           {p.divisas_mezcladas.join("+")}
+                        </Chip>
+                      )}
+                      {/* La operación dice una moneda y el mercado otra: una de las dos es una
+                          errata. Las cifras en euros ya salen bien —el valor se convierte con el
+                          cambio del mercado donde cotiza— pero el precio medio "en divisa" mezcla
+                          monedas mientras la ficha siga mal. */}
+                      {p.divisa_incoherente && (
+                        <Chip tono="aviso"
+                              title={`Tus operaciones de ${p.symbol} están en ${p.divisa}, pero cotiza en ${p.divisa_cotizacion}. Las cifras en euros son correctas; revisa la divisa de la ficha o la de las compras.`}>
+                          {p.divisa}≠{p.divisa_cotizacion}
                         </Chip>
                       )}
                       {!!p.niveles_comprados?.length && (

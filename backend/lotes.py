@@ -81,6 +81,10 @@ def _hoy() -> str:
 
 # ── Un lote de compra ────────────────────────────────────────────────────────
 
+def _divisa(divisa) -> str:
+    return (divisa or "USD").strip().upper() or "USD"
+
+
 def coste_lote(precio: float, acciones: float, comision: float = 0.0) -> float:
     """Lo que te costó de verdad, comisión incluida."""
     return acciones * precio + (comision or 0.0)
@@ -311,8 +315,9 @@ def nueva_compra(symbol: str, acciones: float, precio: float, fecha: str = None,
         "acciones": acciones,
         "precio": precio,
         "comision": comision,
-        "divisa": (divisa or "USD").strip().upper() or "USD",
-        "tasa": tasa,           # divisa por 1 EUR el día de la compra
+        "divisa": _divisa(divisa),
+        # En euros el cambio es 1: guardar otra cosa es guardar un error.
+        "tasa": 1.0 if _divisa(divisa) == "EUR" else tasa,           # divisa por 1 EUR el día de la compra
         "nivel": nivel,         # "nivel3", "deseado"… o None si fue fuera de niveles
         "notas": notas or "",
         "created_at": _ahora(),
@@ -339,8 +344,9 @@ def nueva_venta(symbol: str, acciones: float, precio: float, fecha: str = None,
         "acciones": acciones,
         "precio": precio,
         "comision": comision,
-        "divisa": (divisa or "USD").strip().upper() or "USD",
-        "tasa": tasa,
+        "divisa": _divisa(divisa),
+        # En euros el cambio es 1: guardar otra cosa es guardar un error.
+        "tasa": 1.0 if _divisa(divisa) == "EUR" else tasa,
         "notas": notas or "",
         "created_at": _ahora(),
     }
@@ -385,11 +391,29 @@ def emparejar(compras: list, cantidad: float, metodo: str = FIFO) -> tuple:
             "acciones": round(toma, 6),
             "precio_compra": c.get("precio"),
             "comision_parte": round(comision_prorrateada, 4),
-            "tasa_compra": c.get("tasa"),
+            "tasa_compra": tasa_de(c),
             "nivel": c.get("nivel"),
             "coste_divisa": round(toma * float(c.get("precio") or 0) + comision_prorrateada, 4),
         })
     return consumos, round(max(restante, 0.0), 6)
+
+
+def tasa_de(op: dict):
+    """Cambio que hay que aplicar a una operación, mirando SU divisa.
+
+    Un euro vale un euro: si la operación está denominada en EUR el cambio es 1, aunque el
+    apunte guarde otro número. No es una preferencia, es aritmética, y por eso se impone al
+    LEER y no solo al escribir: los apuntes ya guardados con un cambio equivocado se
+    corrigen solos en cuanto se vuelven a mostrar, sin reescribir la base de datos.
+
+    De dónde salía el error: la divisa de la operación y su tipo de cambio llegaban por
+    caminos distintos —la ficha, el formulario, Yahoo— y nadie comprobaba que fueran
+    coherentes. Dividir un importe en euros entre 1,1655 encoge el coste un 14% y convierte
+    una posición plana recién comprada en una ganancia de tres cifras que nunca existió.
+    """
+    if (op.get("divisa") or "").strip().upper() == "EUR":
+        return 1.0
+    return op.get("tasa")
 
 
 def _a_eur(importe: float, tasa) -> float:
@@ -410,7 +434,7 @@ def resultado_venta(venta: dict, consumos: list) -> dict:
     acciones = float(venta.get("acciones") or 0)
     precio = float(venta.get("precio") or 0)
     comision = float(venta.get("comision") or 0.0)
-    tasa_venta = venta.get("tasa")
+    tasa_venta = tasa_de(venta)
 
     bruto_divisa = acciones * precio
     ingreso_divisa = bruto_divisa - comision
@@ -495,6 +519,13 @@ def reproducir(compras: list, ventas: list, metodo: str = FIFO) -> dict:
         # Realizado salía hinchado y con pinta de cifra buena.
         if sin_cubrir > 1e-9:
             res["exacto"] = False
+        # Cuántas quedaban vivas DESPUÉS de esta venta. Es lo que separa una venta que
+        # cierra la posición de una por niveles, y esa distinción explica por qué unas
+        # cuadran con el bróker y otras no: al cerrar del todo se consumen todos los lotes
+        # y FIFO, LIFO y media ponderada dan por fuerza el mismo número; vendiendo una
+        # parte, el resultado depende de QUÉ lote das por vendido y los tres se separan.
+        res["abiertas_despues"] = round(sum(max(l["_libres"], 0.0) for l in lotes), 6)
+        res["cierra_posicion"] = res["abiertas_despues"] <= 1e-9
         realizadas.append({**{k: val for k, val in v.items() if k != "_libres"}, **res,
                            "metodo": metodo})
 
@@ -507,7 +538,7 @@ def reproducir(compras: list, ventas: list, metodo: str = FIFO) -> dict:
             abierto["coste_divisa"] = round(
                 l["_libres"] * float(l.get("precio") or 0)
                 + float(l.get("comision") or 0.0) * parte, 4)
-            abierto["coste_eur"] = _a_eur(abierto["coste_divisa"], l.get("tasa"))
+            abierto["coste_eur"] = _a_eur(abierto["coste_divisa"], tasa_de(l))
             if abierto["coste_eur"] is not None:
                 abierto["coste_eur"] = round(abierto["coste_eur"], 2)
             abiertos.append(abierto)
@@ -618,7 +649,7 @@ def media_ponderada(compras: list, ventas: list) -> dict:
         comision = float(op.get("comision") or 0.0)
         if op["_t"] == "c":
             coste = cantidad * media + n * precio + comision
-            en_eur = _a_eur(n * precio + comision, op.get("tasa"))
+            en_eur = _a_eur(n * precio + comision, tasa_de(op))
             if en_eur is None:
                 eur_completo = False
             elif eur_completo:
@@ -638,7 +669,7 @@ def media_ponderada(compras: list, ventas: list) -> dict:
             # El coste va al cambio de CADA compra (dentro de `media_eur`) y el ingreso al
             # del día de la venta: la diferencia entre las dos es el efecto del euro, y
             # borrarla usando un solo cambio daría un número que no es de nadie.
-            ingreso_eur = _a_eur(n * precio - comision, op.get("tasa"))
+            ingreso_eur = _a_eur(n * precio - comision, tasa_de(op))
             coste_eur_v = (usadas * media_eur) if eur_completo else None
             ganancia_eur = (round(ingreso_eur - coste_eur_v, 2)
                             if ingreso_eur is not None and coste_eur_v is not None
