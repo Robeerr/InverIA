@@ -1626,3 +1626,38 @@ def test_una_venta_con_comision_no_sale_en_el_aviso():
     h = _correr(cartera_api.historial(db))
     assert h["ventas_sin_comision"] == 0 and h["comision_no_contada_eur"] is None
     assert h["ventas_sin_comision_detalle"] == []
+# ── Por qué una venta parcial no cuadra con el bróker ────────────────────────
+
+def _db_tres_niveles():
+    db = _DB([{"id": "e1", "symbol": "X"}])
+    for f, p in (("2026-01-10", 100.0), ("2026-02-10", 80.0), ("2026-03-10", 60.0)):
+        _correr(cartera_api.registrar_compra(db, "X", 10, p, fecha=f, comision=2.0))
+    return db
+
+
+def test_al_cerrar_la_posicion_los_tres_metodos_coinciden():
+    """Se consumen todos los lotes, así que no queda nada que elegir."""
+    db = _db_tres_niveles()
+    _correr(cartera_api.registrar_venta(db, "X", 30, 120.0, fecha="2026-06-01", comision=2.0))
+    f = _correr(cartera_api.historial(db))["items"][0]
+    assert f["cierra_posicion"] is True and f["abiertas_despues"] == 0
+    assert f["fifo"]["ganancia_divisa"] == f["lifo"]["ganancia_divisa"] \
+        == f["ponderada"]["ganancia_divisa"]
+
+
+def test_vendiendo_por_niveles_los_tres_metodos_difieren():
+    """No es un fallo: el resultado depende de qué lote das por vendido."""
+    db = _db_tres_niveles()
+    _correr(cartera_api.registrar_venta(db, "X", 10, 120.0, fecha="2026-06-01", comision=2.0))
+    f = _correr(cartera_api.historial(db))["items"][0]
+    assert f["cierra_posicion"] is False and f["abiertas_despues"] == 20
+    assert len({f["fifo"]["ganancia_divisa"], f["lifo"]["ganancia_divisa"],
+                f["ponderada"]["ganancia_divisa"]}) == 3
+
+
+def test_la_ponderada_trae_la_ganancia_en_euros():
+    """En dólares no se puede cuadrar con la pantalla de DEGIRO, que es para lo que sirve."""
+    db = _db_tres_niveles()
+    _correr(cartera_api.registrar_venta(db, "X", 10, 120.0, fecha="2026-06-01", comision=2.0))
+    p = _correr(cartera_api.historial(db))["items"][0]["ponderada"]
+    assert p["ganancia_eur"] is not None and p["pct_eur"] is not None

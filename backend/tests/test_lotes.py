@@ -730,3 +730,37 @@ def test_sin_el_cambio_de_una_compra_no_se_inventa_la_cifra_en_euros():
     v = lotes.media_ponderada(compras, ventas)["ventas"][0]
     assert v["ganancia_divisa"] is not None
     assert v["ganancia_eur"] is None and v["pct_eur"] is None
+
+def test_la_ponderada_da_la_ganancia_en_euros_cada_compra_a_su_cambio():
+    compras = [{"id": "c1", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0,
+                "comision": 0.0, "tasa": 1.00},
+               {"id": "c2", "fecha": "2026-02-10", "acciones": 10, "precio": 50.0,
+                "comision": 0.0, "tasa": 1.25}]
+    ventas = [{"id": "v1", "fecha": "2026-06-01", "acciones": 10, "precio": 120.0,
+               "comision": 0.0, "tasa": 1.20}]
+    v = lotes.media_ponderada(compras, ventas)["ventas"][0]
+    # Media en euros: (1000/1,00 + 500/1,25) / 20 = 1400/20 = 70 €/acción.
+    assert v["coste_eur"] == 700.0
+    assert v["ingreso_eur"] == 1000.0        # 1.200 $ / 1,20
+    assert v["ganancia_eur"] == 300.0
+    assert v["pct_eur"] == pytest.approx(42.86, abs=0.01)
+
+
+def test_sin_el_cambio_de_una_compra_la_ponderada_no_inventa_euros():
+    compras = [{"id": "c1", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0,
+                "comision": 0.0, "tasa": None}]
+    ventas = [{"id": "v1", "fecha": "2026-06-01", "acciones": 10, "precio": 120.0,
+               "comision": 0.0, "tasa": 1.20}]
+    v = lotes.media_ponderada(compras, ventas)["ventas"][0]
+    assert v["ganancia_eur"] is None and v["coste_eur"] is None
+    assert v["ganancia_divisa"] == 200.0     # en dólares sí se sabe
+
+
+def test_reproducir_dice_cuantas_quedaron_abiertas_tras_cada_venta():
+    compras = [{"id": "c1", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0},
+               {"id": "c2", "fecha": "2026-02-10", "acciones": 10, "precio": 50.0}]
+    ventas = [{"id": "v1", "fecha": "2026-06-01", "acciones": 5, "precio": 120.0},
+              {"id": "v2", "fecha": "2026-07-01", "acciones": 15, "precio": 120.0}]
+    r = lotes.reproducir(compras, ventas, lotes.FIFO)["ventas"]
+    assert [x["abiertas_despues"] for x in r] == [15, 0]
+    assert [x["cierra_posicion"] for x in r] == [False, True]

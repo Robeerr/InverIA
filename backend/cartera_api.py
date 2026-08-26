@@ -516,6 +516,10 @@ async def historial(db, limite: int = 1000) -> dict:
                 "lifo": _fila_metodo(vl),
                 "ponderada": pmp.get(vf.get("id")),
                 "sin_cubrir": vf.get("sin_cubrir") or 0,
+                # Si cerró la posición, los tres métodos coinciden por fuerza. Decirlo evita
+                # leer como error de cálculo lo que es la definición de vender por niveles.
+                "cierra_posicion": vf.get("cierra_posicion", False),
+                "abiertas_despues": vf.get("abiertas_despues"),
             })
         resumen_symbol.append({
             "symbol": sym,

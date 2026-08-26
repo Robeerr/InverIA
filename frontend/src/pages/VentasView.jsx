@@ -312,6 +312,21 @@ function FilaVenta({ v, metodo, onBorrar }) {
                   </span>
                 </div>
               )}
+              {/* Por qué unas ventas cuadran con el bróker y otras no. Sin esto, la
+                  diferencia se lee como un fallo de cálculo, y no lo es. */}
+              {v.ponderada && (difiere || v.ponderada.ganancia_eur != null) && (
+                <p className="text-[11px] text-tinta-3 pt-1 leading-snug">
+                  {v.cierra_posicion
+                    ? "Esta venta cerró la posición: se vendieron todos los lotes, así que "
+                      + "los tres métodos dan por fuerza el mismo número."
+                    : "Venta parcial" + (v.abiertas_despues
+                        ? ` — quedaron ${v.abiertas_despues} acciones abiertas`
+                        : "")
+                      + ". Los tres métodos difieren porque el resultado depende de qué lote "
+                      + "das por vendido, y eso no lo decide el cálculo. DEGIRO usa la media "
+                      + "ponderada; a tu declaración va el FIFO."}
+                </p>
+              )}
             </div>
             <div className="pt-2">
               <button onClick={() => onBorrar(v)}
