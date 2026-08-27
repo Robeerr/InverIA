@@ -1906,3 +1906,36 @@ def test_reparar_baja_la_ganancia_realizada():
     despues = _correr(cartera_api.historial(db))["resumen"]["lifo"]["ganancia_eur"]
     assert despues < antes
     assert _correr(cartera_api.historial(db))["ventas_sin_comision"] == 0
+
+
+# ── Por qué se salta cada fila ───────────────────────────────────────────────
+
+def test_la_importacion_dice_POR_QUE_se_salta_cada_fila():
+    """«Ya estaba todo importado (443 operaciones)» no se puede accionar: con eso delante
+    no se distingue un fichero que en efecto ya está entero de otro cuyas filas están
+    siendo tapadas por apuntes manuales, que es un problema y bien distinto."""
+    db = _DB([{"id": "e1", "symbol": "RH", "isin": "US74967X1037"}])
+    # Un apunte tecleado a mano que coincide con una fila del fichero.
+    _correr(cartera_api.registrar_compra(db, "RH", 5, 140.76, fecha="2026-08-25",
+                                         divisa="USD", tasa=1.16, comision=0))
+    op = {"huella": "h1", "tipo": "compra", "symbol": "RH", "isin": "US74967X1037",
+          "producto": "RH", "fecha": "2026-08-25", "hora": "16:00", "acciones": 5,
+          "precio": 140.76, "comision": 2.0, "divisa": "USD", "tasa": 1.16, "orden": "X"}
+    r = _correr(cartera_api.importar_degiro(db, [op], {"US74967X1037": "RH"}))
+
+    assert r["importadas"] == 0 and r["saltadas"] == 1
+    assert r["motivos_salto"]["la_tapa_un_apunte_manual"] == 1
+    assert r["motivos_salto"]["ya_estaba"] == 0
+    assert r["tapadas_por_symbol"] == [{"symbol": "RH", "filas": 1, "acciones": 5}]
+
+
+def test_una_fila_que_de_verdad_ya_estaba_se_cuenta_aparte():
+    db = _DB([{"id": "e1", "symbol": "RH", "isin": "US74967X1037"}])
+    op = {"huella": "h1", "tipo": "compra", "symbol": "RH", "isin": "US74967X1037",
+          "producto": "RH", "fecha": "2026-08-25", "hora": "16:00", "acciones": 5,
+          "precio": 140.76, "comision": 2.0, "divisa": "USD", "tasa": 1.16, "orden": "X"}
+    _correr(cartera_api.importar_degiro(db, [op], {"US74967X1037": "RH"}))
+    r = _correr(cartera_api.importar_degiro(db, [op], {"US74967X1037": "RH"}))
+    assert r["motivos_salto"]["ya_estaba"] == 1
+    assert r["motivos_salto"]["la_tapa_un_apunte_manual"] == 0
+    assert r["tapadas_por_symbol"] == []

@@ -1177,13 +1177,22 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None,
 
     nuevas_compras, nuevas_ventas, descartadas, reparables = [], [], [], []
     importadas, saltadas, tocados = 0, 0, set()
+    # POR QUÉ se salta cada fila, no solo cuántas. "Ya estaba todo importado (443
+    # operaciones)" es un dato que no se puede accionar: con él delante es imposible
+    # distinguir un fichero que en efecto ya está entero de otro cuyas filas están siendo
+    # tapadas por apuntes manuales —que es un problema, y bien distinto—. Se cuentan los
+    # tres motivos por separado y se guarda qué símbolos toca cada uno.
+    motivos = {"sin_ticker": 0, "ya_estaba": 0, "la_tapa_un_apunte_manual": 0}
+    tapadas_por_symbol = {}
     for op in sorted(operaciones, key=lambda o: (o["fecha"], o.get("hora") or "")):
         sym = mapa.get(op["isin"])
         if not sym:
             saltadas += 1
+            motivos["sin_ticker"] += 1
             continue
         if op["huella"] in ya:
             saltadas += 1
+            motivos["ya_estaba"] += 1
             if actualizar:
                 reparables.append(op)
             continue
@@ -1191,6 +1200,10 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None,
         if ya_manual.get(km, 0) > 0:
             ya_manual[km] -= 1      # esta fila la cubre UN apunte manual, no todas
             saltadas += 1
+            motivos["la_tapa_un_apunte_manual"] += 1
+            d = tapadas_por_symbol.setdefault(sym, {"symbol": sym, "filas": 0, "acciones": 0})
+            d["filas"] += 1
+            d["acciones"] = round(d["acciones"] + (op.get("acciones") or 0), 6)
             continue
         comun = dict(symbol=sym, acciones=op["acciones"], precio=op["precio"],
                      fecha=op["fecha"], comision=op["comision"], divisa=op["divisa"],
@@ -1258,6 +1271,13 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None,
     await _sincronizar_varias(db, tocados)
 
     return {**prep, "importadas": importadas, "saltadas": saltadas,
+            "motivos_salto": motivos,
+            # Los símbolos cuyas filas del CSV están siendo tapadas por apuntes tuyos. Es la
+            # lista que hace falta para decidir: esas compras del fichero —con su fecha, su
+            # precio y su comisión reales— NO están en el libro, y no entrarán mientras el
+            # apunte que las tapa siga ahí.
+            "tapadas_por_symbol": sorted(tapadas_por_symbol.values(),
+                                         key=lambda d: -d["acciones"]),
             # Se devuelve si se PIDIÓ reparar, no solo cuántas se repararon. Sin esto el
             # cliente no puede distinguir "no lo pediste" de "no había nada que corregir",
             # y las dos acaban en el mismo mensaje: "ya estaba todo importado".

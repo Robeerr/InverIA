@@ -425,7 +425,17 @@ function ImportarDegiro({ onCerrar }) {
           : nadaQueCorregir
             ? `Nada que corregir: las ${r.saltadas} operaciones ya tienen la misma `
               + "comisión que el fichero."
-            : `Ya estaba todo importado (${r.saltadas} operaciones). Si querías corregir `
+            : r.tapadas_por_symbol?.length
+              // NO es lo mismo "el fichero ya está entero" que "hay filas del fichero que
+              // no pueden entrar porque un apunte tuyo las tapa". Lo segundo significa que
+              // esas compras —con su fecha, su precio y su comisión reales— siguen fuera
+              // del libro, y que seguirán fuera por mucho que reimportes.
+              ? `${r.motivos_salto.la_tapa_un_apunte_manual} fila(s) del fichero NO han `
+                + "entrado porque las tapa un apunte tuyo: "
+                + r.tapadas_por_symbol.slice(0, 6)
+                  .map((t) => `${t.symbol} (${t.acciones} acc.)`).join(", ")
+                + ". Borra esos apuntes y vuelve a importar."
+              : `Ya estaba todo importado (${r.saltadas} operaciones). Si querías corregir `
               + "las comisiones, marca la casilla y vuelve a importar.",
         { duration: 10000 });
       // Una compra descartada es una venta futura SIN COSTE: su ganancia saldrá hinchada.
