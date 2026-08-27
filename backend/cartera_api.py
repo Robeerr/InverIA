@@ -448,6 +448,56 @@ async def registrar_venta(db, symbol: str, acciones: float, precio: float,
     return res
 
 
+async def estimar_comisiones_pendientes(db, aplicar: bool = False) -> dict:
+    """Pone la comisión estimada a los apuntes que se quedaron a cero por el fallo del vacío.
+
+    Durante un tiempo el formulario enviaba 0 cuando dejabas el campo en blanco, y el
+    servidor hacía lo correcto con ese 0: respetarlo, porque un cero explícito significa
+    "esta operación no me costó nada". El resultado es que TODAS las operaciones tecleadas
+    a mano quedaron sin comisión, inflando la ganancia realizada entre 6 y 10 € cada venta.
+
+    Solo se tocan las que NO vienen del CSV. Un apunte con huella trae la comisión real del
+    fichero, y si esa es cero es que de verdad fue cero: sustituirla por una estimación
+    sería cambiar un dato bueno por uno inventado.
+
+    Sin `aplicar` solo se calcula y se devuelve, para poder ver qué va a pasar antes de que
+    pase. Lo que se escribe queda marcado como estimado, que es lo que permite distinguirlo
+    después de una cifra sacada de tu extracto.
+    """
+    cambios = {"compras": [], "ventas": []}
+    total_eur = 0.0
+    for col, clave in (("compras", "compras"), ("ventas", "ventas")):
+        for d in await getattr(db, col).find({}, {"_id": 0}).to_list(5000):
+            if d.get("huella"):
+                continue
+            if float(d.get("comision") or 0) > 0.01:
+                continue
+            bruto = float(d.get("acciones") or 0) * float(d.get("precio") or 0)
+            tasa = lotes.tasa_de(d)
+            if not tasa:
+                tasa = await _tasa(d.get("divisa") or "USD", d.get("fecha"))
+            est = comisiones.estimar(bruto, d.get("divisa") or "USD", tasa)
+            if est["total"] is None or est["total"] <= 0:
+                continue
+            en_eur = est["total"] / float(tasa) if tasa else None
+            total_eur += en_eur or 0.0
+            cambios[clave].append({"id": d.get("id"), "symbol": d.get("symbol"),
+                                   "fecha": str(d.get("fecha") or "")[:10],
+                                   "acciones": d.get("acciones"),
+                                   "comision": round(est["total"], 4),
+                                   "eur": round(en_eur, 2) if en_eur is not None else None})
+            if aplicar:
+                await getattr(db, col).update_one(
+                    {"id": d.get("id")},
+                    {"$set": {"comision": round(est["total"], 4),
+                              "comision_estimada": True,
+                              "comision_detalle": est["detalle"]}})
+    return {"aplicado": aplicar,
+            "compras": len(cambios["compras"]), "ventas": len(cambios["ventas"]),
+            "total_eur": round(total_eur, 2),
+            "detalle": cambios}
+
+
 async def borrar_venta(db, venta_id: str) -> bool:
     doc = await db.ventas.find_one({"id": venta_id}, {"_id": 0})
     r = await db.ventas.delete_one({"id": venta_id})

@@ -2912,6 +2912,22 @@ async def crear_venta(item: VentaLoteCreate, _user: str = Depends(auth.get_curre
     return estado
 
 
+@api_router.post("/cartera/estimar-comisiones")
+async def estimar_comisiones(aplicar: bool = False,
+                             _user: str = Depends(auth.get_current_user)):
+    """Pone la comisión estimada a los apuntes tecleados que se quedaron a cero.
+
+    Dos pasos a propósito: sin `aplicar` solo dice qué tocaría y cuánto suma, porque esto
+    reescribe apuntes del usuario. Nunca toca lo que vino del CSV: ahí la comisión es la
+    del fichero, y un cero real es un dato, no un hueco.
+    """
+    r = await cartera_api.estimar_comisiones_pendientes(db, aplicar=aplicar)
+    if aplicar:
+        for k in ("signals_list", "signals_hot"):
+            _cache._store.pop(k, None)
+    return r
+
+
 @api_router.delete("/cartera/ventas/{venta_id}")
 async def eliminar_venta(venta_id: str, _user: str = Depends(auth.get_current_user)):
     """Borra una venta. No hay que 'devolver' acciones a ninguna parte: la posición se

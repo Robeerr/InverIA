@@ -1839,3 +1839,70 @@ def test_un_cero_puesto_a_proposito_se_respeta():
                                         divisa="USD", comision=0))
     assert db.ventas.docs[0]["comision"] == 0
     assert db.ventas.docs[0]["comision_estimada"] is False
+
+
+# ── Reparar las comisiones que se quedaron a cero ────────────────────────────
+
+def _db_con_apuntes_a_cero():
+    db = _DB([{"id": "e1", "symbol": "NVDA", "mercado": "NASDAQ"}])
+    _correr(cartera_api.registrar_compra(db, "NVDA", 5, 200.0, fecha="2026-08-01",
+                                         divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.registrar_venta(db, "NVDA", 5, 222.94, fecha="2026-08-27",
+                                        divisa="USD", tasa=1.16, comision=0))
+    return db
+
+
+def test_sin_aplicar_solo_dice_lo_que_haria():
+    """Reescribir apuntes del usuario sin enseñar antes qué se toca no es aceptable."""
+    db = _db_con_apuntes_a_cero()
+    r = _correr(cartera_api.estimar_comisiones_pendientes(db))
+    assert r["aplicado"] is False
+    assert r["compras"] == 1 and r["ventas"] == 1 and r["total_eur"] > 0
+    assert db.ventas.docs[0]["comision"] == 0, "sin pedirlo no se escribe nada"
+
+
+def test_al_aplicar_se_pone_la_estimacion_y_queda_marcada():
+    db = _db_con_apuntes_a_cero()
+    r = _correr(cartera_api.estimar_comisiones_pendientes(db, aplicar=True))
+    assert r["aplicado"] is True and r["ventas"] == 1
+    v = db.ventas.docs[0]
+    assert v["comision"] > 0 and v["comision_estimada"] is True
+    assert v["comision_detalle"], "sin desglose no se puede cuadrar con el extracto"
+
+
+def test_NO_se_toca_lo_que_vino_del_csv_aunque_este_a_cero():
+    """Con huella, la comisión es la del fichero. Si es cero, de verdad fue cero:
+    sustituirla por una estimación cambiaría un dato bueno por uno inventado."""
+    db = _db_con_apuntes_a_cero()
+    db.ventas.docs[0]["huella"] = "h1"
+    r = _correr(cartera_api.estimar_comisiones_pendientes(db, aplicar=True))
+    assert r["ventas"] == 0
+    assert db.ventas.docs[0]["comision"] == 0
+
+
+def test_una_comision_real_ya_puesta_no_se_pisa():
+    db = _db_con_apuntes_a_cero()
+    db.ventas.docs[0]["comision"] = 10.04
+    r = _correr(cartera_api.estimar_comisiones_pendientes(db, aplicar=True))
+    assert r["ventas"] == 0
+    assert db.ventas.docs[0]["comision"] == 10.04
+
+
+def test_aplicarlo_dos_veces_no_suma_dos_veces():
+    """La segunda pasada ya no encuentra nada a cero: es idempotente."""
+    db = _db_con_apuntes_a_cero()
+    _correr(cartera_api.estimar_comisiones_pendientes(db, aplicar=True))
+    antes = db.ventas.docs[0]["comision"]
+    r = _correr(cartera_api.estimar_comisiones_pendientes(db, aplicar=True))
+    assert r["ventas"] == 0 and r["compras"] == 0
+    assert db.ventas.docs[0]["comision"] == antes
+
+
+def test_reparar_baja_la_ganancia_realizada():
+    """Es el objetivo entero: la ganancia estaba inflada por las comisiones que faltaban."""
+    db = _db_con_apuntes_a_cero()
+    antes = _correr(cartera_api.historial(db))["resumen"]["lifo"]["ganancia_eur"]
+    _correr(cartera_api.estimar_comisiones_pendientes(db, aplicar=True))
+    despues = _correr(cartera_api.historial(db))["resumen"]["lifo"]["ganancia_eur"]
+    assert despues < antes
+    assert _correr(cartera_api.historial(db))["ventas_sin_comision"] == 0

@@ -1405,6 +1405,33 @@ export default function VentasView() {
   });
   const setMetodo = (m) => cambiarMetodo.mutate(m);
 
+  // Dos pasos: primero se pregunta qué tocaría, se enseña, y solo si dices que sí se
+  // escribe. Reescribir apuntes del usuario sin que vea antes el alcance no es aceptable,
+  // por muy claro que esté el fallo que los dejó así.
+  const repararComisiones = useMutation({
+    mutationFn: async () => {
+      const previo = await api.cartera.estimarComisiones(false);
+      const n = previo.compras + previo.ventas;
+      if (!n) {
+        toast.success("No hay nada que estimar: todo lo tecleado ya tiene comisión.");
+        return null;
+      }
+      const ok = window.confirm(
+        `Se va a poner la comisión estimada (2 € + 0,25% de AutoFX) a ${n} apunte(s) `
+        + `tecleados a mano que están a cero: ${previo.compras} compra(s) y `
+        + `${previo.ventas} venta(s).\n\nSuman unos ${previo.total_eur} €. Quedarán `
+        + "marcados como ESTIMADOS.\n\nLo que vino del CSV no se toca.\n\n¿Continuar?");
+      return ok ? api.cartera.estimarComisiones(true) : null;
+    },
+    onSuccess: (r) => {
+      if (!r) return;
+      toast.success(`${r.compras} compra(s) y ${r.ventas} venta(s) actualizadas · `
+        + `${r.total_eur} € de comisiones que faltaban`, { duration: 10000 });
+      qc.invalidateQueries({ queryKey: ["cartera"] });
+    },
+    onError: () => toast.error("No se pudieron estimar las comisiones"),
+  });
+
   // Borrar la copia manual de una compra duplicada. `forzar` porque la posición tiene
   // ventas registradas y el borrado normal se niega para no dejarlas sin coste; aquí es
   // justo lo contrario: son acciones que nunca existieron y estaban cubriendo ventas que
@@ -1672,6 +1699,20 @@ export default function VentasView() {
                 </li>
               ))}
             </ul>
+          )}
+          {/* El botón para repararlas. Los apuntes tecleados se quedaron a cero por un
+              fallo del formulario —enviaba 0 donde debía enviar "vacío"—, así que no son
+              ceros que nadie afirmara: son huecos. Se rellenan con la tarifa publicada y
+              quedan marcados como estimados, para poder distinguirlos luego de una cifra
+              sacada del extracto. Lo que vino del CSV no se toca: ahí un cero es un dato. */}
+          {!!hist.ventas_sin_comision_manuales && (
+            <button onClick={() => repararComisiones.mutate()}
+                    disabled={repararComisiones.isPending}
+                    className="mt-2 text-[11px] underline text-aviso disabled:opacity-60">
+              {repararComisiones.isPending
+                ? "Calculando…"
+                : "Poner la comisión estimada a las que tecleaste a mano"}
+            </button>
           )}
         </div>
       )}

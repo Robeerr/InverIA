@@ -182,6 +182,11 @@ export const api = {
     cambiarNivelCompra: (id, nivel) =>
       client.put(`/cartera/compras/${id}/nivel`, null, { params: nivel ? { nivel } : {} }).then((r) => r.data),
     borrarVenta: (id) => client.delete(`/cartera/ventas/${id}`).then((r) => r.data),
+    // Comisiones que se quedaron a cero por el fallo del campo vacío. Sin `aplicar` solo
+    // dice qué tocaría: esto reescribe apuntes, así que se mira antes de hacerlo.
+    estimarComisiones: (aplicar = false) =>
+      client.post(`/cartera/estimar-comisiones`, null, { params: { aplicar } })
+        .then((r) => r.data),
     // `reemplazar` rehace las posiciones ya importadas: sirve cuando la primera vez salió
     // mal y borrar los lotes a mano serían decenas de clics. Nunca toca las que ya tienen
     // ventas registradas.
