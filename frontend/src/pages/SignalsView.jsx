@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { aNumero } from "../lib/format";
+import RiesgoVenta from "../components/RiesgoVenta";
 
 const API = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
 const authHeaders = () => {
@@ -345,6 +346,30 @@ const RIESGO_STYLE = {
   MEDIO: { bg: "bg-yellow-100 dark:bg-yellow-900/40", text: "text-yellow-700 dark:text-yellow-300" },
   ALTO:  { bg: "bg-red-100 dark:bg-red-900/40",       text: "text-red-600 dark:text-red-400" },
 };
+
+// La letra A-D del modelo de MARGEN de DEGIRO, que NO es el campo `riesgo` de al lado.
+// `riesgo` es la clasificación de tu inversor; esta la publica el bróker junto a cada
+// producto y determina cuánto riesgo le asigna su modelo — una categoría D computa al 100%
+// de su valor, así que venderla libera todo y comprarla se lo come todo.
+//
+// Se teclea a mano porque no hay API que la sirva. Sin ella el simulador de margen no puede
+// reproducir el riesgo real y se calla, que es exactamente lo que estaba pasando.
+const CAT_TONO = { A: "text-sube", B: "text-tinta-2", C: "text-aviso", D: "text-baja" };
+
+function CategoriaDegiro({ value, onChange }) {
+  const v = (value || "").toUpperCase();
+  return (
+    <select
+      value={v}
+      onChange={(ev) => onChange(ev.target.value || null)}
+      title="Categoría de riesgo de DEGIRO (A-D). Sale junto al nombre del producto en la pantalla de la orden. Determina cuánto margen libera vender esta acción."
+      className={`bg-transparent border border-linea rounded px-1 py-0.5 text-xs font-mono font-bold ${CAT_TONO[v] || "text-tinta-3"}`}
+    >
+      <option value="">—</option>
+      {["A", "B", "C", "D"].map((c) => <option key={c} value={c}>{c}</option>)}
+    </select>
+  );
+}
 
 function RiesgoBadge({ value }) {
   if (!value) return <span className="text-neutral-400">—</span>;
@@ -925,6 +950,11 @@ function DialogoVenta({ entry, onClose, onHecho }) {
                 </p>
               )}
             </div>
+            {/* ANTES del botón: la pregunta que resuelve solo sirve mientras la venta
+                todavía se puede no hacer. Después ya no es una decisión, es un apunte. */}
+            <div className="mt-3">
+              <RiesgoVenta symbol={entry.symbol} acciones={aNumero(acciones) || undefined} />
+            </div>
             <button onClick={enviar} disabled={enviando}
                     className="w-full mt-4 bg-marca text-marca-tinta rounded-lg py-2 font-semibold disabled:opacity-60">
               {enviando ? "Calculando…" : "Registrar venta"}
@@ -982,6 +1012,8 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                   <span className="font-bold text-marca cursor-pointer text-lg" onClick={() => setSymbol && setSymbol(e.symbol)}>{e.symbol}</span>
                   {e.mercado && <span className="text-[10px] font-mono bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded">{e.mercado}</span>}
                   <RiesgoBadge value={e.riesgo} />
+                  <CategoriaDegiro value={e.categoria_degiro}
+                                   onChange={(v) => updateField(e.id, "categoria_degiro", v)} />
                 </div>
                 <p className="text-sm text-neutral-500 mt-0.5">{e.name || "—"}</p>
                 {e.sector && <p className="text-xs text-neutral-400">{e.sector}</p>}
@@ -1075,6 +1107,7 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                 <th key={n} className="px-3 py-3 text-xs whitespace-nowrap text-right bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 font-bold border-l border-green-200 dark:border-green-800">Nivel {n}{n === 5 ? " ⭐" : ""}</th>
               ))}
               <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800 border-l border-neutral-200">Riesgo</th>
+              <th title="Categoría de riesgo de DEGIRO (A-D). Determina cuánto margen libera vender esta acción." className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Cat.</th>
               <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Sector</th>
               <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">📈 Ganancia</th>
               <th className="px-3 py-3 w-8 bg-neutral-100 dark:bg-neutral-800"></th>
@@ -1135,6 +1168,7 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                   );
                 }); })()}
                 <td className="px-3 py-2.5 whitespace-nowrap border-l border-neutral-100 dark:border-neutral-800"><RiesgoBadge value={e.riesgo} /></td>
+                <td className="px-3 py-2.5 whitespace-nowrap"><CategoriaDegiro value={e.categoria_degiro} onChange={(v) => updateField(e.id, "categoria_degiro", v)} /></td>
                 <td className="px-3 py-2.5 whitespace-nowrap max-w-[150px] truncate">
                   <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">{e.sector || "—"}</span>
                 </td>
