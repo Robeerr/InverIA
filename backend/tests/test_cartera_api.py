@@ -1812,3 +1812,30 @@ def test_dos_compras_a_mano_el_mismo_dia_tampoco_se_tocan():
                                              divisa="USD", tasa=1.15, comision=0))
     _correr(cartera_api.registrar_venta(db, "NFLX", 1, 80.0, fecha="2026-08-20", comision=0))
     assert _correr(cartera_api.historial(db))["posibles_compras_duplicadas"] == []
+
+
+# ── Vacío no es cero ─────────────────────────────────────────────────────────
+
+def test_una_venta_sin_comision_indicada_se_estima():
+    """El formulario promete "se estima sola". Enviando 0 en vez de vacío, esa promesa no
+    se cumplía nunca: cada venta tecleada entraba a coste cero y acababa en el aviso de
+    ventas sin comisión, inflando la ganancia realizada."""
+    db = _DB([{"id": "e1", "symbol": "NVDA", "mercado": "NASDAQ"}])
+    _correr(cartera_api.registrar_compra(db, "NVDA", 5, 200.0, fecha="2026-08-01",
+                                         divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.registrar_venta(db, "NVDA", 5, 222.94, fecha="2026-08-27",
+                                        divisa="USD"))          # sin comisión: vacía
+    v = db.ventas.docs[0]
+    assert v["comision"] > 0, "una venta a coste cero infla la ganancia sin decirlo"
+    assert v["comision_estimada"] is True, "y hay que poder distinguirla de un dato real"
+
+
+def test_un_cero_puesto_a_proposito_se_respeta():
+    """Cero es una afirmación —esta operación no me costó nada— y no se pisa."""
+    db = _DB([{"id": "e1", "symbol": "NVDA", "mercado": "NASDAQ"}])
+    _correr(cartera_api.registrar_compra(db, "NVDA", 5, 200.0, fecha="2026-08-01",
+                                         divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.registrar_venta(db, "NVDA", 5, 222.94, fecha="2026-08-27",
+                                        divisa="USD", comision=0))
+    assert db.ventas.docs[0]["comision"] == 0
+    assert db.ventas.docs[0]["comision_estimada"] is False
