@@ -1271,9 +1271,18 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
     if (!sym) return toast.error("Falta el ticker");
     if (!(n > 0)) return toast.error("El número de acciones debe ser mayor que cero");
     if (!(p > 0)) return toast.error("El precio debe ser mayor que cero");
+    // VACÍO y CERO no son lo mismo, y aquí se colapsaban los dos a 0. El servidor trata el
+    // cero como una afirmación —"esta operación no me costó nada"— y por eso NO la estima,
+    // que es justo lo que hay que hacer cuando alguien lo pone a propósito. Pero el campo
+    // en blanco significa "no lo sé", y el propio formulario promete debajo que se estimará
+    // sola. Enviando 0, esa promesa no se cumplía nunca: cada venta tecleada entraba a
+    // coste cero y acababa en el aviso de "ventas registradas sin comisión", inflando la
+    // ganancia realizada. La previsualización de al lado ya distinguía los dos casos; lo
+    // que se enviaba, no.
+    const vacia = f.comision == null || String(f.comision).trim() === "";
     mut.mutate({
       symbol: sym, acciones: n, precio: p,
-      comision: aNumero(f.comision) || 0,
+      ...(vacia ? {} : { comision: aNumero(f.comision) || 0 }),
       fecha: f.fecha || hoy, notas: f.notas || "",
       ...(tipo === "compra" && f.nivel ? { nivel: f.nivel } : {}),
     });
