@@ -1,19 +1,6 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "create-react-app",
   "outputDirectory": "build",
-
-  "//": [
-    "npm y no yarn, PORQUE EL LOCK ES DE NPM. Con `yarn install` y sin yarn.lock, Vercel",
-    "resolvía las dependencias de cero en cada build ('info No lockfile found') e ignoraba",
-    "el package-lock.json que sí está en el repo: una versión nueva de cualquier paquete",
-    "transitivo podía romper un despliegue sin que nadie hubiera tocado el código, y el",
-    "build de Vercel dejaba de parecerse al que se prueba en local.",
-    "",
-    "`npm ci` y no `npm install`: instala EXACTAMENTE lo que dice el lock y falla si el",
-    "lock y package.json no concuerdan, en vez de reescribirlo por su cuenta. Es lo que",
-    "hace que dos builds del mismo commit den el mismo resultado."
-  ],
   "installCommand": "npm ci",
   "buildCommand": "npm run build"
 }

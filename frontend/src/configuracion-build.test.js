@@ -21,6 +21,16 @@ describe("el despliegue es reproducible", () => {
     expect(v.buildCommand).not.toMatch(/yarn/);
   });
 
+  test("vercel.json no lleva claves que Vercel no entienda", () => {
+    // Vercel valida este fichero contra su esquema y RECHAZA el despliegue entero si
+    // encuentra una propiedad que no reconoce. Pasó de verdad: se añadió una clave "//"
+    // para documentar por qué se instala con npm, y los dos builds siguientes murieron
+    // antes de empezar. La explicación vive en este test, que es donde no estorba.
+    for (const clave of Object.keys(leer("vercel.json"))) {
+      expect(clave).toMatch(/^[a-zA-Z]+$/);
+    }
+  });
+
   test("el lock de npm existe y es el único", () => {
     expect(fs.existsSync(path.join(raiz, "package-lock.json"))).toBe(true);
     // Dos locks de gestores distintos se desincronizan, y entonces lo que instala Vercel
