@@ -3264,6 +3264,11 @@ async def importar_degiro(archivo: UploadFile = File(...),
                           # que se importó mal: cientos de operaciones con comisión cero
                           # que reimportar no arreglaba.
                           actualizar: bool = False,
+                          # Sustituye tus apuntes tecleados por la fila equivalente del
+                          # fichero. Sin esto, una fila tapada por un apunte tuyo no entra
+                          # NUNCA —y de paso bloquea el borrado de los lotes de la foto,
+                          # porque el CSV "no cubre" unas acciones que sí trae.
+                          sustituir: bool = False,
                           _user: str = Depends(auth.get_current_user)):
     """Importa el CSV de Transacciones de DEGIRO.
 
@@ -3304,7 +3309,7 @@ async def importar_degiro(archivo: UploadFile = File(...),
                 "errores": leido["errores"], "confirmado": False}
 
     r = await cartera_api.importar_degiro(db, leido["operaciones"], mapa,
-                                          actualizar=actualizar)
+                                          actualizar=actualizar, sustituir=sustituir)
     for k in ("signals_list", "signals_hot"):
         _cache._store.pop(k, None)
     return {**r, "resumen": degiro_csv.resumen(leido["operaciones"]),

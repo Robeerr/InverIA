@@ -1101,7 +1101,7 @@ async def preparar_importacion_degiro(db, operaciones: list, mapeo: dict = None)
 
 
 async def importar_degiro(db, operaciones: list, mapeo: dict = None,
-                          actualizar: bool = False) -> dict:
+                          actualizar: bool = False, sustituir: bool = False) -> dict:
     """Guarda las operaciones del CSV como compras y ventas del libro.
 
     Se salta las que ya estén (por huella), así que subir el mismo fichero dos veces —o uno
@@ -1160,14 +1160,21 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None,
     # set bastaba haber tecleado una para perder las demás — y esas acciones desaparecían
     # del libro. Es el mismo patrón que ya usa importar_dividendos.
     ya_manual = {}
+    # Y QUIÉN la tapa, para poder sustituirla. Una fila tapada es la MISMA operación que un
+    # apunte tuyo —coinciden fecha, acciones y precio al cuarto decimal— solo que la del
+    # fichero trae además la comisión y el tipo de cambio que te aplicaron de verdad. Con
+    # `sustituir` se borra el apunte tecleado y entra el del CSV; sin él, todo sigue igual.
+    quien_tapa = {}
     for c in compras_db:
         if not c.get("huella"):
             k = _clave(c, "compra")
             ya_manual[k] = ya_manual.get(k, 0) + 1
+            quien_tapa.setdefault(k, []).append(("compras", c))
     for v in ventas_db:
         if not v.get("huella"):
             k = _clave(v, "venta")
             ya_manual[k] = ya_manual.get(k, 0) + 1
+            quien_tapa.setdefault(k, []).append(("ventas", v))
 
     # Las posiciones de la Cartera, UNA vez. Antes se consultaba una por cada compra para
     # detectar su nivel: con un fichero de años son cientos de idas y vueltas a Mongo, y la
@@ -1183,7 +1190,7 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None,
     # tapadas por apuntes manuales —que es un problema, y bien distinto—. Se cuentan los
     # tres motivos por separado y se guarda qué símbolos toca cada uno.
     motivos = {"sin_ticker": 0, "ya_estaba": 0, "la_tapa_un_apunte_manual": 0}
-    tapadas_por_symbol = {}
+    tapadas_por_symbol, sust_por_symbol, sustituidas = {}, {}, 0
     for op in sorted(operaciones, key=lambda o: (o["fecha"], o.get("hora") or "")):
         sym = mapa.get(op["isin"])
         if not sym:
@@ -1199,12 +1206,27 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None,
         km = _clave({**op, "symbol": sym}, op["tipo"])
         if ya_manual.get(km, 0) > 0:
             ya_manual[km] -= 1      # esta fila la cubre UN apunte manual, no todas
-            saltadas += 1
-            motivos["la_tapa_un_apunte_manual"] += 1
-            d = tapadas_por_symbol.setdefault(sym, {"symbol": sym, "filas": 0, "acciones": 0})
-            d["filas"] += 1
-            d["acciones"] = round(d["acciones"] + (op.get("acciones") or 0), 6)
-            continue
+            if sustituir and quien_tapa.get(km):
+                # Se borra el apunte tecleado y se deja pasar la fila: misma operación, con
+                # la comisión y el cambio reales en vez de estimados. Sin esto la fila no
+                # entraba nunca, y encima bloqueaba el borrado de los lotes de la foto —el
+                # CSV "no cubría" unas acciones que sí estaban en el fichero.
+                col, doc = quien_tapa[km].pop()
+                await getattr(db, col).delete_one({"id": doc.get("id")})
+                sustituidas += 1
+                sust_por_symbol.setdefault(sym, {"symbol": sym, "apuntes": 0, "acciones": 0})
+                sust_por_symbol[sym]["apuntes"] += 1
+                sust_por_symbol[sym]["acciones"] = round(
+                    sust_por_symbol[sym]["acciones"] + (op.get("acciones") or 0), 6)
+                tocados.add(sym)
+            else:
+                saltadas += 1
+                motivos["la_tapa_un_apunte_manual"] += 1
+                d = tapadas_por_symbol.setdefault(sym, {"symbol": sym, "filas": 0,
+                                                        "acciones": 0})
+                d["filas"] += 1
+                d["acciones"] = round(d["acciones"] + (op.get("acciones") or 0), 6)
+                continue
         comun = dict(symbol=sym, acciones=op["acciones"], precio=op["precio"],
                      fecha=op["fecha"], comision=op["comision"], divisa=op["divisa"],
                      tasa=op["tasa"], notas=f"DEGIRO · orden {op.get('orden') or '—'}")
@@ -1278,6 +1300,9 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None,
             # apunte que las tapa siga ahí.
             "tapadas_por_symbol": sorted(tapadas_por_symbol.values(),
                                          key=lambda d: -d["acciones"]),
+            "sustituidas": sustituidas,
+            "sustituidas_por_symbol": sorted(sust_por_symbol.values(),
+                                             key=lambda d: -d["acciones"]),
             # Se devuelve si se PIDIÓ reparar, no solo cuántas se repararon. Sin esto el
             # cliente no puede distinguir "no lo pediste" de "no había nada que corregir",
             # y las dos acaban en el mismo mensaje: "ya estaba todo importado".

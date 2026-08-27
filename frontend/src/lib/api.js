@@ -194,11 +194,15 @@ export const api = {
     // productos no se sabe a que accion corresponden; con el mapeo resuelto, guarda.
     // `actualizar` repara las operaciones que YA estaban (solo la comisión). Sin él
     // se saltan, que es lo correcto para no duplicar pero deja intacto lo mal importado.
-    importarDegiro: (archivo, mapeo = null, confirmar = false, actualizar = false) => {
+    // `sustituir`: cambia tus apuntes tecleados por la fila equivalente del fichero. Sin
+    // esto, una fila tapada por un apunte tuyo no entra nunca.
+    importarDegiro: (archivo, mapeo = null, confirmar = false, actualizar = false,
+                     sustituir = false) => {
       const fd = new FormData();
       fd.append("archivo", archivo);
       return client.post(`/cartera/importar-degiro`, fd, {
         params: { confirmar, actualizar: actualizar || undefined,
+                  sustituir: sustituir || undefined,
                   mapeo: mapeo ? JSON.stringify(mapeo) : undefined },
         timeout: 120000,
       }).then((r) => r.data);

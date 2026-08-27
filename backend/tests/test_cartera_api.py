@@ -1939,3 +1939,71 @@ def test_una_fila_que_de_verdad_ya_estaba_se_cuenta_aparte():
     assert r["motivos_salto"]["ya_estaba"] == 1
     assert r["motivos_salto"]["la_tapa_un_apunte_manual"] == 0
     assert r["tapadas_por_symbol"] == []
+
+
+# ── Sustituir mis apuntes por los del fichero ────────────────────────────────
+
+def _op_rh(huella="h1", comision=2.0):
+    return {"huella": huella, "tipo": "compra", "symbol": "RH", "isin": "US74967X1037",
+            "producto": "RH", "fecha": "2026-08-25", "hora": "16:00", "acciones": 5,
+            "precio": 140.76, "comision": comision, "divisa": "USD", "tasa": 1.1584,
+            "orden": "X"}
+
+
+def _db_con_apunte_que_tapa():
+    db = _DB([{"id": "e1", "symbol": "RH", "isin": "US74967X1037"}])
+    _correr(cartera_api.registrar_compra(db, "RH", 5, 140.76, fecha="2026-08-25",
+                                         divisa="USD", tasa=1.16, comision=0))
+    return db
+
+
+def test_sin_pedirlo_el_apunte_manual_sigue_tapando():
+    db = _db_con_apunte_que_tapa()
+    r = _correr(cartera_api.importar_degiro(db, [_op_rh()], {"US74967X1037": "RH"}))
+    assert r["importadas"] == 0 and r["sustituidas"] == 0
+    assert len(db.compras.docs) == 1 and not db.compras.docs[0].get("huella")
+
+
+def test_al_sustituir_entra_la_del_fichero_con_su_comision_y_su_cambio_reales():
+    """Es la MISMA operación —fecha, acciones y precio coinciden al cuarto decimal—; lo que
+    cambia es que la del fichero trae lo que DEGIRO te cobró de verdad."""
+    db = _db_con_apunte_que_tapa()
+    r = _correr(cartera_api.importar_degiro(db, [_op_rh()], {"US74967X1037": "RH"},
+                                            sustituir=True))
+    assert r["sustituidas"] == 1 and r["importadas"] == 1
+    assert r["sustituidas_por_symbol"] == [{"symbol": "RH", "apuntes": 1, "acciones": 5}]
+    assert len(db.compras.docs) == 1, "una entra, otra se va: la posición no cambia"
+    c = db.compras.docs[0]
+    assert c["huella"] == "h1" and c["comision"] == 2.0 and c["tasa"] == 1.1584
+
+
+def test_sustituir_no_toca_un_apunte_que_no_esta_en_el_fichero():
+    """Una operación tuya que el CSV no contiene no se puede sustituir por nada."""
+    db = _db_con_apunte_que_tapa()
+    _correr(cartera_api.registrar_compra(db, "RH", 7, 99.0, fecha="2026-01-05",
+                                         divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.importar_degiro(db, [_op_rh()], {"US74967X1037": "RH"},
+                                        sustituir=True))
+    suelta = [c for c in db.compras.docs if c["acciones"] == 7]
+    assert len(suelta) == 1 and not suelta[0].get("huella")
+
+
+def test_sustituir_no_duplica_si_se_repite():
+    """La segunda pasada ya encuentra la huella: no hay nada que sustituir ni que importar."""
+    db = _db_con_apunte_que_tapa()
+    _correr(cartera_api.importar_degiro(db, [_op_rh()], {"US74967X1037": "RH"},
+                                        sustituir=True))
+    r = _correr(cartera_api.importar_degiro(db, [_op_rh()], {"US74967X1037": "RH"},
+                                            sustituir=True))
+    assert r["sustituidas"] == 0 and r["importadas"] == 0
+    assert r["motivos_salto"]["ya_estaba"] == 1
+    assert len(db.compras.docs) == 1
+
+
+def test_un_apunte_manual_tapa_UNA_fila_y_no_dos():
+    """DEGIRO parte una orden en ejecuciones idénticas. Un apunte tuyo sustituye a una."""
+    db = _db_con_apunte_que_tapa()
+    r = _correr(cartera_api.importar_degiro(
+        db, [_op_rh("h1"), _op_rh("h2")], {"US74967X1037": "RH"}, sustituir=True))
+    assert r["sustituidas"] == 1 and r["importadas"] == 2
+    assert len(db.compras.docs) == 2 and all(c.get("huella") for c in db.compras.docs)

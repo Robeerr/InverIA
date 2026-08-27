@@ -361,6 +361,7 @@ function ImportarDegiro({ onCerrar }) {
   // Reparar las que ya estaban. Apagado por defecto: reescribe apuntes existentes y
   // eso solo debe pasar cuando se pide, no como efecto secundario de reimportar.
   const [actualizar, setActualizar] = React.useState(false);
+  const [sustituir, setSustituir] = React.useState(false);
   const IGNORAR = "__IGNORAR__";
   const [archivo, setArchivo] = React.useState(null);
   const [previo, setPrevio] = React.useState(null);
@@ -391,7 +392,8 @@ function ImportarDegiro({ onCerrar }) {
   });
 
   const confirmar = useMutation({
-    mutationFn: () => api.cartera.importarDegiro(archivo, mapeo, true, actualizar),
+    mutationFn: () =>
+      api.cartera.importarDegiro(archivo, mapeo, true, actualizar, sustituir),
     onSuccess: (r) => {
       if (r.pendientes?.length) {
         toast.error("Faltan productos por emparejar");
@@ -417,9 +419,12 @@ function ImportarDegiro({ onCerrar }) {
       // importado" tanto si no se pidió reparar como si se pidió y no había nada que
       // reparar deja al usuario sin saber si la casilla funcionó.
       const nadaQueCorregir = r.actualizar_pedido && !r.actualizadas;
+      const sust = r.sustituidas
+        ? ` · ${r.sustituidas} apunte(s) tuyos sustituidos por los del fichero`
+        : "";
       toast.success(r.importadas
         ? `${r.importadas} operación(es) importadas`
-          + (r.saltadas ? ` · ${r.saltadas} ya estaban` : "") + reparadas
+          + (r.saltadas ? ` · ${r.saltadas} ya estaban` : "") + sust + reparadas
         : reparadas
           ? `No había nada nuevo, pero${reparadas.replace(" · ", " ")}.`
           : nadaQueCorregir
@@ -434,7 +439,7 @@ function ImportarDegiro({ onCerrar }) {
                 + "entrado porque las tapa un apunte tuyo: "
                 + r.tapadas_por_symbol.slice(0, 6)
                   .map((t) => `${t.symbol} (${t.acciones} acc.)`).join(", ")
-                + ". Borra esos apuntes y vuelve a importar."
+                + ". Marca «Sustituir mis apuntes por los del fichero» y vuelve a importar."
               : `Ya estaba todo importado (${r.saltadas} operaciones). Si querías corregir `
               + "las comisiones, marca la casilla y vuelve a importar.",
         { duration: 10000 });
@@ -606,6 +611,25 @@ function ImportarDegiro({ onCerrar }) {
               comisión de los apuntes que ya tienes con la del fichero. No toca precios,
               fechas ni acciones. Márcalo si tu realizado está inflado porque se importaron
               sin comisión.
+            </span>
+          </label>
+
+          {/* Sustituir lo tecleado por lo del fichero. Es la salida del punto muerto: una
+              fila tapada por un apunte tuyo no entra NUNCA —y mientras no entre, el CSV
+              "no cubre" esas acciones y tampoco se pueden quitar los lotes de la foto—.
+              Son la misma operación: coinciden fecha, acciones y precio al cuarto decimal.
+              Lo único que cambia es que la del fichero trae la comisión y el tipo de cambio
+              que te aplicaron de verdad, en vez de estimados. */}
+          <label className="flex items-start gap-2 mb-3 cursor-pointer">
+            <input type="checkbox" checked={sustituir}
+                   onChange={(e) => setSustituir(e.target.checked)}
+                   className="mt-0.5 w-4 h-4 accent-marca shrink-0" />
+            <span className="text-apoyo text-tinta-2 leading-snug">
+              <b>Sustituir mis apuntes por los del fichero.</b> Si tecleaste una operación
+              que también viene en el CSV —misma fecha, mismas acciones, mismo precio—, se
+              queda la del fichero, que trae la comisión y el tipo de cambio reales. Tu
+              posición no cambia: entra una y se va la otra. Lo que no esté en el fichero no
+              se toca.
             </span>
           </label>
 
