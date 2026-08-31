@@ -69,22 +69,29 @@ export default function ExtractoMargen() {
   const cls =
     "w-full bg-fondo border border-linea rounded px-2 py-1.5 font-mono text-apoyo";
 
+  // Con el extracto ya guardado esto es un dato de mantenimiento: se teclea una vez al mes
+  // y el resto del tiempo solo estorba. Entonces se encoge a una línea y la explicación se
+  // pliega. Cuando NO hay extracto es al revés —hay que decir qué es y de dónde se saca, o
+  // el hueco no se rellena nunca—, así que ahí el texto se queda a la vista.
+  const guardado = data?.riesgo_eur && !f;
+
+  const explicacion = (
+    <>
+      Cópialo de «Available to trade → Margin statement». Sin él, InverIA no estima
+      cuánto margen libera una venta: prefiere callarse a dar un número que no puede
+      comprobar. <b>Vale un mes</b> — se compara la proporción riesgo/cartera, que no se
+      mueve con el vaivén diario de los precios, y DEGIRO recategoriza los instrumentos
+      mensualmente. Cuando caduque te avisa por Telegram.
+    </>
+  );
+
   return (
     <section className="iv-panel p-4">
-      <h3 className="font-heading font-semibold text-titulo text-tinta">
-        Extracto de margen de DEGIRO
-      </h3>
-      <p className="text-apoyo text-tinta-3 mt-1 leading-snug">
-        Cópialo de «Available to trade → Margin statement». Sin él, InverIA no estima
-        cuánto margen libera una venta: prefiere callarse a dar un número que no puede
-        comprobar. <b>Vale un mes</b> — se compara la proporción riesgo/cartera, que no se
-        mueve con el vaivén diario de los precios, y DEGIRO recategoriza los instrumentos
-        mensualmente. Cuando caduque te avisa por Telegram.
-      </p>
-
-      {data?.riesgo_eur && !f && (
-        <div className="mt-3 flex items-baseline gap-3 flex-wrap">
-          <span className="iv-etiqueta">Guardado</span>
+      {guardado ? (
+        <div className="flex items-baseline gap-3 flex-wrap">
+          <h3 className="font-heading font-semibold text-cuerpo text-tinta-2">
+            Extracto de margen
+          </h3>
           <span className="iv-cifra text-cuerpo text-tinta">
             {Math.round(data.riesgo_eur).toLocaleString("es-ES")} € de riesgo
           </span>
@@ -99,6 +106,22 @@ export default function ExtractoMargen() {
             Actualizar
           </button>
         </div>
+      ) : (
+        <>
+          <h3 className="font-heading font-semibold text-titulo text-tinta">
+            Extracto de margen de DEGIRO
+          </h3>
+          <p className="text-apoyo text-tinta-3 mt-1 leading-snug">{explicacion}</p>
+        </>
+      )}
+
+      {guardado && (
+        <details className="mt-1">
+          <summary className="text-etiqueta text-tinta-3 cursor-pointer">
+            Para qué sirve
+          </summary>
+          <p className="text-apoyo text-tinta-3 mt-1 leading-snug">{explicacion}</p>
+        </details>
       )}
 
       {(!data?.riesgo_eur || f) && (

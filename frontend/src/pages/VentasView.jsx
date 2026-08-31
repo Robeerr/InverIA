@@ -1936,10 +1936,6 @@ export default function VentasView() {
         </Plegable>
       )}
 
-      {/* El extracto de DEGIRO va ANTES de las posiciones: es lo que decide si los
-          avisos de margen de cada venta pueden dar una cifra o tienen que callarse. */}
-      <ExtractoMargen />
-
       {/* Qué posiciones arrastran lotes que no vinieron del CSV. Son las que pueden no
           cuadrar con el bróker: su fecha es la del alta, no la de la compra, así que el
           coste se pasó a euros al cambio de un día que no es el tuyo. El precio y las
@@ -2361,6 +2357,11 @@ export default function VentasView() {
           </details>
         </Plegable>
       )}
+
+      {/* Al final, no en medio. Es lo que autoriza a estimar el margen de una venta, pero
+          se teclea una vez al mes: partía la página en dos entre el historial y la tabla
+          de posiciones, que es lo que se viene a mirar. Su sitio no cambia lo que hace. */}
+      <ExtractoMargen />
     </div>
   );
 }
