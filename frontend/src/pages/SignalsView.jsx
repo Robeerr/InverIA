@@ -1095,54 +1095,54 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="text-left border-b-2 border-neutral-200 dark:border-neutral-700">
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap w-10 bg-neutral-100 dark:bg-neutral-800">⚡</th>
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Acción</th>
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Mdo.</th>
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Precio actual</th>
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Compra</th>
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Nº acc.</th>
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">P&amp;L</th>
-              <th className="px-3 py-3 text-xs whitespace-nowrap text-right bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 font-bold border-l border-blue-200 dark:border-blue-800">🎯 Deseado / Venta</th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap w-10 bg-neutral-100 dark:bg-neutral-800">⚡</th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Acción</th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Mdo.</th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Precio</th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Compra</th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Acc.</th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">P&amp;L</th>
+              <th className="px-2 py-2.5 text-xs whitespace-nowrap text-right bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 font-bold border-l border-blue-200 dark:border-blue-800">Deseado</th>
               {[1,2,3,4,5].map((n) => (
-                <th key={n} className="px-3 py-3 text-xs whitespace-nowrap text-right bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 font-bold border-l border-green-200 dark:border-green-800">Nivel {n}{n === 5 ? " ⭐" : ""}</th>
+                <th key={n} className="px-2 py-2.5 text-xs whitespace-nowrap text-right bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 font-bold border-l border-green-200 dark:border-green-800">N{n}{n === 5 ? "⭐" : ""}</th>
               ))}
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800 border-l border-neutral-200">Riesgo</th>
-              <th title="Categoría de riesgo de DEGIRO (A-D). Determina cuánto margen libera vender esta acción." className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Cat.</th>
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Sector</th>
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">📈 Ganancia</th>
-              <th className="px-3 py-3 w-8 bg-neutral-100 dark:bg-neutral-800"></th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800 border-l border-neutral-200">Riesgo</th>
+              <th title="Categoría de riesgo de DEGIRO (A-D). Determina cuánto margen libera vender esta acción." className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Cat.</th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Sector</th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Ganancia</th>
+              <th className="px-2 py-2.5 w-8 bg-neutral-100 dark:bg-neutral-800"></th>
             </tr>
           </thead>
           <tbody>
             {entries.map((e, idx) => (
               <tr key={e.id} className={`border-t border-neutral-100 dark:border-neutral-800 transition-colors group ${!e.active ? "opacity-40" : ""} ${idx % 2 === 0 ? "bg-white dark:bg-neutral-900" : "bg-neutral-50 dark:bg-neutral-800/40"} hover:bg-amber-50/60 dark:hover:bg-neutral-700/40`}>
-                <td className="px-3 py-2.5 text-center">
+                <td className="px-2 py-2.5 text-center">
                   <input type="checkbox" checked={e.active} onChange={(ev) => updateField(e.id, "active", ev.target.checked)} className="w-4 h-4 cursor-pointer accent-marca" title={e.active ? "Monitorización activa" : "Monitorización pausada"} />
                 </td>
-                <td className="px-3 py-2.5 whitespace-nowrap">
+                <td className="px-2 py-2.5 whitespace-nowrap">
                   <div className="flex items-center gap-1.5">
                     <span className="font-bold text-marca cursor-pointer hover:underline text-sm" onClick={() => setSymbol && setSymbol(e.symbol)}>{e.symbol}</span>
                     {saving[e.id] && <span className="text-[10px] text-neutral-400 animate-pulse">·</span>}
                   </div>
-                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate max-w-[130px] font-medium">{e.name}</p>
+                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate max-w-[104px] font-medium">{e.name}</p>
                 </td>
-                <td className="px-3 py-2.5">
+                <td className="px-2 py-2.5">
                   <span className="text-[11px] font-mono font-semibold bg-neutral-200 dark:bg-neutral-700 px-2 py-0.5 rounded text-neutral-700 dark:text-neutral-300">{e.mercado || "—"}</span>
                 </td>
-                <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                <td className="px-2 py-2.5 text-right whitespace-nowrap">
                   <span className="font-mono font-bold text-neutral-900 dark:text-white text-sm">{fmtP(e.last_price)}</span>
                   <ExtendedBadge entry={e} />
                 </td>
-                <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                <td className="px-2 py-2.5 text-right whitespace-nowrap">
                   <EditableCell value={e.compra} onChange={(v) => updateField(e.id, "compra", v)} className="font-mono text-sm text-neutral-700 dark:text-neutral-300" />
                 </td>
-                <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                <td className="px-2 py-2.5 text-right whitespace-nowrap">
                   <EditableCell value={e.acciones} onChange={(v) => updateField(e.id, "acciones", v)} isNumber format={(v) => v != null && v !== "" ? Number(v).toLocaleString("es-ES", { maximumFractionDigits: 2 }) : "—"} className="font-mono text-sm text-neutral-700 dark:text-neutral-300" />
                 </td>
-                <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                <td className="px-2 py-2.5 text-right whitespace-nowrap">
                   <PnlText abs={pnlAbs(e)} pct={pnlPct(e)} eur={pnlEur.porSymbol[(e.symbol || "").toUpperCase()]} tasa={pnlEur.tasaUSD} />
                 </td>
-                <td className="px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 border-l border-blue-100 dark:border-blue-900">
+                <td className="px-2 py-2.5 bg-blue-50 dark:bg-blue-900/20 border-l border-blue-100 dark:border-blue-900">
                   <div className="flex items-center justify-end gap-1">
                     <EditableCell value={e.deseado} onChange={(v) => updateField(e.id, "deseado", v)} className="font-mono text-sm font-bold text-blue-800 dark:text-blue-200" />
                     {/* El estado que se NIEGA debe ser el mismo que se PINTA. Con `!e.alert_deseado`, una
@@ -1158,7 +1158,7 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                   const d = nivelDist(e, n);
                   const isNext = n === nextN;
                   return (
-                    <td key={n} className={`px-3 py-2.5 border-l border-green-100 dark:border-green-900 ${isNext ? "bg-aviso/15" : "bg-green-50 dark:bg-green-900/10"}`}>
+                    <td key={n} className={`px-2 py-2.5 border-l border-green-100 dark:border-green-900 ${isNext ? "bg-aviso/15" : "bg-green-50 dark:bg-green-900/10"}`}>
                       <div className="flex items-center justify-end gap-1">
                         <EditableCell value={val} onChange={(v) => updateField(e.id, `nivel${n}`, v)} className="font-mono text-sm font-semibold text-green-900 dark:text-green-300" />
                         <BellToggle active={alertOn} onClick={() => updateField(e.id, alertKey, !alertOn)} />
@@ -1167,17 +1167,18 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                     </td>
                   );
                 }); })()}
-                <td className="px-3 py-2.5 whitespace-nowrap border-l border-neutral-100 dark:border-neutral-800"><RiesgoBadge value={e.riesgo} /></td>
-                <td className="px-3 py-2.5 whitespace-nowrap"><CategoriaDegiro value={e.categoria_degiro} onChange={(v) => updateField(e.id, "categoria_degiro", v)} /></td>
-                <td className="px-3 py-2.5 whitespace-nowrap max-w-[150px] truncate">
-                  <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">{e.sector || "—"}</span>
+                <td className="px-2 py-2.5 whitespace-nowrap border-l border-neutral-100 dark:border-neutral-800"><RiesgoBadge value={e.riesgo} /></td>
+                <td className="px-2 py-2.5 whitespace-nowrap"><CategoriaDegiro value={e.categoria_degiro} onChange={(v) => updateField(e.id, "categoria_degiro", v)} /></td>
+                <td className="px-2 py-2.5 whitespace-nowrap max-w-[150px] truncate">
+                  <span title={e.sector || ""}
+                        className="block max-w-[92px] truncate text-xs font-medium text-neutral-700 dark:text-neutral-300">{e.sector || "—"}</span>
                 </td>
-                <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                <td className="px-2 py-2.5 text-right whitespace-nowrap">
                   {e.posibles_ganancias != null ? (
                     <span className="inline-block font-bold text-white bg-green-600 dark:bg-green-700 font-mono text-xs px-2 py-0.5 rounded-full">+{fmtPct(e.posibles_ganancias)}</span>
                   ) : <span className="text-neutral-400">—</span>}
                 </td>
-                <td className="px-3 py-2.5 text-center">
+                <td className="px-2 py-2.5 text-center">
                   <button onClick={() => deleteEntry(e.id)} className="text-neutral-300 hover:text-red-500 transition-colors p-1 opacity-0 group-hover:opacity-100" title="Eliminar"><Trash size={14} /></button>
                 </td>
               </tr>
