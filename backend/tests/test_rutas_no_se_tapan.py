@@ -101,3 +101,8 @@ def test_el_detector_funciona():
     assert _tapa("/analyst/{symbol}", "/analyst/ideas/extra") is False
     assert _tapa("/otro/{symbol}", "/analyst/ideas") is False
     assert _tapa("/analyst/ideas", "/analyst/ideas") is False
+
+
+def test_la_ruta_de_estimar_comisiones_existe():
+    """Se llama desde el aviso de ventas sin comisión; sin ruta, el botón daría 404."""
+    assert ("post", "/cartera/estimar-comisiones") in {(m, r) for m, r, _ in _rutas()}
