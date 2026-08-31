@@ -559,6 +559,15 @@ export default function SignalsView({ setSymbol }) {
   const [importText, setImportText] = useState("");
   const [importing, setImporting] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  // Se puede llegar aquí con el formulario ya abierto (/cartera?nueva=1). Lo usa el botón
+  // «Nueva acción» de la portada: mandar a la Cartera y que ahí haya que buscar el botón
+  // otra vez convierte un atajo en un desvío.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("nueva") === "1") {
+      setNewEntry(EMPTY);
+      setShowAdd(true);
+    }
+  }, []);
   const [newEntry, setNewEntry] = useState(EMPTY);
   const imageInputRef = useRef(null);
 

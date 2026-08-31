@@ -29,10 +29,13 @@ export default function PanelCartera({ cartera }) {
   const c = cartera || {};
   return (
     <section className="iv-panel p-4" aria-labelledby="hoy-cartera">
-      <div className="flex items-baseline justify-between mb-2">
-        <h2 id="hoy-cartera" className="iv-etiqueta">Tu cartera</h2>
-        <Link to="/cartera" className="text-etiqueta text-marca hover:underline">ver todo</Link>
+      <div className="flex items-baseline justify-between gap-2 mb-1">
+        <p className="iv-etiqueta tracking-[0.16em] text-tinta-3">Tu cartera</p>
+        <Link to="/cartera" className="text-etiqueta text-marca hover:underline shrink-0">ver todo ›</Link>
       </div>
+      {/* El rótulo dice QUÉ es la cifra grande. Sin él, «34.758 €» debajo de «Tu cartera»
+          podía leerse como lo invertido, que es otro número y está tres líneas más abajo. */}
+      <h2 id="hoy-cartera" className="text-apoyo text-tinta-2 mb-0.5">Valor actual</h2>
 
       {/* La cifra grande: el valor total. Es el número que se abre a mirar. */}
       <p className="iv-cifra text-cifra font-bold text-tinta leading-none">
