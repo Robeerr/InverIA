@@ -3953,6 +3953,13 @@ async def remove_watchlist(symbol: str, _user: str = Depends(auth.get_current_us
 
 
 # ---------- Correlación de la cartera (#22) ----------
+#: Cuántos valores entran en la matriz de correlación. Cada uno descarga un año de
+#: histórico, así que el techo es de memoria y de tiempo, no de criterio. Lo que importa no
+#: es el número sino QUIÉNES: con las posiciones abiertas primero, 25 cubre de sobra una
+#: cartera normal, y lo que se queda fuera es lista de seguimiento.
+TECHO_CORRELACION = 25
+
+
 @api_router.get("/portfolio/correlation")
 async def portfolio_correlation(_user: str = Depends(auth.get_current_user)):
     """Correlación entre las acciones de la Cartera: detecta 'concentración oculta' —
@@ -3964,16 +3971,39 @@ async def portfolio_correlation(_user: str = Depends(auth.get_current_user)):
     import pandas as pd
     import numpy as np
 
-    rows = await db.signal_entries.find({"active": True}, {"_id": 0, "symbol": 1}).to_list(200)
-    syms, seen = [], set()
+    rows = await db.signal_entries.find({"active": True},
+                                        {"_id": 0, "symbol": 1, "acciones": 1}).to_list(200)
+    # QUÉ 25, que era el problema. El techo existe porque cada símbolo descarga un año de
+    # histórico, pero antes se cogían los 25 primeros que devolvía Mongo —orden arbitrario y
+    # ni siquiera estable entre llamadas—. Con 83 valores en la Cartera, eso medía la
+    # diversificación de un trozo cualquiera y la enseñaba como si fuera la cartera entera.
+    #
+    # Ahora mandan las posiciones que TIENES ABIERTAS: "si cae una, caen todas" es una
+    # pregunta sobre el dinero que está puesto, no sobre una lista de seguimiento. Las que
+    # solo vigilas rellenan lo que sobre, y dentro de cada grupo el orden es alfabético para
+    # que dos llamadas seguidas den el mismo resultado.
+    def _acc(r):
+        try:
+            return float(r.get("acciones") or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    vistos, candidatos = set(), []
     for r in rows:
-        s = (r.get("symbol") or "").upper()
-        if s and s not in seen:
-            seen.add(s)
-            syms.append(s)
-    syms = syms[:25]  # techo: bounded en memoria
+        sym = (r.get("symbol") or "").upper()
+        if not sym or sym in vistos:
+            continue
+        vistos.add(sym)
+        candidatos.append((0 if _acc(r) > 0 else 1, sym))
+    candidatos.sort()
+    total, en_cartera = len(candidatos), sum(1 for c in candidatos if c[0] == 0)
+    syms = [sym for _, sym in candidatos[:TECHO_CORRELACION]]
+    # Cuántas se han mirado de cuántas hay. Sin esto, un número calculado sobre un tercio
+    # de la cartera se lee como si fuera sobre toda.
+    alcance = {"analizadas": len(syms), "total": total, "en_cartera": en_cartera,
+               "truncado": total > len(syms)}
     if len(syms) < 2:
-        return {"pairs": [], "avg_corr": None, "n": len(syms),
+        return {"pairs": [], "avg_corr": None, "n": len(syms), **alcance,
                 "message": "Necesitas al menos 2 acciones en la Cartera para medir la correlación."}
 
     loop = asyncio.get_running_loop()
@@ -3988,11 +4018,11 @@ async def portfolio_correlation(_user: str = Depends(auth.get_current_user)):
             continue
     mem.trim()
     if len(series) < 2:
-        return {"pairs": [], "avg_corr": None, "n": len(series),
+        return {"pairs": [], "avg_corr": None, "n": len(series), **alcance,
                 "message": "No hay histórico suficiente para las acciones de la Cartera."}
     mat = pd.DataFrame(series).dropna()
     if len(mat) < 20:
-        return {"pairs": [], "avg_corr": None, "n": len(series),
+        return {"pairs": [], "avg_corr": None, "n": len(series), **alcance,
                 "message": "Histórico común insuficiente entre las acciones."}
     corr = mat.pct_change().dropna().corr()
     cols = list(corr.columns)
@@ -4005,6 +4035,7 @@ async def portfolio_correlation(_user: str = Depends(auth.get_current_user)):
     pairs.sort(key=lambda x: x["corr"], reverse=True)
     avg = round(float(np.mean([p["corr"] for p in pairs])), 2) if pairs else None
     result = {
+        **alcance,
         "n": len(cols),
         "avg_corr": avg,
         "pairs": pairs[:8],

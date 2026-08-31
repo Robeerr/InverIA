@@ -319,8 +319,22 @@ function CorrelationCard() {
           <div className="flex items-baseline gap-2">
             <span className="font-mono font-bold text-lg text-neutral-900 dark:text-white">{data.avg_corr}</span>
             <span className={`text-xs font-semibold ${nivel.cls}`}>{nivel.txt}</span>
-            <span className="text-[10px] text-neutral-400">· {data.n} acciones</span>
+            {/* De cuántas. Con 83 valores en la Cartera y un techo de 25, decir solo "25
+                acciones" hace leer como veredicto de toda la cartera lo que es de una
+                parte. Las abiertas entran primero, que es lo que hace que la cifra siga
+                significando algo aunque no quepan todas. */}
+            <span className="text-[10px] text-neutral-400">
+              · {data.n} acciones
+              {data.truncado && data.total ? ` de ${data.total}` : ""}
+            </span>
           </div>
+          {data.truncado && (
+            <p className="text-[10px] text-neutral-400 leading-snug">
+              Se analizan hasta {data.n} valores, y entran primero tus{" "}
+              {data.en_cartera} posición(es) abiertas: cada acción descarga un año de
+              histórico. Las que solo vigilas pueden quedarse fuera.
+            </p>
+          )}
           {(data.high || []).length > 0 ? (
             <div>
               <p className="text-[10px] uppercase text-neutral-400 font-mono mb-1">Se mueven casi igual (riesgo de bloque)</p>
