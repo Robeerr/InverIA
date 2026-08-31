@@ -1108,12 +1108,15 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
               ))}
               <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800 border-l border-neutral-200">Riesgo</th>
               <th title="Categoría de riesgo de DEGIRO (A-D). Determina cuánto margen libera vender esta acción." className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Cat.</th>
-              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Sector</th>
-              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Ganancia</th>
               <th className="px-2 py-2.5 w-8 bg-neutral-100 dark:bg-neutral-800"></th>
             </tr>
           </thead>
           <tbody>
+            {/* Sector y Ganancia no salen aquí: son de SOLO LECTURA en esta tabla y con
+                dieciocho columnas obligaban a scroll horizontal. Se siguen viendo en la
+                vista de móvil y se editan en el formulario, así que no se pierde nada —y
+                el sector sigue alimentando el modelo de riesgo igual, esté a la vista o
+                no. */}
             {entries.map((e, idx) => (
               <tr key={e.id} className={`border-t border-neutral-100 dark:border-neutral-800 transition-colors group ${!e.active ? "opacity-40" : ""} ${idx % 2 === 0 ? "bg-white dark:bg-neutral-900" : "bg-neutral-50 dark:bg-neutral-800/40"} hover:bg-amber-50/60 dark:hover:bg-neutral-700/40`}>
                 <td className="px-2 py-2.5 text-center">
@@ -1169,15 +1172,6 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                 }); })()}
                 <td className="px-2 py-2.5 whitespace-nowrap border-l border-neutral-100 dark:border-neutral-800"><RiesgoBadge value={e.riesgo} /></td>
                 <td className="px-2 py-2.5 whitespace-nowrap"><CategoriaDegiro value={e.categoria_degiro} onChange={(v) => updateField(e.id, "categoria_degiro", v)} /></td>
-                <td className="px-2 py-2.5 whitespace-nowrap max-w-[150px] truncate">
-                  <span title={e.sector || ""}
-                        className="block max-w-[92px] truncate text-xs font-medium text-neutral-700 dark:text-neutral-300">{e.sector || "—"}</span>
-                </td>
-                <td className="px-2 py-2.5 text-right whitespace-nowrap">
-                  {e.posibles_ganancias != null ? (
-                    <span className="inline-block font-bold text-white bg-green-600 dark:bg-green-700 font-mono text-xs px-2 py-0.5 rounded-full">+{fmtPct(e.posibles_ganancias)}</span>
-                  ) : <span className="text-neutral-400">—</span>}
-                </td>
                 <td className="px-2 py-2.5 text-center">
                   <button onClick={() => deleteEntry(e.id)} className="text-neutral-300 hover:text-red-500 transition-colors p-1 opacity-0 group-hover:opacity-100" title="Eliminar"><Trash size={14} /></button>
                 </td>
