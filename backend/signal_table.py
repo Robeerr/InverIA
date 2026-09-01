@@ -247,11 +247,18 @@ def mercado_legible(codigo) -> str:
 # ninguna API la devuelve. Derivarlo de la beta o de la volatilidad daría un número con
 # pinta de criterio, escrito justo en la casilla donde lees el criterio de otra persona.
 # Prefiere quedarse vacío: un hueco se ve, y una etiqueta inventada no.
-_CAMPOS_FICHA = ("name", "mercado", "sector")
+#
+# `sector_degiro` SÍ está, y es el mismo dato del proveedor puesto en otra casilla. Parece
+# redundante con `sector` y no lo es: aquel puede llevar tu etiqueta —y se respeta— así que
+# no sirve para reproducir cómo agrupa el bróker. Este guarda siempre el sector estándar y
+# grueso que publica el proveedor ("Technology", "Industrials"), que es del mismo tipo de
+# grano que el de DEGIRO. No es una suposición sobre su taxonomía: es un hecho publicado
+# que se parece a la suya, y la calibración contra su extracto dice si acierta.
+_CAMPOS_FICHA = ("name", "mercado", "sector", "sector_degiro")
 
 
 async def completar_ficha(db, entry: dict) -> dict:
-    """Rellena nombre, mercado y sector de una fila que los tenga vacíos.
+    """Rellena nombre, mercado y los dos sectores de una fila que los tenga vacíos.
 
     SOLO rellena huecos. Nunca pisa lo que ya hay: el sector que tú escribiste ("TECH
     GROWTH", "Viajes") es tu taxonomía y dice algo que "Technology" no dice; sustituirlo
@@ -273,6 +280,10 @@ async def completar_ficha(db, entry: dict) -> dict:
             "name": (q.get("name") or "").strip(),
             "mercado": mercado_legible(q.get("exchange")),
             "sector": (q.get("sector") or "").strip(),
+            # El mismo valor: en `sector` es un hueco que se rellena una vez y luego es
+            # tuyo; aquí es siempre el del proveedor, porque lo que tiene que reproducir
+            # es el agrupamiento del bróker y no tu criterio.
+            "sector_degiro": (q.get("sector") or "").strip(),
         }
         # El nombre que devuelven los proveedores cuando no saben nada es el propio
         # símbolo. Guardarlo dejaría "AEM · AEM", que no informa de nada.
