@@ -549,3 +549,29 @@ def test_nuestro_mayor_sector_no_cuenta_la_categoria_D():
            {"symbol": "B", "valor_eur": 3000.0, "sector": "TECH", "categoria": "D"},
            {"symbol": "C", "valor_eur": 1000.0, "sector": "SALUD", "categoria": "A"}]
     assert rc._mayor_sector(pos) == 5000.0
+
+
+def test_una_D_pendiente_ridicula_no_tapa_la_causa_de_verdad():
+    """El caso real: 6.710 € marcados de 6.726, o sea 16 € pendientes. Marcar esos 16 €
+    subiría el riesgo unos 11 € sobre un hueco de 492 —el 2%— así que perseguirlos no
+    arregla nada, y mientras el mensaje habla de ellos no habla de lo que sí importa.
+
+    Un euro pendiente de D no aporta un euro de riesgo: esa posición ya contaba al 25% por
+    el neto y al 6,36% por la divisa, así que lo que suma marcarla es el resto."""
+    cal = {**_fresco(), "nuestro_eur": 13527.0, "degiro_eur": 14019.0,
+           "d_implicita": {"categoria_d_eur": 6726.0, "pct_cartera": 0.237},
+           "nuestra_d_eur": 6710.0,
+           "sector_degiro_eur": 14748.0, "nuestro_sector_eur": 13518.0}
+    m = rc._motivo_calibracion(cal)
+    assert "SECTOR" in m and "1.230" in m
+    assert "16 €" not in m
+
+
+def test_una_D_pendiente_que_SI_explica_el_hueco_se_señala():
+    """La otra cara: si lo que falta de D da cuenta del desfase, hay que decirlo."""
+    cal = {**_fresco(), "nuestro_eur": 10575.0, "degiro_eur": 13920.0,
+           "d_implicita": {"categoria_d_eur": 6684.0, "pct_cartera": 0.236},
+           "nuestra_d_eur": 0.0,
+           "sector_degiro_eur": 14748.0, "nuestro_sector_eur": 13518.0}
+    m = rc._motivo_calibracion(cal)
+    assert "CATEGORÍA D" in m and "6.684" in m

@@ -502,7 +502,15 @@ def _motivo_calibracion(cal: dict) -> str:
         if implicita and implicita["categoria_d_eur"] > 0:
             nuestra_d = cal.get("nuestra_d_eur")
             falta = implicita["categoria_d_eur"] - (nuestra_d or 0.0)
-            if falta > 1.0:
+            # Que falte D no basta: tiene que faltar LO BASTANTE para explicar el desfase.
+            # Marcar una posición como D no suma su valor entero al riesgo —ya contaba al
+            # 25% por el neto y al 6,36% por la divisa—, así que cada euro pendiente aporta
+            # unos 0,69. Con 16 € pendientes eso son 11 € sobre un hueco de 492: el 2%. El
+            # mensaje mandaba a buscar esos 16 € y de paso tapaba la causa de verdad, que
+            # es lo que hace daño. Por debajo de un quinto del hueco, se pasa de largo.
+            hueco = (cal.get("degiro_eur") or 0.0) - (cal.get("nuestro_eur") or 0.0)
+            aporta = falta * (1 - P_NETO - P_DIVISA)
+            if falta > 1.0 and hueco > 0 and aporta >= 0.20 * hueco:
                 tienes = (f"Ahora tienes marcados {_eur(nuestra_d)} €"
                           if nuestra_d else "Ahora no tienes ninguna marcada")
                 return (f"El modelo se queda corto: {diferencia}. La causa se puede "
