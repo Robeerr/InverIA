@@ -35,6 +35,7 @@ import signal_table
 import daily_analyst
 import sp500_rsi_watch
 import vigia_modelo
+import riesgo_cartera
 import ventas as ventas_mod
 import cartera_api
 import degiro_csv
@@ -942,6 +943,9 @@ class SignalEntryCreate(BaseModel):
     alert_venta2: Optional[bool] = True
     alert_venta3: Optional[bool] = True
     riesgo: Optional[str] = ""
+    # La letra A-D del modelo de MARGEN de DEGIRO. Sin declararla aquí, Pydantic la
+    # descarta en silencio y el desplegable de la Cartera no guarda nada.
+    categoria_degiro: Optional[str] = ""
     sector: Optional[str] = ""
     posibles_ganancias: Optional[float] = None
     notes: Optional[str] = ""
@@ -985,6 +989,9 @@ class SignalEntryUpdate(BaseModel):
     alert_venta2: Optional[bool] = None
     alert_venta3: Optional[bool] = None
     riesgo: Optional[str] = None
+    # La letra A-D del modelo de MARGEN de DEGIRO. Sin declararla aquí, Pydantic la
+    # descarta en silencio y el desplegable de la Cartera no guarda nada.
+    categoria_degiro: Optional[str] = None
     sector: Optional[str] = None
     posibles_ganancias: Optional[float] = None
     notes: Optional[str] = None
@@ -2905,6 +2912,22 @@ async def crear_venta(item: VentaLoteCreate, _user: str = Depends(auth.get_curre
     return estado
 
 
+@api_router.post("/cartera/estimar-comisiones")
+async def estimar_comisiones(aplicar: bool = False,
+                             _user: str = Depends(auth.get_current_user)):
+    """Pone la comisión estimada a los apuntes tecleados que se quedaron a cero.
+
+    Dos pasos a propósito: sin `aplicar` solo dice qué tocaría y cuánto suma, porque esto
+    reescribe apuntes del usuario. Nunca toca lo que vino del CSV: ahí la comisión es la
+    del fichero, y un cero real es un dato, no un hueco.
+    """
+    r = await cartera_api.estimar_comisiones_pendientes(db, aplicar=aplicar)
+    if aplicar:
+        for k in ("signals_list", "signals_hot"):
+            _cache._store.pop(k, None)
+    return r
+
+
 @api_router.delete("/cartera/ventas/{venta_id}")
 async def eliminar_venta(venta_id: str, _user: str = Depends(auth.get_current_user)):
     """Borra una venta. No hay que 'devolver' acciones a ninguna parte: la posición se
@@ -3006,6 +3029,191 @@ async def resumen_cartera(_user: str = Depends(auth.get_current_user)):
     return await cartera_api.resumen_cartera(db, precios)
 
 
+def _hoy() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+class ExtractoMargen(BaseModel):
+    """El «Margin statement» de DEGIRO, copiado a mano.
+
+    Es lo que permite comprobar si el modelo reproduce el riesgo real. Sin esto no se da
+    ninguna cifra: las categorías A-D y la taxonomía sectorial del bróker no se pueden
+    consultar por API, así que la única forma honesta de dar euros es demostrar antes que
+    los números salen.
+    """
+    riesgo_eur: float
+    valor_cartera_eur: Optional[float] = None
+    saldo_eur: Optional[float] = None
+    margen_eur: Optional[float] = None
+    fecha: Optional[str] = None          # YYYY-MM-DD; vacío = hoy
+
+
+@api_router.get("/cartera/margen")
+async def leer_extracto_margen(_user: str = Depends(auth.get_current_user)):
+    doc = await db.margen_degiro.find_one({"id": "actual"}, {"_id": 0})
+    return doc or {}
+
+
+@api_router.put("/cartera/margen")
+async def guardar_extracto_margen(item: ExtractoMargen,
+                                  _user: str = Depends(auth.get_current_user)):
+    datos = item.model_dump()
+    datos["fecha"] = (datos.get("fecha") or "")[:10] or _hoy()
+    datos["id"] = "actual"
+    await db.margen_degiro.update_one({"id": "actual"}, {"$set": datos}, upsert=True)
+    return datos
+
+
+async def _posiciones_con_riesgo():
+    """Las posiciones abiertas con lo que el modelo de margen necesita.
+
+    El sector y la categoría no viajan en `resumen_cartera` —viven en la ficha de la
+    Cartera—, así que se unen aquí. Es la única razón de que esto no esté dentro de
+    `cartera_api`: ese módulo es el libro de operaciones y no sabe de `signal_entries`.
+    """
+    precios, fichas = {}, {}
+    try:
+        for e in await signal_table.list_entries(db):
+            s = (e.get("symbol") or "").upper()
+            if not s:
+                continue
+            if e.get("last_price") is not None:
+                precios[s] = e["last_price"]
+            fichas[s] = e
+    except Exception as exc:
+        logger.warning("No se pudieron leer las fichas para el riesgo de venta: %s", exc)
+    resumen = await cartera_api.resumen_cartera(db, precios)
+    posiciones = []
+    for p in (resumen.get("posiciones") or []):
+        sym = (p.get("symbol") or "").upper()
+        f = fichas.get(sym, {})
+        posiciones.append({
+            "symbol": sym,
+            "valor_eur": p.get("valor_eur"),
+            "acciones": p.get("acciones"),
+            "sector": (f.get("sector") or "").strip(),
+            # La letra que DEGIRO enseña junto al producto. Se teclea a mano porque no hay
+            # API que la sirva; sin ella se asume la categoría más baja y la calibración
+            # se encarga de delatarlo.
+            "categoria": (f.get("categoria_degiro") or "").strip().upper(),
+            "divisa": (p.get("divisa") or "USD").upper(),
+        })
+    return posiciones
+
+
+@api_router.get("/cartera/riesgo-venta/{symbol}")
+async def riesgo_de_vender(symbol: str, acciones: Optional[float] = None,
+                           _user: str = Depends(auth.get_current_user)):
+    """Cuánto margen libre debería devolver vender esto.
+
+    Da euros SOLO si el modelo reproduce el riesgo del último extracto de margen dentro de
+    su tolerancia. Si no, devuelve el motivo por el que se calla.
+    """
+    posiciones = await _posiciones_con_riesgo()
+    extracto = await db.margen_degiro.find_one({"id": "actual"}, {"_id": 0})
+    return riesgo_cartera.estimar(posiciones, (symbol or "").strip().upper(),
+                                  acciones=acciones, extracto=extracto, hoy=_hoy())
+
+
+async def _importe_de_acciones(sym: str, acciones: float, posiciones: list):
+    """Cuántos euros son `acciones` de `sym`. None si no se puede saber el precio.
+
+    Si el valor está en la cartera se divide `valor_eur` entre las acciones: así el precio
+    unitario es EXACTAMENTE el que usa el modelo, y 15 acciones simuladas valen lo mismo
+    que 15 acciones vendidas. Cualquier otra fuente introduciría una segunda verdad sobre
+    el mismo número.
+    """
+    for p in posiciones:
+        if p["symbol"] == sym and (p.get("acciones") or 0) > 0 and p.get("valor_eur"):
+            return float(p["valor_eur"]) / float(p["acciones"]) * acciones
+    # No está en la cartera: hay que cotizarlo y pasarlo a euros.
+    try:
+        q = await asyncio.to_thread(market_data.get_quote, sym)
+        precio = float((q or {}).get("price") or 0)
+        divisa = ((q or {}).get("currency") or "USD").upper()
+    except Exception as exc:
+        logger.info("Sin cotización para simular %s: %s", sym, exc)
+        return None
+    if precio <= 0:
+        return None
+    if divisa == "EUR":
+        return precio * acciones
+    try:
+        tasa = await asyncio.to_thread(fx.tasa_actual, divisa)
+    except Exception:
+        tasa = None
+    return (precio * acciones / tasa) if tasa else None
+
+
+@api_router.get("/cartera/simular-margen/{symbol}")
+async def simular_margen(symbol: str, accion: str, importe: Optional[float] = None,
+                         acciones: Optional[float] = None,
+                         categoria: Optional[str] = None,
+                         _user: str = Depends(auth.get_current_user)):
+    """Qué le pasa a tu margen si compras o vendes esto. ANTES de decidir.
+
+    Para comprar algo que no tienes hace falta su sector, que sí se puede consultar. Su
+    categoría A-D no: sin ella `simular` devuelve el rango entre la más barata y la más
+    cara en vez de elegir una, porque esa letra decide casi todo el resultado.
+    """
+    sym = (symbol or "").strip().upper()
+    posiciones = await _posiciones_con_riesgo()
+    extracto = await db.margen_degiro.find_one({"id": "actual"}, {"_id": 0})
+
+    sector = None
+    if not any(p["symbol"] == sym for p in posiciones):
+        # No está en la cartera: hay que averiguar en qué sector cae, porque comprarla
+        # engorda ese sector y puede ser justo el que marca el máximo.
+        ficha = await db.signal_entries.find_one({"symbol": sym}, {"_id": 0})
+        sector = (ficha or {}).get("sector") or None
+        if not sector:
+            try:
+                q = await asyncio.to_thread(market_data.get_quote, sym)
+                sector = (q or {}).get("sector") or None
+            except Exception as exc:
+                logger.info("Sin sector para simular %s: %s", sym, exc)
+        if not categoria:
+            categoria = ((ficha or {}).get("categoria_degiro") or "").strip().upper() or None
+
+    # En acciones, que es como se teclea una orden. El importe se deriva aquí para que no
+    # haya dos precios distintos para el mismo número.
+    if importe is None and acciones:
+        importe = await _importe_de_acciones(sym, float(acciones), posiciones)
+        if importe is None:
+            return {"estado": riesgo_cartera.FALTAN_DATOS, "symbol": sym,
+                    "motivo": (f"No se ha podido saber a cuánto cotiza {sym}, así que no "
+                               f"se puede pasar de acciones a euros.")}
+
+    r = riesgo_cartera.simular(posiciones, sym, accion, importe,
+                               categoria=categoria, sector=sector, extracto=extracto,
+                               hoy=_hoy())
+    if acciones and r.get("importe_eur"):
+        # Lo que se simula puede ser MENOS de lo pedido: vender no puede pasar de lo que
+        # tienes. Se devuelven las acciones que corresponden al importe realmente simulado.
+        r["acciones"] = round(float(acciones) * r["importe_eur"] / importe, 6) if importe else None
+    return r
+
+
+@api_router.get("/cartera/riesgo-ranking")
+async def ranking_de_riesgo(_user: str = Depends(auth.get_current_user)):
+    """Todas las posiciones ordenadas por cuánto margen libera vender cada una.
+
+    Es lo que DEGIRO no da: su pantalla solo calcula el impacto de la orden que ya estás
+    componiendo, una a una.
+    """
+    posiciones = await _posiciones_con_riesgo()
+    extracto = await db.margen_degiro.find_one({"id": "actual"}, {"_id": 0})
+    filas = [riesgo_cartera.estimar(posiciones, p["symbol"], extracto=extracto, hoy=_hoy())
+             for p in posiciones]
+    validas = [f for f in filas if f.get("estado") == riesgo_cartera.OK]
+    if not validas:
+        return {"estado": (filas[0]["estado"] if filas else riesgo_cartera.FALTAN_DATOS),
+                "motivo": (filas[0].get("motivo") if filas else None), "posiciones": []}
+    validas.sort(key=lambda f: f.get("pct_del_importe") or 0, reverse=True)
+    return {"estado": riesgo_cartera.OK, "posiciones": validas,
+            "calibracion": validas[0].get("calibracion")}
+
+
 class PrecioManual(BaseModel):
     symbol: str
     precio: Optional[float] = None       # 0 o vacío = quitarlo
@@ -3051,6 +3259,16 @@ async def guardar_ajustes(item: AjusteMetodo, _user: str = Depends(auth.get_curr
 async def importar_degiro(archivo: UploadFile = File(...),
                           mapeo: Optional[str] = None,
                           confirmar: bool = False,
+                          # Repara las que ya estaban en vez de solo saltarlas. Existe
+                          # porque saltarlas —correcto para no duplicar— dejaba intacto lo
+                          # que se importó mal: cientos de operaciones con comisión cero
+                          # que reimportar no arreglaba.
+                          actualizar: bool = False,
+                          # Sustituye tus apuntes tecleados por la fila equivalente del
+                          # fichero. Sin esto, una fila tapada por un apunte tuyo no entra
+                          # NUNCA —y de paso bloquea el borrado de los lotes de la foto,
+                          # porque el CSV "no cubre" unas acciones que sí trae.
+                          sustituir: bool = False,
                           _user: str = Depends(auth.get_current_user)):
     """Importa el CSV de Transacciones de DEGIRO.
 
@@ -3090,7 +3308,8 @@ async def importar_degiro(archivo: UploadFile = File(...),
         return {**prep, "resumen": degiro_csv.resumen(leido["operaciones"]),
                 "errores": leido["errores"], "confirmado": False}
 
-    r = await cartera_api.importar_degiro(db, leido["operaciones"], mapa)
+    r = await cartera_api.importar_degiro(db, leido["operaciones"], mapa,
+                                          actualizar=actualizar, sustituir=sustituir)
     for k in ("signals_list", "signals_hot"):
         _cache._store.pop(k, None)
     return {**r, "resumen": degiro_csv.resumen(leido["operaciones"]),
@@ -3734,6 +3953,13 @@ async def remove_watchlist(symbol: str, _user: str = Depends(auth.get_current_us
 
 
 # ---------- Correlación de la cartera (#22) ----------
+#: Cuántos valores entran en la matriz de correlación. Cada uno descarga un año de
+#: histórico, así que el techo es de memoria y de tiempo, no de criterio. Lo que importa no
+#: es el número sino QUIÉNES: con las posiciones abiertas primero, 25 cubre de sobra una
+#: cartera normal, y lo que se queda fuera es lista de seguimiento.
+TECHO_CORRELACION = 25
+
+
 @api_router.get("/portfolio/correlation")
 async def portfolio_correlation(_user: str = Depends(auth.get_current_user)):
     """Correlación entre las acciones de la Cartera: detecta 'concentración oculta' —
@@ -3745,16 +3971,39 @@ async def portfolio_correlation(_user: str = Depends(auth.get_current_user)):
     import pandas as pd
     import numpy as np
 
-    rows = await db.signal_entries.find({"active": True}, {"_id": 0, "symbol": 1}).to_list(200)
-    syms, seen = [], set()
+    rows = await db.signal_entries.find({"active": True},
+                                        {"_id": 0, "symbol": 1, "acciones": 1}).to_list(200)
+    # QUÉ 25, que era el problema. El techo existe porque cada símbolo descarga un año de
+    # histórico, pero antes se cogían los 25 primeros que devolvía Mongo —orden arbitrario y
+    # ni siquiera estable entre llamadas—. Con 83 valores en la Cartera, eso medía la
+    # diversificación de un trozo cualquiera y la enseñaba como si fuera la cartera entera.
+    #
+    # Ahora mandan las posiciones que TIENES ABIERTAS: "si cae una, caen todas" es una
+    # pregunta sobre el dinero que está puesto, no sobre una lista de seguimiento. Las que
+    # solo vigilas rellenan lo que sobre, y dentro de cada grupo el orden es alfabético para
+    # que dos llamadas seguidas den el mismo resultado.
+    def _acc(r):
+        try:
+            return float(r.get("acciones") or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    vistos, candidatos = set(), []
     for r in rows:
-        s = (r.get("symbol") or "").upper()
-        if s and s not in seen:
-            seen.add(s)
-            syms.append(s)
-    syms = syms[:25]  # techo: bounded en memoria
+        sym = (r.get("symbol") or "").upper()
+        if not sym or sym in vistos:
+            continue
+        vistos.add(sym)
+        candidatos.append((0 if _acc(r) > 0 else 1, sym))
+    candidatos.sort()
+    total, en_cartera = len(candidatos), sum(1 for c in candidatos if c[0] == 0)
+    syms = [sym for _, sym in candidatos[:TECHO_CORRELACION]]
+    # Cuántas se han mirado de cuántas hay. Sin esto, un número calculado sobre un tercio
+    # de la cartera se lee como si fuera sobre toda.
+    alcance = {"analizadas": len(syms), "total": total, "en_cartera": en_cartera,
+               "truncado": total > len(syms)}
     if len(syms) < 2:
-        return {"pairs": [], "avg_corr": None, "n": len(syms),
+        return {"pairs": [], "avg_corr": None, "n": len(syms), **alcance,
                 "message": "Necesitas al menos 2 acciones en la Cartera para medir la correlación."}
 
     loop = asyncio.get_running_loop()
@@ -3769,11 +4018,11 @@ async def portfolio_correlation(_user: str = Depends(auth.get_current_user)):
             continue
     mem.trim()
     if len(series) < 2:
-        return {"pairs": [], "avg_corr": None, "n": len(series),
+        return {"pairs": [], "avg_corr": None, "n": len(series), **alcance,
                 "message": "No hay histórico suficiente para las acciones de la Cartera."}
     mat = pd.DataFrame(series).dropna()
     if len(mat) < 20:
-        return {"pairs": [], "avg_corr": None, "n": len(series),
+        return {"pairs": [], "avg_corr": None, "n": len(series), **alcance,
                 "message": "Histórico común insuficiente entre las acciones."}
     corr = mat.pct_change().dropna().corr()
     cols = list(corr.columns)
@@ -3786,6 +4035,7 @@ async def portfolio_correlation(_user: str = Depends(auth.get_current_user)):
     pairs.sort(key=lambda x: x["corr"], reverse=True)
     avg = round(float(np.mean([p["corr"] for p in pairs])), 2) if pairs else None
     result = {
+        **alcance,
         "n": len(cols),
         "avg_corr": avg,
         "pairs": pairs[:8],

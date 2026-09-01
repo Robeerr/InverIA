@@ -358,3 +358,51 @@ def test_una_fila_de_cantidad_cero_sigue_siendo_ruido_silencioso():
             '"0,00",,"0,00",')
     r = degiro_csv.leer("\n".join([cabecera, fila]).encode())
     assert r["operaciones"] == [] and r["errores"] == []
+
+
+# ── Las comisiones no se pueden perder en silencio ───────────────────────────
+# En el CSV ESPAÑOL la comisión de AutoFX se llama "Tasa de cambio" —justo al lado de
+# "Tipo de cambio", que es el tipo de cambio de verdad—. Sin ese alias, el 0,25% de
+# conversión se perdía en cada operación importada y la ganancia realizada salía inflada.
+# Con 154 ventas eso son más de mil euros que acaban en una declaración de la renta.
+
+_CAB_ES = ("Fecha,Hora,Producto,ISIN,Bolsa de,Centro de ejecución,Número,Precio,,"
+           "Valor local,,Valor,Tipo de cambio,Tasa de cambio,"
+           "Costes de transacción,Total,ID de orden")
+
+
+def test_la_comision_de_autofx_del_csv_espanol_se_lee():
+    fila = ('21-08-2026,15:30,MARVELL,US5738741041,NDQ,SOHO,-15,"250,5600",USD,'
+            '"3758,40",USD,"3216,73","1,1684","-8,04","-2,00","3206,68",ID')
+    r = degiro_csv.leer(("\n".join([_CAB_ES, fila])).encode())
+    assert r["operaciones"], r["errores"]
+    op = r["operaciones"][0]
+    # 8,04 + 2,00 = 10,04 € de comisión, pasados a dólares con el cambio de la fila.
+    assert op["comision"] == pytest.approx(10.04 * 1.1684, rel=1e-3)
+
+
+def test_sin_las_columnas_de_comision_se_avisa_en_vez_de_importar_a_cero():
+    """Callarlo dejaría la ganancia inflada sin que nadie tuviera motivo para dudar."""
+    cab = "Fecha,Hora,Producto,ISIN,Número,Precio,,Valor local,,Valor,Tipo de cambio,Total"
+    fila = ('21-08-2026,15:30,MARVELL,US5738741041,-15,"250,5600",USD,"3758,40",USD,'
+            '"3216,73","1,1684","3206,68"')
+    r = degiro_csv.leer(("\n".join([cab, fila])).encode())
+    assert r["operaciones"] and r["operaciones"][0]["comision"] == 0
+    assert any("comisión" in e for e in r["errores"])
+
+
+def test_un_fichero_sin_operaciones_no_avisa_de_comisiones():
+    """Un fichero de ruido no tiene comisiones que perder."""
+    cab = "Fecha,Hora,Producto,ISIN,Número,Precio,,Valor local,,Valor,Tipo de cambio,Total"
+    r = degiro_csv.leer(cab.encode())
+    assert r["operaciones"] == [] and r["errores"] == []
+
+
+def test_tasa_de_cambio_no_se_confunde_con_tipo_de_cambio():
+    """Están una al lado de la otra y significan cosas distintas: una es el tipo de cambio
+    aplicado y la otra lo que te cobran por aplicarlo."""
+    fila = ('21-08-2026,15:30,MARVELL,US5738741041,NDQ,SOHO,-15,"250,5600",USD,'
+            '"3758,40",USD,"3216,73","1,1684","-8,04","-2,00","3206,68",ID')
+    op = degiro_csv.leer(("\n".join([_CAB_ES, fila])).encode())["operaciones"][0]
+    assert op["tasa"] == pytest.approx(1.1684), "el tipo de cambio sigue siendo el suyo"
+    assert op["comision"] > 10, "y la tasa de AutoFX cuenta como comisión, no como cambio"
