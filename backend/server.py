@@ -3043,6 +3043,12 @@ class ExtractoMargen(BaseModel):
     """
     riesgo_eur: float
     valor_cartera_eur: Optional[float] = None
+    # Las dos líneas del desglose de «Portfolio Risk». Opcionales, pero son las que
+    # convierten «mira a ver si son las categorías o los sectores» en «te faltan 6.684 € en
+    # categoría D»: su resta es el 15% de lo que NO está en D, así que despeja lo que hay.
+    riesgo_neto_eur: Optional[float] = None
+    riesgo_bruto_eur: Optional[float] = None
+    riesgo_sector_eur: Optional[float] = None
     saldo_eur: Optional[float] = None
     margen_eur: Optional[float] = None
     fecha: Optional[str] = None          # YYYY-MM-DD; vacío = hoy

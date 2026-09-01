@@ -159,6 +159,17 @@ def componentes(posiciones: List[dict]) -> dict:
     }
 
 
+def _mayor_sector(posiciones: List[dict]) -> float:
+    """Lo que agrupa nuestro sector más pesado, sin contar la categoría D."""
+    por_sector = {}
+    for p in posiciones:
+        if _es_d(p) or (p.get("valor_eur") or 0) <= 0:
+            continue
+        s = (p.get("sector") or "").strip().upper()
+        por_sector[s] = por_sector.get(s, 0.0) + float(p["valor_eur"])
+    return max(por_sector.values()) if por_sector else 0.0
+
+
 def riesgo(posiciones: List[dict]) -> tuple:
     """(riesgo, componente que manda, todos los componentes).
 
@@ -234,6 +245,18 @@ def calibrar(posiciones: List[dict], extracto: Optional[dict],
     else:
         error = abs(nuestro - suyo) / suyo
         base["comparacion"] = "euros"
+    # Lo que el extracto implica de categoría D, y lo que tenemos marcado: la diferencia es
+    # lo que hay que buscar, y es un dato, no una conjetura.
+    implicita = categoria_d_implicita(extracto)
+    if implicita:
+        base["d_implicita"] = implicita
+        base["nuestra_d_eur"] = round(sum(float(p["valor_eur"]) for p in posiciones
+                                          if _es_d(p) and (p.get("valor_eur") or 0) > 0), 2)
+        suyo_sector = sector_implicito(extracto, implicita["categoria_d_eur"],
+                                       comps.get("divisa") or 0.0)
+        if suyo_sector:
+            base["sector_degiro_eur"] = suyo_sector
+            base["nuestro_sector_eur"] = round(_mayor_sector(posiciones), 2)
     estado = OK if error <= TOLERANCIA else NO_CUADRA
     return {"estado": estado, "error": round(error, 4), **base}
 
@@ -355,6 +378,64 @@ def _porcentaje(x) -> str:
     return f"{x:.1%}".replace(".", ",")
 
 
+def categoria_d_implicita(extracto: Optional[dict]) -> Optional[dict]:
+    """Cuántos euros de categoría D tiene la cartera, despejados del propio extracto.
+
+    Las líneas «Net investment…» y «Gross investment…» del Margin statement aplican
+    porcentajes distintos —25% y 10%— al MISMO importe, y le suman los mismos dos términos:
+    el valor íntegro de lo que está en categoría D y el riesgo de divisa. Restarlas cancela
+    esos dos términos y deja despejado lo que no es D:
+
+        Net − Gross = (25% − 10%) x no_D   →   no_D = (Net − Gross) / 0,15
+        D = valor de la cartera − no_D
+
+    Esto convierte la pregunta «¿cuáles de mis posiciones están en D?» —que hay que ir a
+    mirar una a una a la aplicación del bróker— en un número exacto que dice cuánto hay que
+    encontrar. Sin esto, la única salida era marcar posiciones a ojo y ver si la
+    calibración mejoraba.
+
+    Devuelve None si faltan las dos líneas o si el resultado no es coherente: un valor
+    negativo o mayor que la cartera significa que alguna cifra está mal copiada, y ahí es
+    mejor callarse que dar un objetivo falso al que perseguir.
+    """
+    e = extracto or {}
+    neto, bruto = e.get("riesgo_neto_eur"), e.get("riesgo_bruto_eur")
+    cartera = e.get("valor_cartera_eur")
+    try:
+        neto, bruto, cartera = float(neto), float(bruto), float(cartera)
+    except (TypeError, ValueError):
+        return None
+    if cartera <= 0 or neto <= bruto:
+        return None
+    no_d = (neto - bruto) / (P_NETO - P_BRUTO)
+    d = cartera - no_d
+    if d < -1.0 or d > cartera:
+        return None
+    return {"categoria_d_eur": round(max(d, 0.0), 2), "no_d_eur": round(no_d, 2),
+            "pct_cartera": round(max(d, 0.0) / cartera, 4)}
+
+
+def sector_implicito(extracto: Optional[dict], d_eur: float,
+                     divisa_eur: float) -> Optional[float]:
+    """Cuánto agrupa DEGIRO en su mayor sector, despejado de la línea «Largest sector risk».
+
+        sector = 40% x mayor_sector + D + divisa   →   mayor_sector = (sector − D − divisa) / 0,40
+
+    Hace falta saber antes la D (de `categoria_d_implicita`) y el riesgo de divisa, que sale
+    del propio modelo. Con eso, la pregunta «¿cómo agrupa DEGIRO mis sectores?» —que su
+    aplicación no contesta en ninguna pantalla— se convierte en un euro concreto que
+    comparar con lo que agrupamos aquí.
+    """
+    try:
+        linea = float((extracto or {}).get("riesgo_sector_eur"))
+    except (TypeError, ValueError):
+        return None
+    resto = linea - (d_eur or 0.0) - (divisa_eur or 0.0)
+    if resto <= 0:
+        return None
+    return round(resto / P_SECTOR, 2)
+
+
 def _motivo_calibracion(cal: dict) -> str:
     if cal["estado"] == SIN_CALIBRAR:
         return ("No se puede estimar todavía: falta el extracto de margen de DEGIRO. "
@@ -414,6 +495,37 @@ def _motivo_calibracion(cal: dict) -> str:
         # que DEGIRO agrupa con la suya, mucho más gruesa. Diez posiciones que para ti son
         # cinco cosas distintas pueden ser un solo sector para él, y entonces su
         # concentración sectorial dispara un riesgo que aquí no aparece.
+        # Si el extracto trae las dos líneas, no hay que elegir entre sospechosos: la D se
+        # despeja y se dice cuántos euros faltan por marcar. Es la diferencia entre "mira a
+        # ver si son los sectores o las categorías" y "te faltan 6.684 € en D".
+        implicita = cal.get("d_implicita")
+        if implicita and implicita["categoria_d_eur"] > 0:
+            nuestra_d = cal.get("nuestra_d_eur")
+            falta = implicita["categoria_d_eur"] - (nuestra_d or 0.0)
+            if falta > 1.0:
+                tienes = (f"Ahora tienes marcados {_eur(nuestra_d)} €"
+                          if nuestra_d else "Ahora no tienes ninguna marcada")
+                return (f"El modelo se queda corto: {diferencia}. La causa se puede "
+                        f"despejar de tu propio extracto: la resta de sus líneas Net y "
+                        f"Gross dice que {_eur(implicita['categoria_d_eur'])} € de tu "
+                        f"cartera —el {_porcentaje(implicita['pct_cartera'])}— están en "
+                        f"CATEGORÍA D, que computa el 100% de su valor. {tienes}, así que "
+                        f"faltan unos {_eur(falta)} € por marcar en la columna «Cat.» de la "
+                        f"Cartera. La letra sale junto al producto en la pantalla de la "
+                        f"orden de DEGIRO.")
+        # Con la D ya cuadrada, el que queda es el sector. Y también se despeja: la línea
+        # sectorial del extracto dice cuánto agrupa DEGIRO, y aquí sabemos cuánto agrupamos
+        # nosotros. La diferencia son euros de posiciones que él mete en el mismo saco y tú
+        # tienes repartidas — no hay que adivinar cuántas ni cuáles pesan.
+        suyo, nuestro = cal.get("sector_degiro_eur"), cal.get("nuestro_sector_eur")
+        if suyo and nuestro is not None and suyo > nuestro + 1.0:
+            return (f"El modelo se queda corto: {diferencia}. La categoría D ya cuadra; lo "
+                    f"que queda es el SECTOR. Tu extracto dice que DEGIRO agrupa "
+                    f"{_eur(suyo)} € en su mayor sector, y aquí el mayor agrupa "
+                    f"{_eur(nuestro)} €: hay unos {_eur(suyo - nuestro)} € en posiciones "
+                    f"que él cuenta en ese mismo sector y tú tienes bajo otra etiqueta. "
+                    f"Únelas en la columna «Sector» de la Cartera —da igual cómo se llame, "
+                    f"lo que cuenta es que compartan nombre— y cuadrará.")
         if cal["degiro_eur"] > techo * 1.02:
             # DOS sospechosos, y no se puede elegir entre ellos desde aquí. Se nombran los
             # dos y se dice cómo distinguirlos, que es mejor que acertar la mitad de las

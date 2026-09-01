@@ -477,3 +477,75 @@ def test_pasarse_por_arriba_con_extracto_fresco_acusa_a_las_categorias():
     assert "se pasa por arriba" in m and "Cat." in m
     assert "El sospechoso es el sector" not in m
     assert "Vuelve a copiar" not in m
+
+
+# ── Despejar la D y el sector del propio extracto ────────────────────────────
+
+EXTRACTO_REAL = {"riesgo_eur": 13951.13, "valor_cartera_eur": 28348.95,
+                 "riesgo_neto_eur": 13468.28, "riesgo_bruto_eur": 10218.56,
+                 "riesgo_sector_eur": 13951.13, "fecha": "2026-09-01"}
+
+
+def test_la_categoria_D_se_despeja_de_las_lineas_Net_y_Gross():
+    """Net y Gross aplican 25% y 10% al MISMO importe y le suman los mismos dos términos
+    (la D íntegra y la divisa). Restarlas los cancela y deja despejado lo que no es D.
+
+    Cifras reales de un extracto: dan 6.684,15 € en D, el 23,6% de la cartera. Con ese
+    dato los tres componentes del modelo reproducen el extracto al céntimo."""
+    r = rc.categoria_d_implicita(EXTRACTO_REAL)
+    assert r["no_d_eur"] == pytest.approx(21664.80, abs=0.01)
+    assert r["categoria_d_eur"] == pytest.approx(6684.15, abs=0.01)
+    assert r["pct_cartera"] == pytest.approx(0.2358, abs=0.001)
+
+
+def test_sin_las_dos_lineas_no_se_inventa_la_D():
+    assert rc.categoria_d_implicita({**EXTRACTO_REAL, "riesgo_bruto_eur": None}) is None
+    assert rc.categoria_d_implicita({}) is None
+
+
+def test_una_cifra_mal_copiada_no_da_un_objetivo_falso():
+    """Perseguir un objetivo inventado es peor que no tener objetivo. El caso que de verdad
+    se puede dar es cambiar las dos líneas de sitio: Gross por encima de Net es imposible,
+    porque el 10% no puede superar al 25% del mismo importe."""
+    assert rc.categoria_d_implicita({**EXTRACTO_REAL, "riesgo_bruto_eur": 20000.0}) is None
+    assert rc.categoria_d_implicita({**EXTRACTO_REAL, "valor_cartera_eur": 0}) is None
+    # Y una D negativa por unos céntimos de redondeo se admite como cero, no se rechaza:
+    # rechazarla dejaría sin diagnóstico a una cartera que simplemente no tiene ninguna D.
+    sin_d = {**EXTRACTO_REAL, "riesgo_neto_eur": 10218.56 + 0.15 * 28348.95}
+    assert rc.categoria_d_implicita(sin_d)["categoria_d_eur"] == 0.0
+
+
+def test_el_sector_de_DEGIRO_se_despeja_de_su_linea_sectorial():
+    """14.747,62 € es lo que DEGIRO agrupa en su mayor sector. Su aplicación no lo dice en
+    ninguna pantalla; sale de la línea sectorial menos la D y la divisa, entre 0,40."""
+    assert rc.sector_implicito(EXTRACTO_REAL, 6684.15, 1367.93) == pytest.approx(14747.62,
+                                                                                 abs=0.01)
+
+
+def test_sin_la_linea_sectorial_no_se_deduce_nada():
+    assert rc.sector_implicito({}, 6684.15, 1367.93) is None
+    assert rc.sector_implicito({"riesgo_sector_eur": 1000.0}, 6684.15, 1367.93) is None
+
+
+def test_el_mensaje_dice_cuantos_euros_de_D_faltan_por_marcar():
+    cal = {**_fresco(), "d_implicita": {"categoria_d_eur": 6684.15, "pct_cartera": 0.2358},
+           "nuestra_d_eur": 2000.0}
+    m = rc._motivo_calibracion(cal)
+    assert "4.684" in m and "Cat." in m
+
+
+def test_con_la_D_ya_cuadrada_el_mensaje_pasa_al_sector():
+    cal = {**_fresco(), "d_implicita": {"categoria_d_eur": 6684.15, "pct_cartera": 0.2358},
+           "nuestra_d_eur": 6684.15, "sector_degiro_eur": 14747.62,
+           "nuestro_sector_eur": 13665.0}
+    m = rc._motivo_calibracion(cal)
+    assert "SECTOR" in m and "1.083" in m
+    assert "CATEGORÍA D" not in m, "la D ya está resuelta: nombrarla despista"
+
+
+def test_nuestro_mayor_sector_no_cuenta_la_categoria_D():
+    """La D ya entra por otra vía, al 100%: contarla también en el sector la duplicaría."""
+    pos = [{"symbol": "A", "valor_eur": 5000.0, "sector": "TECH", "categoria": "A"},
+           {"symbol": "B", "valor_eur": 3000.0, "sector": "TECH", "categoria": "D"},
+           {"symbol": "C", "valor_eur": 1000.0, "sector": "SALUD", "categoria": "A"}]
+    assert rc._mayor_sector(pos) == 5000.0

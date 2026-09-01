@@ -56,15 +56,26 @@ export default function ExtractoMargen() {
       valor_cartera_eur: aNumero(f?.valor_cartera_eur),
       saldo_eur: aNumero(f?.saldo_eur),
       margen_eur: aNumero(f?.margen_eur),
+      riesgo_neto_eur: aNumero(f?.riesgo_neto_eur),
+      riesgo_bruto_eur: aNumero(f?.riesgo_bruto_eur),
+      riesgo_sector_eur: aNumero(f?.riesgo_sector_eur),
       fecha: f?.fecha || undefined,
     });
   };
 
+  // Las tres últimas salen de DESPLEGAR «Portfolio Risk» en el extracto. Son opcionales,
+  // pero valen mucho: con Net y Gross, InverIA despeja cuántos euros de tu cartera están
+  // en categoría D —su resta es el 15% de lo que NO lo está— y con la línea sectorial
+  // despeja cuánto agrupa DEGIRO en su mayor sector. Sin ellas solo puede decir «no
+  // cuadro»; con ellas dice cuántos euros faltan por marcar y dónde.
   const campos = [
     ["riesgo_eur", "Portfolio Risk *", "11645,14"],
     ["valor_cartera_eur", "Value of portfolio *", "30440,28"],
     ["saldo_eur", "Cash balance", "-18616,99"],
     ["margen_eur", "Margin (surplus)", "196,37"],
+    ["riesgo_neto_eur", "Net investment…", "13468,28"],
+    ["riesgo_bruto_eur", "Gross investment…", "10218,56"],
+    ["riesgo_sector_eur", "Largest sector risk", "13951,13"],
   ];
   const cls =
     "w-full bg-fondo border border-linea rounded px-2 py-1.5 font-mono text-apoyo";
@@ -140,6 +151,14 @@ export default function ExtractoMargen() {
               </label>
             ))}
           </div>
+          {/* Dónde salen las tres últimas, que es lo que nadie adivina: hay que TOCAR la
+              flecha de «Portfolio Risk» para que se abra el desglose. */}
+          <p className="text-etiqueta text-tinta-3 leading-snug">
+            Las tres últimas salen de desplegar <b>Portfolio Risk</b> en el extracto (la
+            flechita a su derecha). Son opcionales, pero con ellas InverIA puede decirte
+            cuántos euros de tu cartera están en categoría D y cuánto agrupa DEGIRO en su
+            mayor sector — que es lo que hace falta para que el modelo cuadre.
+          </p>
           <div className="flex gap-2 pt-1">
             <button
               type="submit"
