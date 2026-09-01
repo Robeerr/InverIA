@@ -450,12 +450,15 @@ def test_con_extracto_de_hoy_no_dice_que_las_cifras_sean_de_dias_distintos():
     assert "días distintos" in rc._motivo_calibracion(_fresco(dias=11, error=0.039))
 
 
-def test_si_degiro_supera_a_los_cuatro_componentes_señala_al_sector():
-    """13.920 € por encima del mayor de los cuatro solo puede ser otro componente, y el
-    único que se calcula con datos que NO salen de la pantalla de DEGIRO es el sector: la
-    categoría se copia de allí, la clasificación sectorial es la del usuario."""
+def test_si_degiro_supera_a_los_cuatro_componentes_nombra_las_DOS_causas():
+    """Apuntar solo al sector mandaba al sitio equivocado en el caso que destapó esto: eran
+    categorías D. Suman el 100% de su valor a los TRES componentes, así que dejan la cifra
+    de DEGIRO por encima de todo lo que calculamos, igual que lo haría un sector agrupado
+    de otra forma. Desde aquí no se puede elegir, así que se nombran las dos y se dice
+    cómo distinguirlas."""
     m = rc._motivo_calibracion(_fresco())
-    assert "sector" in m and "Margin statement" in m
+    assert "CATEGORÍA D" in m and "SECTOR" in m
+    assert "Gross" in m and "Net" in m, "hace falta la resta que las distingue"
 
 
 def test_si_degiro_cabe_dentro_de_los_componentes_no_acusa_al_sector():

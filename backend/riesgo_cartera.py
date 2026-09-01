@@ -415,14 +415,21 @@ def _motivo_calibracion(cal: dict) -> str:
         # cinco cosas distintas pueden ser un solo sector para él, y entonces su
         # concentración sectorial dispara un riesgo que aquí no aparece.
         if cal["degiro_eur"] > techo * 1.02:
+            # DOS sospechosos, y no se puede elegir entre ellos desde aquí. Se nombran los
+            # dos y se dice cómo distinguirlos, que es mejor que acertar la mitad de las
+            # veces: apuntar solo al sector mandaba al sitio equivocado en el caso real que
+            # destapó esto —eran categorías D, que suman el 100% de su valor a los TRES
+            # componentes a la vez y por eso pueden dejar la cifra de DEGIRO por encima de
+            # todo lo que calculamos.
             return (f"El modelo se queda corto con un extracto recién copiado: "
                     f"{diferencia}. Aquí manda {NOMBRES.get(dom, dom)}, y la cifra de "
-                    f"DEGIRO es más alta que cualquiera de los cuatro componentes que "
-                    f"calcula, así que a él le está mandando otro. El sospechoso es el "
-                    f"sector: el de tu Cartera es TU clasificación, y DEGIRO agrupa con la "
-                    f"suya, más gruesa — lo que para ti son varios sectores puede ser uno "
-                    f"solo para él. Abre tu «Margin statement» y mira qué línea le sale "
-                    f"más alta; si es la sectorial, hay que unificar sectores.")
+                    f"DEGIRO supera a los cuatro componentes que calculamos, así que hay "
+                    f"riesgo que no vemos. Dos causas posibles: posiciones en CATEGORÍA D "
+                    f"—computan el 100% de su valor y se suman a los tres componentes— o "
+                    f"un SECTOR agrupado de otra forma, porque DEGIRO usa su clasificación "
+                    f"y no la tuya. Se distinguen con tu «Margin statement»: despliega "
+                    f"«Portfolio Risk» y resta la línea Gross de la Net; esa diferencia es "
+                    f"el 15% de lo que NO es categoría D, así que te dice cuánta D tienes.")
         return (f"El modelo se queda corto con un extracto recién copiado: {diferencia}. "
                 f"Aquí manda {NOMBRES.get(dom, dom)}. Compara los componentes con los de "
                 f"tu «Margin statement»: el que no cuadre dice qué dato hay que revisar.")
