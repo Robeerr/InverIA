@@ -532,8 +532,11 @@ def _motivo_calibracion(cal: dict) -> str:
                     f"{_eur(suyo)} € en su mayor sector, y aquí el mayor agrupa "
                     f"{_eur(nuestro)} €: hay unos {_eur(suyo - nuestro)} € en posiciones "
                     f"que él cuenta en ese mismo sector y tú tienes bajo otra etiqueta. "
-                    f"Únelas en la columna «Sector» de la Cartera —da igual cómo se llame, "
-                    f"lo que cuenta es que compartan nombre— y cuadrará.")
+                    f"Ponles el mismo texto en «Sector DEGIRO», al editar la fila de la "
+                    f"Cartera —da igual cuál sea, lo que cuenta es que compartan nombre—. "
+                    f"Ese campo va aparte del sector de siempre justo para esto: el tuyo "
+                    f"dice a qué se dedica la empresa, y este solo reproduce en qué saco "
+                    f"la mete DEGIRO, que agrupa mucho más grueso.")
         if cal["degiro_eur"] > techo * 1.02:
             # DOS sospechosos, y no se puede elegir entre ellos desde aquí. Se nombran los
             # dos y se dice cómo distinguirlos, que es mejor que acertar la mitad de las

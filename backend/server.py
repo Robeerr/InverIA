@@ -947,6 +947,7 @@ class SignalEntryCreate(BaseModel):
     # descarta en silencio y el desplegable de la Cartera no guarda nada.
     categoria_degiro: Optional[str] = ""
     sector: Optional[str] = ""
+    sector_degiro: Optional[str] = None
     posibles_ganancias: Optional[float] = None
     notes: Optional[str] = ""
     active: Optional[bool] = True
@@ -993,6 +994,7 @@ class SignalEntryUpdate(BaseModel):
     # descarta en silencio y el desplegable de la Cartera no guarda nada.
     categoria_degiro: Optional[str] = None
     sector: Optional[str] = None
+    sector_degiro: Optional[str] = None
     posibles_ganancias: Optional[float] = None
     notes: Optional[str] = None
     active: Optional[bool] = None
@@ -3097,7 +3099,11 @@ async def _posiciones_con_riesgo():
             "symbol": sym,
             "valor_eur": p.get("valor_eur"),
             "acciones": p.get("acciones"),
-            "sector": (f.get("sector") or "").strip(),
+            # El sector con el que agrupa DEGIRO, si se ha rellenado; si no, el propio.
+            # La distinción importa: el suyo es mucho más grueso, y su límite de
+            # concentración se calcula sobre SUS grupos, no sobre los del usuario.
+            "sector": ((f.get("sector_degiro") or "").strip()
+                       or (f.get("sector") or "").strip()),
             # La letra que DEGIRO enseña junto al producto. Se teclea a mano porque no hay
             # API que la sirva; sin ella se asume la categoría más baja y la calibración
             # se encarga de delatarlo.

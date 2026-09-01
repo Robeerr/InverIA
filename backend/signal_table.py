@@ -40,6 +40,12 @@ ALLOWED_CREATE = (
     "alert_deseado", "alert_nivel1", "alert_nivel2", "alert_nivel3", "alert_nivel4", "alert_nivel5",
     "alert_venta1", "alert_venta2", "alert_venta3",
     "riesgo", "sector", "posibles_ganancias", "notes", "active",
+    # Cómo agrupa DEGIRO esta acción para su límite de concentración sectorial. VA APARTE
+    # de `sector` a propósito: ese lo rellena el proveedor de datos y además es la
+    # taxonomía del usuario —la que separa lo que él separa—, mientras que esta solo tiene
+    # que reproducir en qué saco la mete el bróker, que agrupa mucho más grueso. Machacar
+    # uno con el otro cambiaría un dato bueno por otro, y se perdería el primero.
+    "sector_degiro",
     # La letra A-D del modelo de MARGEN de DEGIRO. No es el campo `riesgo`, que es la
     # clasificación del inversor del usuario: esta la publica el bróker junto a cada
     # producto y determina cuánto riesgo le asigna su modelo. Sin API que la sirva y
@@ -57,6 +63,12 @@ ALLOWED_UPDATE = (
     "alert_deseado", "alert_nivel1", "alert_nivel2", "alert_nivel3", "alert_nivel4", "alert_nivel5",
     "alert_venta1", "alert_venta2", "alert_venta3",
     "riesgo", "sector", "posibles_ganancias", "notes", "active",
+    # Cómo agrupa DEGIRO esta acción para su límite de concentración sectorial. VA APARTE
+    # de `sector` a propósito: ese lo rellena el proveedor de datos y además es la
+    # taxonomía del usuario —la que separa lo que él separa—, mientras que esta solo tiene
+    # que reproducir en qué saco la mete el bróker, que agrupa mucho más grueso. Machacar
+    # uno con el otro cambiaría un dato bueno por otro, y se perdería el primero.
+    "sector_degiro",
     # La letra A-D del modelo de MARGEN de DEGIRO. No es el campo `riesgo`, que es la
     # clasificación del inversor del usuario: esta la publica el bróker junto a cada
     # producto y determina cuánto riesgo le asigna su modelo. Sin API que la sirva y
@@ -94,6 +106,7 @@ def _make_entry(
     riesgo: str = "",
     categoria_degiro: str = "",
     sector: str = "",
+    sector_degiro: str = "",
     posibles_ganancias: Optional[float] = None,
     notes: str = "",
     active: bool = True,
@@ -131,6 +144,7 @@ def _make_entry(
         "riesgo": (riesgo or "").strip().upper(),
         "categoria_degiro": (categoria_degiro or "").strip().upper()[:1],
         "sector": (sector or "").strip(),
+        "sector_degiro": (sector_degiro or "").strip(),
         "posibles_ganancias": posibles_ganancias,
         "notes": (notes or "").strip(),
         "active": active,

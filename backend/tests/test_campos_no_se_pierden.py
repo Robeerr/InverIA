@@ -57,3 +57,16 @@ def test_la_categoria_se_normaliza_a_una_letra():
     assert signal_table._make_entry("T", categoria_degiro=" c ")["categoria_degiro"] == "C"
     assert signal_table._make_entry("T", categoria_degiro="")["categoria_degiro"] == ""
     assert signal_table._make_entry("T")["categoria_degiro"] == ""
+
+
+def test_el_sector_de_DEGIRO_va_aparte_del_sector_propio():
+    """Son dos datos distintos y machacar uno con el otro pierde el primero: `sector` lo
+    rellena el proveedor y es la taxonomía del usuario —la que separa lo que él separa—,
+    mientras que `sector_degiro` solo reproduce en qué saco mete el bróker cada acción para
+    su límite de concentración, que agrupa mucho más grueso."""
+    import signal_table
+    assert "sector" in signal_table.ALLOWED_UPDATE
+    assert "sector_degiro" in signal_table.ALLOWED_UPDATE
+    assert "sector_degiro" in signal_table.ALLOWED_CREATE
+    entry = signal_table._make_entry("AAA", sector="TECH GROWTH", sector_degiro="Technology")
+    assert entry["sector"] == "TECH GROWTH" and entry["sector_degiro"] == "Technology"

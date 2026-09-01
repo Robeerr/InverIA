@@ -575,3 +575,15 @@ def test_una_D_pendiente_que_SI_explica_el_hueco_se_señala():
            "sector_degiro_eur": 14748.0, "nuestro_sector_eur": 13518.0}
     m = rc._motivo_calibracion(cal)
     assert "CATEGORÍA D" in m and "6.684" in m
+
+
+def test_el_mensaje_del_sector_manda_al_campo_de_DEGIRO_y_no_al_propio():
+    """El campo «Sector» lo rellena el proveedor de datos y además es la taxonomía del
+    usuario. Pedirle que lo reescriba para imitar el agrupamiento del bróker cambiaría un
+    dato bueno por otro y perdería el primero. Por eso hay un campo aparte."""
+    cal = {**_fresco(), "nuestro_eur": 13497.0, "degiro_eur": 14019.0,
+           "d_implicita": {"categoria_d_eur": 6726.0, "pct_cartera": 0.237},
+           "nuestra_d_eur": 6726.0,
+           "sector_degiro_eur": 14782.0, "nuestro_sector_eur": 9384.0}
+    m = rc._motivo_calibracion(cal)
+    assert "Sector DEGIRO" in m and "5.398" in m

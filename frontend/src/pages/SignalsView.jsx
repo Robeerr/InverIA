@@ -544,6 +544,10 @@ const ADD_FIELDS = {
     { key: "fecha_compra", label: "Fecha compra", placeholder: "2025-01-15" },
     { key: "riesgo",   label: "Riesgo",      placeholder: "MEDIO" },
     { key: "sector",   label: "Sector",      placeholder: "TECH" },
+    // Aparte del anterior: aquí va cómo agrupa DEGIRO, que es mucho más grueso. Solo se
+    // usa para el límite de concentración sectorial de su modelo de margen. Vacío = se
+    // usa el sector de al lado.
+    { key: "sector_degiro", label: "Sector DEGIRO", placeholder: "= el de al lado" },
     { key: "posibles_ganancias", label: "Posibles Ganancias %", placeholder: "25.5" },
   ],
 };
