@@ -373,12 +373,23 @@ def _motivo_calibracion(cal: dict) -> str:
     # euros: 10.627 y 10.508 se llevan un 1,1%, y el mensaje anunciaba un 3,9%. Quien lo
     # leyera no podía comprobarlo y parecía una cuenta mal hecha. Se dice cuál es cada
     # cosa: los euros son de días distintos, y el porcentaje es el de la proporción.
-    euros = (f"calcula {_eur(cal['nuestro_eur'])} € y DEGIRO decía "
+    dias = cal.get("dias")
+    recien = dias is not None and dias <= 1
+    euros = (f"calcula {_eur(cal['nuestro_eur'])} € y DEGIRO dice "
+             f"{_eur(cal['degiro_eur'])} €" if recien else
+             f"calcula {_eur(cal['nuestro_eur'])} € y DEGIRO decía "
              f"{_eur(cal['degiro_eur'])} €")
     if cal.get("comparacion") == "proporcion":
-        diferencia = (f"{euros}. Esas dos cifras son de días distintos, así que lo que se "
-                      f"compara es la proporción riesgo/cartera: ahí la diferencia es del "
-                      f"{_porcentaje(cal['error'])}, por encima del {TOLERANCIA:.0%} admitido")
+        # La coletilla de los días solo vale si de verdad son días distintos: con el
+        # extracto de hoy, decirlo es una explicación falsa de por qué el porcentaje no
+        # sale de restar los euros.
+        por_que = ("" if recien else
+                   " Esas dos cifras son de días distintos, así que lo que se compara es "
+                   "la proporción riesgo/cartera:")
+        cuerpo = (f" En proporción al valor de la cartera la diferencia es del"
+                  if recien else " ahí la diferencia es del")
+        diferencia = (f"{euros}.{por_que}{cuerpo} {_porcentaje(cal['error'])}, "
+                      f"por encima del {TOLERANCIA:.0%} admitido")
     else:
         diferencia = f"{euros}: un {_porcentaje(cal['error'])} de diferencia"
     # Quedarse CORTO con categorías sin rellenar tiene una explicación concreta, y mandar a
@@ -389,6 +400,41 @@ def _motivo_calibracion(cal: dict) -> str:
                 f"100% y se queda corto: {diferencia}. Ponlas en la Cartera, en la "
                 f"columna «Cat.»: la letra sale junto al nombre del producto en la "
                 f"pantalla de la orden de DEGIRO.")
+    # Con el extracto RECIÉN copiado, mandar a copiarlo otra vez no es un consejo: es un
+    # bucle. Si acabas de pegarlo y sigue sin cuadrar, el problema está en los datos que el
+    # modelo usa, y se puede señalar cuál.
+    if recien and corto:
+        comps = cal.get("componentes") or {}
+        dom = cal.get("dominante")
+        techo = max((v for k, v in comps.items() if k in COMPONENTES), default=0.0)
+        # DEGIRO por encima del MAYOR de los cuatro componentes solo puede significar que a
+        # él le manda otro, calculado sobre datos distintos de los nuestros. Y el sospechoso
+        # es el sector: la categoría se teclea de su propia pantalla y coincide, pero el
+        # sector de tu Cartera es TU taxonomía —la que separa lo que tú separas— mientras
+        # que DEGIRO agrupa con la suya, mucho más gruesa. Diez posiciones que para ti son
+        # cinco cosas distintas pueden ser un solo sector para él, y entonces su
+        # concentración sectorial dispara un riesgo que aquí no aparece.
+        if cal["degiro_eur"] > techo * 1.02:
+            return (f"El modelo se queda corto con un extracto recién copiado: "
+                    f"{diferencia}. Aquí manda {NOMBRES.get(dom, dom)}, y la cifra de "
+                    f"DEGIRO es más alta que cualquiera de los cuatro componentes que "
+                    f"calcula, así que a él le está mandando otro. El sospechoso es el "
+                    f"sector: el de tu Cartera es TU clasificación, y DEGIRO agrupa con la "
+                    f"suya, más gruesa — lo que para ti son varios sectores puede ser uno "
+                    f"solo para él. Abre tu «Margin statement» y mira qué línea le sale "
+                    f"más alta; si es la sectorial, hay que unificar sectores.")
+        return (f"El modelo se queda corto con un extracto recién copiado: {diferencia}. "
+                f"Aquí manda {NOMBRES.get(dom, dom)}. Compara los componentes con los de "
+                f"tu «Margin statement»: el que no cuadre dice qué dato hay que revisar.")
+    if recien:
+        # Pasarse POR ARRIBA con el extracto al día tiene el sospechoso contrario: una
+        # categoría D de más. La D carga el 100% del valor de la posición, así que basta
+        # una mal puesta para inflar el riesgo muy por encima de lo real.
+        dom = cal.get("dominante")
+        return (f"El modelo se pasa por arriba con un extracto recién copiado: "
+                f"{diferencia}. Aquí manda {NOMBRES.get(dom, dom)}. Revisa las categorías "
+                f"de la columna «Cat.»: una D computa el 100% del valor de esa posición, "
+                f"así que una sola mal puesta infla el riesgo de toda la cartera.")
     return (f"El modelo ya no reproduce tu riesgo real: {diferencia}. Suele pasar cuando "
             f"has comprado o vendido desde que copiaste el extracto, o cuando DEGIRO ha "
             f"recategorizado. Vuelve a copiarlo y se recalibra solo.")

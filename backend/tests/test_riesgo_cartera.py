@@ -425,3 +425,52 @@ def test_ninguna_funcion_del_modulo_se_define_dos_veces():
     nombres = re.findall(r"^def (\w+)", fuente, re.M)
     repetidos = {n for n in nombres if nombres.count(n) > 1}
     assert not repetidos, f"definidas dos veces: {sorted(repetidos)}"
+
+
+# ── Con el extracto recién copiado, el consejo no puede ser «cópialo» ────────
+
+def _fresco(**extra):
+    return {"estado": rc.NO_CUADRA, "error": 0.24, "comparacion": "proporcion",
+            "nuestro_eur": 10575.0, "degiro_eur": 13920.0, "dias": 0,
+            "sin_categoria": 0, "posiciones": 14, "dominante": "neto",
+            "componentes": {"evento": 2100.0, "neto": 10575.0,
+                            "sector": 7800.0, "bruto": 5560.0}, **extra}
+
+
+def test_con_extracto_de_hoy_no_manda_a_copiarlo_otra_vez():
+    """Sería un bucle: acaba de pegarlo y se le pide que lo pegue."""
+    m = rc._motivo_calibracion(_fresco())
+    assert "Vuelve a copiar" not in m
+    assert "recién copiado" in m
+
+
+def test_con_extracto_de_hoy_no_dice_que_las_cifras_sean_de_dias_distintos():
+    """Con el extracto de hoy son del mismo día: esa explicación sería falsa."""
+    assert "días distintos" not in rc._motivo_calibracion(_fresco())
+    assert "días distintos" in rc._motivo_calibracion(_fresco(dias=11, error=0.039))
+
+
+def test_si_degiro_supera_a_los_cuatro_componentes_señala_al_sector():
+    """13.920 € por encima del mayor de los cuatro solo puede ser otro componente, y el
+    único que se calcula con datos que NO salen de la pantalla de DEGIRO es el sector: la
+    categoría se copia de allí, la clasificación sectorial es la del usuario."""
+    m = rc._motivo_calibracion(_fresco())
+    assert "sector" in m and "Margin statement" in m
+
+
+def test_si_degiro_cabe_dentro_de_los_componentes_no_acusa_al_sector():
+    """Ahí la explicación es otra y acusar al sector sería adivinar."""
+    # Corto, pero DEGIRO cabe dentro del mayor componente (10.575): la explicación es
+    # otra y acusar al sector sería adivinar.
+    m = rc._motivo_calibracion(_fresco(degiro_eur=10700.0))
+    assert "El sospechoso es el sector" not in m
+    assert "Compara los componentes" in m
+
+
+def test_pasarse_por_arriba_con_extracto_fresco_acusa_a_las_categorias():
+    """Quedarse LARGO no lo explica un sector agrupado de otra forma: lo explica una D de
+    más, que carga el 100% del valor de su posición."""
+    m = rc._motivo_calibracion(_fresco(nuestro_eur=16000.0, degiro_eur=13920.0))
+    assert "se pasa por arriba" in m and "Cat." in m
+    assert "El sospechoso es el sector" not in m
+    assert "Vuelve a copiar" not in m
