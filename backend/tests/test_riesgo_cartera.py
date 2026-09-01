@@ -23,7 +23,7 @@ QUÉ MÁS SE FIJA
   · sin extracto de DEGIRO, o si el modelo deja de reproducirlo, NO se da ninguna cifra
   · los tres ejemplos numéricos del manual oficial se reproducen al céntimo
 
-Ejecutar:  cd backend && pytest tests/test_riesgo_cartera.py -v
+Ejecutar:  cd backend && pytest tests/test_rc.py -v
 """
 import pytest
 
@@ -367,4 +367,61 @@ def test_si_se_pasa_por_arriba_no_culpa_a_las_categorias():
     """Quedarse LARGO no lo explica una categoría vacía, así que el mensaje es el otro."""
     e = rc.estimar(SIN_CATS, "MRVL", extracto={"riesgo_eur": 3000.0, "fecha": "2026-08-21"})
     assert "Faltan las categorías" not in e["motivo"]
-    assert "Vuelve a copiar el extracto" in e["motivo"]
+    assert "Vuelve a copiar" in e["motivo"]
+
+
+# ── El mensaje de "ya no cuadro" tiene que poder comprobarse ─────────────────
+
+def _cal_no_cuadra(comparacion="proporcion"):
+    return {"estado": rc.NO_CUADRA, "error": 0.039, "comparacion": comparacion,
+            "nuestro_eur": 10627.0, "degiro_eur": 10508.0,
+            "sin_categoria": 0, "posiciones": 14}
+
+
+def test_los_miles_van_con_punto_como_en_espanol():
+    """«10,627 €» en español se lee como diez euros con 627 milésimas."""
+    m = rc._motivo_calibracion(_cal_no_cuadra())
+    assert "10.627" in m and "10.508" in m
+    assert "10,627" not in m
+
+
+def test_el_porcentaje_corresponde_a_lo_que_se_compara():
+    """El caso real: 10.627 y 10.508 se llevan un 1,1%, y el mensaje anunciaba un 3,9%
+    —que es el de la PROPORCIÓN riesgo/cartera—. Quien lo leía no podía comprobarlo."""
+    m = rc._motivo_calibracion(_cal_no_cuadra("proporcion"))
+    assert "proporción riesgo/cartera" in m
+    assert "días distintos" in m, "hay que decir por qué los euros no dan ese porcentaje"
+    assert "3.9%" in m or "3,9%" in m
+
+
+def test_comparando_euros_la_frase_es_la_directa():
+    """Sin valor de cartera en el extracto se comparan euros, y entonces el porcentaje SÍ
+    sale de esas dos cifras: sobra la explicación."""
+    m = rc._motivo_calibracion(_cal_no_cuadra("euros"))
+    assert "proporción" not in m and "días distintos" not in m
+
+
+def test_se_dice_cual_es_la_tolerancia():
+    """Un 3,9% no significa nada sin saber a partir de cuánto se considera que no cuadra."""
+    assert "2%" in rc._motivo_calibracion(_cal_no_cuadra())
+
+
+def test_con_categorias_sin_rellenar_sigue_mandando_a_la_columna_Cat():
+    """Quedarse corto por categorías vacías tiene otra causa: el extracto está bien."""
+    cal = {**_cal_no_cuadra(), "sin_categoria": 3,
+           "nuestro_eur": 9987.0, "degiro_eur": 10508.0}   # corto: es lo que explican
+    m = rc._motivo_calibracion(cal)
+    assert "Cat." in m and "9.987" in m
+
+
+def test_ninguna_funcion_del_modulo_se_define_dos_veces():
+    """Definir `_pct` por segunda vez no da error: la segunda pisa a la primera y el
+    modelo entero pasa a llamar a la función equivocada. Aquí pasó — el `_pct` que calcula
+    el porcentaje de riesgo de una posición quedó sustituido por uno que formatea texto, y
+    lo que reventó fue un test de otro fichero."""
+    import inspect
+    import re
+    fuente = inspect.getsource(rc)
+    nombres = re.findall(r"^def (\w+)", fuente, re.M)
+    repetidos = {n for n in nombres if nombres.count(n) > 1}
+    assert not repetidos, f"definidas dos veces: {sorted(repetidos)}"

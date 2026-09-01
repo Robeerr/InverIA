@@ -335,6 +335,26 @@ def estimar(posiciones: List[dict], symbol: str, acciones: Optional[float] = Non
     }
 
 
+def _eur(n) -> str:
+    """10627.4 → «10.627». Punto para los miles, que es como se escribe en español.
+
+    El formato `,.0f` de Python pone la coma inglesa, y «10,627 €» en español se lee como
+    diez euros con seiscientas veintisiete milésimas. En un mensaje cuyo trabajo es que
+    compares dos cifras, el separador no es cosmética.
+    """
+    return f"{n:,.0f}".replace(",", ".")
+
+
+def _porcentaje(x) -> str:
+    """0.039 → «3,9%». Coma decimal, por lo mismo que el punto en los miles.
+
+    Y no se llama `_pct` porque ese nombre ya está cogido en este módulo por otra cosa
+    —el porcentaje de riesgo de una posición— y definirlo dos veces no da error: la
+    segunda pisa a la primera y todo el modelo empieza a llamar a la función equivocada.
+    """
+    return f"{x:.1%}".replace(".", ",")
+
+
 def _motivo_calibracion(cal: dict) -> str:
     if cal["estado"] == SIN_CALIBRAR:
         return ("No se puede estimar todavía: falta el extracto de margen de DEGIRO. "
@@ -348,18 +368,30 @@ def _motivo_calibracion(cal: dict) -> str:
                 "Tu extracto de margen ha caducado. Vuelve a copiarlo.")
     faltan, total = cal.get("sin_categoria") or 0, cal.get("posiciones") or 0
     corto = (cal.get("nuestro_eur") or 0) < (cal.get("degiro_eur") or 0)
-    diferencia = (f"calcula {cal['nuestro_eur']:,.0f} € y DEGIRO dice "
-                  f"{cal['degiro_eur']:,.0f} € ({cal['error']:.1%} de diferencia)")
+    # El porcentaje tiene que corresponder a lo que se compara. Cuando se comparan
+    # PROPORCIONES riesgo/cartera —el caso normal— el error no sale de restar los dos
+    # euros: 10.627 y 10.508 se llevan un 1,1%, y el mensaje anunciaba un 3,9%. Quien lo
+    # leyera no podía comprobarlo y parecía una cuenta mal hecha. Se dice cuál es cada
+    # cosa: los euros son de días distintos, y el porcentaje es el de la proporción.
+    euros = (f"calcula {_eur(cal['nuestro_eur'])} € y DEGIRO decía "
+             f"{_eur(cal['degiro_eur'])} €")
+    if cal.get("comparacion") == "proporcion":
+        diferencia = (f"{euros}. Esas dos cifras son de días distintos, así que lo que se "
+                      f"compara es la proporción riesgo/cartera: ahí la diferencia es del "
+                      f"{_porcentaje(cal['error'])}, por encima del {TOLERANCIA:.0%} admitido")
+    else:
+        diferencia = f"{euros}: un {_porcentaje(cal['error'])} de diferencia"
     # Quedarse CORTO con categorías sin rellenar tiene una explicación concreta, y mandar a
     # repegar el extracto en ese caso es mandar al sitio equivocado: el extracto está bien.
     if faltan and corto:
         return (f"Faltan las categorías de riesgo de DEGIRO: {faltan} de {total} "
                 f"posiciones no la tienen. Sin ellas el modelo no sabe cuáles computan al "
-                f"100% y se queda corto — {diferencia}. Ponlas en la Cartera, en la "
+                f"100% y se queda corto: {diferencia}. Ponlas en la Cartera, en la "
                 f"columna «Cat.»: la letra sale junto al nombre del producto en la "
                 f"pantalla de la orden de DEGIRO.")
-    return (f"El modelo ya no reproduce tu riesgo real: {diferencia}. Puede que hayan "
-            f"cambiado categorías o sectores. Vuelve a copiar el extracto de margen.")
+    return (f"El modelo ya no reproduce tu riesgo real: {diferencia}. Suele pasar cuando "
+            f"has comprado o vendido desde que copiaste el extracto, o cuando DEGIRO ha "
+            f"recategorizado. Vuelve a copiarlo y se recalibra solo.")
 
 
 # ── Simulador: comprar o vender, antes de decidir ────────────────────────────
