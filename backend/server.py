@@ -3135,7 +3135,9 @@ async def agrupar_sector_como_degiro(aplicar: bool = False,
     if not objetivo:
         raise HTTPException(400, "Falta la línea «Largest sector risk» del extracto.")
 
-    plan = riesgo_cartera.agrupar_como_degiro(posiciones, objetivo)
+    plan = riesgo_cartera.agrupar_como_degiro(
+        posiciones, objetivo,
+        tolerancia_eur=riesgo_cartera.tolerancia_de_sector(extracto.get("riesgo_eur")))
     if not plan:
         raise HTTPException(400, "No hay posiciones abiertas que agrupar.")
     if aplicar and plan.get("propuesta"):

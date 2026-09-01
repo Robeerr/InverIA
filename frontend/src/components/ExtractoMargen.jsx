@@ -47,7 +47,14 @@ export default function ExtractoMargen() {
             + "suma: cualquier combinación que sobre serviría.",
           AMBIGUO: `hay varias combinaciones que cuadran igual (${(plan.candidatas || [])
             .map((c) => c.join("+")).join(", ")}), y acertar por suerte no vale.`,
-          SIN_SOLUCION: "ninguna combinación de tus posiciones llega al objetivo.",
+          SIN_SOLUCION: "ninguna combinación de tus posiciones llega al objetivo"
+            + ((plan.cerca || []).length
+              // Lo más cerca que se llega dice MÁS que el "no": si el objetivo se queda
+              // entre dos posiciones, es que DEGIRO no agrupa como ningún subconjunto del
+              // nuestro y hay que mirar otra cosa.
+              ? `. Lo más cerca: ${plan.cerca.map((c) => `${c.symbols.join("+")} = `
+                  + `${Math.round(c.suma_eur)} €`).join(", ")}.`
+              : "."),
           DEMASIADAS: "hay demasiadas posiciones fuera del grupo para probarlas todas.",
         }[plan.estado] || "no se ha podido calcular.";
         toast.error(`Faltan ${Math.round(plan.faltan_eur)} € pero ${porque}`,

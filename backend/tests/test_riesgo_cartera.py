@@ -610,14 +610,25 @@ def test_propone_la_posicion_que_cierra_el_hueco():
     assert r["resultado_eur"] == 14825.0
 
 
-def test_no_propone_nada_si_hay_dos_combinaciones_que_cuadran():
-    """Acertar por suerte es indistinguible de acertar por criterio hasta que cambian los
-    precios y deja de cuadrar sin que nadie sepa por qué."""
+def test_no_propone_nada_si_hay_dos_combinaciones_IGUAL_de_buenas():
+    """Que dos entren en la tolerancia no las hace equivalentes: una que clava el objetivo
+    y otra que se queda a 600 € no son «dos opciones». Se para cuando de verdad empatan,
+    porque acertar por suerte es indistinguible de acertar por criterio hasta que cambian
+    los precios y deja de cuadrar sin que nadie sepa por qué."""
     empatadas = CARTERA_SECTORES + [{"symbol": "XXX", "valor_eur": 2825.0,
-                            "sector": "ENERGY", "categoria": "A"}]
+                                     "sector": "ENERGY", "categoria": "A"}]
     r = rc.agrupar_como_degiro(empatadas, 14825.0)
     assert r["estado"] == "AMBIGUO" and r["propuesta"] is None
-    assert sorted(sum(r["candidatas"], [])) == ["META", "XXX"]
+    # Las dos primeras, que son las que empatan a cero; el orden es por cercanía.
+    assert sorted(c[0] for c in r["candidatas"][:2]) == ["META", "XXX"]
+
+
+def test_una_que_clava_gana_a_otra_que_solo_se_acerca():
+    """META clava los 2.825 y NFLX se queda a 575: entran las dos en la tolerancia, pero
+    llamarlas ambiguas seria renunciar a la respuesta buena por tener una mala al lado."""
+    r = rc.agrupar_como_degiro(CARTERA_SECTORES, 14825.0)
+    assert r["estado"] == "PROPUESTA"
+    assert [p["symbol"] for p in r["propuesta"]] == ["META"]
 
 
 def test_si_ya_cuadra_no_toca_nada():
@@ -641,3 +652,34 @@ def test_la_categoria_D_no_entra_en_la_propuesta():
     con_d = [{**p, "categoria": "D"} if p["symbol"] == "META" else p for p in CARTERA_SECTORES]
     r = rc.agrupar_como_degiro(con_d, 14825.0)
     assert r["estado"] != "PROPUESTA" or all(p["symbol"] != "META" for p in r["propuesta"])
+
+
+def test_la_tolerancia_del_sector_sale_de_la_de_calibracion():
+    """No es un número a ojo: el sector entra al 40%, así que un desvío de X euros de valor
+    mueve el riesgo 0,40·X. Exigir ±60 € era doce veces más fino de lo necesario, y por eso
+    no encontraba combinaciones cuando había varias que valían."""
+    assert rc.tolerancia_de_sector(14019) == pytest.approx(700.95, abs=0.01)
+    assert rc.tolerancia_de_sector(0) == 50.0, "un suelo, para no aceptar cualquier cosa"
+
+
+def test_sin_solucion_se_enseña_lo_mas_cerca_que_se_llega():
+    """Un «no» a secas no dice nada. Ver que el objetivo cae entre dos posiciones dice que
+    DEGIRO no agrupa como ningún subconjunto del nuestro, que es otra conversación."""
+    r = rc.agrupar_como_degiro(CARTERA_SECTORES, 30000.0, tolerancia_eur=100.0)
+    assert r["estado"] == "SIN_SOLUCION"
+    assert r["cerca"] and all({"symbols", "suma_eur", "se_pasa_eur"} <= set(c)
+                              for c in r["cerca"])
+    # Ordenadas por cercanía: la primera es la mejor aproximación.
+    assert r["cerca"][0]["se_pasa_eur"] <= r["cerca"][-1]["se_pasa_eur"]
+
+
+def test_con_la_tolerancia_buena_lo_que_antes_no_cuadraba_cuadra():
+    """Con ±60 no entra nada que se desvíe más de eso, por bien que aproxime. Aquí NFLX se
+    queda a 175 € del objetivo: inútil con el umbral viejo, aceptable con el bueno —esos
+    175 € mueven el riesgo 70 €, medio punto de la tolerancia—."""
+    objetivo = 12000.0 + 2900.0        # META vale 2.825: se queda a 75 € del hueco
+    assert rc.agrupar_como_degiro(CARTERA_SECTORES, objetivo,
+                                  tolerancia_eur=60.0)["estado"] == "SIN_SOLUCION"
+    r = rc.agrupar_como_degiro(CARTERA_SECTORES, objetivo, tolerancia_eur=700.0)
+    assert r["estado"] == "PROPUESTA"
+    assert [p["symbol"] for p in r["propuesta"]] == ["META"]

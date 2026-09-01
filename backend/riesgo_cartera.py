@@ -436,8 +436,20 @@ def sector_implicito(extracto: Optional[dict], d_eur: float,
     return round(resto / P_SECTOR, 2)
 
 
+def tolerancia_de_sector(riesgo_degiro: float) -> float:
+    """Cuánto puede desviarse el mayor sector sin que la calibración se salga.
+
+    No es un número redondo elegido a ojo: el sector entra en el riesgo al 40%, así que un
+    desvío de X euros de valor mueve el riesgo 0,40·X. Para no pasarse de la tolerancia de
+    calibración, X puede llegar a TOLERANCIA·riesgo/0,40 — unos 700 € en una cartera con
+    14.000 € de riesgo. Exigir cuadrar a ±60 € era doce veces más fino de lo necesario, y
+    por eso no encontraba ninguna combinación cuando había varias que valían.
+    """
+    return max(TOLERANCIA * float(riesgo_degiro or 0) / P_SECTOR, 50.0)
+
+
 def agrupar_como_degiro(posiciones: List[dict], objetivo: float,
-                        tolerancia_eur: float = 60.0) -> Optional[dict]:
+                        tolerancia_eur: float = 700.0) -> Optional[dict]:
     """Qué posiciones hay que meter en el grupo grande para reproducir el sector de DEGIRO.
 
     El extracto dice cuánto agrupa el bróker en su mayor sector; aquí sabemos el valor de
@@ -479,20 +491,50 @@ def agrupar_como_degiro(posiciones: List[dict], objetivo: float,
     if len(fuera) > 14:            # 2^14: el coste se dispara y deja de ser instantáneo
         return {**base, "propuesta": None, "estado": "DEMASIADAS"}
 
+    # Todas las combinaciones que caben en la tolerancia, ordenadas por lo cerca que
+    # quedan. Se empieza por las de menos posiciones —cambiar una etiqueta es mejor que
+    # cambiar tres si las dos cuadran— y dentro de cada tamaño manda la distancia.
     soluciones = []
     for n in range(1, len(fuera) + 1):
+        candidatas = []
         for combo in combinations(fuera, n):
             suma = sum(float(p["valor_eur"]) for p in combo)
             if abs(suma - faltan) <= tolerancia_eur:
-                soluciones.append(combo)
-        if soluciones:
-            break               # la más pequeña que cuadra; no hace falta seguir subiendo
+                candidatas.append((abs(suma - faltan), combo))
+        if candidatas:
+            candidatas.sort(key=lambda x: x[0])
+            soluciones = candidatas
+            break
     if not soluciones:
-        return {**base, "propuesta": None, "estado": "SIN_SOLUCION"}
-    if len(soluciones) > 1:
+        # Ni con holgura hay nada que cuadre. Entonces lo útil no es un "no" a secas: lo
+        # útil es enseñar lo más cerca que se llega, porque de ahí se ve si el objetivo se
+        # queda entre dos posiciones —y entonces el agrupamiento de DEGIRO no coincide con
+        # ningún subconjunto del nuestro— o si simplemente falta una que no tenemos.
+        cerca = []
+        for n in range(1, min(len(fuera), 3) + 1):
+            for combo in combinations(fuera, n):
+                suma = sum(float(p["valor_eur"]) for p in combo)
+                cerca.append((abs(suma - faltan), [p["symbol"] for p in combo], round(suma, 2)))
+        cerca.sort()
+        return {**base, "propuesta": None, "estado": "SIN_SOLUCION",
+                "cerca": [{"symbols": c[1], "suma_eur": c[2], "se_pasa_eur": round(c[0], 2)}
+                          for c in cerca[:3]]}
+    # Con la tolerancia bien puesta —derivada de la calibración, ~700 €— es normal que
+    # entren varias. Que entren no las hace equivalentes: una que clava el objetivo y otra
+    # que se queda a 600 € no son "dos opciones". Se propone la mejor solo si es CLARAMENTE
+    # mejor, y clarísimamente quiere decir al menos el doble de cerca que la siguiente.
+    # Cuando están de verdad empatadas se para, porque acertar por suerte es indistinguible
+    # de acertar por criterio hasta que cambian los precios.
+    margen = max(tolerancia_eur * 0.10, 25.0)
+    mejor, segunda = soluciones[0][0], (soluciones[1][0] if len(soluciones) > 1 else None)
+    # Dos condiciones, y hacen falta las dos. La del doble sola dejaba pasar el empate
+    # exacto —dos posiciones que valen lo mismo dan 0 y 0, y 0*2 no es mayor que 0— que es
+    # justo el caso donde elegir es tirar una moneda.
+    unica = segunda is None or (segunda >= mejor * 2 and segunda - mejor > margen)
+    if not unica:
         return {**base, "propuesta": None, "estado": "AMBIGUO",
-                "candidatas": [[p["symbol"] for p in c] for c in soluciones[:4]]}
-    combo = soluciones[0]
+                "candidatas": [[p["symbol"] for p in c] for _, c in soluciones[:4]]}
+    combo = soluciones[0][1]
     return {**base, "estado": "PROPUESTA",
             "propuesta": [{"symbol": p["symbol"], "sector": p.get("sector"),
                            "valor_eur": round(float(p["valor_eur"]), 2)} for p in combo],
