@@ -106,3 +106,7 @@ def test_el_detector_funciona():
 def test_la_ruta_de_estimar_comisiones_existe():
     """Se llama desde el aviso de ventas sin comisión; sin ruta, el botón daría 404."""
     assert ("post", "/cartera/estimar-comisiones") in {(m, r) for m, r, _ in _rutas()}
+
+
+def test_la_ruta_de_agrupar_sector_existe():
+    assert ("post", "/cartera/agrupar-sector") in {(m, r) for m, r, _ in _rutas()}

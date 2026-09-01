@@ -3113,6 +3113,42 @@ async def _posiciones_con_riesgo():
     return posiciones
 
 
+@api_router.post("/cartera/agrupar-sector")
+async def agrupar_sector_como_degiro(aplicar: bool = False,
+                                     _user: str = Depends(auth.get_current_user)):
+    """Propone —y opcionalmente aplica— la agrupación sectorial que reproduce el extracto.
+
+    El bróker no publica su taxonomía, pero sí publica cuánto suma su mayor sector. Con eso
+    y el valor de cada posición, la pregunta se convierte en una suma con solución. Va en
+    dos pasos porque escribe en fichas del usuario: sin `aplicar` solo dice qué haría.
+    """
+    posiciones = await _posiciones_con_riesgo()
+    extracto = await db.margen_degiro.find_one({"id": "actual"}, {"_id": 0})
+    implicita = riesgo_cartera.categoria_d_implicita(extracto)
+    if not implicita:
+        raise HTTPException(400, "Faltan las líneas «Net investment» y «Gross investment» "
+                                 "del extracto: sin ellas no se sabe cuánto es categoría D "
+                                 "y el objetivo del sector no se puede despejar.")
+    comps = riesgo_cartera.componentes(posiciones)
+    objetivo = riesgo_cartera.sector_implicito(extracto, implicita["categoria_d_eur"],
+                                              comps.get("divisa") or 0.0)
+    if not objetivo:
+        raise HTTPException(400, "Falta la línea «Largest sector risk» del extracto.")
+
+    plan = riesgo_cartera.agrupar_como_degiro(posiciones, objetivo)
+    if not plan:
+        raise HTTPException(400, "No hay posiciones abiertas que agrupar.")
+    if aplicar and plan.get("propuesta"):
+        for p in plan["propuesta"]:
+            await db.signal_entries.update_one(
+                {"symbol": p["symbol"]},
+                {"$set": {"sector_degiro": plan["grupo"], "updated_at": _hoy()}})
+        for k in ("signals_list", "signals_hot"):
+            _cache._store.pop(k, None)
+        plan["aplicado"] = True
+    return plan
+
+
 @api_router.get("/cartera/riesgo-venta/{symbol}")
 async def riesgo_de_vender(symbol: str, acciones: Optional[float] = None,
                            _user: str = Depends(auth.get_current_user)):

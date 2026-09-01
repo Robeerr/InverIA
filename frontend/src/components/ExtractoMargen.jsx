@@ -30,6 +30,50 @@ export default function ExtractoMargen() {
   const [f, setF] = React.useState(null);
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
 
+  // Agrupar como DEGIRO. El bróker no publica su taxonomía, pero sí cuánto suma su mayor
+  // sector; con el valor de cada posición eso deja de ser una pregunta sobre clasificación
+  // y pasa a ser una suma con solución. Va en dos pasos: escribe en fichas del usuario, así
+  // que primero enseña qué tocaría y solo escribe si se acepta.
+  const agrupar = useMutation({
+    mutationFn: async () => {
+      const plan = await api.cartera.agruparSector(false);
+      if (plan.estado === "YA_CUADRA") {
+        toast.success("El sector ya cuadra con tu extracto: no hay nada que agrupar.");
+        return null;
+      }
+      if (!plan.propuesta?.length) {
+        const porque = {
+          NOS_PASAMOS: "aquí se agrupa MÁS que en DEGIRO, y qué sacar no se deduce de una "
+            + "suma: cualquier combinación que sobre serviría.",
+          AMBIGUO: `hay varias combinaciones que cuadran igual (${(plan.candidatas || [])
+            .map((c) => c.join("+")).join(", ")}), y acertar por suerte no vale.`,
+          SIN_SOLUCION: "ninguna combinación de tus posiciones llega al objetivo.",
+          DEMASIADAS: "hay demasiadas posiciones fuera del grupo para probarlas todas.",
+        }[plan.estado] || "no se ha podido calcular.";
+        toast.error(`Faltan ${Math.round(plan.faltan_eur)} € pero ${porque}`,
+          { duration: 12000 });
+        return null;
+      }
+      const cuales = plan.propuesta
+        .map((p) => `${p.symbol} (${Math.round(p.valor_eur)} €, ahora ${p.sector})`)
+        .join("\n");
+      const ok = window.confirm(
+        `Tu extracto dice que DEGIRO agrupa ${Math.round(plan.objetivo_eur)} € en su mayor `
+        + `sector, y aquí «${plan.grupo}» agrupa ${Math.round(plan.actual_eur)} €.\n\n`
+        + `Pasando esto al mismo grupo se llega a ${Math.round(plan.resultado_eur)} €:\n\n`
+        + `${cuales}\n\nSolo cambia el campo «Sector DEGIRO»; tu columna Sector no se `
+        + "toca.\n\n¿Aplicar?");
+      return ok ? api.cartera.agruparSector(true) : null;
+    },
+    onSuccess: (r) => {
+      if (!r) return;
+      toast.success(`${r.propuesta.length} posición(es) agrupadas en «${r.grupo}». `
+        + `El sector pasa a ${Math.round(r.resultado_eur)} €.`, { duration: 10000 });
+      qc.invalidateQueries({ queryKey: ["cartera"] });
+    },
+    onError: (e) => toast.error(e?.response?.data?.detail || "No se pudo calcular la agrupación"),
+  });
+
   const guardar = useMutation({
     mutationFn: (datos) => api.cartera.guardarMargen(datos),
     onSuccess: () => {
@@ -111,8 +155,17 @@ export default function ExtractoMargen() {
           )}
           <button
             type="button"
+            onClick={() => agrupar.mutate()}
+            disabled={agrupar.isPending}
+            title="Calcula qué posiciones hay que meter en el mismo sector para reproducir el agrupamiento de DEGIRO, usando la cifra de su propio extracto. No toca tu columna Sector."
+            className="text-apoyo text-tinta-3 underline ml-auto disabled:opacity-60"
+          >
+            {agrupar.isPending ? "Calculando…" : "Agrupar como DEGIRO"}
+          </button>
+          <button
+            type="button"
             onClick={() => setF({})}
-            className="text-apoyo text-tinta-3 underline ml-auto"
+            className="text-apoyo text-tinta-3 underline"
           >
             Actualizar
           </button>

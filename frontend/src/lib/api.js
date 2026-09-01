@@ -211,6 +211,10 @@ export const api = {
       client.post(`/cartera/importar-posiciones`, null, { params: { reemplazar } }).then((r) => r.data),
     // Quita los lotes de "Importar mis posiciones" en los símbolos que ya cubre el CSV de
     // DEGIRO: las dos importaciones cuentan las mismas acciones y juntas duplican la posición.
+    // Propone —y con `aplicar`, escribe— la agrupación sectorial que reproduce el extracto
+    // de DEGIRO. Dos pasos porque toca fichas del usuario: primero se enseña qué haría.
+    agruparSector: (aplicar = false) =>
+      client.post(`/cartera/agrupar-sector`, null, { params: { aplicar } }).then((r) => r.data),
     quitarDuplicados: () =>
       client.post(`/cartera/quitar-duplicados`).then((r) => r.data),
     // Precio a mano para valores sin cotización en vivo (ETFs, otros mercados). Solo

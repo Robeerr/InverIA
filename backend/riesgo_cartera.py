@@ -436,6 +436,69 @@ def sector_implicito(extracto: Optional[dict], d_eur: float,
     return round(resto / P_SECTOR, 2)
 
 
+def agrupar_como_degiro(posiciones: List[dict], objetivo: float,
+                        tolerancia_eur: float = 60.0) -> Optional[dict]:
+    """Qué posiciones hay que meter en el grupo grande para reproducir el sector de DEGIRO.
+
+    El extracto dice cuánto agrupa el bróker en su mayor sector; aquí sabemos el valor de
+    cada posición y en qué grupo está. Con eso, "¿cómo agrupa DEGIRO?" deja de ser una
+    pregunta sobre su taxonomía —que no publica— y pasa a ser una suma: qué subconjunto de
+    las que están FUERA del grupo mayor lo lleva hasta el objetivo.
+
+    Se buscan todos los subconjuntos y solo se propone algo si la solución es ÚNICA. Con
+    dos combinaciones distintas que cuadran igual de bien, acertar sería suerte, y una
+    etiqueta puesta por suerte es indistinguible de una puesta por criterio hasta que
+    cambian los precios y deja de cuadrar sin que nadie sepa por qué.
+
+    La categoría D queda fuera: ya computa al 100% por otra vía y el sector no la cuenta.
+    """
+    from itertools import combinations
+
+    vivas = [p for p in posiciones
+             if not _es_d(p) and (p.get("valor_eur") or 0) > 0]
+    if not vivas or objetivo <= 0:
+        return None
+
+    grupos = {}
+    for p in vivas:
+        g = (p.get("sector") or "").strip().upper()
+        grupos.setdefault(g, []).append(p)
+    mayor = max(grupos, key=lambda g: sum(float(p["valor_eur"]) for p in grupos[g]))
+    actual = sum(float(p["valor_eur"]) for p in grupos[mayor])
+    faltan = objetivo - actual
+    base = {"grupo": mayor, "actual_eur": round(actual, 2),
+            "objetivo_eur": round(objetivo, 2), "faltan_eur": round(faltan, 2)}
+    if abs(faltan) <= tolerancia_eur:
+        return {**base, "propuesta": [], "estado": "YA_CUADRA"}
+    if faltan < 0:
+        # Nos pasamos: habría que SACAR posiciones, y cuáles no se puede deducir de una
+        # suma —cualquier combinación que sobre serviría—. Se dice y se para.
+        return {**base, "propuesta": None, "estado": "NOS_PASAMOS"}
+
+    fuera = [p for p in vivas if (p.get("sector") or "").strip().upper() != mayor]
+    if len(fuera) > 14:            # 2^14: el coste se dispara y deja de ser instantáneo
+        return {**base, "propuesta": None, "estado": "DEMASIADAS"}
+
+    soluciones = []
+    for n in range(1, len(fuera) + 1):
+        for combo in combinations(fuera, n):
+            suma = sum(float(p["valor_eur"]) for p in combo)
+            if abs(suma - faltan) <= tolerancia_eur:
+                soluciones.append(combo)
+        if soluciones:
+            break               # la más pequeña que cuadra; no hace falta seguir subiendo
+    if not soluciones:
+        return {**base, "propuesta": None, "estado": "SIN_SOLUCION"}
+    if len(soluciones) > 1:
+        return {**base, "propuesta": None, "estado": "AMBIGUO",
+                "candidatas": [[p["symbol"] for p in c] for c in soluciones[:4]]}
+    combo = soluciones[0]
+    return {**base, "estado": "PROPUESTA",
+            "propuesta": [{"symbol": p["symbol"], "sector": p.get("sector"),
+                           "valor_eur": round(float(p["valor_eur"]), 2)} for p in combo],
+            "resultado_eur": round(actual + sum(float(p["valor_eur"]) for p in combo), 2)}
+
+
 def _motivo_calibracion(cal: dict) -> str:
     if cal["estado"] == SIN_CALIBRAR:
         return ("No se puede estimar todavía: falta el extracto de margen de DEGIRO. "

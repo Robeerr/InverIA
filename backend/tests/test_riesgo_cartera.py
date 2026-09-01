@@ -587,3 +587,57 @@ def test_el_mensaje_del_sector_manda_al_campo_de_DEGIRO_y_no_al_propio():
            "sector_degiro_eur": 14782.0, "nuestro_sector_eur": 9384.0}
     m = rc._motivo_calibracion(cal)
     assert "Sector DEGIRO" in m and "5.398" in m
+
+
+# ── Proponer la agrupación que reproduce el extracto ─────────────────────────
+
+CARTERA_SECTORES = [
+    {"symbol": "ORCL", "valor_eur": 4400.0, "sector": "TECHNOLOGY", "categoria": "C"},
+    {"symbol": "FN", "valor_eur": 5600.0, "sector": "TECHNOLOGY", "categoria": "A"},
+    {"symbol": "TXN", "valor_eur": 2000.0, "sector": "TECHNOLOGY", "categoria": "A"},
+    {"symbol": "NFLX", "valor_eur": 3400.0, "sector": "COMMUNICATION SERVICES", "categoria": "A"},
+    {"symbol": "META", "valor_eur": 2825.0, "sector": "COMMUNICATION SERVICES", "categoria": "A"},
+    {"symbol": "ETN", "valor_eur": 1400.0, "sector": "INDUSTRIALS", "categoria": "A"},
+    {"symbol": "RH", "valor_eur": 1860.0, "sector": "CONSUMER CYCLICAL", "categoria": "A"},
+]
+
+
+def test_propone_la_posicion_que_cierra_el_hueco():
+    """«¿Cómo agrupa DEGIRO?» no se puede consultar, pero «¿qué suma 2.825 €?» sí."""
+    r = rc.agrupar_como_degiro(CARTERA_SECTORES, 14825.0)
+    assert r["estado"] == "PROPUESTA"
+    assert [p["symbol"] for p in r["propuesta"]] == ["META"]
+    assert r["resultado_eur"] == 14825.0
+
+
+def test_no_propone_nada_si_hay_dos_combinaciones_que_cuadran():
+    """Acertar por suerte es indistinguible de acertar por criterio hasta que cambian los
+    precios y deja de cuadrar sin que nadie sepa por qué."""
+    empatadas = CARTERA_SECTORES + [{"symbol": "XXX", "valor_eur": 2825.0,
+                            "sector": "ENERGY", "categoria": "A"}]
+    r = rc.agrupar_como_degiro(empatadas, 14825.0)
+    assert r["estado"] == "AMBIGUO" and r["propuesta"] is None
+    assert sorted(sum(r["candidatas"], [])) == ["META", "XXX"]
+
+
+def test_si_ya_cuadra_no_toca_nada():
+    r = rc.agrupar_como_degiro(CARTERA_SECTORES, 12000.0)
+    assert r["estado"] == "YA_CUADRA" and r["propuesta"] == []
+
+
+def test_si_nos_pasamos_lo_dice_en_vez_de_quitar_a_ciegas():
+    """Sacar posiciones no tiene solución única: cualquier combinación que sobre serviría."""
+    r = rc.agrupar_como_degiro(CARTERA_SECTORES, 9000.0)
+    assert r["estado"] == "NOS_PASAMOS" and r["propuesta"] is None
+
+
+def test_sin_combinacion_posible_no_se_fuerza_uina():
+    r = rc.agrupar_como_degiro(CARTERA_SECTORES, 99999.0)
+    assert r["estado"] == "SIN_SOLUCION" and r["propuesta"] is None
+
+
+def test_la_categoria_D_no_entra_en_la_propuesta():
+    """Ya computa al 100% por otra vía; el sector no la cuenta y moverla no cambiaría nada."""
+    con_d = [{**p, "categoria": "D"} if p["symbol"] == "META" else p for p in CARTERA_SECTORES]
+    r = rc.agrupar_como_degiro(con_d, 14825.0)
+    assert r["estado"] != "PROPUESTA" or all(p["symbol"] != "META" for p in r["propuesta"])
