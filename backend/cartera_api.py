@@ -90,7 +90,41 @@ _DIVISA_POR_MERCADO = {
     "LON": "GBP", "LSE": "GBP", "SWX": "CHF", "SIX": "CHF",
     "STO": "SEK", "CPH": "DKK", "OSL": "NOK", "TSX": "CAD", "TOR": "CAD",
 }
+# Los mercados de EE. UU. están AQUÍ y no en el "si no lo conozco, dólares" de abajo. La
+# diferencia importa: como hecho conocido, NASDAQ manda sobre un campo `divisa` tecleado a
+# mano; como caída por defecto, no mandaría sobre nada.
+_DIVISA_POR_MERCADO.update({"NASDAQ": "USD", "NYSE": "USD", "AMEX": "USD",
+                            "NYSEARCA": "USD", "BATS": "USD"})
 _PAIS_ISIN_EUR = {"ES", "DE", "FR", "NL", "IT", "PT", "BE", "IE", "AT", "FI", "LU", "GR"}
+
+
+def divisa_de_cotizacion(entry) -> str:
+    """En qué moneda COTIZA el valor, según su mercado.
+
+    No es lo mismo que la divisa de la operación, y confundirlas es lo que rompía NVDA: el
+    coste iba bien (dólares al cambio del día) mientras el valor de hoy tomaba el precio de
+    NASDAQ —dólares— y lo convertía con el cambio del EURO, o sea por 1. Salían dólares con
+    el símbolo €: una posición recién comprada, plana, aparecía con +150 € y +16%.
+
+    El mercado lo rellena el proveedor de datos, así que es un hecho comprobable; el campo
+    `divisa` de la ficha se teclea a mano. Cuando se contradicen gana el mercado.
+    """
+    e = entry or {}
+    porm = _DIVISA_POR_MERCADO.get((e.get("mercado") or "").strip().upper())
+    if porm:
+        return porm
+    d = (e.get("divisa") or "").strip().upper()
+    if d:
+        return d
+    isin = (e.get("isin") or "").strip().upper()
+    if len(isin) >= 2:
+        if isin[:2] in _PAIS_ISIN_EUR:
+            return "EUR"
+        if isin[:2] == "GB":
+            return "GBP"
+        if isin[:2] == "CH":
+            return "CHF"
+    return "USD"
 
 
 def _divisa_de(divisa, entry) -> str:
@@ -99,6 +133,11 @@ def _divisa_de(divisa, entry) -> str:
     if d:
         return d
     e = entry or {}
+    # El mercado, que viene del proveedor, por delante del campo tecleado a mano: una ficha
+    # de NASDAQ marcada "EUR" es una errata, y esa errata acababa dentro de cada compra.
+    porm = _DIVISA_POR_MERCADO.get((e.get("mercado") or "").strip().upper())
+    if porm:
+        return porm
     d = (e.get("divisa") or "").strip().upper()
     if d:
         return d
@@ -409,6 +448,56 @@ async def registrar_venta(db, symbol: str, acciones: float, precio: float,
     return res
 
 
+async def estimar_comisiones_pendientes(db, aplicar: bool = False) -> dict:
+    """Pone la comisión estimada a los apuntes que se quedaron a cero por el fallo del vacío.
+
+    Durante un tiempo el formulario enviaba 0 cuando dejabas el campo en blanco, y el
+    servidor hacía lo correcto con ese 0: respetarlo, porque un cero explícito significa
+    "esta operación no me costó nada". El resultado es que TODAS las operaciones tecleadas
+    a mano quedaron sin comisión, inflando la ganancia realizada entre 6 y 10 € cada venta.
+
+    Solo se tocan las que NO vienen del CSV. Un apunte con huella trae la comisión real del
+    fichero, y si esa es cero es que de verdad fue cero: sustituirla por una estimación
+    sería cambiar un dato bueno por uno inventado.
+
+    Sin `aplicar` solo se calcula y se devuelve, para poder ver qué va a pasar antes de que
+    pase. Lo que se escribe queda marcado como estimado, que es lo que permite distinguirlo
+    después de una cifra sacada de tu extracto.
+    """
+    cambios = {"compras": [], "ventas": []}
+    total_eur = 0.0
+    for col, clave in (("compras", "compras"), ("ventas", "ventas")):
+        for d in await getattr(db, col).find({}, {"_id": 0}).to_list(5000):
+            if d.get("huella"):
+                continue
+            if float(d.get("comision") or 0) > 0.01:
+                continue
+            bruto = float(d.get("acciones") or 0) * float(d.get("precio") or 0)
+            tasa = lotes.tasa_de(d)
+            if not tasa:
+                tasa = await _tasa(d.get("divisa") or "USD", d.get("fecha"))
+            est = comisiones.estimar(bruto, d.get("divisa") or "USD", tasa)
+            if est["total"] is None or est["total"] <= 0:
+                continue
+            en_eur = est["total"] / float(tasa) if tasa else None
+            total_eur += en_eur or 0.0
+            cambios[clave].append({"id": d.get("id"), "symbol": d.get("symbol"),
+                                   "fecha": str(d.get("fecha") or "")[:10],
+                                   "acciones": d.get("acciones"),
+                                   "comision": round(est["total"], 4),
+                                   "eur": round(en_eur, 2) if en_eur is not None else None})
+            if aplicar:
+                await getattr(db, col).update_one(
+                    {"id": d.get("id")},
+                    {"$set": {"comision": round(est["total"], 4),
+                              "comision_estimada": True,
+                              "comision_detalle": est["detalle"]}})
+    return {"aplicado": aplicar,
+            "compras": len(cambios["compras"]), "ventas": len(cambios["ventas"]),
+            "total_eur": round(total_eur, 2),
+            "detalle": cambios}
+
+
 async def borrar_venta(db, venta_id: str) -> bool:
     doc = await db.ventas.find_one({"id": venta_id}, {"_id": 0})
     r = await db.ventas.delete_one({"id": venta_id})
@@ -473,7 +562,66 @@ async def estado_simbolo(db, symbol: str, precio_actual=None) -> dict:
         "ponderada": lotes.media_ponderada(compras, ventas),
         "latente": lotes.valorar_abierto(comp[gestion], precio_actual, tasa_hoy),
         "tasa_hoy": round(tasa_hoy, 4) if tasa_hoy else None,
+        # Con qué precio se ha valorado, y el cierre anterior al lado. Es la única cifra de
+        # la posición que no sale de tus apuntes, y cuando el bróker enseña otra ganancia
+        # suele ser esto: en NFLX eran 81,78 $ aquí contra los 80,01 $ que implicaba DEGIRO
+        # —121,80 € de diferencia— con el mismo coste, el mismo cambio y el mismo método.
+        "precio_actual": precio_actual,
+        "cierre_anterior": entry.get("previous_close"),
+        "estado_mercado": entry.get("market_state"),
+        **_cambio_de_la_posicion(comp[gestion], tasa_hoy),
     }
+
+
+def _cambio_de_la_posicion(estado: dict, tasa_hoy) -> dict:
+    """Al cambio de qué se convirtió el coste de la posición, y cuánto se fía uno de él.
+
+    Es la explicación de por qué el latente de InverIA y el del bróker no coinciden aunque
+    el precio y las acciones sean idénticos. El coste en euros de cada lote sale del cambio
+    de SU día; si ese día no es el día real de la compra —lotes metidos a mano, o traídos
+    de una foto de posiciones en vez del CSV de operaciones— el cambio es el del día en que
+    se dieron de alta, y el coste en euros sale desviado aunque las acciones y el precio en
+    dólares estén perfectos.
+
+    En NFLX salía así: 6.106,40 $ convertidos a 1,1554 de media (5.285 €) cuando el bróker
+    los tenía a 1,1273 (5.417 €). Mismo valor de hoy, 131 € de diferencia en la ganancia,
+    y ninguna de las dos pantallas equivocada en el precio. Se enseña el cambio medio para
+    poder compararlo, y se dice cuántas acciones NO vienen del CSV, que son las sospechosas:
+    su fecha es la de importación, no la de la compra.
+    """
+    abiertos = estado.get("abiertos") or []
+    coste_div = estado.get("coste_abierto_divisa") or 0.0
+    coste_eur = estado.get("coste_abierto_eur")
+    medio = round(coste_div / coste_eur, 4) if coste_eur else None
+    # Solo los lotes que creó la FOTO de posiciones, no todo lo que no tenga huella. Esa
+    # era la trampa: una compra que acabas de teclear tampoco tiene huella —el CSV de hoy
+    # todavía no existe— y salía acusada de llevar "la fecha en que se dio de alta y no la
+    # de tu compra", que en una compra de hoy es la misma fecha. El aviso mandaba a borrarla
+    # y reimportar un fichero que no puede contenerla.
+    #
+    # Los lotes de la foto sí se reconocen: los escribe `importar_posiciones_existentes` con
+    # esa nota, y son los únicos cuya fecha es demostrablemente inventada.
+    sin_csv = [l for l in abiertos
+               if not l.get("huella")
+               and str(l.get("notas") or "").startswith("Importada de tu Cartera")]
+    return {
+        "cambio_medio_compras": medio,
+        # Con el de hoy al lado: un cambio medio pegado al de hoy en una posición vieja es
+        # justo la señal de que las fechas de los lotes no son las de las compras.
+        "cambio_hoy": round(tasa_hoy, 4) if tasa_hoy else None,
+        "acciones_sin_csv": round(sum(l.get("acciones_abiertas") or 0 for l in sin_csv), 6),
+        "acciones_abiertas_total": estado.get("acciones_abiertas"),
+    }
+
+
+def _coinciden(*ventas) -> bool:
+    """¿Dan los métodos el mismo resultado? En dólares, que siempre se conoce.
+
+    Un céntimo de holgura por el redondeo de cada lote; más que eso es otro conjunto de
+    lotes, no otra forma de redondear.
+    """
+    cifras = [v.get("ganancia_divisa") for v in ventas if v and v.get("ganancia_divisa") is not None]
+    return len(cifras) < 2 or (max(cifras) - min(cifras)) < 0.02
 
 
 async def historial(db, limite: int = 1000) -> dict:
@@ -516,6 +664,19 @@ async def historial(db, limite: int = 1000) -> dict:
                 "lifo": _fila_metodo(vl),
                 "ponderada": pmp.get(vf.get("id")),
                 "sin_cubrir": vf.get("sin_cubrir") or 0,
+                # Si cerró la posición, los tres métodos coinciden por fuerza. Decirlo evita
+                # leer como error de cálculo lo que es la definición de vender por niveles.
+                "cierra_posicion": vf.get("cierra_posicion", False),
+                "abiertas_despues": vf.get("abiertas_despues"),
+                # Cerrar la posición OBLIGA a que los tres métodos den lo mismo: se
+                # consumen todos los lotes, así que no queda nada que elegir. Si difieren,
+                # el libro tiene lotes que no deberían estar —o le faltan— y la cifra de
+                # arriba está calculada sobre un conjunto que no es el real. Callarlo y
+                # seguir imprimiendo «los tres coinciden» es afirmar algo que la propia
+                # pantalla desmiente tres líneas más abajo.
+                "metodos_incoherentes": bool(
+                    vf.get("cierra_posicion")
+                    and not _coinciden(vf, vl, pmp.get(vf.get("id")))),
             })
         resumen_symbol.append({
             "symbol": sym,
@@ -534,6 +695,33 @@ async def historial(db, limite: int = 1000) -> dict:
     # número de acciones, solo en que la ganancia se dispara. Se avisa de las parejas
     # sospechosas (misma acción, misma fecha, mismas acciones, y solo una con huella de CSV)
     # para poder borrar la copia manual con su botón.
+    # LO MISMO CON LAS COMPRAS, que era el hueco. Una compra duplicada no dispara ninguna
+    # alarma contable —no deja ventas sin cubrir, no descuadra nada— pero infla la posición
+    # y con ella el latente. Pasó de verdad en NFLX: 30 acciones tecleadas a 76,00 $ el
+    # 13/08 y la MISMA compra importada del CSV a 76,01. Un céntimo de diferencia, así que
+    # el emparejamiento exacto no las veía; en pantalla salían 80 acciones donde el bróker
+    # tenía 50, y unos +140 € de ganancia que no existían. Las otras quince posiciones
+    # cuadraban al detalle, que es justo lo que hace que un fallo así no se busque.
+    dudosas_compra = []
+    for sym, libro in por_symbol.items():
+        vistos = {}
+        for c in libro["compras"]:
+            k = (str(c.get("fecha") or "")[:10], round(float(c.get("acciones") or 0), 6))
+            vistos.setdefault(k, []).append(c)
+        for (fch, acc), grupo in vistos.items():
+            if len(grupo) > 1 and any(g.get("huella") for g in grupo) \
+                    and any(not g.get("huella") for g in grupo):
+                manuales = [g for g in grupo if not g.get("huella")]
+                dudosas_compra.append({
+                    "symbol": sym, "fecha": fch, "acciones": acc,
+                    "precios": sorted({round(float(g.get("precio") or 0), 4) for g in grupo}),
+                    "ids_manuales": [g["id"] for g in manuales],
+                    # Lo que se quita de la posición si se borran las copias manuales. Es la
+                    # cifra que dice si merece la pena mirarlo.
+                    "acciones_de_mas": round(sum(g.get("acciones") or 0 for g in manuales), 6),
+                })
+    dudosas_compra.sort(key=lambda d: d["acciones_de_mas"], reverse=True)
+
     dudosas = []
     for sym, libro in por_symbol.items():
         vistos = {}
@@ -546,8 +734,39 @@ async def historial(db, limite: int = 1000) -> dict:
                 dudosas.append({"symbol": sym, "fecha": fch, "acciones": acc,
                                 "ids_manuales": [g["id"] for g in grupo if not g.get("huella")]})
 
+    # Ventas registradas SIN comisión. DEGIRO cobra 2 € por operación más el 0,25% de
+    # AutoFX, así que una venta a coste cero es casi siempre un dato que no llegó —del CSV
+    # con las columnas sin reconocer, o tecleada dejando el campo vacío—. Cada una infla la
+    # ganancia entre 6 y 10 €, y con cien ventas eso es dinero de verdad en una declaración.
+    #
+    # Se cuenta y se ESTIMA lo que falta, en vez de corregirlo solo: el apunte es del
+    # usuario y una comisión inventada sería otro dato falso, solo que en la otra dirección.
+    sin_comision, coste_no_contado = [], 0.0
+    for sym, libro in por_symbol.items():
+        for v in libro["ventas"]:
+            if float(v.get("comision") or 0) > 0.01:
+                continue
+            bruto = float(v.get("acciones") or 0) * float(v.get("precio") or 0)
+            tasa = v.get("tasa") or 1.0
+            # La tarifa de DEGIRO: 2 € fijos + 0,25% de conversión, en euros.
+            coste_no_contado += 2.0 + (bruto / tasa) * 0.0025
+            # CUÁLES, no solo cuántas. Casi siempre son ventas tecleadas a mano, y esas no
+            # se arreglan reimportando: sin huella no hay nada que emparejar, y encima el
+            # apunte manual TAPA la fila del CSV, que sí trae la comisión buena. Se
+            # arreglan borrándolas y volviendo a importar, así que hay que poder
+            # encontrarlas — con el símbolo y la fecha delante se tarda un minuto.
+            sin_comision.append({"symbol": sym, "fecha": str(v.get("fecha") or "")[:10],
+                                 "acciones": v.get("acciones"), "id": v.get("id"),
+                                 "manual": not v.get("huella")})
+    sin_comision.sort(key=lambda x: x["fecha"], reverse=True)
+
     return {
         "posibles_duplicadas": dudosas,
+        "posibles_compras_duplicadas": dudosas_compra,
+        "ventas_sin_comision": len(sin_comision),
+        "ventas_sin_comision_detalle": sin_comision[:30],
+        "ventas_sin_comision_manuales": sum(1 for v in sin_comision if v["manual"]),
+        "comision_no_contada_eur": round(coste_no_contado, 2) if sin_comision else None,
         "items": filas[:limite],
         "por_symbol": resumen_symbol,
         "resumen": _totales(filas),
@@ -681,9 +900,18 @@ async def resumen_cartera(db, precios: dict) -> dict:
     for v in ventas:
         por_symbol[v.get("symbol")]["ventas"].append(v)
 
+    # Las fichas, para saber en qué moneda COTIZA cada valor. El coste sale de la moneda de
+    # cada operación; el valor de hoy, de la del mercado donde cotiza. Son dos preguntas
+    # distintas y usar la misma respuesta para las dos es lo que inventaba ganancias.
+    fichas = {(e.get("symbol") or "").upper(): e for e in await db.signal_entries.find(
+        {}, {"_id": 0, "symbol": 1, "mercado": 1, "divisa": 1, "isin": 1,
+             "previous_close": 1, "market_state": 1, "updated_at": 1}).to_list(1000)}
+    cotiza = {sym: divisa_de_cotizacion(fichas.get(sym)) for sym in por_symbol}
+
     # Un solo tipo de cambio por divisa para toda la cartera: pedirlo por posición sería la
     # misma llamada repetida, y encima podría dar cifras distintas dentro de la misma tabla.
-    divisas = {(op.get("divisa") or "USD") for op in compras + ventas} or {"USD"}
+    divisas = ({(op.get("divisa") or "USD") for op in compras + ventas}
+               | set(cotiza.values())) or {"USD"}
     tasas = {}
     for d in divisas:
         try:
@@ -712,10 +940,20 @@ async def resumen_cartera(db, precios: dict) -> dict:
         # se convierte con su propia tasa.
         divisas_lote = {(o.get("divisa") or divisa) for o in libro["compras"] + libro["ventas"]}
         mezcla = sorted(divisas_lote) if len(divisas_lote) > 1 else None
-        val = lotes.valorar_abierto(estado, precios.get(sym), tasas.get(divisa))
+        # El precio de hoy viene del mercado donde cotiza, así que se convierte con el
+        # cambio de ESA moneda. Antes se usaba el de la operación: con una ficha de NASDAQ
+        # etiquetada "EUR", el precio en dólares se dividía entre 1 y se enseñaba como
+        # euros. El coste, en cambio, sigue saliendo del cambio propio de cada lote.
+        divisa_cot = cotiza.get(sym, divisa)
+        val = lotes.valorar_abierto(estado, precios.get(sym), tasas.get(divisa_cot))
         pmp = lotes.media_ponderada(libro["compras"], libro["ventas"])
         posiciones.append({
             "symbol": sym, "divisa": divisa, "divisas_mezcladas": mezcla,
+            # Cuando la operación dice una moneda y el mercado otra, una de las dos es una
+            # errata. Se dice cuál es cada una en vez de elegir en silencio: las cifras en
+            # euros ya salen bien, pero el precio medio "en divisa" mezcla peras y manzanas.
+            "divisa_cotizacion": divisa_cot,
+            "divisa_incoherente": divisa_cot != divisa,
             **val,
             # Para cuadrar con el bróker. Va aparte del precio_medio y etiquetado: son dos
             # medidas distintas y mezclarlas haría pensar que una de las dos está mal.
@@ -723,13 +961,26 @@ async def resumen_cartera(db, precios: dict) -> dict:
             # La posición valorada COMO EL BRÓKER, para poder comparar fila a fila. Lo que
             # FIFO/LIFO se apuntan de más aquí ya se lo apuntaron en lo realizado: sumando
             # latente y realizado, los dos métodos dan el mismo total.
-            "ponderada": lotes.valorar_ponderado(pmp, precios.get(sym), tasas.get(divisa)),
+            "ponderada": lotes.valorar_ponderado(pmp, precios.get(sym), tasas.get(divisa_cot)),
             "acciones": estado["acciones_abiertas"],
+            # A qué cambio se pasó a euros el coste de esta posición, y cuánto de ella no
+            # viene del CSV. Es lo que explica que el latente no cuadre con el del bróker
+            # teniendo el mismo precio y las mismas acciones.
+            **_cambio_de_la_posicion(estado, tasas.get(divisa_cot)),
             "precio_medio": estado["precio_medio"],
             "precio_actual": precios.get(sym),
             # Etiquetado siempre: un precio puesto a mano que pareciera de mercado haría
             # creer que la posición está valorada en vivo cuando no lo está.
             "precio_manual": sym in manuales,
+            # De dónde sale el "Valor hoy". Es la única cifra de la fila que no se puede
+            # comprobar mirando tus apuntes, y cuando el bróker enseña otro número suele
+            # ser esto y no el coste: en NFLX, 81,78 $ contra los 80,01 $ que implicaba
+            # DEGIRO daban 121,80 € de diferencia, exactamente el desvío que se veía.
+            # Con el cierre anterior al lado se distingue en un vistazo un precio en vivo
+            # de uno que se quedó en la sesión pasada, que es de lo que suele ir la cosa.
+            "cierre_anterior": (fichas.get(sym) or {}).get("previous_close"),
+            "estado_mercado": (fichas.get(sym) or {}).get("market_state"),
+            "precio_actualizado": (fichas.get(sym) or {}).get("updated_at"),
             # El coste se sabe siempre; el valor de hoy solo con precio. Se ponen DESPUÉS
             # de val para que no los pise cuando la posición no se puede valorar.
             "coste_divisa": estado["coste_abierto_divisa"],
@@ -878,12 +1129,20 @@ async def preparar_importacion_degiro(db, operaciones: list, mapeo: dict = None)
             "simbolos_conocidos": conocidos}
 
 
-async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
+async def importar_degiro(db, operaciones: list, mapeo: dict = None,
+                          actualizar: bool = False, sustituir: bool = False) -> dict:
     """Guarda las operaciones del CSV como compras y ventas del libro.
 
     Se salta las que ya estén (por huella), así que subir el mismo fichero dos veces —o uno
     nuevo que solape con el anterior— no duplica nada. Es la diferencia entre poder
     reexportar tranquilamente cada mes y tener que llevar la cuenta de lo ya subido.
+
+    `actualizar` REPARA las que ya estaban. Hace falta porque saltarlas es correcto para no
+    duplicar, pero deja intacto lo que se importó mal: cuando el lector no reconocía la
+    columna "Tasa de cambio" —la comisión de AutoFX del CSV español— cientos de operaciones
+    entraron con comisión cero, y volver a subir el fichero no las arreglaba. Se toca SOLO
+    la comisión: precio, fecha y acciones se quedan como están, porque ahí no había ningún
+    fallo y reescribirlos sería arriesgar datos buenos para arreglar uno malo.
     """
     # Se recuerda ANTES de comprobar si falta algo: así emparejar diez y dejarse dos no
     # tira por la borda los diez. Con un fichero de años, volver a teclearlo todo es lo que
@@ -930,14 +1189,21 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
     # set bastaba haber tecleado una para perder las demás — y esas acciones desaparecían
     # del libro. Es el mismo patrón que ya usa importar_dividendos.
     ya_manual = {}
+    # Y QUIÉN la tapa, para poder sustituirla. Una fila tapada es la MISMA operación que un
+    # apunte tuyo —coinciden fecha, acciones y precio al cuarto decimal— solo que la del
+    # fichero trae además la comisión y el tipo de cambio que te aplicaron de verdad. Con
+    # `sustituir` se borra el apunte tecleado y entra el del CSV; sin él, todo sigue igual.
+    quien_tapa = {}
     for c in compras_db:
         if not c.get("huella"):
             k = _clave(c, "compra")
             ya_manual[k] = ya_manual.get(k, 0) + 1
+            quien_tapa.setdefault(k, []).append(("compras", c))
     for v in ventas_db:
         if not v.get("huella"):
             k = _clave(v, "venta")
             ya_manual[k] = ya_manual.get(k, 0) + 1
+            quien_tapa.setdefault(k, []).append(("ventas", v))
 
     # Las posiciones de la Cartera, UNA vez. Antes se consultaba una por cada compra para
     # detectar su nivel: con un fichero de años son cientos de idas y vueltas a Mongo, y la
@@ -945,21 +1211,51 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
     entradas = {e["symbol"].upper(): e for e in await db.signal_entries.find(
         {}, {"_id": 0}).to_list(500) if e.get("symbol")}
 
-    nuevas_compras, nuevas_ventas, descartadas = [], [], []
+    nuevas_compras, nuevas_ventas, descartadas, reparables = [], [], [], []
     importadas, saltadas, tocados = 0, 0, set()
+    # POR QUÉ se salta cada fila, no solo cuántas. "Ya estaba todo importado (443
+    # operaciones)" es un dato que no se puede accionar: con él delante es imposible
+    # distinguir un fichero que en efecto ya está entero de otro cuyas filas están siendo
+    # tapadas por apuntes manuales —que es un problema, y bien distinto—. Se cuentan los
+    # tres motivos por separado y se guarda qué símbolos toca cada uno.
+    motivos = {"sin_ticker": 0, "ya_estaba": 0, "la_tapa_un_apunte_manual": 0}
+    tapadas_por_symbol, sust_por_symbol, sustituidas = {}, {}, 0
     for op in sorted(operaciones, key=lambda o: (o["fecha"], o.get("hora") or "")):
         sym = mapa.get(op["isin"])
         if not sym:
             saltadas += 1
+            motivos["sin_ticker"] += 1
             continue
         if op["huella"] in ya:
             saltadas += 1
+            motivos["ya_estaba"] += 1
+            if actualizar:
+                reparables.append(op)
             continue
         km = _clave({**op, "symbol": sym}, op["tipo"])
         if ya_manual.get(km, 0) > 0:
             ya_manual[km] -= 1      # esta fila la cubre UN apunte manual, no todas
-            saltadas += 1
-            continue
+            if sustituir and quien_tapa.get(km):
+                # Se borra el apunte tecleado y se deja pasar la fila: misma operación, con
+                # la comisión y el cambio reales en vez de estimados. Sin esto la fila no
+                # entraba nunca, y encima bloqueaba el borrado de los lotes de la foto —el
+                # CSV "no cubría" unas acciones que sí estaban en el fichero.
+                col, doc = quien_tapa[km].pop()
+                await getattr(db, col).delete_one({"id": doc.get("id")})
+                sustituidas += 1
+                sust_por_symbol.setdefault(sym, {"symbol": sym, "apuntes": 0, "acciones": 0})
+                sust_por_symbol[sym]["apuntes"] += 1
+                sust_por_symbol[sym]["acciones"] = round(
+                    sust_por_symbol[sym]["acciones"] + (op.get("acciones") or 0), 6)
+                tocados.add(sym)
+            else:
+                saltadas += 1
+                motivos["la_tapa_un_apunte_manual"] += 1
+                d = tapadas_por_symbol.setdefault(sym, {"symbol": sym, "filas": 0,
+                                                        "acciones": 0})
+                d["filas"] += 1
+                d["acciones"] = round(d["acciones"] + (op.get("acciones") or 0), 6)
+                continue
         comun = dict(symbol=sym, acciones=op["acciones"], precio=op["precio"],
                      fecha=op["fecha"], comision=op["comision"], divisa=op["divisa"],
                      tasa=op["tasa"], notas=f"DEGIRO · orden {op.get('orden') or '—'}")
@@ -996,9 +1292,52 @@ async def importar_degiro(db, operaciones: list, mapeo: dict = None) -> dict:
     if nuevas_ventas:
         await db.ventas.insert_many(nuevas_ventas)
 
+    # Reparación de las que ya estaban: solo la comisión, y solo si CAMBIA. Escribir por
+    # escribir dejaría un `updated_at` nuevo en cientos de apuntes intactos y haría
+    # imposible ver, mirando la base de datos, qué tocó de verdad esta importación.
+    actualizadas, comision_recuperada = 0, 0.0
+    por_huella = {}
+    if reparables:
+        for col, docs in (("compras", compras_db), ("ventas", ventas_db)):
+            for d in docs:
+                if d.get("huella"):
+                    por_huella[d["huella"]] = (col, d)
+    for op in reparables:
+        destino = por_huella.get(op["huella"])
+        if not destino:
+            continue
+        col, doc = destino
+        nueva = round(float(op.get("comision") or 0), 4)
+        vieja = round(float(doc.get("comision") or 0), 4)
+        if abs(nueva - vieja) < 0.005:
+            continue
+        # `getattr` y no `db[col]`: todo el módulo accede a las colecciones por
+        # atributo, y el doble de Mongo de los tests solo implementa esa forma.
+        await getattr(db, col).update_one({"id": doc["id"]},
+                                          {"$set": {"comision": nueva}})
+        actualizadas += 1
+        comision_recuperada += nueva - vieja
+        tocados.add((doc.get("symbol") or "").upper())
+
     await _sincronizar_varias(db, tocados)
 
     return {**prep, "importadas": importadas, "saltadas": saltadas,
+            "motivos_salto": motivos,
+            # Los símbolos cuyas filas del CSV están siendo tapadas por apuntes tuyos. Es la
+            # lista que hace falta para decidir: esas compras del fichero —con su fecha, su
+            # precio y su comisión reales— NO están en el libro, y no entrarán mientras el
+            # apunte que las tapa siga ahí.
+            "tapadas_por_symbol": sorted(tapadas_por_symbol.values(),
+                                         key=lambda d: -d["acciones"]),
+            "sustituidas": sustituidas,
+            "sustituidas_por_symbol": sorted(sust_por_symbol.values(),
+                                             key=lambda d: -d["acciones"]),
+            # Se devuelve si se PIDIÓ reparar, no solo cuántas se repararon. Sin esto el
+            # cliente no puede distinguir "no lo pediste" de "no había nada que corregir",
+            # y las dos acaban en el mismo mensaje: "ya estaba todo importado".
+            "actualizar_pedido": bool(actualizar),
+            "actualizadas": actualizadas,
+            "comision_recuperada": round(comision_recuperada, 2) if actualizadas else None,
             "descartadas": descartadas, "simbolos": sorted(tocados)}
 
 

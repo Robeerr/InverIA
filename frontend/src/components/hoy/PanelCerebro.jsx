@@ -13,10 +13,13 @@ export default function PanelCerebro({ cerebro }) {
   const hayNovedad = c.menciones_nuevas > 0 || (c.tickers_nuevos?.length || 0) > 0;
   return (
     <section className="iv-panel p-4" aria-labelledby="hoy-cerebro">
-      <div className="flex items-baseline justify-between mb-2">
-        <h2 id="hoy-cerebro" className="iv-etiqueta">Desde tu última visita</h2>
-        <Link to="/cerebro" className="text-etiqueta text-marca hover:underline">el Cerebro</Link>
+      <div className="flex items-baseline justify-between gap-2 mb-1">
+        <p className="iv-etiqueta tracking-[0.16em] text-tinta-3">Desde tu última visita</p>
+        <Link to="/cerebro" className="text-etiqueta text-marca hover:underline shrink-0">explorar ›</Link>
       </div>
+      <h2 id="hoy-cerebro" className="font-heading text-cuerpo font-semibold text-tinta mb-1.5">
+        Cerebro
+      </h2>
 
       {hayNovedad ? (
         <>
