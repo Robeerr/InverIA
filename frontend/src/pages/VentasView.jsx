@@ -333,9 +333,17 @@ function FilaVenta({ v, metodo, onBorrar }) {
                       + "estar, o le faltan: la cifra de arriba está calculada sobre un "
                       + "conjunto de compras que no es el real. Revisa sus compras antes de "
                       + "fiarte de este resultado."
+                    : v.cierra_posicion && !v.ventas_antes
+                    ? "Esta venta cerró la posición y es la única que has hecho de esta "
+                      + "acción: se vendieron todos los lotes de una vez, así que los tres "
+                      + "métodos dan por fuerza el mismo número."
                     : v.cierra_posicion
-                    ? "Esta venta cerró la posición: se vendieron todos los lotes, así que "
-                      + "los tres métodos dan por fuerza el mismo número."
+                    ? "Esta venta cerró la posición, pero antes vendiste parte, y ahí está "
+                      + "la explicación de que los tres métodos difieran: cada uno dejó "
+                      + "vivos lotes distintos —FIFO gastó los viejos, LIFO los nuevos— "
+                      + "así que las acciones que quedaban no eran las mismas para uno que "
+                      + "para otro. Lo que sí coincide en los tres es el TOTAL de todas tus "
+                      + "ventas de esta acción; lo que cambia es cómo se reparte entre ellas."
                     : "Venta parcial" + (v.abiertas_despues
                         ? ` — quedaron ${v.abiertas_despues} acciones abiertas`
                         : "")

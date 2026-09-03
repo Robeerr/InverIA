@@ -526,13 +526,17 @@ def reproducir(compras: list, ventas: list, metodo: str = FIFO) -> dict:
         # Realizado salía hinchado y con pinta de cifra buena.
         if sin_cubrir > 1e-9:
             res["exacto"] = False
-        # Cuántas quedaban vivas DESPUÉS de esta venta. Es lo que separa una venta que
-        # cierra la posición de una por niveles, y esa distinción explica por qué unas
-        # cuadran con el bróker y otras no: al cerrar del todo se consumen todos los lotes
-        # y FIFO, LIFO y media ponderada dan por fuerza el mismo número; vendiendo una
-        # parte, el resultado depende de QUÉ lote das por vendido y los tres se separan.
+        # Cuántas quedaban vivas DESPUÉS de esta venta, y cuántas ventas hubo ANTES.
+        #
+        # Hacen falta las dos. Que una venta cierre la posición NO obliga a que los tres
+        # métodos coincidan, como se decía aquí: solo lo obliga si además es la PRIMERA
+        # venta. Con ventas anteriores, cada método dejó vivos lotes distintos —FIFO gastó
+        # los viejos y LIFO los nuevos— así que las acciones que quedaban no eran las
+        # mismas para uno que para otro, y su coste tampoco. Lo que coincide entonces es
+        # el TOTAL de todas las ventas, no el de la última.
         res["abiertas_despues"] = round(sum(max(l["_libres"], 0.0) for l in lotes), 6)
         res["cierra_posicion"] = res["abiertas_despues"] <= 1e-9
+        res["ventas_antes"] = len(realizadas)
         realizadas.append({**{k: val for k, val in v.items() if k != "_libres"}, **res,
                            "metodo": metodo})
 

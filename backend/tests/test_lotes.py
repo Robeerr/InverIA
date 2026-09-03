@@ -834,3 +834,33 @@ def test_la_llave_interna_no_se_cuela_en_la_respuesta():
     compras = [{"id": "c1", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0}]
     r = lotes.reproducir(compras, [], lotes.FIFO)
     assert "_k" not in r["abiertos"][0] and "_libres" not in r["abiertos"][0]
+
+
+def test_cerrar_la_posicion_NO_obliga_a_coincidir_si_hubo_ventas_antes():
+    """Lo daba por hecho y es falso. Con ventas anteriores cada método dejó vivos lotes
+    distintos —FIFO gastó los viejos, LIFO los nuevos— así que las acciones que quedaban no
+    eran las mismas para uno que para otro, y su coste tampoco. Lo que coincide es el TOTAL
+    de todas las ventas, no el de la última."""
+    compras = [{"id": "viejo", "fecha": "2025-01-10", "acciones": 10, "precio": 60.0},
+               {"id": "nuevo", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0}]
+    ventas = [{"id": "v1", "fecha": "2026-06-01", "acciones": 10, "precio": 90.0},
+              {"id": "v2", "fecha": "2026-09-01", "acciones": 10, "precio": 90.0}]
+    f = lotes.reproducir(compras, ventas, lotes.FIFO)
+    l = lotes.reproducir(compras, ventas, lotes.LIFO)
+
+    ultima_f, ultima_l = f["ventas"][1], l["ventas"][1]
+    assert ultima_f["cierra_posicion"] and ultima_l["cierra_posicion"]
+    assert ultima_f["ganancia_divisa"] != ultima_l["ganancia_divisa"]
+    assert ultima_f["ventas_antes"] == 1, "hubo una venta antes: por eso pueden diferir"
+    # Y el total sí coincide, que es lo que de verdad es invariante.
+    assert f["ganancia_realizada_divisa"] == l["ganancia_realizada_divisa"] == 200.0
+
+
+def test_si_es_la_UNICA_venta_entonces_si_coinciden():
+    compras = [{"id": "viejo", "fecha": "2025-01-10", "acciones": 10, "precio": 60.0},
+               {"id": "nuevo", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0}]
+    ventas = [{"id": "v1", "fecha": "2026-09-01", "acciones": 20, "precio": 90.0}]
+    f = lotes.reproducir(compras, ventas, lotes.FIFO)["ventas"][0]
+    l = lotes.reproducir(compras, ventas, lotes.LIFO)["ventas"][0]
+    assert f["ventas_antes"] == 0 and f["cierra_posicion"]
+    assert f["ganancia_divisa"] == l["ganancia_divisa"]

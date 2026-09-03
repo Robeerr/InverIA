@@ -2040,6 +2040,25 @@ def test_un_lote_de_la_foto_si_sale():
 
 # ── Cerrar la posición obliga a que los tres métodos coincidan ───────────────
 
+def test_la_alarma_NO_salta_cuando_hubo_ventas_antes():
+    """Es el caso normal de esta cartera: se vende por niveles y la última venta cierra.
+    Ahí los métodos difieren porque cada uno dejó vivos lotes distintos, no porque el libro
+    esté roto. La alarma anterior habría acusado a datos sanos."""
+    db = _DB([{"id": "e1", "symbol": "UBER", "mercado": "NYSE"}])
+    _correr(cartera_api.registrar_compra(db, "UBER", 10, 60.0, fecha="2025-01-10",
+                                         divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.registrar_compra(db, "UBER", 10, 100.0, fecha="2026-01-10",
+                                         divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.registrar_venta(db, "UBER", 10, 90.0, fecha="2026-06-01",
+                                        divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.registrar_venta(db, "UBER", 10, 90.0, fecha="2026-09-01",
+                                        divisa="USD", tasa=1.16, comision=0))
+    ultima = _correr(cartera_api.historial(db))["items"][0]
+    assert ultima["cierra_posicion"] is True and ultima["ventas_antes"] == 1
+    assert ultima["fifo"]["ganancia_divisa"] != ultima["lifo"]["ganancia_divisa"]
+    assert ultima["metodos_incoherentes"] is False
+
+
 def test_si_cierra_la_posicion_y_los_metodos_no_coinciden_se_avisa():
     """Es un estado imposible: al vender todos los lotes no queda nada que elegir, así que
     los tres métodos dan lo mismo. Si difieren, el libro tiene lotes que no deberían estar

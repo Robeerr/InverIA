@@ -674,8 +674,13 @@ async def historial(db, limite: int = 1000) -> dict:
                 # arriba está calculada sobre un conjunto que no es el real. Callarlo y
                 # seguir imprimiendo «los tres coinciden» es afirmar algo que la propia
                 # pantalla desmiente tres líneas más abajo.
+                "ventas_antes": vf.get("ventas_antes", 0),
+                # Los tres métodos SOLO están obligados a coincidir cuando la venta cierra
+                # la posición Y es la primera: entonces se consumen todos los lotes y no
+                # queda nada que elegir. Con ventas anteriores cada método dejó vivos lotes
+                # distintos, así que difieran es lo normal y no un síntoma de nada.
                 "metodos_incoherentes": bool(
-                    vf.get("cierra_posicion")
+                    vf.get("cierra_posicion") and not vf.get("ventas_antes")
                     and not _coinciden(vf, vl, pmp.get(vf.get("id")))),
             })
         resumen_symbol.append({
