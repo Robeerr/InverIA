@@ -279,6 +279,23 @@ function FilaVenta({ v, metodo, onBorrar }) {
                 <span className={`font-mono ${tono(m.efecto_divisa_eur)}`}>{eur(m.efecto_divisa_eur)}</span>
               </div>
             )}
+            {/* Cuando el SIGNO cambia entre las dos monedas, decirlo. Es el momento en que
+                la pantalla más parece equivocada: arriba pone +22,10 $ y al lado −56,39 €,
+                y sin una frase que lo nombre eso se lee como un fallo de cálculo. No es
+                un dato nuevo —sale del efecto del euro que ya está tres líneas más
+                arriba— es el mismo dato dicho cuando hace falta. */}
+            {m.ganancia_eur != null && m.ganancia_divisa != null
+              && (m.ganancia_divisa > 0) !== (m.ganancia_eur > 0)
+              && Math.abs(m.ganancia_divisa) > 0.005 && Math.abs(m.ganancia_eur) > 0.005 && (
+              <p className="text-apoyo text-tinta-2 mt-1.5 leading-snug">
+                <b>{m.ganancia_divisa > 0 ? "Ganaste" : "Perdiste"} en {v.divisa} y{" "}
+                {m.ganancia_eur > 0 ? "ganaste" : "perdiste"} en euros.</b>{" "}
+                No es un error: el euro se movió entre tus compras y esta venta, así que
+                cada {v.divisa === "USD" ? "dólar" : v.divisa} que recuperaste vale{" "}
+                {m.ganancia_eur < 0 ? "menos" : "más"} euros que los que pusiste. Lo que
+                cuenta para ti —y para Hacienda— es la cifra en euros.
+              </p>
+            )}
             {!m.exacto && (
               <p className="text-[11px] text-aviso pt-1">
                 Falta el tipo de cambio de alguna compra: la ganancia en euros de esta venta

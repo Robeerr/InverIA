@@ -864,3 +864,19 @@ def test_si_es_la_UNICA_venta_entonces_si_coinciden():
     l = lotes.reproducir(compras, ventas, lotes.LIFO)["ventas"][0]
     assert f["ventas_antes"] == 0 and f["cierra_posicion"]
     assert f["ganancia_divisa"] == l["ganancia_divisa"]
+
+
+def test_se_puede_ganar_en_dolares_y_perder_en_euros():
+    """El caso de MRVL: +22,10 $ y −56,39 €. No es un fallo — es que el euro subió entre
+    las compras y la venta, así que cada dólar recuperado vale menos euros que los que se
+    pusieron. La cifra que cuenta, y la que va a Hacienda, es la de euros."""
+    compras = [{"id": "c1", "fecha": "2026-07-01", "acciones": 15, "precio": 248.30,
+                "comision": 16.12, "divisa": "USD", "tasa": 1.1414}]
+    ventas = [{"id": "v1", "fecha": "2026-08-21", "acciones": 15, "precio": 250.56,
+               "comision": 11.73, "divisa": "USD", "tasa": 1.1684}]
+    v = lotes.reproducir(compras, ventas, lotes.FIFO)["ventas"][0]
+    assert v["ganancia_divisa"] > 0, "en dólares se gana"
+    assert v["ganancia_eur"] < 0, "en euros se pierde"
+    # Y el efecto del euro explica exactamente la diferencia entre las dos.
+    sin_efecto = v["ganancia_divisa"] / 1.1684
+    assert v["ganancia_eur"] == pytest.approx(sin_efecto + v["efecto_divisa_eur"], abs=0.01)
