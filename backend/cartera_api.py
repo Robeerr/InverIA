@@ -814,6 +814,20 @@ def _totales(filas: list) -> dict:
                 sum(x.get("efecto_divisa_eur") or 0 for x in exactas), 2) if exactas else None,
             "n_exactas": len(exactas),
         }
+    # Y el total por MEDIA PONDERADA, que es el método del bróker. Sin él, el interruptor
+    # «Ver como en DEGIRO» solo podía cambiar la tabla de posiciones abiertas: el realizado
+    # de arriba seguía en FIFO/LIFO, así que la pantalla enseñaba a la vez dos métodos sin
+    # decirlo. Se calcula igual que los otros dos —solo lo exacto— para no mezclar una
+    # cifra con tipos de cambio con otra que no los tiene.
+    pond = [f["ponderada"] for f in filas if f.get("ponderada")]
+    con_eur = [x for x in pond if x.get("ganancia_eur") is not None]
+    out["ponderada"] = {
+        "ganancia_eur": round(sum(x["ganancia_eur"] for x in con_eur), 2) if con_eur else None,
+        "ganancia_divisa": round(sum(x.get("ganancia_divisa") or 0 for x in pond), 2),
+        "efecto_divisa_eur": None,
+        "n_exactas": len(con_eur),
+    }
+
     sin_cambio = sum(1 for f in filas if not f["fifo"].get("exacto"))
     out["n_ventas"] = len(filas)
     out["ventas_sin_tipo_de_cambio"] = sin_cambio

@@ -179,11 +179,18 @@ function DetalleLotes({ lotes, divisa }) {
 }
 
 // ── Una venta ────────────────────────────────────────────────────────────────
-function FilaVenta({ v, metodo, onBorrar }) {
+function FilaVenta({ v, metodo, comoBroker, onBorrar }) {
   const [abierto, setAbierto] = React.useState(false);
-  const m = v[metodo];
-  const otro = v[metodo === "fifo" ? "lifo" : "fifo"];
-  const difiere = Math.abs((m.ganancia_divisa ?? 0) - (otro.ganancia_divisa ?? 0)) > 0.005;
+  // Con el interruptor puesto manda la ponderada, que es la del bróker. Antes solo cambiaba
+  // la tabla de posiciones abiertas: el historial y el realizado seguían en FIFO/LIFO, así
+  // que un botón que dice «ver como en DEGIRO» dejaba media pantalla en el otro método sin
+  // decirlo. Si a esta venta le falta la ponderada se cae al método elegido, que es peor
+  // que nada pero mejor que un hueco.
+  const usaPmp = comoBroker && v.ponderada?.ganancia_divisa != null;
+  const m = usaPmp ? v.ponderada : v[metodo];
+  const otro = usaPmp ? v[metodo] : v[metodo === "fifo" ? "lifo" : "fifo"];
+  const nombreOtro = usaPmp ? metodo.toUpperCase() : (metodo === "fifo" ? "LIFO" : "FIFO");
+  const difiere = Math.abs((m.ganancia_divisa ?? 0) - (otro?.ganancia_divisa ?? 0)) > 0.005;
 
   return (
     <div className="border-b border-linea last:border-0">
@@ -308,10 +315,10 @@ function FilaVenta({ v, metodo, onBorrar }) {
               {difiere && (
                 <div className="flex justify-between">
                   <span className="text-tinta-3">
-                    Por <b>{metodo === "fifo" ? "LIFO" : "FIFO"}</b>
-                    {metodo === "fifo"
-                      ? " (como vendes tú)"
-                      : " (lo que va a tu declaración)"}
+                    Por <b>{nombreOtro}</b>
+                    {nombreOtro === "FIFO"
+                      ? " (lo que va a tu declaración)"
+                      : " (como vendes tú)"}
                   </span>
                   <span className="font-mono text-tinta-3">
                     {otro.ganancia_eur != null ? eur(otro.ganancia_eur) : usd(otro.ganancia_divisa, v.divisa)}
@@ -319,7 +326,7 @@ function FilaVenta({ v, metodo, onBorrar }) {
                   </span>
                 </div>
               )}
-              {v.ponderada && (
+              {v.ponderada && !usaPmp && (
                 <div className="flex justify-between">
                   <span className="text-tinta-3"
                         title="Media ponderada: el método que usa tu bróker para su pantalla. Todas tus acciones cuestan lo mismo (la media), así que no distingue niveles. Sirve para cuadrar con DEGIRO, no para la declaración.">
@@ -1602,7 +1609,11 @@ export default function VentasView() {
     onError: () => toast.error("No se pudieron quitar los duplicados"),
   });
 
-  const tot = hist?.resumen?.[metodo];
+  // El realizado también obedece al interruptor: enseñar el total por LIFO debajo de un
+  // botón que dice «como en DEGIRO» es mezclar dos métodos en la misma pantalla.
+  const tot = (comoBroker && hist?.resumen?.ponderada?.ganancia_eur != null)
+    ? hist.resumen.ponderada
+    : hist?.resumen?.[metodo];
   const ventas = hist?.items || [];
   const realizado = tot?.ganancia_eur;
   const latente = resumen?.latente_eur;
@@ -1668,7 +1679,9 @@ export default function VentasView() {
              // sin compra registrada, salen con coste CERO y esta cifra está hinchada en
              // hasta esos euros. Sin el aviso, el número gordo se lee como bueno.
              sub={[
-               `${hist?.resumen?.n_ventas ?? 0} venta(s) · ${metodo.toUpperCase()}`,
+               `${hist?.resumen?.n_ventas ?? 0} venta(s) · ${
+                 comoBroker && hist?.resumen?.ponderada?.ganancia_eur != null
+                   ? "media ponderada" : metodo.toUpperCase()}`,
                hist?.resumen?.sin_cubrir_acciones
                  ? `⚠ ${hist.resumen.sin_cubrir_acciones} acción(es) vendidas sin compra registrada`
                    + ` (${(hist.resumen.sin_cubrir_por_symbol || []).map((s) => s.symbol).join(", ")})`
@@ -1865,6 +1878,14 @@ export default function VentasView() {
       <div className="iv-panel px-4 py-3">
         <div className="flex items-center gap-3 flex-wrap">
           <span className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono">Método de cálculo</span>
+          {/* El interruptor del bróker vive AQUÍ, junto al método, porque manda en toda la
+              pantalla: el historial, el realizado y la tabla de posiciones. Estaba metido
+              en la cabecera de esa tabla y desde ahí parecía cambiar solo esa tabla —que
+              es lo que hacía antes—, así que el resto de la pantalla se quedaba en el otro
+              método sin decirlo.
+              Va aparte de FIFO/LIFO y no como un tercer botón porque no es lo mismo: esos
+              dos deciden CÓMO SE EMPAREJAN tus ventas y se guardan en el servidor; este
+              solo cambia lo que estás mirando ahora, y vive en tu navegador. */}
           <div className="flex rounded overflow-hidden border border-linea">
             {[["fifo", "FIFO"], ["lifo", "LIFO"]].map(([k, label]) => (
               <button key={k} onClick={() => setMetodo(k)}
@@ -1873,6 +1894,13 @@ export default function VentasView() {
               </button>
             ))}
           </div>
+          <button onClick={alternarBroker}
+                  title="Tu bróker valora TODAS las acciones al precio medio ponderado, que no baja al vender. FIFO/LIFO dejan vivos unos lotes concretos —los caros o los baratos— y por eso dan otro número. Ninguna está mal: lo que una se apunta de más aquí, la otra ya se lo apuntó en lo realizado. Cambia el historial, el realizado y la tabla de posiciones."
+                  className={`text-[11px] rounded px-2 py-1 border ${comoBroker
+                    ? "bg-marca text-marca-tinta border-marca font-semibold"
+                    : "border-linea text-tinta-3"}`}>
+            {comoBroker ? "✓ Como en DEGIRO (media ponderada)" : "Ver como en DEGIRO"}
+          </button>
           {cambiarMetodo.isPending && (
             <span className="text-[11px] text-tinta-3">Recalculando…</span>
           )}
@@ -1940,7 +1968,7 @@ export default function VentasView() {
             {/* Las últimas 15 a la vista; el resto bajo demanda. Con 146 ventas la lista
                 entera convertía llegar al final de la página en una expedición. */}
             {(verTodas ? ventas : ventas.slice(0, 15)).map((v) => (
-              <FilaVenta key={v.id} v={v} metodo={metodo}
+              <FilaVenta key={v.id} v={v} metodo={metodo} comoBroker={comoBroker}
                          onBorrar={(x) => window.confirm(`¿Borrar la venta de ${x.acciones} ${x.symbol} del ${fecha(x.fecha)}?`) && borrar.mutate(x)} />
             ))}
             {ventas.length > 15 && (
@@ -2032,13 +2060,6 @@ export default function VentasView() {
               {/* El interruptor que hace que esta tabla se pueda comparar fila a fila con la
                   pantalla del bróker. Sin él, las posiciones donde se vendió parte enseñaban
                   otro precio medio y otra ganancia, y parecía un error de cálculo. */}
-              <button onClick={alternarBroker}
-                      title="Tu bróker valora TODAS las acciones al precio medio ponderado, que no baja al vender. FIFO/LIFO dejan vivos unos lotes concretos —los caros o los baratos— y por eso dan otro número. Ninguna está mal: lo que una se apunta de más aquí, la otra ya se lo apuntó en lo realizado."
-                      className={`text-[11px] rounded px-2 py-0.5 border ${comoBroker
-                        ? "bg-marca text-marca-tinta border-marca"
-                        : "border-linea text-tinta-3"}`}>
-                {comoBroker ? "✓ Como en DEGIRO (media ponderada)" : "Ver como en DEGIRO"}
-              </button>
               {/* Rehacer la importación: si la primera salió con los lotes mal repartidos,
                   borrarlos uno a uno serían decenas de clics. No toca las acciones que ya
                   tengan ventas registradas — ahí borrar compras falsearía la ganancia. */}

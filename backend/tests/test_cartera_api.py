@@ -2079,3 +2079,23 @@ def test_una_venta_normal_no_dispara_la_alarma():
                                         divisa="USD", tasa=1.16, comision=0))
     f = _correr(cartera_api.historial(db))["items"][0]
     assert f["cierra_posicion"] is True and f["metodos_incoherentes"] is False
+
+
+def test_el_resumen_trae_el_total_por_media_ponderada():
+    """Sin él, el interruptor «Ver como en DEGIRO» solo podía cambiar la tabla de
+    posiciones: el realizado de arriba seguía en FIFO/LIFO, así que la pantalla enseñaba a
+    la vez dos métodos sin decirlo."""
+    db = _DB([{"id": "e1", "symbol": "X", "mercado": "NASDAQ"}])
+    _correr(cartera_api.registrar_compra(db, "X", 10, 100.0, fecha="2026-01-10",
+                                         divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.registrar_compra(db, "X", 10, 60.0, fecha="2026-02-10",
+                                         divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.registrar_venta(db, "X", 10, 90.0, fecha="2026-06-01",
+                                        divisa="USD", tasa=1.16, comision=0))
+    r = _correr(cartera_api.historial(db))["resumen"]
+    for metodo in ("fifo", "lifo", "ponderada"):
+        assert r[metodo]["ganancia_eur"] is not None, metodo
+    # Vendiendo la mitad, los tres miden cosas distintas: si coincidieran, el interruptor
+    # no cambiaría nada y no haría falta.
+    assert len({round(r[m]["ganancia_divisa"], 2)
+                for m in ("fifo", "lifo", "ponderada")}) == 3
