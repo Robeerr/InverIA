@@ -806,3 +806,31 @@ def test_una_venta_en_euros_tampoco_se_convierte():
     v = lotes.reproducir(compras, ventas, lotes.FIFO)["ventas"][0]
     assert v["ganancia_divisa"] == pytest.approx(53.30, abs=0.01)
     assert v["ganancia_eur"] == pytest.approx(53.30, abs=0.01)   # misma cifra: es la misma moneda
+
+
+def test_dos_lotes_con_el_mismo_id_se_descuentan_por_separado():
+    """El descuento buscaba el lote por su `id` y se quedaba con el PRIMERO que coincidía.
+    Con dos lotes que compartan id —o a los que les falte— toda la venta se le cargaba a
+    uno y los demás quedaban intactos: el libro dejaba de cuadrar sin que nada fallara a la
+    vista, y la posición seguía enseñando acciones que ya se habían vendido."""
+    compras = [{"id": "repetido", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0},
+               {"id": "repetido", "fecha": "2026-02-10", "acciones": 10, "precio": 80.0}]
+    ventas = [{"id": "v1", "fecha": "2026-06-01", "acciones": 15, "precio": 120.0}]
+    r = lotes.reproducir(compras, ventas, lotes.FIFO)
+    assert r["acciones_abiertas"] == 5, "quedan 5: 20 compradas menos 15 vendidas"
+    assert r["ventas"][0]["abiertas_despues"] == 5
+
+
+def test_sin_id_tampoco_se_confunden():
+    compras = [{"fecha": "2026-01-10", "acciones": 10, "precio": 100.0},
+               {"fecha": "2026-02-10", "acciones": 10, "precio": 80.0}]
+    ventas = [{"id": "v1", "fecha": "2026-06-01", "acciones": 20, "precio": 120.0}]
+    r = lotes.reproducir(compras, ventas, lotes.FIFO)
+    assert r["acciones_abiertas"] == 0 and r["ventas"][0]["cierra_posicion"] is True
+
+
+def test_la_llave_interna_no_se_cuela_en_la_respuesta():
+    """`_k` es del reparto, no del apunte: si sale, acaba en la pantalla y en la API."""
+    compras = [{"id": "c1", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0}]
+    r = lotes.reproducir(compras, [], lotes.FIFO)
+    assert "_k" not in r["abiertos"][0] and "_libres" not in r["abiertos"][0]

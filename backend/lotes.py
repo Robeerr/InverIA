@@ -394,6 +394,8 @@ def emparejar(compras: list, cantidad: float, metodo: str = FIFO) -> tuple:
             "tasa_compra": tasa_de(c),
             "nivel": c.get("nivel"),
             "coste_divisa": round(toma * float(c.get("precio") or 0) + comision_prorrateada, 4),
+            # Para descontar del lote EXACTO, no del primero que tenga el mismo id.
+            "_k": c.get("_k"),
         })
     return consumos, round(max(restante, 0.0), 6)
 
@@ -497,6 +499,11 @@ def reproducir(compras: list, ventas: list, metodo: str = FIFO) -> dict:
                                             str(x.get("created_at") or ""))):
         d = dict(c)
         d["_libres"] = float(d.get("acciones") or 0)
+        # Una llave propia, del reparto y no del dato. El descuento buscaba el lote por su
+        # `id` y se quedaba con el PRIMERO que coincidiera: con dos lotes que compartan id
+        # —o a los que les falte— toda la venta se le carga a uno y los demás se quedan
+        # intactos, así que el libro deja de cuadrar sin que nada falle a la vista.
+        d["_k"] = len(lotes)
         lotes.append(d)
 
     realizadas, descuadres = [], 0.0
@@ -505,11 +512,11 @@ def reproducir(compras: list, ventas: list, metodo: str = FIFO) -> dict:
         # Solo cuentan los lotes comprados en la fecha de la venta o antes.
         disponibles = [l for l in lotes if str(l.get("fecha") or "") <= str(v.get("fecha") or "")]
         consumos, sin_cubrir = emparejar(disponibles, float(v.get("acciones") or 0), metodo)
+        por_k = {l["_k"]: l for l in lotes}
         for c in consumos:
-            for l in lotes:
-                if l.get("id") == c["compra_id"]:
-                    l["_libres"] = round(l["_libres"] - c["acciones"], 6)
-                    break
+            l = por_k.get(c.get("_k"))
+            if l is not None:
+                l["_libres"] = round(l["_libres"] - c["acciones"], 6)
         descuadres += sin_cubrir
         res = resultado_venta(v, consumos)
         res["sin_cubrir"] = sin_cubrir
@@ -532,7 +539,7 @@ def reproducir(compras: list, ventas: list, metodo: str = FIFO) -> dict:
     abiertos = []
     for l in lotes:
         if l["_libres"] > 1e-9:
-            abierto = {k: val for k, val in l.items() if k != "_libres"}
+            abierto = {k: val for k, val in l.items() if k not in ("_libres", "_k")}
             abierto["acciones_abiertas"] = round(l["_libres"], 6)
             parte = l["_libres"] / (float(l.get("acciones") or 0) or 1.0)
             abierto["coste_divisa"] = round(
