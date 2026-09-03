@@ -2099,3 +2099,37 @@ def test_el_resumen_trae_el_total_por_media_ponderada():
     # no cambiaría nada y no haría falta.
     assert len({round(r[m]["ganancia_divisa"], 2)
                 for m in ("fifo", "lifo", "ponderada")}) == 3
+
+
+def test_el_TOTAL_no_depende_del_metodo():
+    """La propiedad que hace útil esa cifra: lo que un método se apunta de más en lo
+    realizado, el otro se lo guarda en el latente. Sumados dan lo mismo.
+
+    Es también lo que obliga a que el interruptor «como en DEGIRO» cambie los DOS a la vez:
+    sumar el realizado de un método con el latente de otro da un total que no es de nadie.
+    """
+    def _db():
+        db = _DB([{"id": "e1", "symbol": "X", "mercado": "NASDAQ"}])
+        _correr(cartera_api.registrar_compra(db, "X", 10, 100.0, fecha="2026-01-10",
+                                             divisa="USD", tasa=1.16, comision=0))
+        _correr(cartera_api.registrar_compra(db, "X", 10, 60.0, fecha="2026-02-10",
+                                             divisa="USD", tasa=1.16, comision=0))
+        _correr(cartera_api.registrar_venta(db, "X", 10, 90.0, fecha="2026-06-01",
+                                            divisa="USD", tasa=1.16, comision=0))
+        return db
+
+    totales = {}
+    for metodo in ("FIFO", "LIFO"):
+        db = _db()
+        _correr(cartera_api.guardar_metodo_gestion(db, metodo))
+        r = _correr(cartera_api.resumen_cartera(db, {"X": 90.0}))
+        h = _correr(cartera_api.historial(db))["resumen"]
+        totales[metodo] = round(h[metodo.lower()]["ganancia_eur"] + r["latente_eur"], 2)
+
+    # Y la media ponderada, que es la del bróker, tiene que dar el mismo total.
+    db = _db()
+    r = _correr(cartera_api.resumen_cartera(db, {"X": 90.0}))
+    h = _correr(cartera_api.historial(db))["resumen"]
+    totales["PMP"] = round(h["ponderada"]["ganancia_eur"] + r["latente_ponderada_eur"], 2)
+
+    assert len(set(totales.values())) == 1, f"el total baila con el método: {totales}"

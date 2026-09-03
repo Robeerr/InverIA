@@ -1616,10 +1616,15 @@ export default function VentasView() {
     : hist?.resumen?.[metodo];
   const ventas = hist?.items || [];
   const realizado = tot?.ganancia_eur;
-  const latente = resumen?.latente_eur;
-  // El mismo latente visto como lo ve el bróker. Nunca sustituye al de arriba: lo acompaña,
-  // porque cuál "cuadra" depende de con qué pantalla estés comparando.
   const latenteBroker = resumen?.latente_ponderada_eur;
+  // El latente TIENE que ir en la misma base que el realizado. Lo que un método se apunta
+  // de más en lo realizado, el otro se lo guarda en el latente; sumar el realizado de uno
+  // con el latente del otro da un Total que no es de nadie. Y esa es justo la propiedad
+  // que hace útil el Total: como los dos lados van en la misma base, sale el MISMO número
+  // con el interruptor puesto o quitado. Si algún día no saliera, es que hay un fallo.
+  const usaPmp = comoBroker && latenteBroker != null
+    && hist?.resumen?.ponderada?.ganancia_eur != null;
+  const latente = usaPmp ? latenteBroker : resumen?.latente_eur;
   // Los dividendos entran en el TOTAL —son dinero cobrado— pero se enseñan en su propia
   // cifra y nunca dentro de "Realizado". Fiscalmente son rendimientos del capital
   // mobiliario, no ganancias patrimoniales: van a casillas distintas de la declaración, y
@@ -1692,9 +1697,9 @@ export default function VentasView() {
                  : null,
              ].filter(Boolean).join(" · ")}
              ayuda="Ganancia de las ventas ya hechas, con el tipo de cambio del día de cada compra y de cada venta. Es dinero que ya está en tu cuenta. Cambia según el método: mira la etiqueta de debajo." />
-        {/* El valor NO cambia con el interruptor, a diferencia de la tabla: el Total suma
-            este latente con TU realizado, y mezclar bases daría una suma que no cuadra.
-            La cifra del bróker va debajo, que es lo que hace falta para comparar. */}
+        {/* Va en la MISMA base que el realizado, y por eso obedece al interruptor: lo que
+            un método se apunta de más arriba, el otro se lo guarda aquí. La cifra del otro
+            método sigue debajo, que es lo que hace falta para comparar pantallas. */}
         <Kpi etiqueta="Latente" valor={latente}
              // Una posición sin cotización NO entra en el latente, y hasta ahora eso no se
              // decía: el número parecía completo cuando le faltaba una posición entera. Es
@@ -1709,8 +1714,13 @@ export default function VentasView() {
                  ? `⚠ ${resumen.posiciones_sin_precio} sin precio, fuera del total` : null,
                resumen?.posiciones_sin_tipo_de_cambio
                  ? `⚠ ${resumen.posiciones_sin_tipo_de_cambio} sin tipo de cambio, fuera del total` : null,
-               latenteBroker != null && Math.abs(latenteBroker - (latente ?? 0)) > 0.5
-                 ? `en DEGIRO verás ${eur(latenteBroker)}` : null,
+               // Con el interruptor puesto, el de al lado ya ES el del bróker: lo que
+               // hace falta enseñar entonces es el otro, no repetir el mismo.
+               (usaPmp ? resumen?.latente_eur : latenteBroker) != null
+                 && Math.abs((usaPmp ? resumen.latente_eur : latenteBroker) - (latente ?? 0)) > 0.5
+                 ? (usaPmp
+                     ? `por ${metodo.toUpperCase()} son ${eur(resumen.latente_eur)}`
+                     : `en DEGIRO verás ${eur(latenteBroker)}`) : null,
              ].filter(Boolean).join(" · ")}
              ayuda="Lo que llevas ganado en lo que AÚN NO has vendido, al precio y al cambio de hoy. Puede cambiar mañana. Tu bróker enseña otra cifra porque valora TODAS las acciones al precio medio ponderado, mientras que FIFO/LIFO dejan vivos unos lotes concretos: lo que aquí falta, ya está contado en el Realizado. Sumados, los dos métodos dan el mismo total." />
         {/* SIEMPRE visible, aunque esté vacía. Escondiéndola hasta que hubiera dividendos,
@@ -1732,7 +1742,12 @@ export default function VentasView() {
                sub={`${divs?.n_costes ?? 0} apunte(s) · intereses y conectividad`}
                ayuda="Intereses por operar con el saldo en negativo y conectividad con mercados, sacados del Account.csv. No incluye las comisiones de compraventa, que ya están descontadas en cada operación. Es lo que separa tu total del Total P/L de DEGIRO." />
         )}
+        {/* La cifra que contesta "¿cuánto llevo ganado en DEGIRO en total?". Y la única de
+            la pantalla que NO depende del método: como el realizado y el latente van en la
+            misma base, lo que un método se apunta de más en uno se lo guarda en el otro y
+            la suma sale igual. Por eso no hay que activar nada para leerla. */}
         <Kpi etiqueta="Total" valor={total}
+             ayuda="Todo lo que llevas ganado o perdido en esta cuenta: lo realizado en ventas, lo latente de lo que sigue abierto, los dividendos cobrados y los costes. NO cambia con el método ni con el interruptor de DEGIRO: FIFO, LIFO y media ponderada reparten lo mismo de otra forma entre realizado y latente, pero suman igual. Si alguna vez cambia, es un fallo."
              sub={[
                "realizado + latente",
                dividendos != null ? "+ dividendos" : null,
