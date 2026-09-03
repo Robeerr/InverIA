@@ -326,7 +326,14 @@ function FilaVenta({ v, metodo, onBorrar }) {
                   diferencia se lee como un fallo de cálculo, y no lo es. */}
               {v.ponderada && (difiere || v.ponderada.ganancia_eur != null) && (
                 <p className="text-[11px] text-tinta-3 pt-1 leading-snug">
-                  {v.cierra_posicion
+                  {v.metodos_incoherentes
+                    ? "⚠ Esta venta debería haber cerrado la posición, y entonces los tres "
+                      + "métodos darían por fuerza el mismo número — pero no coinciden. Eso "
+                      + "solo pasa si el libro tiene lotes de esta acción que no deberían "
+                      + "estar, o le faltan: la cifra de arriba está calculada sobre un "
+                      + "conjunto de compras que no es el real. Revisa sus compras antes de "
+                      + "fiarte de este resultado."
+                    : v.cierra_posicion
                     ? "Esta venta cerró la posición: se vendieron todos los lotes, así que "
                       + "los tres métodos dan por fuerza el mismo número."
                     : "Venta parcial" + (v.abiertas_despues

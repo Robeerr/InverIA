@@ -593,7 +593,17 @@ def _cambio_de_la_posicion(estado: dict, tasa_hoy) -> dict:
     coste_div = estado.get("coste_abierto_divisa") or 0.0
     coste_eur = estado.get("coste_abierto_eur")
     medio = round(coste_div / coste_eur, 4) if coste_eur else None
-    sin_csv = [l for l in abiertos if not l.get("huella")]
+    # Solo los lotes que creó la FOTO de posiciones, no todo lo que no tenga huella. Esa
+    # era la trampa: una compra que acabas de teclear tampoco tiene huella —el CSV de hoy
+    # todavía no existe— y salía acusada de llevar "la fecha en que se dio de alta y no la
+    # de tu compra", que en una compra de hoy es la misma fecha. El aviso mandaba a borrarla
+    # y reimportar un fichero que no puede contenerla.
+    #
+    # Los lotes de la foto sí se reconocen: los escribe `importar_posiciones_existentes` con
+    # esa nota, y son los únicos cuya fecha es demostrablemente inventada.
+    sin_csv = [l for l in abiertos
+               if not l.get("huella")
+               and str(l.get("notas") or "").startswith("Importada de tu Cartera")]
     return {
         "cambio_medio_compras": medio,
         # Con el de hoy al lado: un cambio medio pegado al de hoy en una posición vieja es
@@ -602,6 +612,16 @@ def _cambio_de_la_posicion(estado: dict, tasa_hoy) -> dict:
         "acciones_sin_csv": round(sum(l.get("acciones_abiertas") or 0 for l in sin_csv), 6),
         "acciones_abiertas_total": estado.get("acciones_abiertas"),
     }
+
+
+def _coinciden(*ventas) -> bool:
+    """¿Dan los métodos el mismo resultado? En dólares, que siempre se conoce.
+
+    Un céntimo de holgura por el redondeo de cada lote; más que eso es otro conjunto de
+    lotes, no otra forma de redondear.
+    """
+    cifras = [v.get("ganancia_divisa") for v in ventas if v and v.get("ganancia_divisa") is not None]
+    return len(cifras) < 2 or (max(cifras) - min(cifras)) < 0.02
 
 
 async def historial(db, limite: int = 1000) -> dict:
@@ -648,6 +668,15 @@ async def historial(db, limite: int = 1000) -> dict:
                 # leer como error de cálculo lo que es la definición de vender por niveles.
                 "cierra_posicion": vf.get("cierra_posicion", False),
                 "abiertas_despues": vf.get("abiertas_despues"),
+                # Cerrar la posición OBLIGA a que los tres métodos den lo mismo: se
+                # consumen todos los lotes, así que no queda nada que elegir. Si difieren,
+                # el libro tiene lotes que no deberían estar —o le faltan— y la cifra de
+                # arriba está calculada sobre un conjunto que no es el real. Callarlo y
+                # seguir imprimiendo «los tres coinciden» es afirmar algo que la propia
+                # pantalla desmiente tres líneas más abajo.
+                "metodos_incoherentes": bool(
+                    vf.get("cierra_posicion")
+                    and not _coinciden(vf, vl, pmp.get(vf.get("id")))),
             })
         resumen_symbol.append({
             "symbol": sym,

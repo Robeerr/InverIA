@@ -1732,8 +1732,11 @@ def test_se_dice_cuantas_acciones_NO_vienen_del_csv():
     _correr(cartera_api.registrar_compra(db, "NFLX", 10, 76.33, fecha="2026-01-10",
                                          divisa="USD", tasa=1.05, comision=0))
     db.compras.docs[0]["huella"] = "h1"          # esta vino del CSV
+    # Y esta, de la FOTO de posiciones: es la que lleva una fecha inventada. Una compra
+    # tecleada a mano no cuenta —su fecha es la que pusiste tú— y por eso lleva la nota.
     _correr(cartera_api.registrar_compra(db, "NFLX", 30, 76.33, fecha="2026-03-10",
-                                         divisa="USD", tasa=1.25, comision=0))
+                                         divisa="USD", tasa=1.25, comision=0,
+                                         notas="Importada de tu Cartera. reparto estimado"))
     r = _correr(cartera_api.estado_simbolo(db, "NFLX", precio_actual=80.0))
     assert r["acciones_abiertas_total"] == 40 and r["acciones_sin_csv"] == 30
 
@@ -1747,6 +1750,8 @@ def test_el_resumen_dice_que_posiciones_arrastran_lotes_sin_csv():
     _correr(cartera_api.registrar_compra(db, "META", 5, 558.54, fecha="2026-01-10",
                                          divisa="USD", tasa=1.05, comision=0))
     db.compras.docs[1]["huella"] = "h1"          # META sí vino del CSV
+    # NFLX, de la foto: sin la nota sería una compra tecleada y no habría nada que avisar.
+    db.compras.docs[0]["notas"] = "Importada de tu Cartera. reparto estimado"
     pos = {p["symbol"]: p for p in _correr(
         cartera_api.resumen_cartera(db, {"NFLX": 80.0, "META": 560.0}))["posiciones"]}
     assert pos["NFLX"]["acciones_sin_csv"] == 10
@@ -2007,3 +2012,51 @@ def test_un_apunte_manual_tapa_UNA_fila_y_no_dos():
         db, [_op_rh("h1"), _op_rh("h2")], {"US74967X1037": "RH"}, sustituir=True))
     assert r["sustituidas"] == 1 and r["importadas"] == 2
     assert len(db.compras.docs) == 2 and all(c.get("huella") for c in db.compras.docs)
+
+
+# ── Una compra recién tecleada no es un lote de la foto ──────────────────────
+
+def test_una_compra_de_hoy_no_sale_en_el_aviso_de_lotes_sin_csv():
+    """El CSV de hoy todavía no existe, así que una compra que acabas de meter tampoco
+    tiene huella. Acusarla de llevar «la fecha del alta y no la de tu compra» —que en una
+    compra de hoy es la misma fecha— y mandar a borrarla y reimportar un fichero que no
+    puede contenerla es mandar al usuario a destruir un dato bueno."""
+    db = _DB([{"id": "e1", "symbol": "MP", "mercado": "NYSE"}])
+    _correr(cartera_api.registrar_compra(db, "MP", 15, 50.0, fecha="2026-09-03",
+                                         divisa="USD", tasa=1.16, comision=0))
+    r = _correr(cartera_api.estado_simbolo(db, "MP", precio_actual=51.0))
+    assert r["acciones_sin_csv"] == 0
+
+
+def test_un_lote_de_la_foto_si_sale():
+    """Esos sí llevan una fecha inventada: la del día en que se importó la posición."""
+    db = _DB([{"id": "e1", "symbol": "MP", "mercado": "NYSE"}])
+    _correr(cartera_api.registrar_compra(db, "MP", 15, 50.0, fecha="2026-09-03",
+                                         divisa="USD", tasa=1.16, comision=0,
+                                         notas="Importada de tu Cartera. reparto estimado"))
+    r = _correr(cartera_api.estado_simbolo(db, "MP", precio_actual=51.0))
+    assert r["acciones_sin_csv"] == 15
+
+
+# ── Cerrar la posición obliga a que los tres métodos coincidan ───────────────
+
+def test_si_cierra_la_posicion_y_los_metodos_no_coinciden_se_avisa():
+    """Es un estado imposible: al vender todos los lotes no queda nada que elegir, así que
+    los tres métodos dan lo mismo. Si difieren, el libro tiene lotes que no deberían estar
+    —o le faltan— y la cifra está calculada sobre un conjunto que no es el real. Imprimir
+    «los tres coinciden» encima es afirmar algo que la propia pantalla desmiente."""
+    vf = {"ganancia_divisa": 34.0, "cierra_posicion": True, "id": "v1"}
+    vl = {"ganancia_divisa": -259.68}
+    assert cartera_api._coinciden(vf, vl) is False
+    assert cartera_api._coinciden(vf, {"ganancia_divisa": 34.005}) is True
+
+
+def test_una_venta_normal_no_dispara_la_alarma():
+    """Cerrando de verdad, los tres coinciden y no hay nada que avisar."""
+    db = _DB([{"id": "e1", "symbol": "UBER", "mercado": "NYSE"}])
+    _correr(cartera_api.registrar_compra(db, "UBER", 10, 80.0, fecha="2026-01-10",
+                                         divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.registrar_venta(db, "UBER", 10, 78.0, fecha="2026-09-03",
+                                        divisa="USD", tasa=1.16, comision=0))
+    f = _correr(cartera_api.historial(db))["items"][0]
+    assert f["cierra_posicion"] is True and f["metodos_incoherentes"] is False
