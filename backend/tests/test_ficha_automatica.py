@@ -16,6 +16,7 @@ Lo demás que se fija:
 Ejecutar:  cd backend && pytest tests/test_ficha_automatica.py -v
 """
 import asyncio
+import inspect
 
 import pytest
 
@@ -146,7 +147,25 @@ def test_el_repaso_no_toca_las_fichas_completas(monkeypatch):
     llamadas = []
     monkeypatch.setattr(signal_table.market_data, "get_quote",
                         lambda s: llamadas.append(s) or PERFIL)
+    # Completa incluye ahora `sector_degiro`: sin él la fila SÍ tiene un hueco que
+    # rellenar, y el repaso debe ir a por ella.
     db = _DB([{"id": "x", "symbol": "MU", "name": "Micron", "mercado": "NASDAQ",
-               "sector": "TECH"}])
+               "sector": "TECH", "sector_degiro": "Technology"}])
     r = _correr(signal_table.completar_fichas(db))
     assert r["revisadas"] == 0 and llamadas == []
+
+
+def test_el_sector_de_DEGIRO_se_rellena_solo_con_el_del_proveedor():
+    """Es el mismo hecho publicado, en otra casilla. En `sector` puede acabar la etiqueta
+    del usuario —y se respeta—, así que ese campo no sirve para reproducir cómo agrupa el
+    bróker; este guarda siempre el sector estándar y grueso del proveedor, que es del mismo
+    tipo de grano que el de DEGIRO."""
+    assert "sector_degiro" in signal_table._CAMPOS_FICHA
+
+
+def test_al_completar_no_se_pisa_el_sector_que_escribio_el_usuario():
+    """«TECH GROWTH» dice algo que «Technology» no dice: sustituirlo sería perder
+    información con cara de mejorarla. El campo de DEGIRO se rellena igualmente."""
+    src = inspect.getsource(signal_table.completar_ficha)
+    assert 'faltan = [c for c in _CAMPOS_FICHA if not (entry.get(c) or "").strip()]' in src
+    assert "upd = {c: candidatos[c] for c in faltan if candidatos[c]}" in src

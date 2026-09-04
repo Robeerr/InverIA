@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import { aNumero } from "../lib/format";
+import RiesgoVenta from "../components/RiesgoVenta";
+import ExtractoMargen from "../components/ExtractoMargen";
 import { useSignals } from "../hooks/useSignals";
 
 // Símbolos que están en la Cartera pero todavía SIN ningún nivel definido.
@@ -44,11 +46,21 @@ const tono = (v) => (v == null ? "text-tinta-3" : v >= 0 ? "text-sube" : "text-b
    precio medio o de dónde sale la ganancia, cambia en un solo sitio; con la regla
    copiada, la versión de móvil se quedaría atrás sin que nadie lo notara. */
 function datosPosicion(p, comoBroker) {
+  // La media ponderada se enseña ENTERA o no se enseña. Antes cada cifra caía por su
+  // cuenta: bastaba con que faltara el coste en euros —lo que ocurre en cuanto UNA compra
+  // de la historia no tiene tipo de cambio— para que la fila mezclara el precio medio del
+  // bróker con el coste y la ganancia de FIFO/LIFO, debajo de un botón que dice "✓ Como en
+  // DEGIRO". Esa fila no cuadra con ninguna de las dos pantallas, y lo peor es que no lo
+  // dice: parece la cifra del bróker y es otra cosa.
+  const pmpCompleta = p.ponderada?.pnl_eur != null && p.ponderada?.coste_eur != null
+    && p.precio_medio_ponderado != null;
+  const usaPmp = comoBroker && pmpCompleta;
   return {
-    // La ganancia ponderada solo manda si existe: no todas las posiciones la traen.
-    g: comoBroker && p.ponderada?.pnl_eur != null ? p.ponderada : p,
-    precioMedio: comoBroker ? (p.precio_medio_ponderado ?? p.precio_medio) : p.precio_medio,
-    invertido: comoBroker ? (p.ponderada?.coste_eur ?? p.coste_eur) : p.coste_eur,
+    g: usaPmp ? p.ponderada : p,
+    precioMedio: usaPmp ? p.precio_medio_ponderado : p.precio_medio,
+    invertido: usaPmp ? p.ponderada.coste_eur : p.coste_eur,
+    // Para poder decirlo en la fila en vez de dejar que el número mienta en silencio.
+    sinPmp: comoBroker && !pmpCompleta,
     // Solo se enseña el otro precio medio cuando difiere de verdad; por debajo de un
     // céntimo, dos cifras iguales una encima de otra parecen un fallo de la pantalla.
     hayOtroMedio: p.precio_medio_ponderado != null
@@ -78,7 +90,7 @@ function Chip({ children, tono: t = "neutro", title }) {
 // La ayuda NO puede vivir solo en `title=`: en el móvil no hay ratón que posar encima, así
 // que el texto era sencillamente inalcanzable. Es un botón que despliega el texto bajo la
 // cifra, y de paso funciona con teclado.
-function Kpi({ etiqueta, valor, sub, acento = false, ayuda }) {
+function Kpi({ etiqueta, significa, valor, sub, acento = false, ayuda }) {
   const [abierta, setAbierta] = React.useState(false);
   return (
     <div className="iv-panel px-4 py-3 flex-1 min-w-[150px]">
@@ -93,6 +105,13 @@ function Kpi({ etiqueta, valor, sub, acento = false, ayuda }) {
           </button>
         )}
       </p>
+      {/* Qué es, en cristiano, entre el nombre y la cifra. La etiqueta de arriba es el
+          nombre técnico —REALIZADO, LATENTE— y no dice nada a quien no lo sepa ya; el pie
+          de debajo es el detalle (cuántas ventas, qué método). Faltaba lo del medio: la
+          frase que contesta "¿esto qué es?" sin tener que abrir la ayuda. */}
+      {significa && (
+        <p className="text-[11px] text-tinta-2 mt-0.5 leading-snug">{significa}</p>
+      )}
       <p className={`font-mono font-bold mt-1 ${acento ? "text-2xl" : "text-xl"} ${tono(valor)}`}>
         {eur(valor)}
       </p>
@@ -124,6 +143,24 @@ function DetalleLotes({ lotes, divisa }) {
   if (!lotes?.length) return null;
   return (
     <div className="bg-superficie-alt px-4 py-3 border-t border-linea">
+      {/* Tú compras y vendes POR NIVELES, pero el método de cálculo empareja por FECHA.
+          Leer qué niveles se han consumido obligaba a recorrer la lista lote a lote; esto
+          lo dice en una frase, en el idioma en el que operas. */}
+      {(() => {
+        const porNivel = {};
+        for (const l of lotes) {
+          const k = l.nivel || "sin";
+          porNivel[k] = (porNivel[k] || 0) + (Number(l.acciones) || 0);
+        }
+        const partes = Object.entries(porNivel)
+          .sort((a, b) => (a[0] === "sin" ? 1 : b[0] === "sin" ? -1 : a[0].localeCompare(b[0])))
+          .map(([k, n]) => `${n} ${k === "sin" ? "sin nivel" : NIVEL_ETIQUETA[k] || k}`);
+        return partes.length ? (
+          <p className="text-apoyo text-tinta-2 mb-2">
+            Has vendido <b className="text-tinta">{partes.join(" y ")}</b>.
+          </p>
+        ) : null;
+      })()}
       <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-2">
         Estas acciones salieron de
       </p>
@@ -149,11 +186,18 @@ function DetalleLotes({ lotes, divisa }) {
 }
 
 // ── Una venta ────────────────────────────────────────────────────────────────
-function FilaVenta({ v, metodo, onBorrar }) {
+function FilaVenta({ v, metodo, comoBroker, onBorrar }) {
   const [abierto, setAbierto] = React.useState(false);
-  const m = v[metodo];
-  const otro = v[metodo === "fifo" ? "lifo" : "fifo"];
-  const difiere = Math.abs((m.ganancia_divisa ?? 0) - (otro.ganancia_divisa ?? 0)) > 0.005;
+  // Con el interruptor puesto manda la ponderada, que es la del bróker. Antes solo cambiaba
+  // la tabla de posiciones abiertas: el historial y el realizado seguían en FIFO/LIFO, así
+  // que un botón que dice «ver como en DEGIRO» dejaba media pantalla en el otro método sin
+  // decirlo. Si a esta venta le falta la ponderada se cae al método elegido, que es peor
+  // que nada pero mejor que un hueco.
+  const usaPmp = comoBroker && v.ponderada?.ganancia_divisa != null;
+  const m = usaPmp ? v.ponderada : v[metodo];
+  const otro = usaPmp ? v[metodo] : v[metodo === "fifo" ? "lifo" : "fifo"];
+  const nombreOtro = usaPmp ? metodo.toUpperCase() : (metodo === "fifo" ? "LIFO" : "FIFO");
+  const difiere = Math.abs((m.ganancia_divisa ?? 0) - (otro?.ganancia_divisa ?? 0)) > 0.005;
 
   return (
     <div className="border-b border-linea last:border-0">
@@ -249,6 +293,23 @@ function FilaVenta({ v, metodo, onBorrar }) {
                 <span className={`font-mono ${tono(m.efecto_divisa_eur)}`}>{eur(m.efecto_divisa_eur)}</span>
               </div>
             )}
+            {/* Cuando el SIGNO cambia entre las dos monedas, decirlo. Es el momento en que
+                la pantalla más parece equivocada: arriba pone +22,10 $ y al lado −56,39 €,
+                y sin una frase que lo nombre eso se lee como un fallo de cálculo. No es
+                un dato nuevo —sale del efecto del euro que ya está tres líneas más
+                arriba— es el mismo dato dicho cuando hace falta. */}
+            {m.ganancia_eur != null && m.ganancia_divisa != null
+              && (m.ganancia_divisa > 0) !== (m.ganancia_eur > 0)
+              && Math.abs(m.ganancia_divisa) > 0.005 && Math.abs(m.ganancia_eur) > 0.005 && (
+              <p className="text-apoyo text-tinta-2 mt-1.5 leading-snug">
+                <b>{m.ganancia_divisa > 0 ? "Ganaste" : "Perdiste"} en {v.divisa} y{" "}
+                {m.ganancia_eur > 0 ? "ganaste" : "perdiste"} en euros.</b>{" "}
+                No es un error: el euro se movió entre tus compras y esta venta, así que
+                cada {v.divisa === "USD" ? "dólar" : v.divisa} que recuperaste vale{" "}
+                {m.ganancia_eur < 0 ? "menos" : "más"} euros que los que pusiste. Lo que
+                cuenta para ti —y para Hacienda— es la cifra en euros.
+              </p>
+            )}
             {!m.exacto && (
               <p className="text-[11px] text-aviso pt-1">
                 Falta el tipo de cambio de alguna compra: la ganancia en euros de esta venta
@@ -261,10 +322,10 @@ function FilaVenta({ v, metodo, onBorrar }) {
               {difiere && (
                 <div className="flex justify-between">
                   <span className="text-tinta-3">
-                    Por <b>{metodo === "fifo" ? "LIFO" : "FIFO"}</b>
-                    {metodo === "fifo"
-                      ? " (como vendes tú)"
-                      : " (lo que va a tu declaración)"}
+                    Por <b>{nombreOtro}</b>
+                    {nombreOtro === "FIFO"
+                      ? " (lo que va a tu declaración)"
+                      : " (como vendes tú)"}
                   </span>
                   <span className="font-mono text-tinta-3">
                     {otro.ganancia_eur != null ? eur(otro.ganancia_eur) : usd(otro.ganancia_divisa, v.divisa)}
@@ -272,17 +333,55 @@ function FilaVenta({ v, metodo, onBorrar }) {
                   </span>
                 </div>
               )}
-              {v.ponderada && (
+              {v.ponderada && !usaPmp && (
                 <div className="flex justify-between">
                   <span className="text-tinta-3"
                         title="Media ponderada: el método que usa tu bróker para su pantalla. Todas tus acciones cuestan lo mismo (la media), así que no distingue niveles. Sirve para cuadrar con DEGIRO, no para la declaración.">
                     Por <b>media ponderada</b> (como tu bróker) ⓘ
                   </span>
-                  <span className="font-mono text-tinta-3">
-                    {usd(v.ponderada.ganancia_divisa, v.divisa)}
-                    {v.ponderada.pct != null && ` · ${pct(v.ponderada.pct)}`}
+                  {/* En EUROS lo primero: es la cifra que enseña DEGIRO y con la que se
+                      compara. En dólares al lado, para cuadrar con la línea de arriba. */}
+                  <span className="font-mono text-tinta-3 text-right">
+                    {v.ponderada.ganancia_eur != null && (
+                      <b className="text-tinta">{eur(v.ponderada.ganancia_eur)}</b>
+                    )}
+                    {v.ponderada.pct_eur != null && ` · ${pct(v.ponderada.pct_eur)}`}
+                    <span className="block text-[10px]">
+                      {usd(v.ponderada.ganancia_divisa, v.divisa)}
+                      {v.ponderada.pct != null && ` · ${pct(v.ponderada.pct)}`}
+                    </span>
                   </span>
                 </div>
+              )}
+              {/* Por qué unas ventas cuadran con el bróker y otras no. Sin esto, la
+                  diferencia se lee como un fallo de cálculo, y no lo es. */}
+              {v.ponderada && (difiere || v.ponderada.ganancia_eur != null) && (
+                <p className="text-[11px] text-tinta-3 pt-1 leading-snug">
+                  {v.metodos_incoherentes
+                    ? "⚠ Esta venta debería haber cerrado la posición, y entonces los tres "
+                      + "métodos darían por fuerza el mismo número — pero no coinciden. Eso "
+                      + "solo pasa si el libro tiene lotes de esta acción que no deberían "
+                      + "estar, o le faltan: la cifra de arriba está calculada sobre un "
+                      + "conjunto de compras que no es el real. Revisa sus compras antes de "
+                      + "fiarte de este resultado."
+                    : v.cierra_posicion && !v.ventas_antes
+                    ? "Esta venta cerró la posición y es la única que has hecho de esta "
+                      + "acción: se vendieron todos los lotes de una vez, así que los tres "
+                      + "métodos dan por fuerza el mismo número."
+                    : v.cierra_posicion
+                    ? "Esta venta cerró la posición, pero antes vendiste parte, y ahí está "
+                      + "la explicación de que los tres métodos difieran: cada uno dejó "
+                      + "vivos lotes distintos —FIFO gastó los viejos, LIFO los nuevos— "
+                      + "así que las acciones que quedaban no eran las mismas para uno que "
+                      + "para otro. Lo que sí coincide en los tres es el TOTAL de todas tus "
+                      + "ventas de esta acción; lo que cambia es cómo se reparte entre ellas."
+                    : "Venta parcial" + (v.abiertas_despues
+                        ? ` — quedaron ${v.abiertas_despues} acciones abiertas`
+                        : "")
+                      + ". Los tres métodos difieren porque el resultado depende de qué lote "
+                      + "das por vendido, y eso no lo decide el cálculo. DEGIRO usa la media "
+                      + "ponderada; a tu declaración va el FIFO."}
+                </p>
               )}
             </div>
             <div className="pt-2">
@@ -305,6 +404,10 @@ function FilaVenta({ v, metodo, onBorrar }) {
 // acción por ISIN y nombre, no por ticker, y meter operaciones en la posición equivocada
 // es peor que no importarlas.
 function ImportarDegiro({ onCerrar }) {
+  // Reparar las que ya estaban. Apagado por defecto: reescribe apuntes existentes y
+  // eso solo debe pasar cuando se pide, no como efecto secundario de reimportar.
+  const [actualizar, setActualizar] = React.useState(false);
+  const [sustituir, setSustituir] = React.useState(false);
   const IGNORAR = "__IGNORAR__";
   const [archivo, setArchivo] = React.useState(null);
   const [previo, setPrevio] = React.useState(null);
@@ -335,7 +438,8 @@ function ImportarDegiro({ onCerrar }) {
   });
 
   const confirmar = useMutation({
-    mutationFn: () => api.cartera.importarDegiro(archivo, mapeo, true),
+    mutationFn: () =>
+      api.cartera.importarDegiro(archivo, mapeo, true, actualizar, sustituir),
     onSuccess: (r) => {
       if (r.pendientes?.length) {
         toast.error("Faltan productos por emparejar");
@@ -353,11 +457,38 @@ function ImportarDegiro({ onCerrar }) {
         onCerrar();
         return;
       }
+      const reparadas = r.actualizadas
+        ? ` · ${r.actualizadas} corregidas`
+          + (r.comision_recuperada ? ` (${eur(r.comision_recuperada)} de comisión recuperada)` : "")
+        : "";
+      // Tres finales distintos, y antes los tres decían lo mismo. "Ya estaba todo
+      // importado" tanto si no se pidió reparar como si se pidió y no había nada que
+      // reparar deja al usuario sin saber si la casilla funcionó.
+      const nadaQueCorregir = r.actualizar_pedido && !r.actualizadas;
+      const sust = r.sustituidas
+        ? ` · ${r.sustituidas} apunte(s) tuyos sustituidos por los del fichero`
+        : "";
       toast.success(r.importadas
         ? `${r.importadas} operación(es) importadas`
-          + (r.saltadas ? ` · ${r.saltadas} ya estaban` : "")
-        : `Ya estaba todo importado (${r.saltadas} operaciones). No hacía falta nada.`,
-        { duration: 8000 });
+          + (r.saltadas ? ` · ${r.saltadas} ya estaban` : "") + sust + reparadas
+        : reparadas
+          ? `No había nada nuevo, pero${reparadas.replace(" · ", " ")}.`
+          : nadaQueCorregir
+            ? `Nada que corregir: las ${r.saltadas} operaciones ya tienen la misma `
+              + "comisión que el fichero."
+            : r.tapadas_por_symbol?.length
+              // NO es lo mismo "el fichero ya está entero" que "hay filas del fichero que
+              // no pueden entrar porque un apunte tuyo las tapa". Lo segundo significa que
+              // esas compras —con su fecha, su precio y su comisión reales— siguen fuera
+              // del libro, y que seguirán fuera por mucho que reimportes.
+              ? `${r.motivos_salto.la_tapa_un_apunte_manual} fila(s) del fichero NO han `
+                + "entrado porque las tapa un apunte tuyo: "
+                + r.tapadas_por_symbol.slice(0, 6)
+                  .map((t) => `${t.symbol} (${t.acciones} acc.)`).join(", ")
+                + ". Marca «Sustituir mis apuntes por los del fichero» y vuelve a importar."
+              : `Ya estaba todo importado (${r.saltadas} operaciones). Si querías corregir `
+              + "las comisiones, marca la casilla y vuelve a importar.",
+        { duration: 10000 });
       // Una compra descartada es una venta futura SIN COSTE: su ganancia saldrá hinchada.
       // Pasó con OHLA y CRWV (filas a precio 0 de ampliaciones/splits) y desde el log del
       // servidor nadie se entera. Aquí se cuenta cuáles y por qué, para meterlas a mano.
@@ -420,12 +551,29 @@ function ImportarDegiro({ onCerrar }) {
 
       {previo && (
         <div className="space-y-3">
-          <div className="text-[11px] text-tinta-3 border-t border-linea pt-2">
-            <b>{previo.resumen?.total}</b> operaciones ·{" "}
-            {previo.resumen?.compras} compras · {previo.resumen?.ventas} ventas ·{" "}
-            de {fecha(previo.resumen?.desde)} a {fecha(previo.resumen?.hasta)} ·{" "}
-            {usd(previo.resumen?.comisiones)} de comisiones reales
-          </div>
+          {/* QUÉ fichero es, antes que cuántas líneas trae. Los dos exports de DEGIRO se
+              llaman parecido y el de Cuenta (dividendos) se reconoce solo, pero esta
+              cabecera lo llamaba "operaciones" igual: salía "131 operaciones · compras ·
+              ventas · — de comisiones reales", con tres huecos donde iban los números,
+              porque el resumen de dividendos no tiene esos campos. Parecía un fichero de
+              transacciones raro y era otro fichero. */}
+          {previo.tipo === "dividendos" ? (
+            <div className="text-[11px] text-tinta-3 border-t border-linea pt-2">
+              Este es el fichero de <b>Cuenta</b> (Account.csv), el de los dividendos — no
+              el de Transacciones. <b>{previo.resumen?.total}</b> apunte(s) de{" "}
+              {fecha(previo.resumen?.desde)} a {fecha(previo.resumen?.hasta)}:{" "}
+              {previo.resumen?.cobros} cobro(s) y {previo.resumen?.retenciones} retención(es).
+              {" "}Si lo que querías era añadir compras y ventas, exporta{" "}
+              <b>Actividad → Transacciones</b>.
+            </div>
+          ) : (
+            <div className="text-[11px] text-tinta-3 border-t border-linea pt-2">
+              <b>{previo.resumen?.total}</b> operaciones ·{" "}
+              {previo.resumen?.compras} compras · {previo.resumen?.ventas} ventas ·{" "}
+              de {fecha(previo.resumen?.desde)} a {fecha(previo.resumen?.hasta)} ·{" "}
+              {usd(previo.resumen?.comisiones)} de comisiones reales
+            </div>
+          )}
 
           {!!previo.errores?.length && (
             <div className="text-[11px] text-aviso">
@@ -495,13 +643,51 @@ function ImportarDegiro({ onCerrar }) {
             )}
           </div>
 
+          {/* Reparar lo que ya está. Apagado por defecto y con el efecto escrito: reescribe
+              apuntes existentes, y eso solo debe pasar cuando se pide. Hace falta porque
+              saltar las repetidas —correcto para no duplicar— dejaba intacto lo que se
+              importó mal: cuando el lector no reconocía la columna de AutoFX, cientos de
+              operaciones entraron con comisión cero y reimportar no las arreglaba. */}
+          <label className="flex items-start gap-2 mb-3 cursor-pointer">
+            <input type="checkbox" checked={actualizar}
+                   onChange={(e) => setActualizar(e.target.checked)}
+                   className="mt-0.5 w-4 h-4 accent-marca shrink-0" />
+            <span className="text-apoyo text-tinta-2 leading-snug">
+              <b>Corregir las comisiones de las operaciones que ya estaban.</b> Reescribe la
+              comisión de los apuntes que ya tienes con la del fichero. No toca precios,
+              fechas ni acciones. Márcalo si tu realizado está inflado porque se importaron
+              sin comisión.
+            </span>
+          </label>
+
+          {/* Sustituir lo tecleado por lo del fichero. Es la salida del punto muerto: una
+              fila tapada por un apunte tuyo no entra NUNCA —y mientras no entre, el CSV
+              "no cubre" esas acciones y tampoco se pueden quitar los lotes de la foto—.
+              Son la misma operación: coinciden fecha, acciones y precio al cuarto decimal.
+              Lo único que cambia es que la del fichero trae la comisión y el tipo de cambio
+              que te aplicaron de verdad, en vez de estimados. */}
+          <label className="flex items-start gap-2 mb-3 cursor-pointer">
+            <input type="checkbox" checked={sustituir}
+                   onChange={(e) => setSustituir(e.target.checked)}
+                   className="mt-0.5 w-4 h-4 accent-marca shrink-0" />
+            <span className="text-apoyo text-tinta-2 leading-snug">
+              <b>Sustituir mis apuntes por los del fichero.</b> Si tecleaste una operación
+              que también viene en el CSV —misma fecha, mismas acciones, mismo precio—, se
+              queda la del fichero, que trae la comisión y el tipo de cambio reales. Tu
+              posición no cambia: entra una y se va la otra. Lo que no esté en el fichero no
+              se toca.
+            </span>
+          </label>
+
           <button onClick={() => confirmar.mutate()}
                   disabled={confirmar.isPending || !!pendientes.length}
                   className="w-full bg-marca text-marca-tinta rounded px-4 py-2 text-sm font-semibold disabled:opacity-60">
             {confirmar.isPending ? "Importando…"
               : ignorados.length
                 ? `Importar (ignorando ${ignorados.length} producto(s))`
-                : `Importar ${previo.resumen?.total || ""} operaciones`}
+                : previo.tipo === "dividendos"
+                  ? "Este fichero es el de dividendos, no el de transacciones"
+                  : `Importar ${previo.resumen?.total || ""} operaciones`}
           </button>
         </div>
       )}
@@ -575,6 +761,41 @@ function LotesAbiertos({ symbol, metodo }) {
         )}
       </p>
 
+      {/* Por qué el latente no coincide con el del bróker aunque el precio y las acciones
+          sean idénticos: el coste en euros sale del cambio del día de CADA compra, y si
+          alguna no lleva su fecha real, ese cambio no es el que te aplicaron. Se enseña el
+          cambio medio para poder compararlo con el del bróker en vez de adivinar. */}
+      {/* El precio con el que se ha valorado, y el cierre anterior al lado. Es la única
+          cifra de la fila que no sale de tus apuntes, y cuando el bróker enseña otra
+          ganancia suele ser esto: en NFLX eran 81,78 $ contra 80,01 $, o sea 121,80 € de
+          diferencia con el mismo coste, el mismo cambio y el mismo método. Si el precio de
+          aquí coincide con el cierre anterior, es que la sesión no ha abierto o el dato se
+          quedó atrás; si el del bróker coincide con él, el que va con retraso es el suyo. */}
+      {!!abiertos.length && data?.precio_actual != null && (
+        <p className="text-[11px] text-tinta-3 mb-1 leading-snug">
+          Valorado a <b className="font-mono">{usd(data.precio_actual, divisa)}</b>
+          {data.cierre_anterior != null && (
+            <> · cierre anterior <span className="font-mono">{usd(data.cierre_anterior, divisa)}</span></>
+          )}
+          {data.estado_mercado && <> · {data.estado_mercado.toLowerCase()}</>}
+        </p>
+      )}
+
+      {!!abiertos.length && data?.cambio_medio_compras && divisa !== "EUR" && (
+        <p className="text-[11px] text-tinta-3 mb-2 leading-snug">
+          Tu coste se pasó a euros a <b className="font-mono">{data.cambio_medio_compras}</b>{" "}
+          {divisa}/€ de media
+          {data.cambio_hoy && <> (hoy: <span className="font-mono">{data.cambio_hoy}</span>)</>}.
+          {!!data.acciones_sin_csv && (
+            <> De las {data.acciones_abiertas_total} acciones abiertas,{" "}
+              <b>{data.acciones_sin_csv} no vienen del CSV</b>: llevan la fecha en que se
+              dieron de alta, no la de la compra, así que su cambio tampoco es el de ese
+              día y el coste en euros puede salir desviado. El precio y las acciones sí
+              son correctos.</>
+          )}
+        </p>
+      )}
+
       {!abiertos.length ? (
         <p className="text-xs text-tinta-3">
           No queda nada abierto de {symbol}: se ha vendido la posición entera.
@@ -584,6 +805,12 @@ function LotesAbiertos({ symbol, metodo }) {
           {abiertos.map((l) => (
             <div key={l.id} className="flex items-center gap-3 flex-wrap text-xs">
               <span className="font-mono text-tinta-3 w-20 shrink-0">{fecha(l.fecha)}</span>
+              {!!l.tasa && divisa !== "EUR" && (
+                <span className="font-mono text-[10px] text-tinta-3"
+                      title={`Cambio con el que el coste de esta compra se pasó a euros. Es el del día de la fecha que tiene el lote; si esa fecha no es la de tu compra real, esta cifra tampoco lo es.`}>
+                  @{Math.round(l.tasa * 1e4) / 1e4}
+                </span>
+              )}
               <span className="font-mono font-semibold">
                 {l.acciones_abiertas} × {usd(l.precio, divisa)}
               </span>
@@ -1124,9 +1351,18 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
     if (!sym) return toast.error("Falta el ticker");
     if (!(n > 0)) return toast.error("El número de acciones debe ser mayor que cero");
     if (!(p > 0)) return toast.error("El precio debe ser mayor que cero");
+    // VACÍO y CERO no son lo mismo, y aquí se colapsaban los dos a 0. El servidor trata el
+    // cero como una afirmación —"esta operación no me costó nada"— y por eso NO la estima,
+    // que es justo lo que hay que hacer cuando alguien lo pone a propósito. Pero el campo
+    // en blanco significa "no lo sé", y el propio formulario promete debajo que se estimará
+    // sola. Enviando 0, esa promesa no se cumplía nunca: cada venta tecleada entraba a
+    // coste cero y acababa en el aviso de "ventas registradas sin comisión", inflando la
+    // ganancia realizada. La previsualización de al lado ya distinguía los dos casos; lo
+    // que se enviaba, no.
+    const vacia = f.comision == null || String(f.comision).trim() === "";
     mut.mutate({
       symbol: sym, acciones: n, precio: p,
-      comision: aNumero(f.comision) || 0,
+      ...(vacia ? {} : { comision: aNumero(f.comision) || 0 }),
       fecha: f.fecha || hoy, notas: f.notas || "",
       ...(tipo === "compra" && f.nivel ? { nivel: f.nivel } : {}),
     });
@@ -1202,6 +1438,11 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
       )}
 
       {tipo === "venta" && <VistaPreviaVenta symbol={f.symbol} acciones={f.acciones} />}
+      {/* ANTES de confirmar, no después: la pregunta que resuelve —"¿esto me libera
+          margen o no?"— solo sirve mientras la venta todavía se puede no hacer. */}
+      {tipo === "venta" && f.symbol.trim() && (
+        <RiesgoVenta symbol={f.symbol} acciones={aNumero(f.acciones) || undefined} />
+      )}
 
       <AvisoComision comision={f.comision} acciones={f.acciones} precio={f.precio} />
 
@@ -1243,6 +1484,46 @@ export default function VentasView() {
     onError: () => toast.error("No se pudo cambiar el método"),
   });
   const setMetodo = (m) => cambiarMetodo.mutate(m);
+
+  // Dos pasos: primero se pregunta qué tocaría, se enseña, y solo si dices que sí se
+  // escribe. Reescribir apuntes del usuario sin que vea antes el alcance no es aceptable,
+  // por muy claro que esté el fallo que los dejó así.
+  const repararComisiones = useMutation({
+    mutationFn: async () => {
+      const previo = await api.cartera.estimarComisiones(false);
+      const n = previo.compras + previo.ventas;
+      if (!n) {
+        toast.success("No hay nada que estimar: todo lo tecleado ya tiene comisión.");
+        return null;
+      }
+      const ok = window.confirm(
+        `Se va a poner la comisión estimada (2 € + 0,25% de AutoFX) a ${n} apunte(s) `
+        + `tecleados a mano que están a cero: ${previo.compras} compra(s) y `
+        + `${previo.ventas} venta(s).\n\nSuman unos ${previo.total_eur} €. Quedarán `
+        + "marcados como ESTIMADOS.\n\nLo que vino del CSV no se toca.\n\n¿Continuar?");
+      return ok ? api.cartera.estimarComisiones(true) : null;
+    },
+    onSuccess: (r) => {
+      if (!r) return;
+      toast.success(`${r.compras} compra(s) y ${r.ventas} venta(s) actualizadas · `
+        + `${r.total_eur} € de comisiones que faltaban`, { duration: 10000 });
+      qc.invalidateQueries({ queryKey: ["cartera"] });
+    },
+    onError: () => toast.error("No se pudieron estimar las comisiones"),
+  });
+
+  // Borrar la copia manual de una compra duplicada. `forzar` porque la posición tiene
+  // ventas registradas y el borrado normal se niega para no dejarlas sin coste; aquí es
+  // justo lo contrario: son acciones que nunca existieron y estaban cubriendo ventas que
+  // no les correspondían.
+  const borrarDuplicada = useMutation({
+    mutationFn: (id) => api.cartera.borrarCompra(id, true),
+    onSuccess: () => {
+      toast.success("Copia borrada. La del CSV se queda con su precio y su comisión reales.");
+      qc.invalidateQueries({ queryKey: ["cartera"] });
+    },
+    onError: () => toast.error("No se pudo borrar la copia"),
+  });
   const [form, setForm] = React.useState(null);   // "compra" | "venta" | null
   const [abierta, setAbierta] = React.useState(null);   // símbolo desplegado en la tabla
   const [verTodas, setVerTodas] = React.useState(false);   // historial completo o últimas 15
@@ -1335,13 +1616,22 @@ export default function VentasView() {
     onError: () => toast.error("No se pudieron quitar los duplicados"),
   });
 
-  const tot = hist?.resumen?.[metodo];
+  // El realizado también obedece al interruptor: enseñar el total por LIFO debajo de un
+  // botón que dice «como en DEGIRO» es mezclar dos métodos en la misma pantalla.
+  const tot = (comoBroker && hist?.resumen?.ponderada?.ganancia_eur != null)
+    ? hist.resumen.ponderada
+    : hist?.resumen?.[metodo];
   const ventas = hist?.items || [];
   const realizado = tot?.ganancia_eur;
-  const latente = resumen?.latente_eur;
-  // El mismo latente visto como lo ve el bróker. Nunca sustituye al de arriba: lo acompaña,
-  // porque cuál "cuadra" depende de con qué pantalla estés comparando.
   const latenteBroker = resumen?.latente_ponderada_eur;
+  // El latente TIENE que ir en la misma base que el realizado. Lo que un método se apunta
+  // de más en lo realizado, el otro se lo guarda en el latente; sumar el realizado de uno
+  // con el latente del otro da un Total que no es de nadie. Y esa es justo la propiedad
+  // que hace útil el Total: como los dos lados van en la misma base, sale el MISMO número
+  // con el interruptor puesto o quitado. Si algún día no saliera, es que hay un fallo.
+  const usaPmp = comoBroker && latenteBroker != null
+    && hist?.resumen?.ponderada?.ganancia_eur != null;
+  const latente = usaPmp ? latenteBroker : resumen?.latente_eur;
   // Los dividendos entran en el TOTAL —son dinero cobrado— pero se enseñan en su propia
   // cifra y nunca dentro de "Realizado". Fiscalmente son rendimientos del capital
   // mobiliario, no ganancias patrimoniales: van a casillas distintas de la declaración, y
@@ -1393,7 +1683,7 @@ export default function VentasView() {
           otro puede evaporarse mañana. Sumarlos sin distinguirlos da una sensación de
           riqueza que el mercado no ha confirmado. */}
       <div className="flex gap-3 flex-wrap">
-        <Kpi etiqueta="Realizado" valor={realizado} acento
+        <Kpi etiqueta="Realizado" significa="Lo que ya cobraste al vender" valor={realizado} acento
              // n_ventas cuelga del resumen, no del método: el número de ventas es el
              // mismo se mire con FIFO o con LIFO. Leerlo de dentro del método daba
              // siempre 0, o sea "no has vendido nada" con 148 ventas en la lista.
@@ -1401,7 +1691,9 @@ export default function VentasView() {
              // sin compra registrada, salen con coste CERO y esta cifra está hinchada en
              // hasta esos euros. Sin el aviso, el número gordo se lee como bueno.
              sub={[
-               `${hist?.resumen?.n_ventas ?? 0} venta(s) · ${metodo.toUpperCase()}`,
+               `${hist?.resumen?.n_ventas ?? 0} venta(s) · ${
+                 comoBroker && hist?.resumen?.ponderada?.ganancia_eur != null
+                   ? "media ponderada" : metodo.toUpperCase()}`,
                hist?.resumen?.sin_cubrir_acciones
                  ? `⚠ ${hist.resumen.sin_cubrir_acciones} acción(es) vendidas sin compra registrada`
                    + ` (${(hist.resumen.sin_cubrir_por_symbol || []).map((s) => s.symbol).join(", ")})`
@@ -1412,10 +1704,10 @@ export default function VentasView() {
                  : null,
              ].filter(Boolean).join(" · ")}
              ayuda="Ganancia de las ventas ya hechas, con el tipo de cambio del día de cada compra y de cada venta. Es dinero que ya está en tu cuenta. Cambia según el método: mira la etiqueta de debajo." />
-        {/* El valor NO cambia con el interruptor, a diferencia de la tabla: el Total suma
-            este latente con TU realizado, y mezclar bases daría una suma que no cuadra.
-            La cifra del bróker va debajo, que es lo que hace falta para comparar. */}
-        <Kpi etiqueta="Latente" valor={latente}
+        {/* Va en la MISMA base que el realizado, y por eso obedece al interruptor: lo que
+            un método se apunta de más arriba, el otro se lo guarda aquí. La cifra del otro
+            método sigue debajo, que es lo que hace falta para comparar pantallas. */}
+        <Kpi etiqueta="Latente" significa="Lo que aún está en juego" valor={latente}
              // Una posición sin cotización NO entra en el latente, y hasta ahora eso no se
              // decía: el número parecía completo cuando le faltaba una posición entera. Es
              // lo primero que hay que mirar cuando el total no cuadra con el bróker.
@@ -1429,14 +1721,19 @@ export default function VentasView() {
                  ? `⚠ ${resumen.posiciones_sin_precio} sin precio, fuera del total` : null,
                resumen?.posiciones_sin_tipo_de_cambio
                  ? `⚠ ${resumen.posiciones_sin_tipo_de_cambio} sin tipo de cambio, fuera del total` : null,
-               latenteBroker != null && Math.abs(latenteBroker - (latente ?? 0)) > 0.5
-                 ? `en DEGIRO verás ${eur(latenteBroker)}` : null,
+               // Con el interruptor puesto, el de al lado ya ES el del bróker: lo que
+               // hace falta enseñar entonces es el otro, no repetir el mismo.
+               (usaPmp ? resumen?.latente_eur : latenteBroker) != null
+                 && Math.abs((usaPmp ? resumen.latente_eur : latenteBroker) - (latente ?? 0)) > 0.5
+                 ? (usaPmp
+                     ? `por ${metodo.toUpperCase()} son ${eur(resumen.latente_eur)}`
+                     : `en DEGIRO verás ${eur(latenteBroker)}`) : null,
              ].filter(Boolean).join(" · ")}
              ayuda="Lo que llevas ganado en lo que AÚN NO has vendido, al precio y al cambio de hoy. Puede cambiar mañana. Tu bróker enseña otra cifra porque valora TODAS las acciones al precio medio ponderado, mientras que FIFO/LIFO dejan vivos unos lotes concretos: lo que aquí falta, ya está contado en el Realizado. Sumados, los dos métodos dan el mismo total." />
         {/* SIEMPRE visible, aunque esté vacía. Escondiéndola hasta que hubiera dividendos,
             la única forma de enterarse de que existe era leer el texto del importador — y
             una función que no se ve no existe. Vacía dice qué falta para llenarla. */}
-        <Kpi etiqueta="Dividendos" valor={dividendos}
+        <Kpi etiqueta="Dividendos" significa="Lo que te han pagado por tener las acciones" valor={dividendos}
              sub={dividendos == null
                ? "sube tu Account.csv de DEGIRO"
                : [
@@ -1448,18 +1745,23 @@ export default function VentasView() {
                  ].filter(Boolean).join(" · ")}
              ayuda="Cobrado por dividendos, ya descontada la retención en origen. Los dividendos NO están en el Transactions.csv: hay que subir además el Account.csv (Actividad → Cuenta). Se cuentan aparte porque fiscalmente no son ganancias patrimoniales sino rendimientos del capital mobiliario, y van a otra casilla de la declaración. La retención de EE.UU. es recuperable en parte con el convenio de doble imposición." />
         {costes != null && (
-          <Kpi etiqueta="Costes" valor={costes}
+          <Kpi etiqueta="Costes" significa="Lo que te cobra DEGIRO por el saldo y los datos" valor={costes}
                sub={`${divs?.n_costes ?? 0} apunte(s) · intereses y conectividad`}
                ayuda="Intereses por operar con el saldo en negativo y conectividad con mercados, sacados del Account.csv. No incluye las comisiones de compraventa, que ya están descontadas en cada operación. Es lo que separa tu total del Total P/L de DEGIRO." />
         )}
-        <Kpi etiqueta="Total" valor={total}
+        {/* La cifra que contesta "¿cuánto llevo ganado en DEGIRO en total?". Y la única de
+            la pantalla que NO depende del método: como el realizado y el latente van en la
+            misma base, lo que un método se apunta de más en uno se lo guarda en el otro y
+            la suma sale igual. Por eso no hay que activar nada para leerla. */}
+        <Kpi etiqueta="Total" significa="Todo junto: tu resultado en esta cuenta" valor={total}
+             ayuda="Todo lo que llevas ganado o perdido en esta cuenta: lo realizado en ventas, lo latente de lo que sigue abierto, los dividendos cobrados y los costes. NO cambia con el método ni con el interruptor de DEGIRO: FIFO, LIFO y media ponderada reparten lo mismo de otra forma entre realizado y latente, pero suman igual. Si alguna vez cambia, es un fallo."
              sub={[
                "realizado + latente",
                dividendos != null ? "+ dividendos" : null,
                costes != null ? "+ costes" : null,
              ].filter(Boolean).join(" ")} />
         {tot?.efecto_divisa_eur != null && Math.abs(tot.efecto_divisa_eur) >= 0.01 && (
-          <Kpi etiqueta="Efecto del euro" valor={tot.efecto_divisa_eur}
+          <Kpi etiqueta="Efecto del euro" significa="Cuánto de tu resultado es el euro y no la acción" valor={tot.efecto_divisa_eur}
                sub="incluido en el realizado"
                ayuda="Cuánto de tu ganancia realizada viene del movimiento del euro frente al dólar, y no de que la acción subiera." />
         )}
@@ -1468,6 +1770,54 @@ export default function VentasView() {
       {/* Ventas de la contabilidad VIEJA (el diálogo Vender de la Cartera antes de que
           escribiera en el libro). Si quedan, ni sus acciones ni su ganancia están en
           ninguna cifra de esta pantalla, y hay que meterlas como ventas normales. */}
+      {/* Una venta sin comisión infla la ganancia entre 6 y 10 €, y esa cifra acaba en
+          una declaración. Con cien ventas deja de ser calderilla, así que se dice cuánto
+          falta en total en vez de dejarlo a que alguien sume. */}
+      {!!hist?.ventas_sin_comision && (
+        <div className="iv-panel px-4 py-2.5 border border-aviso/40 bg-aviso/[0.06]">
+          <p className="text-apoyo text-aviso leading-snug">
+            ⚠ <b>{hist.ventas_sin_comision} venta(s) registradas sin comisión.</b> DEGIRO
+            cobra 2 € por operación más el 0,25% de AutoFX, así que tu ganancia realizada
+            está inflada en unos{" "}
+            <b className="font-mono">{eur(hist.comision_no_contada_eur)}</b>.
+            {hist.ventas_sin_comision_manuales === hist.ventas_sin_comision
+              ? " Todas están tecleadas a mano, así que reimportar el CSV no las toca:"
+                + " no tienen huella que emparejar, y encima tapan la fila del fichero,"
+                + " que sí trae la comisión buena. Se arreglan borrándolas aquí abajo y"
+                + " volviendo a importar el CSV."
+              : " Las que vinieron del CSV se corrigen reimportándolo con la casilla de"
+                + " corregir comisiones marcada; las tecleadas a mano hay que borrarlas y"
+                + " reimportar, porque no tienen huella que emparejar."}
+          </p>
+          {/* CUÁLES. Sin el símbolo y la fecha delante, «10 ventas» es un dato que no se
+              puede accionar: hay que rebuscarlas una a una entre cientos de filas. */}
+          {!!hist.ventas_sin_comision_detalle?.length && (
+            <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-etiqueta text-tinta-3">
+              {hist.ventas_sin_comision_detalle.map((v) => (
+                <li key={v.id} className="font-mono">
+                  {v.symbol} · {v.fecha} · {v.acciones} acc.
+                  {v.manual ? " · a mano" : " · del CSV"}
+                </li>
+              ))}
+            </ul>
+          )}
+          {/* El botón para repararlas. Los apuntes tecleados se quedaron a cero por un
+              fallo del formulario —enviaba 0 donde debía enviar "vacío"—, así que no son
+              ceros que nadie afirmara: son huecos. Se rellenan con la tarifa publicada y
+              quedan marcados como estimados, para poder distinguirlos luego de una cifra
+              sacada del extracto. Lo que vino del CSV no se toca: ahí un cero es un dato. */}
+          {!!hist.ventas_sin_comision_manuales && (
+            <button onClick={() => repararComisiones.mutate()}
+                    disabled={repararComisiones.isPending}
+                    className="mt-2 text-[11px] underline text-aviso disabled:opacity-60">
+              {repararComisiones.isPending
+                ? "Calculando…"
+                : "Poner la comisión estimada a las que tecleaste a mano"}
+            </button>
+          )}
+        </div>
+      )}
+
       {!!hist?.ventas_antiguas && (
         <div className="iv-panel px-4 py-3 border-l-4 border-l-amber-500">
           <p className="text-sm font-semibold mb-1">
@@ -1504,12 +1854,60 @@ export default function VentasView() {
         </div>
       )}
 
+      {/* Compras duplicadas. Al contrario que una venta repetida, una compra repetida no
+          descuadra nada contable —no deja ventas sin cubrir, no rompe ningún total— así que
+          nadie la busca: solo infla la posición y con ella el latente. En NFLX eran 30
+          acciones tecleadas a 76,00 $ y la misma compra del CSV a 76,01: 80 acciones en
+          pantalla donde el broker tenía 50, y unos +140 € de ganancia inexistente. Las otras
+          quince posiciones cuadraban al detalle, que es lo que hace que no se sospeche. */}
+      {!!hist?.posibles_compras_duplicadas?.length && (
+        <div className="iv-panel px-4 py-3 border-l-4 border-l-amber-500">
+          <p className="text-sm font-semibold mb-1">
+            ⚠ {hist.posibles_compras_duplicadas.length} compra(s) posiblemente contadas dos veces
+          </p>
+          <p className="text-xs text-tinta-3 mb-2">
+            Cada una está metida a mano y además traída del CSV de DEGIRO: misma acción,
+            misma fecha y mismas acciones, con los precios a un céntimo. Eso infla tu
+            posición y tu ganancia latente sin descuadrar ningún total, así que no salta
+            ningún otro aviso. Borra la copia manual — la del precio redondeado.
+          </p>
+          {hist.posibles_compras_duplicadas.map((d, i) => (
+            <div key={i} className="flex items-center gap-3 flex-wrap text-xs font-mono py-0.5">
+              <span className="font-semibold">{d.symbol}</span>
+              <span className="text-tinta-3">{fecha(d.fecha)}</span>
+              <span>{d.acciones} acciones</span>
+              <span className="text-tinta-3">
+                a {d.precios.map((x) => x.toFixed(2)).join(" y ")}
+              </span>
+              <span className="text-aviso">+{d.acciones_de_mas} de más</span>
+              <button onClick={() => window.confirm(
+                        `Se borra la copia MANUAL de ${d.acciones} ${d.symbol} del `
+                        + `${fecha(d.fecha)}. La que vino del CSV se queda, con su precio y `
+                        + "su comisión reales.\n\n¿Continuar?")
+                        && d.ids_manuales.forEach((id) => borrarDuplicada.mutate(id))}
+                      disabled={borrarDuplicada.isPending}
+                      className="text-baja underline disabled:opacity-60">
+                borrar la copia manual
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Selector de método. Va acompañado SIEMPRE de la explicación fiscal: enseñar dos
           cifras distintas para la misma venta sin decir cuál vale para Hacienda sería peor
           que enseñar una sola. */}
       <div className="iv-panel px-4 py-3">
         <div className="flex items-center gap-3 flex-wrap">
           <span className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono">Método de cálculo</span>
+          {/* El interruptor del bróker vive AQUÍ, junto al método, porque manda en toda la
+              pantalla: el historial, el realizado y la tabla de posiciones. Estaba metido
+              en la cabecera de esa tabla y desde ahí parecía cambiar solo esa tabla —que
+              es lo que hacía antes—, así que el resto de la pantalla se quedaba en el otro
+              método sin decirlo.
+              Va aparte de FIFO/LIFO y no como un tercer botón porque no es lo mismo: esos
+              dos deciden CÓMO SE EMPAREJAN tus ventas y se guardan en el servidor; este
+              solo cambia lo que estás mirando ahora, y vive en tu navegador. */}
           <div className="flex rounded overflow-hidden border border-linea">
             {[["fifo", "FIFO"], ["lifo", "LIFO"]].map(([k, label]) => (
               <button key={k} onClick={() => setMetodo(k)}
@@ -1518,6 +1916,13 @@ export default function VentasView() {
               </button>
             ))}
           </div>
+          <button onClick={alternarBroker}
+                  title="Tu bróker valora TODAS las acciones al precio medio ponderado, que no baja al vender. FIFO/LIFO dejan vivos unos lotes concretos —los caros o los baratos— y por eso dan otro número. Ninguna está mal: lo que una se apunta de más aquí, la otra ya se lo apuntó en lo realizado. Cambia el historial, el realizado y la tabla de posiciones."
+                  className={`text-[11px] rounded px-2 py-1 border ${comoBroker
+                    ? "bg-marca text-marca-tinta border-marca font-semibold"
+                    : "border-linea text-tinta-3"}`}>
+            {comoBroker ? "✓ Como en DEGIRO (media ponderada)" : "Ver como en DEGIRO"}
+          </button>
           {cambiarMetodo.isPending && (
             <span className="text-[11px] text-tinta-3">Recalculando…</span>
           )}
@@ -1585,7 +1990,7 @@ export default function VentasView() {
             {/* Las últimas 15 a la vista; el resto bajo demanda. Con 146 ventas la lista
                 entera convertía llegar al final de la página en una expedición. */}
             {(verTodas ? ventas : ventas.slice(0, 15)).map((v) => (
-              <FilaVenta key={v.id} v={v} metodo={metodo}
+              <FilaVenta key={v.id} v={v} metodo={metodo} comoBroker={comoBroker}
                          onBorrar={(x) => window.confirm(`¿Borrar la venta de ${x.acciones} ${x.symbol} del ${fecha(x.fecha)}?`) && borrar.mutate(x)} />
             ))}
             {ventas.length > 15 && (
@@ -1613,6 +2018,62 @@ export default function VentasView() {
         </Plegable>
       )}
 
+      {/* Qué posiciones arrastran lotes que no vinieron del CSV. Son las que pueden no
+          cuadrar con el bróker: su fecha es la del alta, no la de la compra, así que el
+          coste se pasó a euros al cambio de un día que no es el tuyo. El precio y las
+          acciones sí están bien; lo que baila es la conversión. Se ordenan por dinero
+          afectado, que es el orden en que compensa arreglarlas. */}
+      {(() => {
+        const sospechosas = (resumen?.posiciones || [])
+          .filter((p) => p.acciones_sin_csv > 0)
+          .sort((a, b) => (b.coste_eur || 0) - (a.coste_eur || 0));
+        if (!sospechosas.length) return null;
+        return (
+          <div className="iv-panel px-4 py-3 border border-aviso/40 bg-aviso/[0.06] mb-3">
+            <p className="text-apoyo text-aviso leading-snug mb-2">
+            ⚠ <b>{sospechosas.length} posición(es) con lotes que no vienen del CSV.</b>{" "}
+            Esos lotes llevan la fecha en que se dieron de alta, no la de tu compra, así
+            que su coste se pasó a euros al cambio de ese día. Por eso el latente puede
+            no cuadrar con DEGIRO teniendo el mismo precio y las mismas acciones. Se
+            arreglan borrando esos lotes y volviendo a importar el CSV.
+            </p>
+            <div className="overflow-x-auto">
+            <table className="w-full text-etiqueta font-mono">
+              <thead className="text-tinta-3">
+                <tr className="text-left">
+                  <th className="pr-3 font-normal">Acción</th>
+                  <th className="pr-3 font-normal text-right">Sin CSV</th>
+                  <th className="pr-3 font-normal text-right">De</th>
+                  <th className="pr-3 font-normal text-right">Invertido</th>
+                  <th className="pr-3 font-normal text-right">Cambio usado</th>
+                  <th className="font-normal text-right">Hoy</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sospechosas.map((p) => (
+                  <tr key={p.symbol} className="border-t border-linea/60">
+                  <td className="pr-3 py-1 font-bold">{p.symbol}</td>
+                  <td className="pr-3 text-right">{p.acciones_sin_csv}</td>
+                  <td className="pr-3 text-right text-tinta-3">
+                    {p.acciones_abiertas_total}
+                  </td>
+                  <td className="pr-3 text-right">{eur(p.coste_eur)}</td>
+                  <td className="pr-3 text-right">{p.cambio_medio_compras ?? "—"}</td>
+                  <td className="text-right text-tinta-3">{p.cambio_hoy ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            </div>
+            <p className="text-[11px] text-tinta-3 mt-2 leading-snug">
+            Un «cambio usado» pegado al de hoy en una compra antigua es la señal: ese
+            lote se convirtió al cambio de hoy y no al del día en que compraste.
+            </p>
+          </div>
+        );
+      })()}
+
+
       {/* Posiciones abiertas, en euros */}
       {!!resumen?.posiciones?.length && (
         <Plegable id="abierto" titulo={`Lo que tienes abierto (${resumen.posiciones.length})`}
@@ -1621,13 +2082,6 @@ export default function VentasView() {
               {/* El interruptor que hace que esta tabla se pueda comparar fila a fila con la
                   pantalla del bróker. Sin él, las posiciones donde se vendió parte enseñaban
                   otro precio medio y otra ganancia, y parecía un error de cálculo. */}
-              <button onClick={alternarBroker}
-                      title="Tu bróker valora TODAS las acciones al precio medio ponderado, que no baja al vender. FIFO/LIFO dejan vivos unos lotes concretos —los caros o los baratos— y por eso dan otro número. Ninguna está mal: lo que una se apunta de más aquí, la otra ya se lo apuntó en lo realizado."
-                      className={`text-[11px] rounded px-2 py-0.5 border ${comoBroker
-                        ? "bg-marca text-marca-tinta border-marca"
-                        : "border-linea text-tinta-3"}`}>
-                {comoBroker ? "✓ Como en DEGIRO (media ponderada)" : "Ver como en DEGIRO"}
-              </button>
               {/* Rehacer la importación: si la primera salió con los lotes mal repartidos,
                   borrarlos uno a uno serían decenas de clics. No toca las acciones que ya
                   tengan ventas registradas — ahí borrar compras falsearía la ganancia. */}
@@ -1676,7 +2130,7 @@ export default function VentasView() {
               los mismos: esto es la MISMA fila, con otra disposición. */}
           <ul className="md:hidden divide-y divide-linea">
             {resumen.posiciones.map((p) => {
-              const { g, precioMedio, invertido, hayOtroMedio } = datosPosicion(p, comoBroker);
+              const { g, precioMedio, invertido, hayOtroMedio, sinPmp } = datosPosicion(p, comoBroker);
               const abiertaEsta = abierta === p.symbol;
               return (
                 <li key={p.symbol}>
@@ -1705,6 +2159,22 @@ export default function VentasView() {
                           <Chip tono="aviso"
                                 title={`Esta posición tiene lotes en ${p.divisas_mezcladas.join(" y ")}. El precio medio y el invertido EN DIVISA suman monedas distintas y no significan nada; las cifras en euros sí son correctas, porque cada lote se convierte con su propia tasa. Revisa la divisa de cada compra.`}>
                             {p.divisas_mezcladas.join("+")}
+                          </Chip>
+                        )}
+                        {/* La operación dice una moneda y el mercado otra: una de las dos es una
+                            errata. Las cifras en euros ya salen bien —el valor se convierte con el
+                            cambio del mercado donde cotiza— pero el precio medio "en divisa" mezcla
+                            monedas mientras la ficha siga mal. */}
+                        {p.divisa_incoherente && (
+                          <Chip tono="aviso"
+                                title={`Tus operaciones de ${p.symbol} están en ${p.divisa}, pero cotiza en ${p.divisa_cotizacion}. Las cifras en euros son correctas; revisa la divisa de la ficha o la de las compras.`}>
+                            {p.divisa}≠{p.divisa_cotizacion}
+                          </Chip>
+                        )}
+                        {sinPmp && (
+                          <Chip tono="aviso"
+                                title="Esta fila NO está en media ponderada aunque el interruptor lo esté: falta el tipo de cambio de alguna compra de su historial y sin él no hay coste en euros que ponderar. Se enseña por tu método (FIFO/LIFO), que da otro número. No la compares con DEGIRO.">
+                            sin ponderada
                           </Chip>
                         )}
                         {p.niveles_comprados?.map((n) => (
@@ -1821,7 +2291,7 @@ export default function VentasView() {
               </thead>
               <tbody>
                 {resumen.posiciones.map((p) => {
-                  const { g, precioMedio, invertido, hayOtroMedio } = datosPosicion(p, comoBroker);
+                  const { g, precioMedio, invertido, hayOtroMedio, sinPmp } = datosPosicion(p, comoBroker);
                   return (
                   <React.Fragment key={p.symbol}>
                   <tr className="border-b border-linea cursor-pointer hover:bg-superficie-alt"
@@ -1843,6 +2313,22 @@ export default function VentasView() {
                         <Chip tono="aviso"
                               title={`Esta posición tiene lotes en ${p.divisas_mezcladas.join(" y ")}. El precio medio y el invertido EN DIVISA suman monedas distintas y no significan nada; las cifras en euros sí son correctas, porque cada lote se convierte con su propia tasa. Revisa la divisa de cada compra.`}>
                           {p.divisas_mezcladas.join("+")}
+                        </Chip>
+                      )}
+                      {/* La operación dice una moneda y el mercado otra: una de las dos es una
+                          errata. Las cifras en euros ya salen bien —el valor se convierte con el
+                          cambio del mercado donde cotiza— pero el precio medio "en divisa" mezcla
+                          monedas mientras la ficha siga mal. */}
+                      {p.divisa_incoherente && (
+                        <Chip tono="aviso"
+                              title={`Tus operaciones de ${p.symbol} están en ${p.divisa}, pero cotiza en ${p.divisa_cotizacion}. Las cifras en euros son correctas; revisa la divisa de la ficha o la de las compras.`}>
+                          {p.divisa}≠{p.divisa_cotizacion}
+                        </Chip>
+                      )}
+                      {sinPmp && (
+                        <Chip tono="aviso"
+                              title="Esta fila NO está en media ponderada aunque el interruptor lo esté: falta el tipo de cambio de alguna compra de su historial y sin él no hay coste en euros que ponderar. Se enseña por tu método (FIFO/LIFO), que da otro número. No la compares con DEGIRO.">
+                          sin ponderada
                         </Chip>
                       )}
                       {!!p.niveles_comprados?.length && (
@@ -1946,6 +2432,11 @@ export default function VentasView() {
           </details>
         </Plegable>
       )}
+
+      {/* Al final, no en medio. Es lo que autoriza a estimar el margen de una venta, pero
+          se teclea una vez al mes: partía la página en dos entre el historial y la tabla
+          de posiciones, que es lo que se viene a mirar. Su sitio no cambia lo que hace. */}
+      <ExtractoMargen />
     </div>
   );
 }

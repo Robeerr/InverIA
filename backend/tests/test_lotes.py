@@ -697,3 +697,186 @@ def test_sin_el_cambio_de_una_compra_no_se_inventa_la_media_en_euros():
     assert pmp["precio_medio"] == 110.0
     assert pmp["precio_medio_eur"] is None and pmp["coste_eur"] is None
     assert lotes.valorar_ponderado(pmp, 130.0, 1.12)["pnl_eur"] is None
+
+
+# ── La media ponderada, en euros ─────────────────────────────────────────────
+# Es la cifra que enseña el bróker, y solo se calculaba en DÓLARES. Comparar "420,14 $" con
+# los "+300 €" que muestra DEGIRO obliga a convertir a mano en cada venta, y esa fricción
+# es justo lo que hace pensar que uno de los dos está mal.
+
+def test_la_media_ponderada_da_la_ganancia_en_euros():
+    compras = [_compra("2026-01-10", 10, 100.0, tasa=1.10)]
+    ventas = [_venta("2026-06-10", 10, 120.0, tasa=1.20)]
+    v = lotes.media_ponderada(compras, ventas)["ventas"][0]
+    assert v["ganancia_divisa"] is not None
+    assert v["ganancia_eur"] is not None
+    assert v["pct_eur"] is not None
+
+
+def test_el_coste_va_al_cambio_de_la_compra_y_el_ingreso_al_de_la_venta():
+    """Usar un solo cambio para los dos lados borraría el efecto del euro, que es la
+    diferencia entre lo que enseña el bróker y un número inventado."""
+    compras = [_compra("2026-01-10", 10, 100.0, tasa=1.10)]
+    ventas = [_venta("2026-06-10", 10, 100.0, tasa=1.30)]   # mismo precio, otro cambio
+    v = lotes.media_ponderada(compras, ventas)["ventas"][0]
+    assert v["ganancia_divisa"] == pytest.approx(0.0, abs=0.01), "en dólares no ganó nada"
+    assert v["ganancia_eur"] < 0, "en euros perdió, porque el euro se fortaleció"
+
+
+def test_sin_el_cambio_de_una_compra_no_se_inventa_la_cifra_en_euros():
+    """Un euro aproximado en una declaración es peor que un hueco."""
+    compras = [_compra("2026-01-10", 10, 100.0, tasa=None)]
+    ventas = [_venta("2026-06-10", 10, 120.0, tasa=1.20)]
+    v = lotes.media_ponderada(compras, ventas)["ventas"][0]
+    assert v["ganancia_divisa"] is not None
+    assert v["ganancia_eur"] is None and v["pct_eur"] is None
+
+def test_la_ponderada_da_la_ganancia_en_euros_cada_compra_a_su_cambio():
+    compras = [{"id": "c1", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0,
+                "comision": 0.0, "tasa": 1.00},
+               {"id": "c2", "fecha": "2026-02-10", "acciones": 10, "precio": 50.0,
+                "comision": 0.0, "tasa": 1.25}]
+    ventas = [{"id": "v1", "fecha": "2026-06-01", "acciones": 10, "precio": 120.0,
+               "comision": 0.0, "tasa": 1.20}]
+    v = lotes.media_ponderada(compras, ventas)["ventas"][0]
+    # Media en euros: (1000/1,00 + 500/1,25) / 20 = 1400/20 = 70 €/acción.
+    assert v["coste_eur"] == 700.0
+    assert v["ingreso_eur"] == 1000.0        # 1.200 $ / 1,20
+    assert v["ganancia_eur"] == 300.0
+    assert v["pct_eur"] == pytest.approx(42.86, abs=0.01)
+
+
+def test_sin_el_cambio_de_una_compra_la_ponderada_no_inventa_euros():
+    compras = [{"id": "c1", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0,
+                "comision": 0.0, "tasa": None}]
+    ventas = [{"id": "v1", "fecha": "2026-06-01", "acciones": 10, "precio": 120.0,
+               "comision": 0.0, "tasa": 1.20}]
+    v = lotes.media_ponderada(compras, ventas)["ventas"][0]
+    assert v["ganancia_eur"] is None and v["coste_eur"] is None
+    assert v["ganancia_divisa"] == 200.0     # en dólares sí se sabe
+
+
+def test_reproducir_dice_cuantas_quedaron_abiertas_tras_cada_venta():
+    compras = [{"id": "c1", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0},
+               {"id": "c2", "fecha": "2026-02-10", "acciones": 10, "precio": 50.0}]
+    ventas = [{"id": "v1", "fecha": "2026-06-01", "acciones": 5, "precio": 120.0},
+              {"id": "v2", "fecha": "2026-07-01", "acciones": 15, "precio": 120.0}]
+    r = lotes.reproducir(compras, ventas, lotes.FIFO)["ventas"]
+    assert [x["abiertas_despues"] for x in r] == [15, 0]
+    assert [x["cierra_posicion"] for x in r] == [False, True]
+
+
+# ── Un euro vale un euro ─────────────────────────────────────────────────────
+
+def test_una_compra_en_euros_no_se_divide_entre_el_dolar():
+    """El fallo de NVDA: 5 × 210,66 € se guardaron como 903,71 € en vez de 1.053,30 €,
+    porque el apunte llevaba el cambio EUR/USD del día pegado a un importe ya en euros.
+    Encogía el coste un 14% y pintaba +150 € de ganancia sobre una compra recién hecha."""
+    compra = {"id": "c1", "fecha": "2026-08-26", "acciones": 5, "precio": 210.66,
+              "comision": 0.0, "divisa": "EUR", "tasa": 1.1655}   # tasa incoherente
+    r = lotes.reproducir([compra], [], lotes.FIFO)
+    assert r["coste_abierto_eur"] == pytest.approx(1053.30, abs=0.01)
+
+
+def test_la_correccion_vale_para_lo_YA_guardado_sin_reescribir_nada():
+    """Se impone al leer, no solo al escribir: si solo se arreglara `nueva_compra`, las
+    posiciones que ya están en la base de datos seguirían enseñando la cifra falsa."""
+    assert lotes.tasa_de({"divisa": "EUR", "tasa": 1.1655}) == 1.0
+    assert lotes.tasa_de({"divisa": "eur", "tasa": None}) == 1.0
+    assert lotes.tasa_de({"divisa": "USD", "tasa": 1.1655}) == 1.1655
+
+
+def test_un_apunte_nuevo_en_euros_nace_con_cambio_1():
+    c = lotes.nueva_compra("NVDA", 5, 210.66, divisa="EUR", tasa=1.1655)
+    v = lotes.nueva_venta("NVDA", 5, 210.66, divisa="EUR", tasa=1.1655)
+    assert c["tasa"] == 1.0 and v["tasa"] == 1.0
+
+
+def test_en_dolares_el_cambio_que_venga_dado_sigue_mandando():
+    """El del banco lleva su margen y es el que de verdad te cobraron."""
+    c = lotes.nueva_compra("NVDA", 5, 210.66, divisa="USD", tasa=1.1655)
+    assert c["tasa"] == 1.1655
+
+
+def test_una_venta_en_euros_tampoco_se_convierte():
+    compras = [{"id": "c1", "fecha": "2026-01-10", "acciones": 5, "precio": 200.0,
+                "comision": 0.0, "divisa": "EUR", "tasa": 1.1655}]
+    ventas = [{"id": "v1", "fecha": "2026-08-26", "acciones": 5, "precio": 210.66,
+               "comision": 0.0, "divisa": "EUR", "tasa": 1.1655}]
+    v = lotes.reproducir(compras, ventas, lotes.FIFO)["ventas"][0]
+    assert v["ganancia_divisa"] == pytest.approx(53.30, abs=0.01)
+    assert v["ganancia_eur"] == pytest.approx(53.30, abs=0.01)   # misma cifra: es la misma moneda
+
+
+def test_dos_lotes_con_el_mismo_id_se_descuentan_por_separado():
+    """El descuento buscaba el lote por su `id` y se quedaba con el PRIMERO que coincidía.
+    Con dos lotes que compartan id —o a los que les falte— toda la venta se le cargaba a
+    uno y los demás quedaban intactos: el libro dejaba de cuadrar sin que nada fallara a la
+    vista, y la posición seguía enseñando acciones que ya se habían vendido."""
+    compras = [{"id": "repetido", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0},
+               {"id": "repetido", "fecha": "2026-02-10", "acciones": 10, "precio": 80.0}]
+    ventas = [{"id": "v1", "fecha": "2026-06-01", "acciones": 15, "precio": 120.0}]
+    r = lotes.reproducir(compras, ventas, lotes.FIFO)
+    assert r["acciones_abiertas"] == 5, "quedan 5: 20 compradas menos 15 vendidas"
+    assert r["ventas"][0]["abiertas_despues"] == 5
+
+
+def test_sin_id_tampoco_se_confunden():
+    compras = [{"fecha": "2026-01-10", "acciones": 10, "precio": 100.0},
+               {"fecha": "2026-02-10", "acciones": 10, "precio": 80.0}]
+    ventas = [{"id": "v1", "fecha": "2026-06-01", "acciones": 20, "precio": 120.0}]
+    r = lotes.reproducir(compras, ventas, lotes.FIFO)
+    assert r["acciones_abiertas"] == 0 and r["ventas"][0]["cierra_posicion"] is True
+
+
+def test_la_llave_interna_no_se_cuela_en_la_respuesta():
+    """`_k` es del reparto, no del apunte: si sale, acaba en la pantalla y en la API."""
+    compras = [{"id": "c1", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0}]
+    r = lotes.reproducir(compras, [], lotes.FIFO)
+    assert "_k" not in r["abiertos"][0] and "_libres" not in r["abiertos"][0]
+
+
+def test_cerrar_la_posicion_NO_obliga_a_coincidir_si_hubo_ventas_antes():
+    """Lo daba por hecho y es falso. Con ventas anteriores cada método dejó vivos lotes
+    distintos —FIFO gastó los viejos, LIFO los nuevos— así que las acciones que quedaban no
+    eran las mismas para uno que para otro, y su coste tampoco. Lo que coincide es el TOTAL
+    de todas las ventas, no el de la última."""
+    compras = [{"id": "viejo", "fecha": "2025-01-10", "acciones": 10, "precio": 60.0},
+               {"id": "nuevo", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0}]
+    ventas = [{"id": "v1", "fecha": "2026-06-01", "acciones": 10, "precio": 90.0},
+              {"id": "v2", "fecha": "2026-09-01", "acciones": 10, "precio": 90.0}]
+    f = lotes.reproducir(compras, ventas, lotes.FIFO)
+    l = lotes.reproducir(compras, ventas, lotes.LIFO)
+
+    ultima_f, ultima_l = f["ventas"][1], l["ventas"][1]
+    assert ultima_f["cierra_posicion"] and ultima_l["cierra_posicion"]
+    assert ultima_f["ganancia_divisa"] != ultima_l["ganancia_divisa"]
+    assert ultima_f["ventas_antes"] == 1, "hubo una venta antes: por eso pueden diferir"
+    # Y el total sí coincide, que es lo que de verdad es invariante.
+    assert f["ganancia_realizada_divisa"] == l["ganancia_realizada_divisa"] == 200.0
+
+
+def test_si_es_la_UNICA_venta_entonces_si_coinciden():
+    compras = [{"id": "viejo", "fecha": "2025-01-10", "acciones": 10, "precio": 60.0},
+               {"id": "nuevo", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0}]
+    ventas = [{"id": "v1", "fecha": "2026-09-01", "acciones": 20, "precio": 90.0}]
+    f = lotes.reproducir(compras, ventas, lotes.FIFO)["ventas"][0]
+    l = lotes.reproducir(compras, ventas, lotes.LIFO)["ventas"][0]
+    assert f["ventas_antes"] == 0 and f["cierra_posicion"]
+    assert f["ganancia_divisa"] == l["ganancia_divisa"]
+
+
+def test_se_puede_ganar_en_dolares_y_perder_en_euros():
+    """El caso de MRVL: +22,10 $ y −56,39 €. No es un fallo — es que el euro subió entre
+    las compras y la venta, así que cada dólar recuperado vale menos euros que los que se
+    pusieron. La cifra que cuenta, y la que va a Hacienda, es la de euros."""
+    compras = [{"id": "c1", "fecha": "2026-07-01", "acciones": 15, "precio": 248.30,
+                "comision": 16.12, "divisa": "USD", "tasa": 1.1414}]
+    ventas = [{"id": "v1", "fecha": "2026-08-21", "acciones": 15, "precio": 250.56,
+               "comision": 11.73, "divisa": "USD", "tasa": 1.1684}]
+    v = lotes.reproducir(compras, ventas, lotes.FIFO)["ventas"][0]
+    assert v["ganancia_divisa"] > 0, "en dólares se gana"
+    assert v["ganancia_eur"] < 0, "en euros se pierde"
+    # Y el efecto del euro explica exactamente la diferencia entre las dos.
+    sin_efecto = v["ganancia_divisa"] / 1.1684
+    assert v["ganancia_eur"] == pytest.approx(sin_efecto + v["efecto_divisa_eur"], abs=0.01)

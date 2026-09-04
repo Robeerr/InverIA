@@ -1520,3 +1520,616 @@ def test_el_resumen_dice_cuanto_hace_que_se_consulto_el_cambio():
     r = _correr(cartera_api.resumen_cartera(db, {"AAPL": 210.0}))
     assert "tasas_edad_s" in r
     assert set(r["tasas_edad_s"]) == set(r["tasas"])
+
+
+# ── Reparar lo que ya estaba importado ───────────────────────────────────────
+# Saltar las operaciones repetidas es correcto —evita duplicar— pero deja INTACTO lo que se
+# importó mal. Cuando el lector no reconocía "Tasa de cambio" (la comisión de AutoFX del CSV
+# español), cientos de operaciones entraron con comisión cero y volver a subir el fichero no
+# las arreglaba: salían como "ya estaban" y se quedaban igual. `actualizar` repara eso.
+
+def _op(huella, tipo="venta", comision=10.04):
+    return {"huella": huella, "tipo": tipo, "symbol": "MRVL", "isin": "US5738741041",
+            "producto": "MARVELL TECHNOLOGY",
+            "fecha": "2026-08-21", "hora": "15:30", "acciones": 15, "precio": 250.56,
+            "comision": comision, "divisa": "USD", "tasa": 1.1684, "orden": "X"}
+
+
+def _db_con_venta_sin_comision():
+    db = _DB([{"id": "e1", "symbol": "MRVL", "isin": "US5738741041"}])
+    db.ventas.docs.append({"id": "v1", "tipo": "venta", "symbol": "MRVL",
+                           "fecha": "2026-08-21", "acciones": 15, "precio": 250.56,
+                           "comision": 0.0, "divisa": "USD", "tasa": 1.1684,
+                           "huella": "h1"})
+    return db
+
+
+def test_sin_actualizar_la_repetida_se_salta_y_NO_se_toca():
+    db = _db_con_venta_sin_comision()
+    r = _correr(cartera_api.importar_degiro(db, [_op("h1")], {"US5738741041": "MRVL"}))
+    assert r["importadas"] == 0 and r["saltadas"] == 1
+    assert r["actualizadas"] == 0
+    assert db.ventas.docs[0]["comision"] == 0.0, "sin pedirlo, no se reescribe nada"
+
+
+def test_con_actualizar_se_recupera_la_comision():
+    db = _db_con_venta_sin_comision()
+    r = _correr(cartera_api.importar_degiro(db, [_op("h1")], {"US5738741041": "MRVL"},
+                                            actualizar=True))
+    assert r["importadas"] == 0 and r["actualizadas"] == 1
+    assert db.ventas.docs[0]["comision"] == pytest.approx(10.04)
+    assert r["comision_recuperada"] == pytest.approx(10.04)
+
+
+def test_actualizar_NO_toca_el_precio_ni_las_acciones():
+    """Ahí no había ningún fallo; reescribirlos sería arriesgar datos buenos."""
+    db = _db_con_venta_sin_comision()
+    _correr(cartera_api.importar_degiro(db, [{**_op("h1"), "precio": 999.0, "acciones": 1}],
+                                        {"US5738741041": "MRVL"}, actualizar=True))
+    v = db.ventas.docs[0]
+    assert v["precio"] == 250.56 and v["acciones"] == 15
+
+
+def test_si_la_comision_ya_estaba_bien_no_se_reescribe():
+    """Escribir por escribir haría imposible ver qué tocó de verdad la importación."""
+    db = _db_con_venta_sin_comision()
+    db.ventas.docs[0]["comision"] = 10.04
+    r = _correr(cartera_api.importar_degiro(db, [_op("h1")], {"US5738741041": "MRVL"},
+                                            actualizar=True))
+    assert r["actualizadas"] == 0 and r["comision_recuperada"] is None
+
+
+def test_se_distingue_no_pedirlo_de_no_haber_nada_que_corregir():
+    """Los dos casos acababan en el mismo mensaje —"ya estaba todo importado"— y dejaban
+    al usuario sin saber si la casilla había funcionado. Costó una ronda entera."""
+    db = _db_con_venta_sin_comision()
+    db.ventas.docs[0]["comision"] = 10.04          # ya correcta
+    sin = _correr(cartera_api.importar_degiro(db, [_op("h1")], {"US5738741041": "MRVL"}))
+    con = _correr(cartera_api.importar_degiro(db, [_op("h1")], {"US5738741041": "MRVL"},
+                                              actualizar=True))
+    assert sin["actualizar_pedido"] is False
+    assert con["actualizar_pedido"] is True
+    assert sin["actualizadas"] == con["actualizadas"] == 0
+
+
+# ── El aviso de comisiones dice CUÁLES ───────────────────────────────────────
+
+def test_el_aviso_identifica_cada_venta_sin_comision():
+    """«10 ventas» sin decir cuáles obliga a rebuscarlas entre cientos de filas."""
+    db = _DB([{"id": "e1", "symbol": "FN"}])
+    _correr(cartera_api.registrar_compra(db, "FN", 5, 100.0, fecha="2026-01-10", comision=0))
+    _correr(cartera_api.registrar_venta(db, "FN", 2, 130.0, fecha="2026-06-01", comision=0))
+
+    h = _correr(cartera_api.historial(db))
+    assert h["ventas_sin_comision"] == 1
+    d = h["ventas_sin_comision_detalle"][0]
+    assert d["symbol"] == "FN" and d["fecha"] == "2026-06-01" and d["acciones"] == 2
+    assert d["id"]
+
+
+def test_el_aviso_distingue_lo_tecleado_a_mano_de_lo_venido_del_csv():
+    """Solo lo del CSV se arregla reimportando; lo manual no tiene huella que emparejar."""
+    db = _db_con_venta_sin_comision()           # esa venta SÍ tiene huella
+    db.ventas.docs.append({"id": "v2", "tipo": "venta", "symbol": "MRVL",
+                           "fecha": "2026-08-22", "acciones": 1, "precio": 250.0,
+                           "comision": 0.0, "divisa": "USD", "tasa": 1.17})
+    h = _correr(cartera_api.historial(db))
+    assert h["ventas_sin_comision"] == 2
+    assert h["ventas_sin_comision_manuales"] == 1
+    assert {d["fecha"]: d["manual"] for d in h["ventas_sin_comision_detalle"]} \
+        == {"2026-08-21": False, "2026-08-22": True}
+
+
+def test_una_venta_con_comision_no_sale_en_el_aviso():
+    db = _db_con_venta_sin_comision()
+    db.ventas.docs[0]["comision"] = 10.04
+    h = _correr(cartera_api.historial(db))
+    assert h["ventas_sin_comision"] == 0 and h["comision_no_contada_eur"] is None
+    assert h["ventas_sin_comision_detalle"] == []
+# ── Por qué una venta parcial no cuadra con el bróker ────────────────────────
+
+def _db_tres_niveles():
+    db = _DB([{"id": "e1", "symbol": "X"}])
+    for f, p in (("2026-01-10", 100.0), ("2026-02-10", 80.0), ("2026-03-10", 60.0)):
+        _correr(cartera_api.registrar_compra(db, "X", 10, p, fecha=f, comision=2.0))
+    return db
+
+
+def test_al_cerrar_la_posicion_los_tres_metodos_coinciden():
+    """Se consumen todos los lotes, así que no queda nada que elegir."""
+    db = _db_tres_niveles()
+    _correr(cartera_api.registrar_venta(db, "X", 30, 120.0, fecha="2026-06-01", comision=2.0))
+    f = _correr(cartera_api.historial(db))["items"][0]
+    assert f["cierra_posicion"] is True and f["abiertas_despues"] == 0
+    assert f["fifo"]["ganancia_divisa"] == f["lifo"]["ganancia_divisa"] \
+        == f["ponderada"]["ganancia_divisa"]
+
+
+def test_vendiendo_por_niveles_los_tres_metodos_difieren():
+    """No es un fallo: el resultado depende de qué lote das por vendido."""
+    db = _db_tres_niveles()
+    _correr(cartera_api.registrar_venta(db, "X", 10, 120.0, fecha="2026-06-01", comision=2.0))
+    f = _correr(cartera_api.historial(db))["items"][0]
+    assert f["cierra_posicion"] is False and f["abiertas_despues"] == 20
+    assert len({f["fifo"]["ganancia_divisa"], f["lifo"]["ganancia_divisa"],
+                f["ponderada"]["ganancia_divisa"]}) == 3
+
+
+def test_la_ponderada_trae_la_ganancia_en_euros():
+    """En dólares no se puede cuadrar con la pantalla de DEGIRO, que es para lo que sirve."""
+    db = _db_tres_niveles()
+    _correr(cartera_api.registrar_venta(db, "X", 10, 120.0, fecha="2026-06-01", comision=2.0))
+    p = _correr(cartera_api.historial(db))["items"][0]["ponderada"]
+    assert p["ganancia_eur"] is not None and p["pct_eur"] is not None
+
+
+# ── Coste y valor no van en la misma moneda ──────────────────────────────────
+
+def test_una_ficha_de_nasdaq_mal_etiquetada_EUR_no_inventa_ganancia():
+    """El fallo de NVDA, exacto. Compra de 5 a 210,656 $ (1.053,28 $ = 903,71 € al 1,1655)
+    con la ficha marcada "EUR" por error (aquí al cambio 1,20 del entorno de pruebas, en su
+    cartera 1,1655). El valor tomaba el precio de NASDAQ —dólares— y
+    lo dividía entre el cambio del EURO, o sea entre 1: enseñaba 1.054,30 € sobre 903,71 €
+    de coste, +150,59 € y +16,66% en una posición comprada esa misma mañana.
+
+    Ahora el valor se convierte con el cambio de la moneda en la que COTIZA, así que las
+    dos cifras están en euros de verdad y la posición sale plana, como en el bróker.
+    """
+    db = _DB([{"id": "e1", "symbol": "NVDA", "mercado": "NASDAQ", "divisa": "EUR"}])
+    _correr(cartera_api.registrar_compra(db, "NVDA", 5, 210.656, fecha="2026-08-26",
+                                         divisa="USD", tasa=1.2, comision=0))
+    r = _correr(cartera_api.resumen_cartera(db, {"NVDA": 211.0}))
+    p = [x for x in r["posiciones"] if x["symbol"] == "NVDA"][0]
+    assert p["coste_eur"] == pytest.approx(877.73, abs=0.02)   # 1.053,28 $ / 1,20
+    assert p["valor_eur"] == pytest.approx(879.17, abs=0.02)   # 5 × 211 $ / 1,20
+    assert abs(p["pnl_eur"]) < 5, "la posición está plana; +150 € era el cambio mal aplicado"
+
+
+def test_el_mercado_manda_sobre_una_divisa_tecleada_a_mano():
+    """El mercado lo rellena el proveedor: es un hecho. El campo `divisa` se teclea."""
+    assert cartera_api.divisa_de_cotizacion(
+        {"mercado": "NASDAQ", "divisa": "EUR"}) == "USD"
+    assert cartera_api._divisa_de(None, {"mercado": "NASDAQ", "divisa": "EUR"}) == "USD"
+    # Sin mercado no hay hecho que oponer: se respeta lo tecleado.
+    assert cartera_api._divisa_de(None, {"divisa": "EUR"}) == "EUR"
+    # Y lo que venga explícito en la operación (el CSV del bróker) sigue mandando.
+    assert cartera_api._divisa_de("USD", {"mercado": "MAD"}) == "USD"
+
+
+def test_se_avisa_cuando_la_operacion_y_el_mercado_no_dicen_lo_mismo():
+    """Las cifras en euros ya salen bien, pero el precio medio "en divisa" mezcla monedas."""
+    db = _DB([{"id": "e1", "symbol": "NVDA", "mercado": "NASDAQ"}])
+    _correr(cartera_api.registrar_compra(db, "NVDA", 5, 210.0, fecha="2026-08-26",
+                                         divisa="EUR", comision=0))
+    p = [x for x in _correr(cartera_api.resumen_cartera(db, {"NVDA": 211.0}))["posiciones"]
+         if x["symbol"] == "NVDA"][0]
+    assert p["divisa_cotizacion"] == "USD" and p["divisa"] == "EUR"
+    assert p["divisa_incoherente"] is True
+
+
+# ── Por qué el latente no coincide con el del bróker ─────────────────────────
+
+def test_se_dice_a_que_cambio_medio_se_convirtio_el_coste():
+    """El caso NFLX: mismo precio y mismas acciones que el bróker, 131 € de diferencia en
+    la ganancia, y toda la diferencia estaba en el cambio con el que se pasó a euros."""
+    db = _DB([{"id": "e1", "symbol": "NFLX", "mercado": "NASDAQ"}])
+    _correr(cartera_api.registrar_compra(db, "NFLX", 40, 76.33, fecha="2026-01-10",
+                                         divisa="USD", tasa=1.05, comision=0))
+    _correr(cartera_api.registrar_compra(db, "NFLX", 40, 76.33, fecha="2026-03-10",
+                                         divisa="USD", tasa=1.25, comision=0))
+    r = _correr(cartera_api.estado_simbolo(db, "NFLX", precio_actual=80.0))
+    # Ponderada POR COSTE, no la media de los dos cambios (1,15), que sería otra cifra:
+    # el lote convertido a 1,05 pesa más en euros que el convertido a 1,25. Las comisiones
+    # entran en el coste por los dos lados, así que no mueven el cociente casi nada.
+    assert r["cambio_medio_compras"] == pytest.approx(1.1413, abs=0.001)
+    assert r["cambio_hoy"] is not None
+
+
+def test_se_dice_cuantas_acciones_NO_vienen_del_csv():
+    """Son las sospechosas: su fecha es la del alta, no la de la compra, así que su cambio
+    tampoco es el del día en que compraste."""
+    db = _DB([{"id": "e1", "symbol": "NFLX", "mercado": "NASDAQ"}])
+    _correr(cartera_api.registrar_compra(db, "NFLX", 10, 76.33, fecha="2026-01-10",
+                                         divisa="USD", tasa=1.05, comision=0))
+    db.compras.docs[0]["huella"] = "h1"          # esta vino del CSV
+    # Y esta, de la FOTO de posiciones: es la que lleva una fecha inventada. Una compra
+    # tecleada a mano no cuenta —su fecha es la que pusiste tú— y por eso lleva la nota.
+    _correr(cartera_api.registrar_compra(db, "NFLX", 30, 76.33, fecha="2026-03-10",
+                                         divisa="USD", tasa=1.25, comision=0,
+                                         notas="Importada de tu Cartera. reparto estimado"))
+    r = _correr(cartera_api.estado_simbolo(db, "NFLX", precio_actual=80.0))
+    assert r["acciones_abiertas_total"] == 40 and r["acciones_sin_csv"] == 30
+
+
+def test_el_resumen_dice_que_posiciones_arrastran_lotes_sin_csv():
+    """Para poder listarlas todas de una vez en vez de abrirlas una a una."""
+    db = _DB([{"id": "e1", "symbol": "NFLX", "mercado": "NASDAQ"},
+              {"id": "e2", "symbol": "META", "mercado": "NASDAQ"}])
+    _correr(cartera_api.registrar_compra(db, "NFLX", 10, 76.33, fecha="2026-01-10",
+                                         divisa="USD", tasa=1.05, comision=0))
+    _correr(cartera_api.registrar_compra(db, "META", 5, 558.54, fecha="2026-01-10",
+                                         divisa="USD", tasa=1.05, comision=0))
+    db.compras.docs[1]["huella"] = "h1"          # META sí vino del CSV
+    # NFLX, de la foto: sin la nota sería una compra tecleada y no habría nada que avisar.
+    db.compras.docs[0]["notas"] = "Importada de tu Cartera. reparto estimado"
+    pos = {p["symbol"]: p for p in _correr(
+        cartera_api.resumen_cartera(db, {"NFLX": 80.0, "META": 560.0}))["posiciones"]}
+    assert pos["NFLX"]["acciones_sin_csv"] == 10
+    assert pos["META"]["acciones_sin_csv"] == 0
+    assert pos["NFLX"]["cambio_medio_compras"] is not None
+
+
+def test_se_dice_con_que_precio_se_valoro_y_cual_era_el_cierre_anterior():
+    """Es la única cifra de la posición que no sale de tus apuntes. En NFLX el desvío con
+    DEGIRO —121,80 €— era exactamente esto: 81,78 $ aquí contra 80,01 $ allí, con el mismo
+    coste, el mismo cambio y el mismo método. Sin verlo, no había forma de saberlo."""
+    db = _DB([{"id": "e1", "symbol": "NFLX", "mercado": "NASDAQ",
+               "previous_close": 80.01, "market_state": "REGULAR"}])
+    _correr(cartera_api.registrar_compra(db, "NFLX", 80, 76.366, fecha="2026-08-13",
+                                         divisa="USD", tasa=1.1539, comision=0))
+    r = _correr(cartera_api.estado_simbolo(db, "NFLX", precio_actual=81.78))
+    assert r["precio_actual"] == 81.78
+    assert r["cierre_anterior"] == 80.01
+    assert r["estado_mercado"] == "REGULAR"
+
+
+# ── Compras duplicadas ───────────────────────────────────────────────────────
+
+def test_se_detecta_la_misma_compra_metida_a_mano_y_traida_del_csv():
+    """El caso NFLX: 30 acciones tecleadas a 76,00 $ el 13/08 y la MISMA compra importada
+    del CSV a 76,01. Un céntimo de diferencia, así que no se emparejan; en pantalla salían
+    80 acciones donde el bróker tenía 50 y unos +140 € de ganancia inexistente.
+
+    Una compra duplicada no descuadra nada contable —no deja ventas sin cubrir— así que
+    nadie la busca: solo infla la posición, y por eso hay que avisar."""
+    db = _DB([{"id": "e1", "symbol": "NFLX", "mercado": "NASDAQ"}])
+    _correr(cartera_api.registrar_compra(db, "NFLX", 30, 76.00, fecha="2026-08-13",
+                                         divisa="USD", tasa=1.15, comision=0))
+    _correr(cartera_api.registrar_compra(db, "NFLX", 30, 76.01, fecha="2026-08-13",
+                                         divisa="USD", tasa=1.15, comision=0))
+    db.compras.docs[1]["huella"] = "h1"          # esta vino del CSV
+    _correr(cartera_api.registrar_venta(db, "NFLX", 1, 80.0, fecha="2026-08-20", comision=0))
+
+    d = _correr(cartera_api.historial(db))["posibles_compras_duplicadas"]
+    assert len(d) == 1
+    assert d[0]["symbol"] == "NFLX" and d[0]["fecha"] == "2026-08-13"
+    assert d[0]["acciones_de_mas"] == 30
+    assert d[0]["precios"] == [76.0, 76.01], "los dos precios, para poder ver cuál tecleaste"
+    assert d[0]["ids_manuales"] == [db.compras.docs[0]["id"]], "solo se ofrece borrar la copia manual"
+
+
+def test_dos_compras_iguales_TODAS_del_csv_no_son_sospechosas():
+    """Comprar dos veces el mismo día es normal y el CSV no se duplica a sí mismo."""
+    db = _DB([{"id": "e1", "symbol": "NFLX", "mercado": "NASDAQ"}])
+    for i in range(2):
+        _correr(cartera_api.registrar_compra(db, "NFLX", 30, 76.0, fecha="2026-08-13",
+                                             divisa="USD", tasa=1.15, comision=0))
+        db.compras.docs[i]["huella"] = f"h{i}"
+    _correr(cartera_api.registrar_venta(db, "NFLX", 1, 80.0, fecha="2026-08-20", comision=0))
+    assert _correr(cartera_api.historial(db))["posibles_compras_duplicadas"] == []
+
+
+def test_dos_compras_a_mano_el_mismo_dia_tampoco_se_tocan():
+    """Sin ninguna del CSV no hay nada con qué comparar: podrían ser dos compras de verdad."""
+    db = _DB([{"id": "e1", "symbol": "NFLX", "mercado": "NASDAQ"}])
+    for _ in range(2):
+        _correr(cartera_api.registrar_compra(db, "NFLX", 30, 76.0, fecha="2026-08-13",
+                                             divisa="USD", tasa=1.15, comision=0))
+    _correr(cartera_api.registrar_venta(db, "NFLX", 1, 80.0, fecha="2026-08-20", comision=0))
+    assert _correr(cartera_api.historial(db))["posibles_compras_duplicadas"] == []
+
+
+# ── Vacío no es cero ─────────────────────────────────────────────────────────
+
+def test_una_venta_sin_comision_indicada_se_estima():
+    """El formulario promete "se estima sola". Enviando 0 en vez de vacío, esa promesa no
+    se cumplía nunca: cada venta tecleada entraba a coste cero y acababa en el aviso de
+    ventas sin comisión, inflando la ganancia realizada."""
+    db = _DB([{"id": "e1", "symbol": "NVDA", "mercado": "NASDAQ"}])
+    _correr(cartera_api.registrar_compra(db, "NVDA", 5, 200.0, fecha="2026-08-01",
+                                         divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.registrar_venta(db, "NVDA", 5, 222.94, fecha="2026-08-27",
+                                        divisa="USD"))          # sin comisión: vacía
+    v = db.ventas.docs[0]
+    assert v["comision"] > 0, "una venta a coste cero infla la ganancia sin decirlo"
+    assert v["comision_estimada"] is True, "y hay que poder distinguirla de un dato real"
+
+
+def test_un_cero_puesto_a_proposito_se_respeta():
+    """Cero es una afirmación —esta operación no me costó nada— y no se pisa."""
+    db = _DB([{"id": "e1", "symbol": "NVDA", "mercado": "NASDAQ"}])
+    _correr(cartera_api.registrar_compra(db, "NVDA", 5, 200.0, fecha="2026-08-01",
+                                         divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.registrar_venta(db, "NVDA", 5, 222.94, fecha="2026-08-27",
+                                        divisa="USD", comision=0))
+    assert db.ventas.docs[0]["comision"] == 0
+    assert db.ventas.docs[0]["comision_estimada"] is False
+
+
+# ── Reparar las comisiones que se quedaron a cero ────────────────────────────
+
+def _db_con_apuntes_a_cero():
+    db = _DB([{"id": "e1", "symbol": "NVDA", "mercado": "NASDAQ"}])
+    _correr(cartera_api.registrar_compra(db, "NVDA", 5, 200.0, fecha="2026-08-01",
+                                         divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.registrar_venta(db, "NVDA", 5, 222.94, fecha="2026-08-27",
+                                        divisa="USD", tasa=1.16, comision=0))
+    return db
+
+
+def test_sin_aplicar_solo_dice_lo_que_haria():
+    """Reescribir apuntes del usuario sin enseñar antes qué se toca no es aceptable."""
+    db = _db_con_apuntes_a_cero()
+    r = _correr(cartera_api.estimar_comisiones_pendientes(db))
+    assert r["aplicado"] is False
+    assert r["compras"] == 1 and r["ventas"] == 1 and r["total_eur"] > 0
+    assert db.ventas.docs[0]["comision"] == 0, "sin pedirlo no se escribe nada"
+
+
+def test_al_aplicar_se_pone_la_estimacion_y_queda_marcada():
+    db = _db_con_apuntes_a_cero()
+    r = _correr(cartera_api.estimar_comisiones_pendientes(db, aplicar=True))
+    assert r["aplicado"] is True and r["ventas"] == 1
+    v = db.ventas.docs[0]
+    assert v["comision"] > 0 and v["comision_estimada"] is True
+    assert v["comision_detalle"], "sin desglose no se puede cuadrar con el extracto"
+
+
+def test_NO_se_toca_lo_que_vino_del_csv_aunque_este_a_cero():
+    """Con huella, la comisión es la del fichero. Si es cero, de verdad fue cero:
+    sustituirla por una estimación cambiaría un dato bueno por uno inventado."""
+    db = _db_con_apuntes_a_cero()
+    db.ventas.docs[0]["huella"] = "h1"
+    r = _correr(cartera_api.estimar_comisiones_pendientes(db, aplicar=True))
+    assert r["ventas"] == 0
+    assert db.ventas.docs[0]["comision"] == 0
+
+
+def test_una_comision_real_ya_puesta_no_se_pisa():
+    db = _db_con_apuntes_a_cero()
+    db.ventas.docs[0]["comision"] = 10.04
+    r = _correr(cartera_api.estimar_comisiones_pendientes(db, aplicar=True))
+    assert r["ventas"] == 0
+    assert db.ventas.docs[0]["comision"] == 10.04
+
+
+def test_aplicarlo_dos_veces_no_suma_dos_veces():
+    """La segunda pasada ya no encuentra nada a cero: es idempotente."""
+    db = _db_con_apuntes_a_cero()
+    _correr(cartera_api.estimar_comisiones_pendientes(db, aplicar=True))
+    antes = db.ventas.docs[0]["comision"]
+    r = _correr(cartera_api.estimar_comisiones_pendientes(db, aplicar=True))
+    assert r["ventas"] == 0 and r["compras"] == 0
+    assert db.ventas.docs[0]["comision"] == antes
+
+
+def test_reparar_baja_la_ganancia_realizada():
+    """Es el objetivo entero: la ganancia estaba inflada por las comisiones que faltaban."""
+    db = _db_con_apuntes_a_cero()
+    antes = _correr(cartera_api.historial(db))["resumen"]["lifo"]["ganancia_eur"]
+    _correr(cartera_api.estimar_comisiones_pendientes(db, aplicar=True))
+    despues = _correr(cartera_api.historial(db))["resumen"]["lifo"]["ganancia_eur"]
+    assert despues < antes
+    assert _correr(cartera_api.historial(db))["ventas_sin_comision"] == 0
+
+
+# ── Por qué se salta cada fila ───────────────────────────────────────────────
+
+def test_la_importacion_dice_POR_QUE_se_salta_cada_fila():
+    """«Ya estaba todo importado (443 operaciones)» no se puede accionar: con eso delante
+    no se distingue un fichero que en efecto ya está entero de otro cuyas filas están
+    siendo tapadas por apuntes manuales, que es un problema y bien distinto."""
+    db = _DB([{"id": "e1", "symbol": "RH", "isin": "US74967X1037"}])
+    # Un apunte tecleado a mano que coincide con una fila del fichero.
+    _correr(cartera_api.registrar_compra(db, "RH", 5, 140.76, fecha="2026-08-25",
+                                         divisa="USD", tasa=1.16, comision=0))
+    op = {"huella": "h1", "tipo": "compra", "symbol": "RH", "isin": "US74967X1037",
+          "producto": "RH", "fecha": "2026-08-25", "hora": "16:00", "acciones": 5,
+          "precio": 140.76, "comision": 2.0, "divisa": "USD", "tasa": 1.16, "orden": "X"}
+    r = _correr(cartera_api.importar_degiro(db, [op], {"US74967X1037": "RH"}))
+
+    assert r["importadas"] == 0 and r["saltadas"] == 1
+    assert r["motivos_salto"]["la_tapa_un_apunte_manual"] == 1
+    assert r["motivos_salto"]["ya_estaba"] == 0
+    assert r["tapadas_por_symbol"] == [{"symbol": "RH", "filas": 1, "acciones": 5}]
+
+
+def test_una_fila_que_de_verdad_ya_estaba_se_cuenta_aparte():
+    db = _DB([{"id": "e1", "symbol": "RH", "isin": "US74967X1037"}])
+    op = {"huella": "h1", "tipo": "compra", "symbol": "RH", "isin": "US74967X1037",
+          "producto": "RH", "fecha": "2026-08-25", "hora": "16:00", "acciones": 5,
+          "precio": 140.76, "comision": 2.0, "divisa": "USD", "tasa": 1.16, "orden": "X"}
+    _correr(cartera_api.importar_degiro(db, [op], {"US74967X1037": "RH"}))
+    r = _correr(cartera_api.importar_degiro(db, [op], {"US74967X1037": "RH"}))
+    assert r["motivos_salto"]["ya_estaba"] == 1
+    assert r["motivos_salto"]["la_tapa_un_apunte_manual"] == 0
+    assert r["tapadas_por_symbol"] == []
+
+
+# ── Sustituir mis apuntes por los del fichero ────────────────────────────────
+
+def _op_rh(huella="h1", comision=2.0):
+    return {"huella": huella, "tipo": "compra", "symbol": "RH", "isin": "US74967X1037",
+            "producto": "RH", "fecha": "2026-08-25", "hora": "16:00", "acciones": 5,
+            "precio": 140.76, "comision": comision, "divisa": "USD", "tasa": 1.1584,
+            "orden": "X"}
+
+
+def _db_con_apunte_que_tapa():
+    db = _DB([{"id": "e1", "symbol": "RH", "isin": "US74967X1037"}])
+    _correr(cartera_api.registrar_compra(db, "RH", 5, 140.76, fecha="2026-08-25",
+                                         divisa="USD", tasa=1.16, comision=0))
+    return db
+
+
+def test_sin_pedirlo_el_apunte_manual_sigue_tapando():
+    db = _db_con_apunte_que_tapa()
+    r = _correr(cartera_api.importar_degiro(db, [_op_rh()], {"US74967X1037": "RH"}))
+    assert r["importadas"] == 0 and r["sustituidas"] == 0
+    assert len(db.compras.docs) == 1 and not db.compras.docs[0].get("huella")
+
+
+def test_al_sustituir_entra_la_del_fichero_con_su_comision_y_su_cambio_reales():
+    """Es la MISMA operación —fecha, acciones y precio coinciden al cuarto decimal—; lo que
+    cambia es que la del fichero trae lo que DEGIRO te cobró de verdad."""
+    db = _db_con_apunte_que_tapa()
+    r = _correr(cartera_api.importar_degiro(db, [_op_rh()], {"US74967X1037": "RH"},
+                                            sustituir=True))
+    assert r["sustituidas"] == 1 and r["importadas"] == 1
+    assert r["sustituidas_por_symbol"] == [{"symbol": "RH", "apuntes": 1, "acciones": 5}]
+    assert len(db.compras.docs) == 1, "una entra, otra se va: la posición no cambia"
+    c = db.compras.docs[0]
+    assert c["huella"] == "h1" and c["comision"] == 2.0 and c["tasa"] == 1.1584
+
+
+def test_sustituir_no_toca_un_apunte_que_no_esta_en_el_fichero():
+    """Una operación tuya que el CSV no contiene no se puede sustituir por nada."""
+    db = _db_con_apunte_que_tapa()
+    _correr(cartera_api.registrar_compra(db, "RH", 7, 99.0, fecha="2026-01-05",
+                                         divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.importar_degiro(db, [_op_rh()], {"US74967X1037": "RH"},
+                                        sustituir=True))
+    suelta = [c for c in db.compras.docs if c["acciones"] == 7]
+    assert len(suelta) == 1 and not suelta[0].get("huella")
+
+
+def test_sustituir_no_duplica_si_se_repite():
+    """La segunda pasada ya encuentra la huella: no hay nada que sustituir ni que importar."""
+    db = _db_con_apunte_que_tapa()
+    _correr(cartera_api.importar_degiro(db, [_op_rh()], {"US74967X1037": "RH"},
+                                        sustituir=True))
+    r = _correr(cartera_api.importar_degiro(db, [_op_rh()], {"US74967X1037": "RH"},
+                                            sustituir=True))
+    assert r["sustituidas"] == 0 and r["importadas"] == 0
+    assert r["motivos_salto"]["ya_estaba"] == 1
+    assert len(db.compras.docs) == 1
+
+
+def test_un_apunte_manual_tapa_UNA_fila_y_no_dos():
+    """DEGIRO parte una orden en ejecuciones idénticas. Un apunte tuyo sustituye a una."""
+    db = _db_con_apunte_que_tapa()
+    r = _correr(cartera_api.importar_degiro(
+        db, [_op_rh("h1"), _op_rh("h2")], {"US74967X1037": "RH"}, sustituir=True))
+    assert r["sustituidas"] == 1 and r["importadas"] == 2
+    assert len(db.compras.docs) == 2 and all(c.get("huella") for c in db.compras.docs)
+
+
+# ── Una compra recién tecleada no es un lote de la foto ──────────────────────
+
+def test_una_compra_de_hoy_no_sale_en_el_aviso_de_lotes_sin_csv():
+    """El CSV de hoy todavía no existe, así que una compra que acabas de meter tampoco
+    tiene huella. Acusarla de llevar «la fecha del alta y no la de tu compra» —que en una
+    compra de hoy es la misma fecha— y mandar a borrarla y reimportar un fichero que no
+    puede contenerla es mandar al usuario a destruir un dato bueno."""
+    db = _DB([{"id": "e1", "symbol": "MP", "mercado": "NYSE"}])
+    _correr(cartera_api.registrar_compra(db, "MP", 15, 50.0, fecha="2026-09-03",
+                                         divisa="USD", tasa=1.16, comision=0))
+    r = _correr(cartera_api.estado_simbolo(db, "MP", precio_actual=51.0))
+    assert r["acciones_sin_csv"] == 0
+
+
+def test_un_lote_de_la_foto_si_sale():
+    """Esos sí llevan una fecha inventada: la del día en que se importó la posición."""
+    db = _DB([{"id": "e1", "symbol": "MP", "mercado": "NYSE"}])
+    _correr(cartera_api.registrar_compra(db, "MP", 15, 50.0, fecha="2026-09-03",
+                                         divisa="USD", tasa=1.16, comision=0,
+                                         notas="Importada de tu Cartera. reparto estimado"))
+    r = _correr(cartera_api.estado_simbolo(db, "MP", precio_actual=51.0))
+    assert r["acciones_sin_csv"] == 15
+
+
+# ── Cerrar la posición obliga a que los tres métodos coincidan ───────────────
+
+def test_la_alarma_NO_salta_cuando_hubo_ventas_antes():
+    """Es el caso normal de esta cartera: se vende por niveles y la última venta cierra.
+    Ahí los métodos difieren porque cada uno dejó vivos lotes distintos, no porque el libro
+    esté roto. La alarma anterior habría acusado a datos sanos."""
+    db = _DB([{"id": "e1", "symbol": "UBER", "mercado": "NYSE"}])
+    _correr(cartera_api.registrar_compra(db, "UBER", 10, 60.0, fecha="2025-01-10",
+                                         divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.registrar_compra(db, "UBER", 10, 100.0, fecha="2026-01-10",
+                                         divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.registrar_venta(db, "UBER", 10, 90.0, fecha="2026-06-01",
+                                        divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.registrar_venta(db, "UBER", 10, 90.0, fecha="2026-09-01",
+                                        divisa="USD", tasa=1.16, comision=0))
+    ultima = _correr(cartera_api.historial(db))["items"][0]
+    assert ultima["cierra_posicion"] is True and ultima["ventas_antes"] == 1
+    assert ultima["fifo"]["ganancia_divisa"] != ultima["lifo"]["ganancia_divisa"]
+    assert ultima["metodos_incoherentes"] is False
+
+
+def test_si_cierra_la_posicion_y_los_metodos_no_coinciden_se_avisa():
+    """Es un estado imposible: al vender todos los lotes no queda nada que elegir, así que
+    los tres métodos dan lo mismo. Si difieren, el libro tiene lotes que no deberían estar
+    —o le faltan— y la cifra está calculada sobre un conjunto que no es el real. Imprimir
+    «los tres coinciden» encima es afirmar algo que la propia pantalla desmiente."""
+    vf = {"ganancia_divisa": 34.0, "cierra_posicion": True, "id": "v1"}
+    vl = {"ganancia_divisa": -259.68}
+    assert cartera_api._coinciden(vf, vl) is False
+    assert cartera_api._coinciden(vf, {"ganancia_divisa": 34.005}) is True
+
+
+def test_una_venta_normal_no_dispara_la_alarma():
+    """Cerrando de verdad, los tres coinciden y no hay nada que avisar."""
+    db = _DB([{"id": "e1", "symbol": "UBER", "mercado": "NYSE"}])
+    _correr(cartera_api.registrar_compra(db, "UBER", 10, 80.0, fecha="2026-01-10",
+                                         divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.registrar_venta(db, "UBER", 10, 78.0, fecha="2026-09-03",
+                                        divisa="USD", tasa=1.16, comision=0))
+    f = _correr(cartera_api.historial(db))["items"][0]
+    assert f["cierra_posicion"] is True and f["metodos_incoherentes"] is False
+
+
+def test_el_resumen_trae_el_total_por_media_ponderada():
+    """Sin él, el interruptor «Ver como en DEGIRO» solo podía cambiar la tabla de
+    posiciones: el realizado de arriba seguía en FIFO/LIFO, así que la pantalla enseñaba a
+    la vez dos métodos sin decirlo."""
+    db = _DB([{"id": "e1", "symbol": "X", "mercado": "NASDAQ"}])
+    _correr(cartera_api.registrar_compra(db, "X", 10, 100.0, fecha="2026-01-10",
+                                         divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.registrar_compra(db, "X", 10, 60.0, fecha="2026-02-10",
+                                         divisa="USD", tasa=1.16, comision=0))
+    _correr(cartera_api.registrar_venta(db, "X", 10, 90.0, fecha="2026-06-01",
+                                        divisa="USD", tasa=1.16, comision=0))
+    r = _correr(cartera_api.historial(db))["resumen"]
+    for metodo in ("fifo", "lifo", "ponderada"):
+        assert r[metodo]["ganancia_eur"] is not None, metodo
+    # Vendiendo la mitad, los tres miden cosas distintas: si coincidieran, el interruptor
+    # no cambiaría nada y no haría falta.
+    assert len({round(r[m]["ganancia_divisa"], 2)
+                for m in ("fifo", "lifo", "ponderada")}) == 3
+
+
+def test_el_TOTAL_no_depende_del_metodo():
+    """La propiedad que hace útil esa cifra: lo que un método se apunta de más en lo
+    realizado, el otro se lo guarda en el latente. Sumados dan lo mismo.
+
+    Es también lo que obliga a que el interruptor «como en DEGIRO» cambie los DOS a la vez:
+    sumar el realizado de un método con el latente de otro da un total que no es de nadie.
+    """
+    def _db():
+        db = _DB([{"id": "e1", "symbol": "X", "mercado": "NASDAQ"}])
+        _correr(cartera_api.registrar_compra(db, "X", 10, 100.0, fecha="2026-01-10",
+                                             divisa="USD", tasa=1.16, comision=0))
+        _correr(cartera_api.registrar_compra(db, "X", 10, 60.0, fecha="2026-02-10",
+                                             divisa="USD", tasa=1.16, comision=0))
+        _correr(cartera_api.registrar_venta(db, "X", 10, 90.0, fecha="2026-06-01",
+                                            divisa="USD", tasa=1.16, comision=0))
+        return db
+
+    totales = {}
+    for metodo in ("FIFO", "LIFO"):
+        db = _db()
+        _correr(cartera_api.guardar_metodo_gestion(db, metodo))
+        r = _correr(cartera_api.resumen_cartera(db, {"X": 90.0}))
+        h = _correr(cartera_api.historial(db))["resumen"]
+        totales[metodo] = round(h[metodo.lower()]["ganancia_eur"] + r["latente_eur"], 2)
+
+    # Y la media ponderada, que es la del bróker, tiene que dar el mismo total.
+    db = _db()
+    r = _correr(cartera_api.resumen_cartera(db, {"X": 90.0}))
+    h = _correr(cartera_api.historial(db))["resumen"]
+    totales["PMP"] = round(h["ponderada"]["ganancia_eur"] + r["latente_ponderada_eur"], 2)
+
+    assert len(set(totales.values())) == 1, f"el total baila con el método: {totales}"
