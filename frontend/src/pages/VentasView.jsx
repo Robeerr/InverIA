@@ -1316,7 +1316,10 @@ function CeldaValorHoy({ p }) {
 
 function FormularioOperacion({ tipo, onHecho, onCerrar }) {
   const hoy = new Date().toISOString().slice(0, 10);
-  const [f, setF] = React.useState({ symbol: "", acciones: "", precio: "", comision: "", fecha: hoy, notas: "", nivel: "" });
+  // `niveles` es una LISTA, no un nivel: una sola orden puede cruzar dos o tres cuando la
+  // acción cae mucho. `reparto` guarda cuántas acciones van en cada uno cuando hay varios.
+  const [f, setF] = React.useState({ symbol: "", acciones: "", precio: "", comision: "",
+                                     fecha: hoy, notas: "", niveles: [], reparto: {} });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   const qc = useQueryClient();
 
@@ -1333,7 +1336,9 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
   });
 
   const mut = useMutation({
-    mutationFn: (payload) => (tipo === "compra" ? api.cartera.comprar(payload) : api.cartera.vender(payload)),
+    mutationFn: ({ _multinivel, ...payload }) =>
+      (_multinivel ? api.cartera.comprarMultinivel(payload)
+        : tipo === "compra" ? api.cartera.comprar(payload) : api.cartera.vender(payload)),
     onSuccess: (r) => {
       toast.success(tipo === "compra" ? "Compra registrada" : "Venta registrada");
       // Un nivel vendido entero reactiva su campanita solo. Decirlo aquí ahorra ir a la
@@ -1353,6 +1358,29 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
     onError: (e) => toast.error(e?.response?.data?.detail || "No se pudo guardar"),
   });
 
+  // Reparto sugerido: a partes iguales, y el primero se lleva el resto cuando no divide
+  // exacto (13 en dos niveles son 7 y 6, no 6,5 y 6,5 — no existen medias acciones aquí).
+  const repartoSugerido = React.useMemo(() => {
+    const niveles = f?.niveles || [];
+    const total = aNumero(f?.acciones) || 0;
+    if (niveles.length < 2 || total <= 0) return {};
+    const base = Math.floor(total / niveles.length);
+    const out = {};
+    niveles.forEach((n, i) => { out[n] = i === 0 ? total - base * (niveles.length - 1) : base; });
+    return out;
+  }, [f?.niveles, f?.acciones]);
+
+  const repartoFinal = React.useMemo(() => {
+    const out = {};
+    for (const n of f?.niveles || []) {
+      out[n] = aNumero((f?.reparto || {})[n]) ?? repartoSugerido[n] ?? 0;
+    }
+    return out;
+  }, [f?.niveles, f?.reparto, repartoSugerido]);
+
+  const sumaReparto = (f?.niveles || []).length > 1
+    ? Object.values(repartoFinal).reduce((s, x) => s + (x || 0), 0) : null;
+
   const enviar = (e) => {
     e.preventDefault();
     const sym = f.symbol.trim().toUpperCase();
@@ -1371,11 +1399,26 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
     // ganancia realizada. La previsualización de al lado ya distinguía los dos casos; lo
     // que se enviaba, no.
     const vacia = f.comision == null || String(f.comision).trim() === "";
+    const niveles = tipo === "compra" ? (f.niveles || []) : [];
+    if (niveles.length > 1) {
+      // Una orden repartida: tiene su propia ruta porque la comisión se cobra UNA vez y se
+      // prorratea. Mandar dos compras sueltas cobraría los 2 € fijos de DEGIRO dos veces.
+      if (Math.abs((sumaReparto || 0) - n) > 1e-6) {
+        return toast.error(`Los niveles suman ${sumaReparto} y la compra son ${n}`);
+      }
+      return mut.mutate({
+        _multinivel: true,
+        symbol: sym, precio: p,
+        reparto: niveles.map((nv) => ({ nivel: nv, acciones: repartoFinal[nv] })),
+        ...(vacia ? {} : { comision: aNumero(f.comision) || 0 }),
+        fecha: f.fecha || hoy, notas: f.notas || "",
+      });
+    }
     mut.mutate({
       symbol: sym, acciones: n, precio: p,
       ...(vacia ? {} : { comision: aNumero(f.comision) || 0 }),
       fecha: f.fecha || hoy, notas: f.notas || "",
-      ...(tipo === "compra" && f.nivel ? { nivel: f.nivel } : {}),
+      ...(tipo === "compra" && niveles.length === 1 ? { nivel: niveles[0] } : {}),
     });
   };
 
@@ -1417,34 +1460,87 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
             "esta compra es mi Nivel 1", que es justo cuando más falta hace.
             Manda el precio al que compraste: al elegir nivel, ese nivel de la Cartera
             pasa a valer tu precio de compra —lo escribas o no estuviera antes—. */}
+        {/* VARIOS niveles, no uno. Cuando una acción cae mucho, una sola orden puede
+            cruzar dos o tres niveles: 12 acciones que son 6 del Nivel 1 y 6 del 2. Con un
+            desplegable de una opción había que mentir —elegir uno— o partir la compra a
+            mano en dos formularios, y entonces DEGIRO cobra una comisión pero la web
+            apuntaba dos. Aquí se marcan los que sean y se reparten las acciones. */}
         {tipo === "compra" && (
           <Campo label="¿De qué nivel es?"
-                 ayuda="Elige el nivel y el precio de ese nivel en la Cartera pasará a ser tu precio real de compra, con su campanita apagada. Si el nivel estaba vacío, queda fijado con tu compra. En automático solo se detecta si el precio cae a menos del 1,5% de un nivel que YA tenga precio.">
-            <select value={f.nivel} onChange={set("nivel")} className={inputCls}>
-              <option value="">detectar solo (±1,5%)</option>
+                 ayuda="Marca uno o varios. El precio de cada nivel marcado pasará a ser tu precio real de compra, con su campanita apagada. Si marcas más de uno, di cuántas acciones van en cada uno: se guardan como lotes separados, que es lo que son, y la comisión se reparte entre ellos en vez de cobrarse dos veces. Sin marcar nada, el nivel se detecta solo si el precio cae a menos del 1,5% de uno que ya tenga precio.">
+            <div className="flex flex-wrap gap-1.5">
               {[1, 2, 3, 4, 5].map((i) => {
                 const clave = `nivel${i}`;
                 const puesto = (pos?.niveles || []).find((n) => n.nivel === clave);
                 const moneda = pos?.divisa === "EUR" ? "€" : "$";
+                const marcado = (f.niveles || []).includes(clave);
                 return (
-                  <option key={clave} value={clave}>
-                    Nivel {i}
-                    {puesto
-                      ? ` · ahora ${puesto.precio} ${moneda}${puesto.comprado ? " · ya comprado" : ""}`
-                      : " · sin precio todavía"}
-                  </option>
+                  <button key={clave} type="button"
+                          onClick={() => setF((p) => {
+                            const ya = p.niveles || [];
+                            return { ...p, niveles: ya.includes(clave)
+                              ? ya.filter((x) => x !== clave) : [...ya, clave].sort() };
+                          })}
+                          title={puesto
+                            ? `Ahora vale ${puesto.precio} ${moneda}${puesto.comprado ? " · ya comprado" : ""}`
+                            : "Sin precio todavía: quedará fijado con tu compra"}
+                          className={`text-[11px] rounded px-2 py-1 border transition-colors ${marcado
+                            ? "bg-marca text-marca-tinta border-marca font-semibold"
+                            : "border-linea text-tinta-3 hover:text-tinta"}`}>
+                    N{i}
+                  </button>
                 );
               })}
-            </select>
+              {(f.niveles || []).length > 0 && (
+                <button type="button" onClick={() => setF((p) => ({ ...p, niveles: [] }))}
+                        className="text-[11px] text-tinta-3 underline px-1">
+                  quitar
+                </button>
+              )}
+            </div>
           </Campo>
         )}
       </div>
 
+      {/* El reparto, solo cuando hay más de un nivel. Se prerrellena a partes iguales
+          porque es el caso normal, pero se puede corregir: entrar 8 en uno y 4 en otro es
+          tan legítimo como 6 y 6, y adivinarlo mal sería peor que preguntarlo. */}
+      {tipo === "compra" && (f.niveles || []).length > 1 && (
+        <div className="rounded border border-linea px-3 py-2 space-y-1.5">
+          <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono">
+            ¿Cuántas acciones en cada nivel?
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {f.niveles.map((clave) => (
+              <label key={clave} className="flex items-center gap-1.5">
+                <span className="text-[11px] text-tinta-2 font-mono">
+                  {NIVEL_ETIQUETA[clave] || clave}
+                </span>
+                <input value={(f.reparto || {})[clave] ?? ""}
+                       onChange={(e) => setF((p) => ({
+                         ...p, reparto: { ...(p.reparto || {}), [clave]: e.target.value } }))}
+                       inputMode="decimal" placeholder={repartoSugerido[clave] ?? ""}
+                       className="w-16 bg-fondo border border-linea rounded px-2 py-1 font-mono text-[11px]" />
+              </label>
+            ))}
+          </div>
+          {sumaReparto != null && aNumero(f.acciones) > 0
+            && Math.abs(sumaReparto - aNumero(f.acciones)) > 1e-6 && (
+            <p className="text-[11px] text-aviso">
+              Los niveles suman {sumaReparto} y la compra son {aNumero(f.acciones)}.
+              Tienen que cuadrar.
+            </p>
+          )}
+        </div>
+      )}
+
       {tipo === "compra" && (
         <p className="text-[11px] text-tinta-3">
-          {f.nivel
-            ? `El ${NIVEL_ETIQUETA[f.nivel] || f.nivel} de la Cartera pasará a valer tu precio real de compra${f.precio ? ` (${f.precio})` : ""}, y su campanita se apagará sola.`
-            : "El nivel se detecta solo si el precio cae a menos del 1,5% de alguno de tus niveles; si compraste algo desviado, elígelo arriba y el precio del nivel en la Cartera se actualizará al tuyo."}
+          {(f.niveles || []).length > 1
+            ? `Se guardarán ${f.niveles.length} lotes, uno por nivel, y cada uno de esos niveles pasará a valer tu precio real de compra${f.precio ? ` (${f.precio})` : ""}. La comisión se reparte entre ellos: es una sola orden.`
+            : (f.niveles || []).length === 1
+            ? `El ${NIVEL_ETIQUETA[f.niveles[0]] || f.niveles[0]} de la Cartera pasará a valer tu precio real de compra${f.precio ? ` (${f.precio})` : ""}, y su campanita se apagará sola.`
+            : "El nivel se detecta solo si el precio cae a menos del 1,5% de alguno de tus niveles; si compraste algo desviado, márcalo arriba y el precio del nivel en la Cartera se actualizará al tuyo."}
         </p>
       )}
 

@@ -110,3 +110,10 @@ def test_la_ruta_de_estimar_comisiones_existe():
 
 def test_la_ruta_de_agrupar_sector_existe():
     assert ("post", "/cartera/agrupar-sector") in {(m, r) for m, r, _ in _rutas()}
+
+
+def test_la_ruta_de_compra_multinivel_no_la_tapa_la_de_borrar():
+    """`/cartera/compras/multinivel` y `/cartera/compras/{id}` comparten prefijo; si la del
+    id se registrara antes, «multinivel» se leería como un id."""
+    rutas = [(m, r) for m, r, _ in _rutas()]
+    assert ("post", "/cartera/compras/multinivel") in rutas

@@ -2865,6 +2865,39 @@ async def crear_compra(item: CompraCreate, _user: str = Depends(auth.get_current
     return compra
 
 
+class CompraMultinivel(BaseModel):
+    """Una orden repartida en varios niveles: 12 acciones que son 6 del Nivel 1 y 6 del 2."""
+    symbol: str
+    precio: float
+    reparto: List[dict]                  # [{"nivel": "nivel1", "acciones": 6}, ...]
+    fecha: Optional[str] = None
+    comision: Optional[float] = None     # de la orden ENTERA; se prorratea
+    divisa: Optional[str] = None
+    tasa: Optional[float] = None
+    notas: Optional[str] = ""
+
+
+@api_router.post("/cartera/compras/multinivel")
+async def crear_compra_multinivel(item: CompraMultinivel,
+                                  _user: str = Depends(auth.get_current_user)):
+    """Registra UNA compra repartida en varios niveles, como lotes separados.
+
+    La comisión se cobra una sola vez y se prorratea: los 2 € fijos de DEGIRO son por
+    operación, no por lote.
+    """
+    try:
+        r = await cartera_api.registrar_compra_multinivel(
+            db, item.symbol,
+            [(d.get("nivel"), d.get("acciones")) for d in (item.reparto or [])],
+            item.precio, fecha=item.fecha, comision=item.comision,
+            divisa=item.divisa, tasa=item.tasa, notas=item.notas or "")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    for k in ("signals_list", "signals_hot"):
+        _cache._store.pop(k, None)
+    return r
+
+
 @api_router.delete("/cartera/compras/{compra_id}")
 async def eliminar_compra(compra_id: str, forzar: bool = False,
                           _user: str = Depends(auth.get_current_user)):

@@ -2133,3 +2133,53 @@ def test_el_TOTAL_no_depende_del_metodo():
     totales["PMP"] = round(h["ponderada"]["ganancia_eur"] + r["latente_ponderada_eur"], 2)
 
     assert len(set(totales.values())) == 1, f"el total baila con el método: {totales}"
+
+
+# ── Una compra repartida en varios niveles ──────────────────────────────────
+
+def test_una_orden_en_dos_niveles_crea_dos_lotes():
+    """Pasa cuando una acción cae tanto que se cruzan dos niveles en la misma compra. Se
+    guardan separados porque es lo que son: dos entradas a precios objetivo distintos, y
+    juntarlas haría imposible después decir de qué nivel salió una venta."""
+    db = _DB([{"id": "e1", "symbol": "MU", "mercado": "NASDAQ"}])
+    r = _correr(cartera_api.registrar_compra_multinivel(
+        db, "MU", [("nivel1", 6), ("nivel2", 6)], 100.0, fecha="2026-09-04",
+        divisa="USD", tasa=1.16, comision=2.5))
+    assert len(r["compras"]) == 2 and r["acciones"] == 12
+    assert {c["nivel"] for c in r["compras"]} == {"nivel1", "nivel2"}
+    assert {c["acciones"] for c in r["compras"]} == {6}
+
+
+def test_la_comision_se_cobra_UNA_vez_y_se_prorratea():
+    """Los 2 € fijos de DEGIRO son por OPERACIÓN, no por lote. Registrar los lotes por
+    separado los cobraría tantas veces como niveles."""
+    db = _DB([{"id": "e1", "symbol": "MU", "mercado": "NASDAQ"}])
+    r = _correr(cartera_api.registrar_compra_multinivel(
+        db, "MU", [("nivel1", 9), ("nivel2", 3)], 100.0, fecha="2026-09-04",
+        divisa="USD", tasa=1.16, comision=4.0))
+    assert sum(c["comision"] for c in r["compras"]) == pytest.approx(4.0, abs=0.001)
+    # Y a prorrata de las acciones, no a partes iguales.
+    por_nivel = {c["nivel"]: c["comision"] for c in r["compras"]}
+    assert por_nivel["nivel1"] == pytest.approx(3.0, abs=0.01)
+    assert por_nivel["nivel2"] == pytest.approx(1.0, abs=0.01)
+
+
+def test_sin_comision_se_estima_sobre_la_orden_entera():
+    """Y no una por lote: eso cobraría los 2 € fijos dos veces por una sola orden."""
+    db = _DB([{"id": "e1", "symbol": "MU", "mercado": "NASDAQ"}])
+    doble = _correr(cartera_api.registrar_compra_multinivel(
+        db, "MU", [("nivel1", 6), ("nivel2", 6)], 100.0, fecha="2026-09-04",
+        divisa="USD", tasa=1.16))
+    db2 = _DB([{"id": "e1", "symbol": "MU", "mercado": "NASDAQ"}])
+    suelta = _correr(cartera_api.registrar_compra(db2, "MU", 12, 100.0, fecha="2026-09-04",
+                                                  divisa="USD", tasa=1.16))
+    assert doble["comision_total"] == pytest.approx(suelta["comision"], abs=0.01)
+    assert doble["comision_estimada"] is True
+    assert all(c.get("comision_estimada") for c in doble["compras"])
+
+
+def test_un_reparto_vacio_no_crea_nada():
+    db = _DB([{"id": "e1", "symbol": "MU", "mercado": "NASDAQ"}])
+    with pytest.raises(ValueError):
+        _correr(cartera_api.registrar_compra_multinivel(
+            db, "MU", [("nivel1", 0)], 100.0, divisa="USD", tasa=1.16))

@@ -173,6 +173,11 @@ export const api = {
     fechasNiveles: (symbol) =>
       client.get(`/cartera/fechas-niveles/${symbol}`, { timeout: 30000 }).then((r) => r.data),
     comprar: (payload) => client.post(`/cartera/compras`, payload).then((r) => r.data),
+    // UNA orden repartida en varios niveles. Va por su propia ruta porque la comisión se
+    // cobra una sola vez y se prorratea: mandar N compras sueltas cobraría los 2 € fijos
+    // de DEGIRO tantas veces como niveles.
+    comprarMultinivel: (payload) =>
+      client.post(`/cartera/compras/multinivel`, payload).then((r) => r.data),
     vender: (payload) => client.post(`/cartera/ventas`, payload).then((r) => r.data),
     // `forzar` sortea la negativa del servidor cuando el borrado dejaría ventas sin coste.
     borrarCompra: (id, forzar = false) =>

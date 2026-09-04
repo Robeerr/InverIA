@@ -498,6 +498,62 @@ async def estimar_comisiones_pendientes(db, aplicar: bool = False) -> dict:
             "detalle": cambios}
 
 
+async def registrar_compra_multinivel(db, symbol: str, reparto: list, precio: float,
+                                      fecha: str = None, comision=None,
+                                      divisa: str = None, tasa: float = None,
+                                      notas: str = "") -> dict:
+    """UNA orden repartida en varios niveles: 12 acciones que son 6 del Nivel 1 y 6 del 2.
+
+    Pasa de verdad cuando una acción cae tanto que se cruzan dos niveles en la misma compra.
+    Se guardan como lotes SEPARADOS —uno por nivel— porque es lo que son: dos entradas a
+    precios objetivo distintos, y mantenerlas juntas haría imposible después decir de qué
+    nivel salió una venta.
+
+    Lo que NO puede pasar es cobrar la comisión dos veces. Es una sola orden y DEGIRO cobra
+    una sola comisión: los 2 € fijos son por operación, no por lote. Así que se calcula una
+    vez sobre el importe ENTERO y se prorratea por acciones. Registrar los lotes por
+    separado con la comisión en blanco los estimaría por su cuenta y cobraría los 2 € fijos
+    tantas veces como niveles hubiera.
+
+    Los lotes se crean del nivel más caro al más barato, que es el orden en que se tocan al
+    caer: FIFO desempata por ese orden cuando comparten fecha.
+    """
+    reparto = [(str(n).strip(), float(a)) for n, a in reparto if float(a or 0) > 0]
+    if not reparto:
+        raise ValueError("Hay que decir cuántas acciones van en cada nivel.")
+    total = sum(a for _, a in reparto)
+
+    entry = await db.signal_entries.find_one({"symbol": (symbol or "").strip().upper()},
+                                             {"_id": 0})
+    divisa = _divisa_de(divisa, entry)
+    if tasa is None:
+        tasa = await _tasa(divisa, (fecha or _hoy())[:10])
+    # La comisión de la orden ENTERA, una sola vez.
+    total_com, estimada, detalle = await _comision_o_estimada(
+        comision, total * float(precio), divisa, tasa)
+
+    # Del nivel más caro al más barato. `nivel1` es el más alto por convenio de la Cartera.
+    reparto.sort(key=lambda x: x[0])
+    creadas = []
+    for i, (nivel, acciones) in enumerate(reparto):
+        parte = acciones / total
+        c = await registrar_compra(
+            db, symbol, acciones, precio, fecha=fecha,
+            # Prorrateada. El último se lleva el resto para que la suma cuadre al céntimo.
+            comision=(round(total_com - sum(x["comision"] for x in creadas), 4)
+                      if i == len(reparto) - 1 else round(total_com * parte, 4)),
+            divisa=divisa, tasa=tasa, nivel=nivel or None,
+            notas=notas or f"Compra repartida en {len(reparto)} niveles")
+        if estimada:
+            await db.compras.update_one({"id": c["id"]},
+                                        {"$set": {"comision_estimada": True,
+                                                  "comision_detalle": detalle}})
+            c["comision_estimada"] = True
+        creadas.append(c)
+    return {"compras": creadas, "acciones": total,
+            "comision_total": round(total_com, 4), "comision_estimada": estimada}
+
+
 async def borrar_venta(db, venta_id: str) -> bool:
     doc = await db.ventas.find_one({"id": venta_id}, {"_id": 0})
     r = await db.ventas.delete_one({"id": venta_id})
