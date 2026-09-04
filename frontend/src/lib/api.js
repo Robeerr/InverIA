@@ -135,6 +135,31 @@ export const api = {
   // DERIVAN de estos apuntes; no hay ningún saldo que actualizar por separado.
   cartera: {
     resumen: () => client.get(`/cartera/resumen`).then((r) => r.data),
+    // Cuánto RIESGO de cartera retira vender un valor. No es el margen libre de DEGIRO:
+    // sin la categoría A-D del instrumento ni el efectivo de la cuenta, eso no se puede
+    // calcular. Devuelve una clase (ALTO/MEDIO/BAJO) y el desglose que la produce.
+    // `acciones` para las ventas PARCIALES: el impacto no es proporcional, porque el
+    // máximo puede no moverse hasta que la venta es lo bastante grande.
+    riesgoVenta: (symbol, acciones) =>
+      client.get(`/cartera/riesgo-venta/${symbol}`,
+                 { params: acciones ? { acciones } : {} }).then((r) => r.data),
+    // Todas las posiciones ordenadas por cuánto margen libera vender cada una. Es lo que
+    // DEGIRO no da: su pantalla solo calcula la orden que ya estás componiendo.
+    riesgoRanking: () => client.get(`/cartera/riesgo-ranking`).then((r) => r.data),
+    // Comprar o vender, ANTES de decidir. `categoria` es la letra A-D de DEGIRO: sin ella
+    // el servidor devuelve el rango entre las cuatro en vez de elegir una, porque esa
+    // letra decide casi todo el coste de una compra.
+    // `acciones` o `importe`: una orden se teclea en acciones, así que es lo normal, y el
+    // servidor deriva los euros con el mismo precio que usa el modelo.
+    simularMargen: (symbol, accion, cantidad, unidad, categoria) =>
+      client.get(`/cartera/simular-margen/${symbol}`,
+                 { params: { accion, categoria,
+                             ...(unidad === "acciones" ? { acciones: cantidad }
+                                                       : { importe: cantidad }) } })
+        .then((r) => r.data),
+    // El «Margin statement» del bróker, copiado a mano. Sin él no se estima nada.
+    margen: () => client.get(`/cartera/margen`).then((r) => r.data),
+    guardarMargen: (datos) => client.put(`/cartera/margen`, datos).then((r) => r.data),
     ajustes: () => client.get(`/cartera/ajustes`).then((r) => r.data),
     // Cambia el metodo con el que se emparejan las ventas y RECALCULA todas las posiciones.
     // No altera ningun apunte: cambia como se emparejan, no lo que ocurrio.
@@ -157,16 +182,28 @@ export const api = {
     cambiarNivelCompra: (id, nivel) =>
       client.put(`/cartera/compras/${id}/nivel`, null, { params: nivel ? { nivel } : {} }).then((r) => r.data),
     borrarVenta: (id) => client.delete(`/cartera/ventas/${id}`).then((r) => r.data),
+    // Comisiones que se quedaron a cero por el fallo del campo vacío. Sin `aplicar` solo
+    // dice qué tocaría: esto reescribe apuntes, así que se mira antes de hacerlo.
+    estimarComisiones: (aplicar = false) =>
+      client.post(`/cartera/estimar-comisiones`, null, { params: { aplicar } })
+        .then((r) => r.data),
     // `reemplazar` rehace las posiciones ya importadas: sirve cuando la primera vez salió
     // mal y borrar los lotes a mano serían decenas de clics. Nunca toca las que ya tienen
     // ventas registradas.
     // CSV de Transacciones de DEGIRO. Dos pasos: sin `confirmar` solo LEE y devuelve que
     // productos no se sabe a que accion corresponden; con el mapeo resuelto, guarda.
-    importarDegiro: (archivo, mapeo = null, confirmar = false) => {
+    // `actualizar` repara las operaciones que YA estaban (solo la comisión). Sin él
+    // se saltan, que es lo correcto para no duplicar pero deja intacto lo mal importado.
+    // `sustituir`: cambia tus apuntes tecleados por la fila equivalente del fichero. Sin
+    // esto, una fila tapada por un apunte tuyo no entra nunca.
+    importarDegiro: (archivo, mapeo = null, confirmar = false, actualizar = false,
+                     sustituir = false) => {
       const fd = new FormData();
       fd.append("archivo", archivo);
       return client.post(`/cartera/importar-degiro`, fd, {
-        params: { confirmar, mapeo: mapeo ? JSON.stringify(mapeo) : undefined },
+        params: { confirmar, actualizar: actualizar || undefined,
+                  sustituir: sustituir || undefined,
+                  mapeo: mapeo ? JSON.stringify(mapeo) : undefined },
         timeout: 120000,
       }).then((r) => r.data);
     },
@@ -174,6 +211,10 @@ export const api = {
       client.post(`/cartera/importar-posiciones`, null, { params: { reemplazar } }).then((r) => r.data),
     // Quita los lotes de "Importar mis posiciones" en los símbolos que ya cubre el CSV de
     // DEGIRO: las dos importaciones cuentan las mismas acciones y juntas duplican la posición.
+    // Propone —y con `aplicar`, escribe— la agrupación sectorial que reproduce el extracto
+    // de DEGIRO. Dos pasos porque toca fichas del usuario: primero se enseña qué haría.
+    agruparSector: (aplicar = false) =>
+      client.post(`/cartera/agrupar-sector`, null, { params: { aplicar } }).then((r) => r.data),
     quitarDuplicados: () =>
       client.post(`/cartera/quitar-duplicados`).then((r) => r.data),
     // Precio a mano para valores sin cotización en vivo (ETFs, otros mercados). Solo

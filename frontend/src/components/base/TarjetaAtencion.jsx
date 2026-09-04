@@ -23,12 +23,12 @@ import { fmtEur, fmtPct, fmtPctPlano, fmtPrice, fmtHace, fmtEnDias } from "@/lib
    es un precio en dólares o un importe en euros. */
 
 const TIPOS = {
-  ruptura: { tono: "baja", etiqueta: "Ruptura" },
-  alerta: { tono: "aviso", etiqueta: "Alerta" },
-  nivel: { tono: "marca", etiqueta: "Nivel cerca" },
-  divergencia: { tono: "info", etiqueta: "Choque" },
-  confluencia: { tono: "sube", etiqueta: "Coincidencia" },
-  resultados: { tono: "neutro", etiqueta: "Resultados" },
+  ruptura: { tono: "baja", etiqueta: "Ruptura", filo: "border-l-baja" },
+  alerta: { tono: "aviso", etiqueta: "Alerta", filo: "border-l-aviso" },
+  nivel: { tono: "marca", etiqueta: "Nivel cerca", filo: "border-l-marca" },
+  divergencia: { tono: "info", etiqueta: "Choque", filo: "border-l-info" },
+  confluencia: { tono: "sube", etiqueta: "Coincidencia", filo: "border-l-sube" },
+  resultados: { tono: "neutro", etiqueta: "Resultados", filo: "border-l-linea-fuerte" },
 };
 
 /* La LECTURA por tipo. Cada entrada: etiqueta corta + valor ya formateado + tono.
@@ -157,22 +157,32 @@ export default function TarjetaAtencion({ tarjeta, orden }) {
   return (
     <article
       className={cn(
-        "relative rounded-iv border transition-colors",
-        // LEY 4 · un solo filo ámbar en toda la pantalla: la tarjeta #1, la decisión.
-        // El resto lleva un filo neutro. El TIPO lo dice el chip, no el color del borde.
-        destacada
-          ? "bg-superficie border-linea-fuerte border-l-[3px] border-l-marca shadow-[0_1px_0_rgb(var(--iv-linea))]"
-          : "bg-superficie border-linea border-l-[3px] border-l-linea-fuerte hover:border-linea-fuerte"
+        "relative rounded-iv border border-linea bg-superficie transition-colors border-l-[3px]",
+        // El filo dice el TIPO, y por eso hay varios colores en pantalla. La #1 se
+        // distingue por el fondo, no por el color: si el ámbar señalara a la vez «esta
+        // es la primera» y «esto es una alerta», dejaría de señalar cualquiera de las dos.
+        meta.filo || "border-l-linea-fuerte",
+        destacada && "bg-superficie-alt/30 shadow-[0_1px_0_rgb(var(--iv-linea))]"
       )}
       data-testid={`tarjeta-hoy-${tarjeta.symbol}`}
     >
       <div className="flex flex-col md:flex-row">
+        {/* El ordinal, en su propia columna. Fuera del texto se lee como índice —01, 02,
+            03— y no compite con el ticker, que es lo que se busca al barrer la lista. */}
+        {orden != null && (
+          <div className="hidden md:flex w-11 shrink-0 items-start justify-center pt-3.5">
+            <span className="iv-cifra text-etiqueta text-tinta-3 tabular-nums">
+              {String(orden).padStart(2, "0")}
+            </span>
+          </div>
+        )}
+
         {/* ── Relato ─────────────────────────────────────────────── */}
-        <div className="flex-1 min-w-0 px-4 py-3">
+        <div className="flex-1 min-w-0 px-4 py-3 md:pl-0">
           <div className="flex items-baseline gap-2 min-w-0">
             {orden != null && (
-              <span className="iv-cifra text-etiqueta text-tinta-3 tabular-nums shrink-0 w-4 text-right">
-                {orden}
+              <span className="iv-cifra text-etiqueta text-tinta-3 tabular-nums shrink-0 md:hidden">
+                {String(orden).padStart(2, "0")}
               </span>
             )}
             <Link
@@ -231,11 +241,17 @@ export default function TarjetaAtencion({ tarjeta, orden }) {
             separa del relato; en móvil baja debajo con un filo superior. Es lo
             que convierte la tarjeta de prosa en una fila de terminal. */}
         {lecturas.length > 0 && (
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2 px-4 py-3 border-t md:border-t-0 md:border-l border-linea
-                          md:w-[188px] md:shrink-0 content-start bg-superficie-alt/40 rounded-b-iv md:rounded-b-none md:rounded-r-iv">
+          <div className="grid grid-cols-2 md:grid-cols-1 gap-x-4 gap-y-2 px-4 py-3 border-t md:border-t-0 md:border-l border-linea
+                          md:w-[172px] md:shrink-0 content-start bg-superficie-alt/40 rounded-b-iv md:rounded-b-none md:rounded-r-iv">
             {lecturas.map((l) => (
               <Lectura key={l.etiqueta} {...l} />
             ))}
+            {/* El enlace vive con las cifras y no con el relato: es adonde se va DESPUÉS
+                de mirarlas, cuando el resumen no basta. */}
+            <Link to={tarjeta.ruta}
+                  className="col-span-2 md:col-span-1 text-etiqueta text-marca hover:underline mt-0.5">
+              Ver análisis →
+            </Link>
           </div>
         )}
       </div>

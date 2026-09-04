@@ -12,6 +12,7 @@ import IndicatorsPanel, { FuerzaRelativa } from "../components/IndicatorsPanel";
 import TesisPanel from "../components/TesisPanel";
 import EstadoTecnico from "../components/EstadoTecnico";
 import TuPosicion from "../components/TuPosicion";
+import SimuladorMargen from "../components/SimuladorMargen";
 import EstadoTendencia from "../components/EstadoTendencia";
 import TradingLevels from "../components/TradingLevels";
 import WhyMovingCard from "../components/WhyMovingCard";
@@ -421,6 +422,14 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
           Antes de los niveles: un nivel al 5% no significa lo mismo con dinero dentro.
           Sale de /signals, que ya estaba cargado y no se cruzaba con el ticker abierto. */}
       <TuPosicion signals={signals} symbol={symbol} quote={quote} />
+
+      {/* ══ 04b · Impacto en el margen ══
+          Comprar y vender mueven el margen libre en sentidos opuestos, y con una
+          cuenta apalancada comprar lo mueve en la dirección peligrosa. Va aquí,
+          pegado a tu posición, porque es la misma conversación: tu dinero en esta
+          acción. El aviso de los formularios de venta llega cuando ya has decidido;
+          esto contesta antes, y también para comprar, que allí no se cubre. */}
+      <SimuladorMargen symbol={sym} />
 
       {/* ══ 05 · Niveles ══ buy_levels es la autoridad única de zonas de compra.
           Sin tendencia alcista no se presentan: en su lugar va el motivo. Es un `o`, no
