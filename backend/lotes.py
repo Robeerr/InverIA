@@ -685,8 +685,15 @@ def media_ponderada(compras: list, ventas: list) -> dict:
             ganancia_eur = (round(ingreso_eur - coste_eur_v, 2)
                             if ingreso_eur is not None and coste_eur_v is not None
                             else None)
+            # La ficha de una venta usa la MISMA plantilla para los tres métodos, así que
+            # un campo que falte aquí no se queda callado: sale como un hueco —el ingreso en
+            # dólares aparecía en "—"— o dispara un aviso que no toca. Sin `exacto`, la
+            # pantalla anunciaba "no se puede calcular la ganancia en euros" justo encima de
+            # la ganancia en euros, ya calculada.
             ventas_pmp.append({"id": op.get("id"), "fecha": op.get("fecha"),
                                "acciones": n, "coste_divisa": round(usadas * media, 2),
+                               "ingreso_divisa": round(n * precio - comision, 2),
+                               "exacto": ganancia_eur is not None,
                                "ganancia_divisa": round(ganancia, 2),
                                "pct": (round(ganancia / (usadas * media) * 100, 2)
                                        if usadas * media else None),

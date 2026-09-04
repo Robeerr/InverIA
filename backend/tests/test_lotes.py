@@ -880,3 +880,22 @@ def test_se_puede_ganar_en_dolares_y_perder_en_euros():
     # Y el efecto del euro explica exactamente la diferencia entre las dos.
     sin_efecto = v["ganancia_divisa"] / 1.1684
     assert v["ganancia_eur"] == pytest.approx(sin_efecto + v["efecto_divisa_eur"], abs=0.01)
+
+
+def test_la_ponderada_trae_los_MISMOS_campos_que_FIFO_y_LIFO():
+    """La ficha de una venta usa la misma plantilla para los tres métodos. Un campo que
+    falte no se queda callado: el ingreso en dólares salía como «—», y sin `exacto` la
+    pantalla anunciaba «no se puede calcular la ganancia en euros» justo encima de la
+    ganancia en euros, calculada."""
+    compras = [{"id": "c1", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0,
+                "comision": 2.0, "divisa": "USD", "tasa": 1.10}]
+    ventas = [{"id": "v1", "fecha": "2026-06-01", "acciones": 10, "precio": 120.0,
+               "comision": 2.0, "divisa": "USD", "tasa": 1.15}]
+    pmp = lotes.media_ponderada(compras, ventas)["ventas"][0]
+    fifo = lotes.reproducir(compras, ventas, lotes.FIFO)["ventas"][0]
+    pide_la_pantalla = ("ingreso_divisa", "coste_divisa", "ganancia_divisa", "pct",
+                        "ingreso_eur", "coste_eur", "ganancia_eur", "pct_eur", "exacto")
+    for campo in pide_la_pantalla:
+        assert campo in pmp, f"la ponderada no trae {campo}"
+        assert campo in fifo, f"FIFO no trae {campo}"
+    assert pmp["exacto"] is True and pmp["ingreso_divisa"] == 1198.0

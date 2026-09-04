@@ -197,6 +197,7 @@ function FilaVenta({ v, metodo, comoBroker, onBorrar }) {
   const m = usaPmp ? v.ponderada : v[metodo];
   const otro = usaPmp ? v[metodo] : v[metodo === "fifo" ? "lifo" : "fifo"];
   const nombreOtro = usaPmp ? metodo.toUpperCase() : (metodo === "fifo" ? "LIFO" : "FIFO");
+  const nombreMetodo = usaPmp ? "media ponderada" : metodo.toUpperCase();
   const difiere = Math.abs((m.ganancia_divisa ?? 0) - (otro?.ganancia_divisa ?? 0)) > 0.005;
 
   return (
@@ -246,6 +247,16 @@ function FilaVenta({ v, metodo, comoBroker, onBorrar }) {
                 dólares y luego aparecía la ganancia en euros: el salto de "259 $" a "209 €"
                 había que creérselo. Con los dos lados y el tipo de cambio, la cuenta se
                 rehace a mano en un minuto — que es la única forma de fiarse de una cifra. */}
+            {/* QUÉ MÉTODO estás viendo. La cifra grande cambia con el interruptor de
+                DEGIRO y nada lo decía: la MISMA venta salía a −56,39 € y a +282,04 € en dos
+                pantallas por lo demás idénticas, sin forma de saber cuál era cuál. Un
+                número que cambia sin decir por qué se lee como un fallo, y con razón. */}
+            <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono pb-1">
+              Calculado por <b className="text-tinta-2">{nombreMetodo}</b>
+              {nombreMetodo === "media ponderada" && " · el método de DEGIRO"}
+              {nombreMetodo === "FIFO" && " · el que va a tu declaración"}
+              {nombreMetodo === "LIFO" && " · como vendes tú"}
+            </p>
             <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 gap-y-1 items-baseline">
               <span className="text-[10px] uppercase tracking-wider text-tinta-3 font-mono">Concepto</span>
               <span className="text-[10px] uppercase tracking-wider text-tinta-3 font-mono text-right">
