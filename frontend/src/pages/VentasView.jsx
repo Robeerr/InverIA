@@ -57,7 +57,13 @@ function datosPosicion(p, comoBroker) {
   const usaPmp = comoBroker && pmpCompleta;
   return {
     g: usaPmp ? p.ponderada : p,
-    precioMedio: usaPmp ? p.precio_medio_ponderado : p.precio_medio,
+    // Con el interruptor puesto se enseña el precio SIN comisiones, que es el que sale en
+    // la pantalla del bróker: su "precio medio" es un precio, no un coste. Con comisiones
+    // el nuestro se pasaba un 0,42% —medido contra los 515,376875 $ de FN— y esa diferencia
+    // no es un error de ninguno de los dos: es lo que te ha costado operar, por acción.
+    precioMedio: usaPmp
+      ? (p.precio_medio_ponderado_limpio ?? p.precio_medio_ponderado)
+      : p.precio_medio,
     invertido: usaPmp ? p.ponderada.coste_eur : p.coste_eur,
     // Para poder decirlo en la fila en vez de dejar que el número mienta en silencio.
     sinPmp: comoBroker && !pmpCompleta,
@@ -2331,7 +2337,7 @@ export default function VentasView() {
                             <div className="text-[10px] text-tinta-3">
                               {comoBroker
                                 ? `${metodo.toUpperCase()} = ${usd(p.precio_medio, p.divisa)}`
-                                : `bróker ≈ ${usd(p.precio_medio_ponderado, p.divisa)}`}
+                                : `bróker ≈ ${usd(p.precio_medio_ponderado_limpio ?? p.precio_medio_ponderado, p.divisa)}`}
                             </div>
                           )}
                         </dd>
@@ -2477,7 +2483,7 @@ export default function VentasView() {
                                : "Precio medio ponderado: el que suele enseñar tu bróker. No cambia al vender, porque promedia TODO lo que has comprado. El de arriba es el coste de las acciones que te quedan de verdad."}>
                           {comoBroker
                             ? `${metodo.toUpperCase()} = ${usd(p.precio_medio, p.divisa)}`
-                            : `bróker ≈ ${usd(p.precio_medio_ponderado, p.divisa)}`}
+                            : `bróker ≈ ${usd(p.precio_medio_ponderado_limpio ?? p.precio_medio_ponderado, p.divisa)}`}
                         </div>
                       )}
                     </td>

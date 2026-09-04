@@ -1033,6 +1033,10 @@ async def resumen_cartera(db, precios: dict) -> dict:
             # Para cuadrar con el bróker. Va aparte del precio_medio y etiquetado: son dos
             # medidas distintas y mezclarlas haría pensar que una de las dos está mal.
             "precio_medio_ponderado": pmp["precio_medio"],
+            # El que cuadra con la pantalla de DEGIRO: su "precio medio" es un PRECIO y no
+            # lleva comisiones dentro. Medido contra su cifra de FN —515,376875 $— el
+            # nuestro con comisiones se pasaba un 0,42% y este coincide.
+            "precio_medio_ponderado_limpio": pmp.get("precio_medio_sin_comision"),
             # La posición valorada COMO EL BRÓKER, para poder comparar fila a fila. Lo que
             # FIFO/LIFO se apuntan de más aquí ya se lo apuntaron en lo realizado: sumando
             # latente y realizado, los dos métodos dan el mismo total.

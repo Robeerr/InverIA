@@ -654,11 +654,20 @@ def media_ponderada(compras: list, ventas: list) -> dict:
     # número inventado. Si a una compra le falta el cambio, la media en euros deja de
     # existir para siempre (arrastrarla a medias daría una cifra falsa sin avisar).
     media_eur, eur_completo = 0.0, True
+    media_limpia = 0.0
     for op in ops:
         n = float(op.get("acciones") or 0)
         precio = float(op.get("precio") or 0)
         comision = float(op.get("comision") or 0.0)
         if op["_t"] == "c":
+            # La media SIN comisiones, en paralelo. Es la que enseña el bróker: su "precio
+            # medio" es un PRECIO —lo que pagaste por acción— y no un coste, así que no
+            # lleva la comisión dentro. La de al lado sí la lleva, y debe llevarla: es la
+            # que sirve para calcular lo que ganas. Son dos cifras distintas y las dos
+            # hacen falta; la diferencia entre ellas es exactamente lo que te ha costado
+            # operar, repartido por acción.
+            media_limpia = (((cantidad * media_limpia + n * precio) / (cantidad + n))
+                            if cantidad + n > 1e-9 else 0.0)
             coste = cantidad * media + n * precio + comision
             en_eur = _a_eur(n * precio + comision, tasa_de(op))
             if en_eur is None:
@@ -710,6 +719,8 @@ def media_ponderada(compras: list, ventas: list) -> dict:
             # bróker no se mueva al vender.
     return {
         "precio_medio": round(media, 4) if cantidad > 1e-9 else None,
+        # El mismo precio medio SIN comisiones: el que cuadra con la pantalla del bróker.
+        "precio_medio_sin_comision": round(media_limpia, 4) if cantidad > 1e-9 else None,
         "precio_medio_eur": (round(media_eur, 4)
                              if eur_completo and cantidad > 1e-9 else None),
         "acciones": round(cantidad, 6),

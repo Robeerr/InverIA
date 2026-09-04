@@ -899,3 +899,38 @@ def test_la_ponderada_trae_los_MISMOS_campos_que_FIFO_y_LIFO():
         assert campo in pmp, f"la ponderada no trae {campo}"
         assert campo in fifo, f"FIFO no trae {campo}"
     assert pmp["exacto"] is True and pmp["ingreso_divisa"] == 1198.0
+
+
+def test_el_precio_medio_del_broker_no_lleva_comisiones():
+    """Medido contra la pantalla de DEGIRO: para FN daba 515,376875 $ y el nuestro 517,53.
+    Ese 0,42% no era un error de ninguno de los dos —es que su «precio medio» es un PRECIO
+    y el nuestro un COSTE—. La diferencia entre las dos cifras es exactamente lo que te ha
+    costado operar, repartido por acción.
+
+    Las dos hacen falta: con comisiones para calcular lo que ganas, sin ellas para cuadrar
+    con la pantalla del bróker."""
+    compras = [{"id": "c1", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0,
+                "comision": 20.0, "divisa": "USD", "tasa": 1.16}]
+    p = lotes.media_ponderada(compras, [])
+    assert p["precio_medio"] == 102.0, "el coste por acción sí lleva la comisión"
+    assert p["precio_medio_sin_comision"] == 100.0, "el precio, no"
+
+
+def test_las_dos_medias_se_mantienen_al_promediar_varias_compras():
+    compras = [{"id": "c1", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0,
+                "comision": 10.0, "divisa": "USD", "tasa": 1.16},
+               {"id": "c2", "fecha": "2026-02-10", "acciones": 10, "precio": 80.0,
+                "comision": 10.0, "divisa": "USD", "tasa": 1.16}]
+    p = lotes.media_ponderada(compras, [])
+    assert p["precio_medio_sin_comision"] == 90.0          # (100 + 80) / 2
+    assert p["precio_medio"] == 91.0                       # + 20 $ / 20 acciones
+
+
+def test_vender_no_mueve_ninguna_de_las_dos():
+    """Es lo que define al método: la media del bróker no baja al vender."""
+    compras = [{"id": "c1", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0,
+                "comision": 10.0, "divisa": "USD", "tasa": 1.16}]
+    ventas = [{"id": "v1", "fecha": "2026-06-01", "acciones": 5, "precio": 200.0,
+               "comision": 2.0, "divisa": "USD", "tasa": 1.16}]
+    p = lotes.media_ponderada(compras, ventas)
+    assert p["precio_medio_sin_comision"] == 100.0 and p["precio_medio"] == 101.0
