@@ -72,7 +72,7 @@ function Item({ n, activo, onNavigate }) {
       aria-current={activo ? "page" : undefined}
       className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-iv-sm text-apoyo transition-colors ${
         activo
-          ? "bg-marca/10 text-tinta font-semibold shadow-[inset_2px_0_0_rgb(var(--iv-marca))]"
+          ? "bg-marca/10 text-marca font-semibold shadow-[inset_2px_0_0_rgb(var(--iv-marca))]"
           : "text-tinta-2 hover:bg-superficie-alt hover:text-tinta"
       }`}
     >

@@ -7,6 +7,7 @@ import TarjetaAtencion from "@/components/base/TarjetaAtencion";
 import Boton from "@/components/base/Boton";
 import { Cargando, Error as ErrorEstado } from "@/components/base/Estado";
 import { fmtHace } from "@/lib/format";
+import { saludoDeLaHora, desgloseDe, titularDe } from "@/lib/portada";
 import { MarketFuturesBar, FearGreedBar, SectorHeatmap } from "@/components/ContextoMercado";
 import BandaRegimen from "@/components/hoy/BandaRegimen";
 import PanelCartera from "@/components/hoy/PanelCartera";
@@ -30,35 +31,6 @@ import PanelCerebro from "@/components/hoy/PanelCerebro";
    cifra sale de `GET /hoy` o de las tres consultas de contexto de mercado. */
 
 const CLAVE_ULTIMA_VISITA = "inveria-ultima-visita-hoy";
-
-const NOMBRES = {
-  nivel: ["ha llegado a tu nivel", "han llegado a tu nivel"],
-  ruptura: ["ha roto su nivel", "han roto su nivel"],
-  alerta: ["ha cruzado tu alerta", "han cruzado tus alertas"],
-  divergencia: ["choca con tus fuentes", "chocan con tus fuentes"],
-  confluencia: ["coincide con tus fuentes", "coinciden con tus fuentes"],
-  resultados: ["presenta resultados", "presentan resultados"],
-};
-const CANTIDAD = ["Ninguna", "Una", "Dos", "Tres", "Cuatro", "Cinco"];
-
-function titularDe(tarjetas) {
-  if (!tarjetas?.length) return null;
-  const porTipo = [];
-  for (const t of tarjetas) {
-    const fila = porTipo.find((x) => x.tipo === t.tipo);
-    if (fila) fila.n += 1;
-    else porTipo.push({ tipo: t.tipo, n: 1 });
-  }
-  const principal = porTipo[0];
-  const nombre = NOMBRES[principal.tipo];
-  if (!nombre) return null;
-  const cuantas = CANTIDAD[principal.n] || String(principal.n);
-  const sujeto = principal.n === 1 ? "acción" : "acciones";
-  return {
-    frase: `${cuantas} ${sujeto} ${nombre[principal.n === 1 ? 0 : 1]}`,
-    resto: tarjetas.length - principal.n,
-  };
-}
 
 function leerUltimaVisita() {
   try {
@@ -113,21 +85,48 @@ export default function HoyView() {
     staleTime: 5 * 60_000,
   });
 
+  const desglose = desgloseDe(data?.saludo?.conteo);
+
   return (
-    <PageShell
-      acciones={
-        <div className="flex items-center gap-3">
+    <PageShell>
+      {/* ── 0 · CABECERA ────────────────────────────────────────────────────
+          Cintillo, saludo y las dos acciones. El saludo no informa de nada —para eso
+          está el desglose de más abajo— pero sitúa: dice de quién es esta pantalla y
+          en qué momento del día se abre. */}
+      <header className="mb-6 flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2.5 mb-1.5">
+            <span className="inline-block w-6 h-px bg-marca shrink-0" aria-hidden="true" />
+            <span className="iv-etiqueta tracking-[0.16em] text-tinta-3">Panel de control</span>
+            {!isLoading && !error && (
+              <span className="iv-etiqueta tracking-[0.12em] text-sube border border-sube/40 rounded-iv-sm px-1.5 py-px">
+                live
+              </span>
+            )}
+          </p>
+          <h1 className="font-heading text-cifra font-bold text-tinta leading-[1.15]">
+            {saludoDeLaHora()}
+          </h1>
+          <p className="text-apoyo text-tinta-2 mt-1">
+            El contexto que necesitas para decidir mejor hoy.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
           {data?.generado_en && (
-            <span className="text-etiqueta text-tinta-3 hidden sm:inline">
+            <span className="text-etiqueta text-tinta-3 hidden sm:inline mr-1">
               Calculado {fmtHace(data.generado_en)}
             </span>
           )}
           <Boton variante="fantasma" tamano="sm" onClick={() => refetch()} ocupado={isFetching}>
             Actualizar
           </Boton>
+          {/* `?nueva=1` abre el formulario directamente: mandar a la Cartera y que ahí
+              haya que buscar el botón otra vez convierte un atajo en un desvío. */}
+          <Boton tamano="sm" asChild>
+            <Link to="/cartera?nueva=1">+ Nueva acción</Link>
+          </Boton>
         </div>
-      }
-    >
+      </header>
       {/* ── 1 · CINTA DE MERCADO ────────────────────────────────────────────
           El estado del terreno de juego, arriba y en cifras. El régimen decide si
           fiarse de las señales; los futuros y el termómetro de miedo lo enmarcan. */}
@@ -139,41 +138,26 @@ export default function HoyView() {
         </div>
       )}
 
-      {/* ── 2 · EL TITULAR ──────────────────────────────────────────────────
-          La respuesta a «¿qué hago hoy?» en una línea. Cuando no hay nada, se dice
-          con la misma calidad: un día vacío es una respuesta legítima. */}
-      {!isLoading && !error && (
-        <div className="mb-5">
-          <h1 className="font-heading text-cifra font-bold text-tinta text-balance leading-[1.15]">
-            {titular ? (
-              <>
-                {titular.frase}
-                {titular.resto > 0 && (
-                  <span className="text-tinta-3 font-semibold">
-                    {" "}y {titular.resto} {titular.resto === 1 ? "cosa" : "cosas"} más
-                  </span>
-                )}
-                <span className="text-marca">.</span>
-              </>
-            ) : (
-              <>Hoy no hay nada que requiera tu atención<span className="text-tinta-3">.</span></>
-            )}
-          </h1>
-          {data?.saludo?.piezas?.length > 0 && (
-            <p className="text-apoyo text-tinta-3 mt-1.5">{data.saludo.piezas.join(" · ")}</p>
-          )}
-        </div>
-      )}
-
       {/* ── Terminal: lo que importa (ancho) + contexto (lateral) ──────────── */}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
         {/* Columna principal */}
         <div className="min-w-0">
-          <div className="flex items-baseline justify-between mb-2.5">
-            <h2 className="iv-etiqueta text-tinta-2 tracking-[0.14em]">Lo que importa hoy</h2>
+          <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1 mb-3">
+            <div className="min-w-0">
+              <p className="iv-etiqueta tracking-[0.16em] text-tinta-3 mb-1">Lo que importa hoy</p>
+              <h2 className="font-heading text-titulo font-bold text-tinta leading-tight">
+                {titular ? "Decisiones que requieren tu atención" : "Hoy no hay decisiones pendientes"}
+              </h2>
+              {/* El desglose por tipo: es el dato que antes iba en el titular grande. */}
+              {(desglose.length > 0 || data?.saludo?.piezas?.length > 0) && (
+                <p className="text-apoyo text-tinta-3 mt-1">
+                  {(desglose.length ? desglose : data.saludo.piezas).join(" · ")}
+                </p>
+              )}
+            </div>
             {!isLoading && !error && importa.length > 0 && (
-              <span className="iv-cifra text-etiqueta text-tinta-3">
-                {importa.length} de 5 · por urgencia
+              <span className="iv-cifra text-etiqueta text-tinta-3 border border-linea rounded-iv-sm px-2 py-1 shrink-0">
+                {importa.length} de {data?.saludo?.total ?? importa.length} · por urgencia
               </span>
             )}
           </div>

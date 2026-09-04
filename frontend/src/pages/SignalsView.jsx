@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { aNumero } from "../lib/format";
+import RiesgoVenta from "../components/RiesgoVenta";
 
 const API = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
 const authHeaders = () => {
@@ -318,8 +319,22 @@ function CorrelationCard() {
           <div className="flex items-baseline gap-2">
             <span className="font-mono font-bold text-lg text-neutral-900 dark:text-white">{data.avg_corr}</span>
             <span className={`text-xs font-semibold ${nivel.cls}`}>{nivel.txt}</span>
-            <span className="text-[10px] text-neutral-400">· {data.n} acciones</span>
+            {/* De cuántas. Con 83 valores en la Cartera y un techo de 25, decir solo "25
+                acciones" hace leer como veredicto de toda la cartera lo que es de una
+                parte. Las abiertas entran primero, que es lo que hace que la cifra siga
+                significando algo aunque no quepan todas. */}
+            <span className="text-[10px] text-neutral-400">
+              · {data.n} acciones
+              {data.truncado && data.total ? ` de ${data.total}` : ""}
+            </span>
           </div>
+          {data.truncado && (
+            <p className="text-[10px] text-neutral-400 leading-snug">
+              Se analizan hasta {data.n} valores, y entran primero tus{" "}
+              {data.en_cartera} posición(es) abiertas: cada acción descarga un año de
+              histórico. Las que solo vigilas pueden quedarse fuera.
+            </p>
+          )}
           {(data.high || []).length > 0 ? (
             <div>
               <p className="text-[10px] uppercase text-neutral-400 font-mono mb-1">Se mueven casi igual (riesgo de bloque)</p>
@@ -345,6 +360,30 @@ const RIESGO_STYLE = {
   MEDIO: { bg: "bg-yellow-100 dark:bg-yellow-900/40", text: "text-yellow-700 dark:text-yellow-300" },
   ALTO:  { bg: "bg-red-100 dark:bg-red-900/40",       text: "text-red-600 dark:text-red-400" },
 };
+
+// La letra A-D del modelo de MARGEN de DEGIRO, que NO es el campo `riesgo` de al lado.
+// `riesgo` es la clasificación de tu inversor; esta la publica el bróker junto a cada
+// producto y determina cuánto riesgo le asigna su modelo — una categoría D computa al 100%
+// de su valor, así que venderla libera todo y comprarla se lo come todo.
+//
+// Se teclea a mano porque no hay API que la sirva. Sin ella el simulador de margen no puede
+// reproducir el riesgo real y se calla, que es exactamente lo que estaba pasando.
+const CAT_TONO = { A: "text-sube", B: "text-tinta-2", C: "text-aviso", D: "text-baja" };
+
+function CategoriaDegiro({ value, onChange }) {
+  const v = (value || "").toUpperCase();
+  return (
+    <select
+      value={v}
+      onChange={(ev) => onChange(ev.target.value || null)}
+      title="Categoría de riesgo de DEGIRO (A-D). Sale junto al nombre del producto en la pantalla de la orden. Determina cuánto margen libera vender esta acción."
+      className={`bg-transparent border border-linea rounded px-1 py-0.5 text-xs font-mono font-bold ${CAT_TONO[v] || "text-tinta-3"}`}
+    >
+      <option value="">—</option>
+      {["A", "B", "C", "D"].map((c) => <option key={c} value={c}>{c}</option>)}
+    </select>
+  );
+}
 
 function RiesgoBadge({ value }) {
   if (!value) return <span className="text-neutral-400">—</span>;
@@ -505,6 +544,10 @@ const ADD_FIELDS = {
     { key: "fecha_compra", label: "Fecha compra", placeholder: "2025-01-15" },
     { key: "riesgo",   label: "Riesgo",      placeholder: "MEDIO" },
     { key: "sector",   label: "Sector",      placeholder: "TECH" },
+    // Aparte del anterior: aquí va cómo agrupa DEGIRO, que es mucho más grueso. Solo se
+    // usa para el límite de concentración sectorial de su modelo de margen. Vacío = se
+    // usa el sector de al lado.
+    { key: "sector_degiro", label: "Sector DEGIRO", placeholder: "= el de al lado" },
     { key: "posibles_ganancias", label: "Posibles Ganancias %", placeholder: "25.5" },
   ],
 };
@@ -520,6 +563,15 @@ export default function SignalsView({ setSymbol }) {
   const [importText, setImportText] = useState("");
   const [importing, setImporting] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  // Se puede llegar aquí con el formulario ya abierto (/cartera?nueva=1). Lo usa el botón
+  // «Nueva acción» de la portada: mandar a la Cartera y que ahí haya que buscar el botón
+  // otra vez convierte un atajo en un desvío.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("nueva") === "1") {
+      setNewEntry(EMPTY);
+      setShowAdd(true);
+    }
+  }, []);
   const [newEntry, setNewEntry] = useState(EMPTY);
   const imageInputRef = useRef(null);
 
@@ -925,6 +977,11 @@ function DialogoVenta({ entry, onClose, onHecho }) {
                 </p>
               )}
             </div>
+            {/* ANTES del botón: la pregunta que resuelve solo sirve mientras la venta
+                todavía se puede no hacer. Después ya no es una decisión, es un apunte. */}
+            <div className="mt-3">
+              <RiesgoVenta symbol={entry.symbol} acciones={aNumero(acciones) || undefined} />
+            </div>
             <button onClick={enviar} disabled={enviando}
                     className="w-full mt-4 bg-marca text-marca-tinta rounded-lg py-2 font-semibold disabled:opacity-60">
               {enviando ? "Calculando…" : "Registrar venta"}
@@ -982,6 +1039,8 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                   <span className="font-bold text-marca cursor-pointer text-lg" onClick={() => setSymbol && setSymbol(e.symbol)}>{e.symbol}</span>
                   {e.mercado && <span className="text-[10px] font-mono bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded">{e.mercado}</span>}
                   <RiesgoBadge value={e.riesgo} />
+                  <CategoriaDegiro value={e.categoria_degiro}
+                                   onChange={(v) => updateField(e.id, "categoria_degiro", v)} />
                 </div>
                 <p className="text-sm text-neutral-500 mt-0.5">{e.name || "—"}</p>
                 {e.sector && <p className="text-xs text-neutral-400">{e.sector}</p>}
@@ -1063,53 +1122,57 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="text-left border-b-2 border-neutral-200 dark:border-neutral-700">
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap w-10 bg-neutral-100 dark:bg-neutral-800">⚡</th>
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Acción</th>
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Mdo.</th>
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Precio actual</th>
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Compra</th>
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Nº acc.</th>
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">P&amp;L</th>
-              <th className="px-3 py-3 text-xs whitespace-nowrap text-right bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 font-bold border-l border-blue-200 dark:border-blue-800">🎯 Deseado / Venta</th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap w-10 bg-neutral-100 dark:bg-neutral-800">⚡</th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Acción</th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Mdo.</th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Precio</th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Compra</th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Acc.</th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">P&amp;L</th>
+              <th className="px-2 py-2.5 text-xs whitespace-nowrap text-right bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 font-bold border-l border-blue-200 dark:border-blue-800">Deseado</th>
               {[1,2,3,4,5].map((n) => (
-                <th key={n} className="px-3 py-3 text-xs whitespace-nowrap text-right bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 font-bold border-l border-green-200 dark:border-green-800">Nivel {n}{n === 5 ? " ⭐" : ""}</th>
+                <th key={n} className="px-2 py-2.5 text-xs whitespace-nowrap text-right bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 font-bold border-l border-green-200 dark:border-green-800">N{n}{n === 5 ? "⭐" : ""}</th>
               ))}
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800 border-l border-neutral-200">Riesgo</th>
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Sector</th>
-              <th className="px-3 py-3 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">📈 Ganancia</th>
-              <th className="px-3 py-3 w-8 bg-neutral-100 dark:bg-neutral-800"></th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800 border-l border-neutral-200">Riesgo</th>
+              <th title="Categoría de riesgo de DEGIRO (A-D). Determina cuánto margen libera vender esta acción." className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Cat.</th>
+              <th className="px-2 py-2.5 w-8 bg-neutral-100 dark:bg-neutral-800"></th>
             </tr>
           </thead>
           <tbody>
+            {/* Sector y Ganancia no salen aquí: son de SOLO LECTURA en esta tabla y con
+                dieciocho columnas obligaban a scroll horizontal. Se siguen viendo en la
+                vista de móvil y se editan en el formulario, así que no se pierde nada —y
+                el sector sigue alimentando el modelo de riesgo igual, esté a la vista o
+                no. */}
             {entries.map((e, idx) => (
               <tr key={e.id} className={`border-t border-neutral-100 dark:border-neutral-800 transition-colors group ${!e.active ? "opacity-40" : ""} ${idx % 2 === 0 ? "bg-white dark:bg-neutral-900" : "bg-neutral-50 dark:bg-neutral-800/40"} hover:bg-amber-50/60 dark:hover:bg-neutral-700/40`}>
-                <td className="px-3 py-2.5 text-center">
+                <td className="px-2 py-2.5 text-center">
                   <input type="checkbox" checked={e.active} onChange={(ev) => updateField(e.id, "active", ev.target.checked)} className="w-4 h-4 cursor-pointer accent-marca" title={e.active ? "Monitorización activa" : "Monitorización pausada"} />
                 </td>
-                <td className="px-3 py-2.5 whitespace-nowrap">
+                <td className="px-2 py-2.5 whitespace-nowrap">
                   <div className="flex items-center gap-1.5">
                     <span className="font-bold text-marca cursor-pointer hover:underline text-sm" onClick={() => setSymbol && setSymbol(e.symbol)}>{e.symbol}</span>
                     {saving[e.id] && <span className="text-[10px] text-neutral-400 animate-pulse">·</span>}
                   </div>
-                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate max-w-[130px] font-medium">{e.name}</p>
+                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate max-w-[104px] font-medium">{e.name}</p>
                 </td>
-                <td className="px-3 py-2.5">
+                <td className="px-2 py-2.5">
                   <span className="text-[11px] font-mono font-semibold bg-neutral-200 dark:bg-neutral-700 px-2 py-0.5 rounded text-neutral-700 dark:text-neutral-300">{e.mercado || "—"}</span>
                 </td>
-                <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                <td className="px-2 py-2.5 text-right whitespace-nowrap">
                   <span className="font-mono font-bold text-neutral-900 dark:text-white text-sm">{fmtP(e.last_price)}</span>
                   <ExtendedBadge entry={e} />
                 </td>
-                <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                <td className="px-2 py-2.5 text-right whitespace-nowrap">
                   <EditableCell value={e.compra} onChange={(v) => updateField(e.id, "compra", v)} className="font-mono text-sm text-neutral-700 dark:text-neutral-300" />
                 </td>
-                <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                <td className="px-2 py-2.5 text-right whitespace-nowrap">
                   <EditableCell value={e.acciones} onChange={(v) => updateField(e.id, "acciones", v)} isNumber format={(v) => v != null && v !== "" ? Number(v).toLocaleString("es-ES", { maximumFractionDigits: 2 }) : "—"} className="font-mono text-sm text-neutral-700 dark:text-neutral-300" />
                 </td>
-                <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                <td className="px-2 py-2.5 text-right whitespace-nowrap">
                   <PnlText abs={pnlAbs(e)} pct={pnlPct(e)} eur={pnlEur.porSymbol[(e.symbol || "").toUpperCase()]} tasa={pnlEur.tasaUSD} />
                 </td>
-                <td className="px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 border-l border-blue-100 dark:border-blue-900">
+                <td className="px-2 py-2.5 bg-blue-50 dark:bg-blue-900/20 border-l border-blue-100 dark:border-blue-900">
                   <div className="flex items-center justify-end gap-1">
                     <EditableCell value={e.deseado} onChange={(v) => updateField(e.id, "deseado", v)} className="font-mono text-sm font-bold text-blue-800 dark:text-blue-200" />
                     {/* El estado que se NIEGA debe ser el mismo que se PINTA. Con `!e.alert_deseado`, una
@@ -1125,7 +1188,7 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                   const d = nivelDist(e, n);
                   const isNext = n === nextN;
                   return (
-                    <td key={n} className={`px-3 py-2.5 border-l border-green-100 dark:border-green-900 ${isNext ? "bg-aviso/15" : "bg-green-50 dark:bg-green-900/10"}`}>
+                    <td key={n} className={`px-2 py-2.5 border-l border-green-100 dark:border-green-900 ${isNext ? "bg-aviso/15" : "bg-green-50 dark:bg-green-900/10"}`}>
                       <div className="flex items-center justify-end gap-1">
                         <EditableCell value={val} onChange={(v) => updateField(e.id, `nivel${n}`, v)} className="font-mono text-sm font-semibold text-green-900 dark:text-green-300" />
                         <BellToggle active={alertOn} onClick={() => updateField(e.id, alertKey, !alertOn)} />
@@ -1134,16 +1197,9 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                     </td>
                   );
                 }); })()}
-                <td className="px-3 py-2.5 whitespace-nowrap border-l border-neutral-100 dark:border-neutral-800"><RiesgoBadge value={e.riesgo} /></td>
-                <td className="px-3 py-2.5 whitespace-nowrap max-w-[150px] truncate">
-                  <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">{e.sector || "—"}</span>
-                </td>
-                <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                  {e.posibles_ganancias != null ? (
-                    <span className="inline-block font-bold text-white bg-green-600 dark:bg-green-700 font-mono text-xs px-2 py-0.5 rounded-full">+{fmtPct(e.posibles_ganancias)}</span>
-                  ) : <span className="text-neutral-400">—</span>}
-                </td>
-                <td className="px-3 py-2.5 text-center">
+                <td className="px-2 py-2.5 whitespace-nowrap border-l border-neutral-100 dark:border-neutral-800"><RiesgoBadge value={e.riesgo} /></td>
+                <td className="px-2 py-2.5 whitespace-nowrap"><CategoriaDegiro value={e.categoria_degiro} onChange={(v) => updateField(e.id, "categoria_degiro", v)} /></td>
+                <td className="px-2 py-2.5 text-center">
                   <button onClick={() => deleteEntry(e.id)} className="text-neutral-300 hover:text-red-500 transition-colors p-1 opacity-0 group-hover:opacity-100" title="Eliminar"><Trash size={14} /></button>
                 </td>
               </tr>

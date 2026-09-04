@@ -22,10 +22,13 @@ export default function PanelAgenda({ eventos }) {
   const lista = eventos || [];
   return (
     <section className="iv-panel p-4" aria-labelledby="hoy-agenda">
-      <div className="flex items-baseline justify-between mb-2">
-        <h2 id="hoy-agenda" className="iv-etiqueta">Próximos 7 días</h2>
-        <Link to="/calendario" className="text-etiqueta text-marca hover:underline">calendario</Link>
+      <div className="flex items-baseline justify-between gap-2 mb-1">
+        <p className="iv-etiqueta tracking-[0.16em] text-tinta-3">Próximos 7 días</p>
+        <Link to="/calendario" className="text-etiqueta text-marca hover:underline shrink-0">abrir ›</Link>
       </div>
+      <h2 id="hoy-agenda" className="font-heading text-cuerpo font-semibold text-tinta mb-1.5">
+        Calendario
+      </h2>
 
       {lista.length > 0 ? (
         <div className="divide-y divide-linea -my-1">

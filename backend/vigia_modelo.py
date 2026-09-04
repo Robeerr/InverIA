@@ -140,6 +140,41 @@ async def comprobar(db) -> dict:
     return {"actual": actual, "nuevo": nuevo, "avisado": True}
 
 
+async def comprobar_extracto(db) -> dict:
+    """Avisa cuando el extracto de margen de DEGIRO ha caducado.
+
+    Existe para que el usuario no tenga que acordarse. El extracto es lo que autoriza al
+    modelo de riesgo a dar cifras, y caduca al mes porque DEGIRO recategoriza los
+    instrumentos mensualmente. Sin aviso, lo normal es que se quede viejo y las
+    estimaciones desaparezcan sin que nadie sepa por qué.
+
+    Una vez por extracto caducado, no una vez por semana: repetirlo enseña a ignorar a este
+    bot, que también manda las alertas de nivel.
+    """
+    import riesgo_cartera
+    doc = await db.margen_degiro.find_one({"id": "actual"}, {"_id": 0})
+    if not doc or not doc.get("riesgo_eur"):
+        return {"avisado": False, "motivo": "sin extracto"}
+    hoy = datetime.now(timezone.utc).date().isoformat()
+    dias = riesgo_cartera._dias_entre(doc.get("fecha"), hoy)
+    if dias is None or dias <= riesgo_cartera.DIAS_CALIBRACION:
+        return {"avisado": False, "dias": dias}
+    if doc.get("avisado_de") == doc.get("fecha"):
+        return {"avisado": False, "dias": dias, "ya_avisado": True}
+    texto = (f"📄 Tu extracto de margen de DEGIRO es del {doc.get('fecha')} "
+             f"({dias} días).\n\n"
+             f"InverIA ha dejado de estimar cuánto margen libera cada venta: DEGIRO "
+             f"recategoriza los instrumentos cada mes y ya no puede comprobar que acierta."
+             f"\n\nCópialo otra vez desde «Available to trade» y vuelve a funcionar.")
+    ok, err = await telegram_notifier.send_message(texto, parse_mode="")
+    if not ok:
+        logger.warning("Aviso de extracto caducado no enviado: %s", err)
+        return {"avisado": False, "error": err}
+    await db.margen_degiro.update_one({"id": "actual"},
+                                      {"$set": {"avisado_de": doc.get("fecha")}})
+    return {"avisado": True, "dias": dias}
+
+
 async def worker_loop(db, intervalo: int = INTERVALO):
     logger.info("Vigía de modelos arrancado (cada %d h)", intervalo // 3600)
     while True:
@@ -147,4 +182,8 @@ async def worker_loop(db, intervalo: int = INTERVALO):
             await comprobar(db)
         except Exception as exc:
             logger.warning("Vigía de modelos falló: %s", str(exc)[:150])
+        try:
+            await comprobar_extracto(db)
+        except Exception as exc:
+            logger.warning("Vigía del extracto falló: %s", str(exc)[:150])
         await asyncio.sleep(intervalo)

@@ -40,6 +40,17 @@ ALLOWED_CREATE = (
     "alert_deseado", "alert_nivel1", "alert_nivel2", "alert_nivel3", "alert_nivel4", "alert_nivel5",
     "alert_venta1", "alert_venta2", "alert_venta3",
     "riesgo", "sector", "posibles_ganancias", "notes", "active",
+    # Cómo agrupa DEGIRO esta acción para su límite de concentración sectorial. VA APARTE
+    # de `sector` a propósito: ese lo rellena el proveedor de datos y además es la
+    # taxonomía del usuario —la que separa lo que él separa—, mientras que esta solo tiene
+    # que reproducir en qué saco la mete el bróker, que agrupa mucho más grueso. Machacar
+    # uno con el otro cambiaría un dato bueno por otro, y se perdería el primero.
+    "sector_degiro",
+    # La letra A-D del modelo de MARGEN de DEGIRO. No es el campo `riesgo`, que es la
+    # clasificación del inversor del usuario: esta la publica el bróker junto a cada
+    # producto y determina cuánto riesgo le asigna su modelo. Sin API que la sirva y
+    # revisada mensualmente, se teclea a mano.
+    "categoria_degiro",
     "divisa", "bz", "objetivo_5a",
     "compra", "acciones",  # posición real (precio medio de compra y nº de acciones) para el P&L
     "fecha_compra",        # fecha de la compra: fija el tipo de cambio para la ganancia en EUR
@@ -52,6 +63,17 @@ ALLOWED_UPDATE = (
     "alert_deseado", "alert_nivel1", "alert_nivel2", "alert_nivel3", "alert_nivel4", "alert_nivel5",
     "alert_venta1", "alert_venta2", "alert_venta3",
     "riesgo", "sector", "posibles_ganancias", "notes", "active",
+    # Cómo agrupa DEGIRO esta acción para su límite de concentración sectorial. VA APARTE
+    # de `sector` a propósito: ese lo rellena el proveedor de datos y además es la
+    # taxonomía del usuario —la que separa lo que él separa—, mientras que esta solo tiene
+    # que reproducir en qué saco la mete el bróker, que agrupa mucho más grueso. Machacar
+    # uno con el otro cambiaría un dato bueno por otro, y se perdería el primero.
+    "sector_degiro",
+    # La letra A-D del modelo de MARGEN de DEGIRO. No es el campo `riesgo`, que es la
+    # clasificación del inversor del usuario: esta la publica el bróker junto a cada
+    # producto y determina cuánto riesgo le asigna su modelo. Sin API que la sirva y
+    # revisada mensualmente, se teclea a mano.
+    "categoria_degiro",
     "divisa", "bz", "objetivo_5a",
     "compra", "acciones",
     "fecha_compra",   # para el tipo de cambio del dia de la compra (ganancia real en EUR)
@@ -82,7 +104,9 @@ def _make_entry(
     alert_venta2: bool = True,
     alert_venta3: bool = True,
     riesgo: str = "",
+    categoria_degiro: str = "",
     sector: str = "",
+    sector_degiro: str = "",
     posibles_ganancias: Optional[float] = None,
     notes: str = "",
     active: bool = True,
@@ -118,7 +142,9 @@ def _make_entry(
         "alert_venta2": alert_venta2,
         "alert_venta3": alert_venta3,
         "riesgo": (riesgo or "").strip().upper(),
+        "categoria_degiro": (categoria_degiro or "").strip().upper()[:1],
         "sector": (sector or "").strip(),
+        "sector_degiro": (sector_degiro or "").strip(),
         "posibles_ganancias": posibles_ganancias,
         "notes": (notes or "").strip(),
         "active": active,
@@ -221,11 +247,18 @@ def mercado_legible(codigo) -> str:
 # ninguna API la devuelve. Derivarlo de la beta o de la volatilidad daría un número con
 # pinta de criterio, escrito justo en la casilla donde lees el criterio de otra persona.
 # Prefiere quedarse vacío: un hueco se ve, y una etiqueta inventada no.
-_CAMPOS_FICHA = ("name", "mercado", "sector")
+#
+# `sector_degiro` SÍ está, y es el mismo dato del proveedor puesto en otra casilla. Parece
+# redundante con `sector` y no lo es: aquel puede llevar tu etiqueta —y se respeta— así que
+# no sirve para reproducir cómo agrupa el bróker. Este guarda siempre el sector estándar y
+# grueso que publica el proveedor ("Technology", "Industrials"), que es del mismo tipo de
+# grano que el de DEGIRO. No es una suposición sobre su taxonomía: es un hecho publicado
+# que se parece a la suya, y la calibración contra su extracto dice si acierta.
+_CAMPOS_FICHA = ("name", "mercado", "sector", "sector_degiro")
 
 
 async def completar_ficha(db, entry: dict) -> dict:
-    """Rellena nombre, mercado y sector de una fila que los tenga vacíos.
+    """Rellena nombre, mercado y los dos sectores de una fila que los tenga vacíos.
 
     SOLO rellena huecos. Nunca pisa lo que ya hay: el sector que tú escribiste ("TECH
     GROWTH", "Viajes") es tu taxonomía y dice algo que "Technology" no dice; sustituirlo
@@ -247,6 +280,10 @@ async def completar_ficha(db, entry: dict) -> dict:
             "name": (q.get("name") or "").strip(),
             "mercado": mercado_legible(q.get("exchange")),
             "sector": (q.get("sector") or "").strip(),
+            # El mismo valor: en `sector` es un hueco que se rellena una vez y luego es
+            # tuyo; aquí es siempre el del proveedor, porque lo que tiene que reproducir
+            # es el agrupamiento del bróker y no tu criterio.
+            "sector_degiro": (q.get("sector") or "").strip(),
         }
         # El nombre que devuelven los proveedores cuando no saben nada es el propio
         # símbolo. Guardarlo dejaría "AEM · AEM", que no informa de nada.
