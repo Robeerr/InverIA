@@ -2183,3 +2183,23 @@ def test_un_reparto_vacio_no_crea_nada():
     with pytest.raises(ValueError):
         _correr(cartera_api.registrar_compra_multinivel(
             db, "MU", [("nivel1", 0)], 100.0, divisa="USD", tasa=1.16))
+
+
+def test_niveles_en_dias_distintos_llevan_UNA_comision_CADA_UNO():
+    """El otro caso, y el contrario del multinivel: comprar el Nivel 1 un día y el Nivel 2
+    otro son DOS órdenes, así que DEGIRO cobra dos veces los 2 € fijos. Repartir una sola
+    comisión entre ellas cobraría de menos, igual que estimar una por lote en una sola
+    orden cobra de más."""
+    db = _DB([{"id": "e1", "symbol": "MU", "mercado": "NASDAQ"}])
+    a = _correr(cartera_api.registrar_compra(db, "MU", 6, 100.0, fecha="2026-09-03",
+                                             divisa="USD", tasa=1.16, nivel="nivel1"))
+    b = _correr(cartera_api.registrar_compra(db, "MU", 6, 95.0, fecha="2026-09-04",
+                                             divisa="USD", tasa=1.16, nivel="nivel2"))
+    assert a["comision"] > 0 and b["comision"] > 0
+
+    # Y la misma cantidad comprada de UNA vez paga bastante menos: una sola comisión.
+    db2 = _DB([{"id": "e1", "symbol": "MU", "mercado": "NASDAQ"}])
+    r = _correr(cartera_api.registrar_compra_multinivel(
+        db2, "MU", [("nivel1", 6), ("nivel2", 6)], 100.0, fecha="2026-09-04",
+        divisa="USD", tasa=1.16))
+    assert r["comision_total"] < a["comision"] + b["comision"]

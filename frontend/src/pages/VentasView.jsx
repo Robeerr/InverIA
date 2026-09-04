@@ -1179,6 +1179,19 @@ function FormularioPorNiveles({ onCerrar }) {
           coste <b>{usd(totalCoste, data?.divisa)}</b> · precio medio{" "}
           <b>{usd(totalCoste / totalAcciones, data?.divisa)}</b>.
           {" "}Compruébalo contra lo que tenías en la Cartera antes de vender.
+          {/* La comisión es lo que separa este formulario del de compra suelta, y hasta
+              ahora no lo decía ninguno de los dos. Aquí cada nivel es una ORDEN distinta
+              —por eso tiene su propia fecha— así que lleva su propia comisión, que es lo
+              correcto: DEGIRO cobra los 2 € fijos por operación. Si todo fue UNA orden, ese
+              reparto cobraría de más, y hay otro sitio para eso. */}
+          {filas.length > 1 && (
+            <>
+              {" "}Se contará <b>una comisión por nivel</b> ({filas.length} en total),
+              porque cada uno es una orden distinta. Si lo compraste TODO de una vez en una
+              sola orden, ciérralo y usa <b>«+ Compra suelta»</b> marcando ahí varios
+              niveles: allí la comisión es una sola y se reparte.
+            </>
+          )}
           {filas.some((f) => f.fecha !== filas[0].fecha)
             ? " Cada nivel se guardará con su fecha, así que los euros saldrán al cambio de cada día."
             : " Todos con la misma fecha: si los compraste en días distintos, ajústalos arriba — la fecha decide el tipo de cambio."}
@@ -1537,7 +1550,7 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
       {tipo === "compra" && (
         <p className="text-[11px] text-tinta-3">
           {(f.niveles || []).length > 1
-            ? `Se guardarán ${f.niveles.length} lotes, uno por nivel, y cada uno de esos niveles pasará a valer tu precio real de compra${f.precio ? ` (${f.precio})` : ""}. La comisión se reparte entre ellos: es una sola orden.`
+            ? `Se guardarán ${f.niveles.length} lotes, uno por nivel, y cada uno de esos niveles pasará a valer tu precio real de compra${f.precio ? ` (${f.precio})` : ""}. Se cobra UNA sola comisión y se reparte entre ellos, porque es una sola orden. Si en realidad fueron compras de días distintos, usa «+ Compras por niveles»: allí cada una lleva su fecha y su comisión.`
             : (f.niveles || []).length === 1
             ? `El ${NIVEL_ETIQUETA[f.niveles[0]] || f.niveles[0]} de la Cartera pasará a valer tu precio real de compra${f.precio ? ` (${f.precio})` : ""}, y su campanita se apagará sola.`
             : "El nivel se detecta solo si el precio cae a menos del 1,5% de alguno de tus niveles; si compraste algo desviado, márcalo arriba y el precio del nivel en la Cartera se actualizará al tuyo."}
