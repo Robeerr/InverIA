@@ -901,36 +901,78 @@ def test_la_ponderada_trae_los_MISMOS_campos_que_FIFO_y_LIFO():
     assert pmp["exacto"] is True and pmp["ingreso_divisa"] == 1198.0
 
 
-def test_el_precio_medio_del_broker_no_lleva_comisiones():
-    """Medido contra la pantalla de DEGIRO: para FN daba 515,376875 $ y el nuestro 517,53.
-    Ese 0,42% no era un error de ninguno de los dos —es que su «precio medio» es un PRECIO
-    y el nuestro un COSTE—. La diferencia entre las dos cifras es exactamente lo que te ha
-    costado operar, repartido por acción.
 
-    Las dos hacen falta: con comisiones para calcular lo que ganas, sin ellas para cuadrar
-    con la pantalla del bróker."""
+# ── El método que usa DEGIRO de verdad ───────────────────────────────────────
+
+def test_el_metodo_de_degiro_reproduce_su_pantalla_con_datos_reales():
+    """FN, medido contra la pantalla del bróker. 18 acciones compradas en seis órdenes,
+    6 vendidas en dos, y DEGIRO enseñando 515,376875 $ de precio medio para las 12 que
+    quedan. Esa cifra es la prueba: solo un método puede producirla.
+
+    Las comisiones de compra no se conocen una a una, así que se reparten los 35,20 $ que
+    exige el método —unos 5,87 $ por orden, que es exactamente 2 € + 0,25% sobre órdenes de
+    ~1.400 $, la tarifa publicada de DEGIRO—.
+    """
+    com = 35.20 / 6
+    compras = [
+        {"id": "c1", "fecha": "2026-06-08", "acciones": 2, "precio": 642.03, "comision": com},
+        {"id": "c2", "fecha": "2026-06-08", "acciones": 2, "precio": 621.94, "comision": com},
+        {"id": "c3", "fecha": "2026-06-09", "acciones": 2, "precio": 565.00, "comision": com},
+        {"id": "c4", "fecha": "2026-06-26", "acciones": 3, "precio": 535.12, "comision": com},
+        {"id": "c5", "fecha": "2026-07-07", "acciones": 3, "precio": 467.63, "comision": com},
+        {"id": "c6", "fecha": "2026-08-18", "acciones": 3, "precio": 505.60, "comision": com},
+    ]
+    # La séptima orden (20/08, 3 × 444,88) no lleva comisión asignada aquí: los 35,20 € se
+    # repartieron entre seis. Se añade con 0 para no contarla dos veces.
+    compras.append({"id": "c7", "fecha": "2026-08-20", "acciones": 3, "precio": 444.88,
+                    "comision": 0.0})
+    ventas = [
+        {"id": "v1", "fecha": "2026-08-07", "acciones": 3, "precio": 558.165, "comision": 6.51},
+        {"id": "v2", "fecha": "2026-08-12", "acciones": 3, "precio": 568.965, "comision": 6.58},
+    ]
+    r = lotes.metodo_degiro(compras, ventas)
+    assert r["acciones"] == 12
+    assert r["precio_medio"] == pytest.approx(515.377, abs=0.05), (
+        "no reproduce el precio medio que enseña DEGIRO")
+
+
+def test_los_otros_metodos_NO_pueden_dar_esa_cifra():
+    """Y esto es lo que convierte la coincidencia en prueba: los demás no fallan por poco,
+    fallan por un margen que exigiría comisiones negativas o de 27 $ por acción."""
+    vivas = 2 * 642.03 + 2 * 621.94 + 2 * 565.00 + 3 * 505.60 + 3 * 444.88
+    vendidas = 3 * 467.63 + 3 * 535.12
+    degiro, ingresado = 515.376875, 1667.99 + 1700.32
+
+    # Comisión total que haría falta en cada hipótesis para llegar a los 515,376875 $.
+    assert degiro * 18 - (vivas + vendidas) < -200, "media ponderada: comisión negativa"
+    assert degiro * 12 - vivas < -300, "LIFO: comisión negativa"
+    fifo_vivas = 3 * 535.12 + 3 * 467.63 + 3 * 505.60 + 3 * 444.88
+    assert degiro * 12 - fifo_vivas > 300, "FIFO: 27 $ de comisión por acción"
+    # Y el de DEGIRO cae en el rango de su tarifa publicada.
+    k = degiro * 12 + ingresado - (vivas + vendidas)
+    assert 30 < k < 40, "el único que exige una comisión que puede existir"
+
+
+def test_el_precio_medio_SE_MUEVE_al_vender():
+    """La propiedad que delata al método y que ningún otro tiene. Con media ponderada no se
+    movería nunca; aquí sube al vender por debajo de tu media y baja al vender por encima."""
     compras = [{"id": "c1", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0,
-                "comision": 20.0, "divisa": "USD", "tasa": 1.16}]
-    p = lotes.media_ponderada(compras, [])
-    assert p["precio_medio"] == 102.0, "el coste por acción sí lleva la comisión"
-    assert p["precio_medio_sin_comision"] == 100.0, "el precio, no"
+                "comision": 0.0}]
+    barata = [{"id": "v1", "fecha": "2026-06-01", "acciones": 5, "precio": 50.0,
+               "comision": 0.0}]
+    cara = [{"id": "v1", "fecha": "2026-06-01", "acciones": 5, "precio": 150.0,
+             "comision": 0.0}]
+    assert lotes.metodo_degiro(compras, barata)["precio_medio"] == 150.0   # sube
+    assert lotes.metodo_degiro(compras, cara)["precio_medio"] == 50.0      # baja
+    assert lotes.media_ponderada(compras, barata)["precio_medio"] == 100.0  # no se mueve
 
 
-def test_las_dos_medias_se_mantienen_al_promediar_varias_compras():
+def test_recuperar_mas_de_lo_puesto_deja_el_coste_en_negativo():
+    """No es un error: quiere decir que ya has sacado más de lo que metiste y lo que queda
+    te sale gratis. DEGIRO lo enseña igual."""
     compras = [{"id": "c1", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0,
-                "comision": 10.0, "divisa": "USD", "tasa": 1.16},
-               {"id": "c2", "fecha": "2026-02-10", "acciones": 10, "precio": 80.0,
-                "comision": 10.0, "divisa": "USD", "tasa": 1.16}]
-    p = lotes.media_ponderada(compras, [])
-    assert p["precio_medio_sin_comision"] == 90.0          # (100 + 80) / 2
-    assert p["precio_medio"] == 91.0                       # + 20 $ / 20 acciones
-
-
-def test_vender_no_mueve_ninguna_de_las_dos():
-    """Es lo que define al método: la media del bróker no baja al vender."""
-    compras = [{"id": "c1", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0,
-                "comision": 10.0, "divisa": "USD", "tasa": 1.16}]
-    ventas = [{"id": "v1", "fecha": "2026-06-01", "acciones": 5, "precio": 200.0,
-               "comision": 2.0, "divisa": "USD", "tasa": 1.16}]
-    p = lotes.media_ponderada(compras, ventas)
-    assert p["precio_medio_sin_comision"] == 100.0 and p["precio_medio"] == 101.0
+                "comision": 0.0}]
+    ventas = [{"id": "v1", "fecha": "2026-06-01", "acciones": 5, "precio": 300.0,
+               "comision": 0.0}]
+    r = lotes.metodo_degiro(compras, ventas)
+    assert r["coste_libro"] == -500.0 and r["precio_medio"] == -100.0

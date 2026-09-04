@@ -654,20 +654,11 @@ def media_ponderada(compras: list, ventas: list) -> dict:
     # número inventado. Si a una compra le falta el cambio, la media en euros deja de
     # existir para siempre (arrastrarla a medias daría una cifra falsa sin avisar).
     media_eur, eur_completo = 0.0, True
-    media_limpia = 0.0
     for op in ops:
         n = float(op.get("acciones") or 0)
         precio = float(op.get("precio") or 0)
         comision = float(op.get("comision") or 0.0)
         if op["_t"] == "c":
-            # La media SIN comisiones, en paralelo. Es la que enseña el bróker: su "precio
-            # medio" es un PRECIO —lo que pagaste por acción— y no un coste, así que no
-            # lleva la comisión dentro. La de al lado sí la lleva, y debe llevarla: es la
-            # que sirve para calcular lo que ganas. Son dos cifras distintas y las dos
-            # hacen falta; la diferencia entre ellas es exactamente lo que te ha costado
-            # operar, repartido por acción.
-            media_limpia = (((cantidad * media_limpia + n * precio) / (cantidad + n))
-                            if cantidad + n > 1e-9 else 0.0)
             coste = cantidad * media + n * precio + comision
             en_eur = _a_eur(n * precio + comision, tasa_de(op))
             if en_eur is None:
@@ -719,8 +710,6 @@ def media_ponderada(compras: list, ventas: list) -> dict:
             # bróker no se mueva al vender.
     return {
         "precio_medio": round(media, 4) if cantidad > 1e-9 else None,
-        # El mismo precio medio SIN comisiones: el que cuadra con la pantalla del bróker.
-        "precio_medio_sin_comision": round(media_limpia, 4) if cantidad > 1e-9 else None,
         "precio_medio_eur": (round(media_eur, 4)
                              if eur_completo and cantidad > 1e-9 else None),
         "acciones": round(cantidad, 6),
@@ -729,6 +718,87 @@ def media_ponderada(compras: list, ventas: list) -> dict:
                       if eur_completo and cantidad > 1e-9 else None),
         "ganancia_realizada_divisa": round(realizado, 2),
         "ventas": ventas_pmp,
+    }
+
+
+def metodo_degiro(compras: list, ventas: list) -> dict:
+    """El método que usa DEGIRO de verdad: el coste del libro MENGUA con lo ingresado.
+
+    No es media ponderada, ni FIFO, ni LIFO. Al vender, DEGIRO resta del coste de la
+    posición el DINERO QUE ENTRA, no lo que costaron las acciones vendidas:
+
+        coste_libro = (todo lo comprado, comisiones incluidas) − (todo lo ingresado al vender)
+        precio_medio = coste_libro / acciones que quedan
+
+    De ahí sale la propiedad que delata al método y que ningún otro tiene: el precio medio
+    SE MUEVE al vender. Sube si vendes por debajo de tu media y baja si vendes por encima.
+    Con media ponderada no se movería nunca; con FIFO o LIFO se movería según qué lote se
+    dé por vendido, no según el precio al que vendes.
+
+    CÓMO SE SABE QUE ES ESTE
+    ------------------------
+    Medido contra la pantalla del bróker con FN: 18 acciones compradas, 6 vendidas, y
+    DEGIRO enseñando 515,376875 $ de precio medio para las 12 que quedan. Despejando qué
+    comisión total haría falta en cada hipótesis para llegar a esa cifra:
+
+        media ponderada   −240,85 $   imposible: comisión negativa
+        FIFO               324,83 $   imposible: 27 $ por acción
+        LIFO              −324,86 $   imposible: comisión negativa
+        ESTE                35,20 $   ~6 órdenes de 1.400 $ a 2 € + 0,25% = 34,8 $  ✓
+
+    Tres de las cuatro no es que ajusten peor: es que exigen números que no pueden existir.
+
+    LO QUE ESTE MÉTODO NO TIENE
+    ---------------------------
+    Ganancia por venta. Al no descontar un coste concreto, una venta no "realiza" nada: solo
+    mueve dinero del coste del libro a tu saldo. Lo que queda medido es la posición entera
+    —valor de hoy menos coste del libro— y por eso el Total P/L de DEGIRO no separa lo
+    realizado de lo latente. Para la ganancia POR VENTA siguen haciendo falta FIFO (que es
+    la que va a la declaración) o LIFO.
+    """
+    ops = sorted([{**c, "_t": "c"} for c in compras] + [{**v, "_t": "v"} for v in ventas],
+                 key=lambda x: (str(x.get("fecha") or ""), str(x.get("created_at") or "")))
+    coste, coste_eur, acciones = 0.0, 0.0, 0.0
+    eur_completo, movimientos = True, []
+    for op in ops:
+        n = float(op.get("acciones") or 0)
+        precio = float(op.get("precio") or 0)
+        comision = float(op.get("comision") or 0.0)
+        medio_antes = (coste / acciones) if acciones > 1e-9 else None
+        if op["_t"] == "c":
+            # La comisión SUMA al coste: es dinero que pusiste para tener esas acciones.
+            importe = n * precio + comision
+            acciones += n
+        else:
+            # Y aquí está la diferencia con todo lo demás: se resta lo INGRESADO —ya neto de
+            # comisión, que es lo que de verdad entra en la cuenta— y no el coste de esas
+            # acciones. Puede dejar el coste del libro en negativo, y no es un error: quiere
+            # decir que ya has recuperado más de lo que pusiste.
+            importe = -(n * precio - comision)
+            acciones = max(0.0, acciones - n)
+        coste += importe
+        en_eur = _a_eur(importe, op.get("tasa"))
+        if en_eur is None:
+            eur_completo = False
+        elif eur_completo:
+            coste_eur += en_eur
+        if op["_t"] == "v":
+            medio_despues = (coste / acciones) if acciones > 1e-9 else None
+            movimientos.append({
+                "id": op.get("id"), "fecha": op.get("fecha"),
+                "precio_medio_antes": round(medio_antes, 4) if medio_antes is not None else None,
+                "precio_medio_despues": (round(medio_despues, 4)
+                                         if medio_despues is not None else None),
+                "acciones_despues": round(acciones, 6),
+            })
+    return {
+        "acciones": round(acciones, 6),
+        "coste_libro": round(coste, 2),
+        "coste_libro_eur": round(coste_eur, 2) if eur_completo else None,
+        "precio_medio": round(coste / acciones, 4) if acciones > 1e-9 else None,
+        "precio_medio_eur": (round(coste_eur / acciones, 4)
+                             if eur_completo and acciones > 1e-9 else None),
+        "ventas": movimientos,
     }
 
 

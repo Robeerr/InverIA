@@ -1022,6 +1022,7 @@ async def resumen_cartera(db, precios: dict) -> dict:
         divisa_cot = cotiza.get(sym, divisa)
         val = lotes.valorar_abierto(estado, precios.get(sym), tasas.get(divisa_cot))
         pmp = lotes.media_ponderada(libro["compras"], libro["ventas"])
+        deg = lotes.metodo_degiro(libro["compras"], libro["ventas"])
         posiciones.append({
             "symbol": sym, "divisa": divisa, "divisas_mezcladas": mezcla,
             # Cuando la operación dice una moneda y el mercado otra, una de las dos es una
@@ -1033,10 +1034,14 @@ async def resumen_cartera(db, precios: dict) -> dict:
             # Para cuadrar con el bróker. Va aparte del precio_medio y etiquetado: son dos
             # medidas distintas y mezclarlas haría pensar que una de las dos está mal.
             "precio_medio_ponderado": pmp["precio_medio"],
-            # El que cuadra con la pantalla de DEGIRO: su "precio medio" es un PRECIO y no
-            # lleva comisiones dentro. Medido contra su cifra de FN —515,376875 $— el
-            # nuestro con comisiones se pasaba un 0,42% y este coincide.
-            "precio_medio_ponderado_limpio": pmp.get("precio_medio_sin_comision"),
+            # El de DEGIRO de verdad. Sustituye a la "media ponderada sin comisiones" que
+            # hubo aquí un rato: aquello salía de suponer que el bróker usaba media
+            # ponderada y que la diferencia con su pantalla eran las comisiones. Con los
+            # datos reales de FN esa hipótesis exige una comisión NEGATIVA de 240 $, así
+            # que era imposible. Esta reproduce su cifra al céntimo.
+            "precio_medio_degiro": deg.get("precio_medio"),
+            "coste_libro_degiro": deg.get("coste_libro"),
+            "coste_libro_degiro_eur": deg.get("coste_libro_eur"),
             # La posición valorada COMO EL BRÓKER, para poder comparar fila a fila. Lo que
             # FIFO/LIFO se apuntan de más aquí ya se lo apuntaron en lo realizado: sumando
             # latente y realizado, los dos métodos dan el mismo total.

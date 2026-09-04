@@ -61,8 +61,12 @@ function datosPosicion(p, comoBroker) {
     // la pantalla del bróker: su "precio medio" es un precio, no un coste. Con comisiones
     // el nuestro se pasaba un 0,42% —medido contra los 515,376875 $ de FN— y esa diferencia
     // no es un error de ninguno de los dos: es lo que te ha costado operar, por acción.
+    // El precio medio del bróker es el SUYO, no la media ponderada: DEGIRO resta del coste
+    // lo INGRESADO al vender, y por eso su medio se mueve cuando vendes —sube si vendes por
+    // debajo de tu media, baja si vendes por encima—. Con media ponderada no se movería
+    // nunca, y moverse es justo lo que se observa en su pantalla todos los días.
     precioMedio: usaPmp
-      ? (p.precio_medio_ponderado_limpio ?? p.precio_medio_ponderado)
+      ? (p.precio_medio_degiro ?? p.precio_medio_ponderado)
       : p.precio_medio,
     invertido: usaPmp ? p.ponderada.coste_eur : p.coste_eur,
     // Para poder decirlo en la fila en vez de dejar que el número mienta en silencio.
@@ -2337,7 +2341,7 @@ export default function VentasView() {
                             <div className="text-[10px] text-tinta-3">
                               {comoBroker
                                 ? `${metodo.toUpperCase()} = ${usd(p.precio_medio, p.divisa)}`
-                                : `bróker ≈ ${usd(p.precio_medio_ponderado_limpio ?? p.precio_medio_ponderado, p.divisa)}`}
+                                : `bróker ≈ ${usd(p.precio_medio_degiro ?? p.precio_medio_ponderado, p.divisa)}`}
                             </div>
                           )}
                         </dd>
@@ -2483,7 +2487,7 @@ export default function VentasView() {
                                : "Precio medio ponderado: el que suele enseñar tu bróker. No cambia al vender, porque promedia TODO lo que has comprado. El de arriba es el coste de las acciones que te quedan de verdad."}>
                           {comoBroker
                             ? `${metodo.toUpperCase()} = ${usd(p.precio_medio, p.divisa)}`
-                            : `bróker ≈ ${usd(p.precio_medio_ponderado_limpio ?? p.precio_medio_ponderado, p.divisa)}`}
+                            : `bróker ≈ ${usd(p.precio_medio_degiro ?? p.precio_medio_ponderado, p.divisa)}`}
                         </div>
                       )}
                     </td>
@@ -2550,10 +2554,13 @@ export default function VentasView() {
             vuelven a encenderse en cuanto vendes la última acción de ese nivel. Los niveles
             que no tengan compras registradas no se tocan.
             <br />
-            <b>bróker ≈</b> es el precio medio ponderado, el que suele enseñar tu bróker: promedia
-            TODO lo que has comprado y no cambia al vender. El de arriba es el coste real de
-            las acciones que te quedan. Los dos son correctos y miden cosas distintas — el
-            ponderado sirve para cuadrar pantallas, no para saber lo que ganaste en cada nivel.
+            <b>bróker ≈</b> es el precio medio de DEGIRO, y no se calcula como el de arriba:
+            al vender, DEGIRO resta del coste de la posición <b>el dinero que ingresas</b>, no
+            lo que costaron las acciones vendidas. Por eso su medio SE MUEVE cuando vendes —
+            sube si vendes por debajo de tu media y baja si vendes por encima—. El de arriba
+            es el coste real de las acciones que te quedan. Los dos son correctos y miden
+            cosas distintas: el suyo sirve para cuadrar pantallas, no para saber lo que
+            ganaste en cada nivel.
           </p>
           </details>
         </Plegable>
