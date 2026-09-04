@@ -90,7 +90,7 @@ function Chip({ children, tono: t = "neutro", title }) {
 // La ayuda NO puede vivir solo en `title=`: en el móvil no hay ratón que posar encima, así
 // que el texto era sencillamente inalcanzable. Es un botón que despliega el texto bajo la
 // cifra, y de paso funciona con teclado.
-function Kpi({ etiqueta, valor, sub, acento = false, ayuda }) {
+function Kpi({ etiqueta, significa, valor, sub, acento = false, ayuda }) {
   const [abierta, setAbierta] = React.useState(false);
   return (
     <div className="iv-panel px-4 py-3 flex-1 min-w-[150px]">
@@ -105,6 +105,13 @@ function Kpi({ etiqueta, valor, sub, acento = false, ayuda }) {
           </button>
         )}
       </p>
+      {/* Qué es, en cristiano, entre el nombre y la cifra. La etiqueta de arriba es el
+          nombre técnico —REALIZADO, LATENTE— y no dice nada a quien no lo sepa ya; el pie
+          de debajo es el detalle (cuántas ventas, qué método). Faltaba lo del medio: la
+          frase que contesta "¿esto qué es?" sin tener que abrir la ayuda. */}
+      {significa && (
+        <p className="text-[11px] text-tinta-2 mt-0.5 leading-snug">{significa}</p>
+      )}
       <p className={`font-mono font-bold mt-1 ${acento ? "text-2xl" : "text-xl"} ${tono(valor)}`}>
         {eur(valor)}
       </p>
@@ -1676,7 +1683,7 @@ export default function VentasView() {
           otro puede evaporarse mañana. Sumarlos sin distinguirlos da una sensación de
           riqueza que el mercado no ha confirmado. */}
       <div className="flex gap-3 flex-wrap">
-        <Kpi etiqueta="Realizado" valor={realizado} acento
+        <Kpi etiqueta="Realizado" significa="Lo que ya cobraste al vender" valor={realizado} acento
              // n_ventas cuelga del resumen, no del método: el número de ventas es el
              // mismo se mire con FIFO o con LIFO. Leerlo de dentro del método daba
              // siempre 0, o sea "no has vendido nada" con 148 ventas en la lista.
@@ -1700,7 +1707,7 @@ export default function VentasView() {
         {/* Va en la MISMA base que el realizado, y por eso obedece al interruptor: lo que
             un método se apunta de más arriba, el otro se lo guarda aquí. La cifra del otro
             método sigue debajo, que es lo que hace falta para comparar pantallas. */}
-        <Kpi etiqueta="Latente" valor={latente}
+        <Kpi etiqueta="Latente" significa="Lo que aún está en juego" valor={latente}
              // Una posición sin cotización NO entra en el latente, y hasta ahora eso no se
              // decía: el número parecía completo cuando le faltaba una posición entera. Es
              // lo primero que hay que mirar cuando el total no cuadra con el bróker.
@@ -1726,7 +1733,7 @@ export default function VentasView() {
         {/* SIEMPRE visible, aunque esté vacía. Escondiéndola hasta que hubiera dividendos,
             la única forma de enterarse de que existe era leer el texto del importador — y
             una función que no se ve no existe. Vacía dice qué falta para llenarla. */}
-        <Kpi etiqueta="Dividendos" valor={dividendos}
+        <Kpi etiqueta="Dividendos" significa="Lo que te han pagado por tener las acciones" valor={dividendos}
              sub={dividendos == null
                ? "sube tu Account.csv de DEGIRO"
                : [
@@ -1738,7 +1745,7 @@ export default function VentasView() {
                  ].filter(Boolean).join(" · ")}
              ayuda="Cobrado por dividendos, ya descontada la retención en origen. Los dividendos NO están en el Transactions.csv: hay que subir además el Account.csv (Actividad → Cuenta). Se cuentan aparte porque fiscalmente no son ganancias patrimoniales sino rendimientos del capital mobiliario, y van a otra casilla de la declaración. La retención de EE.UU. es recuperable en parte con el convenio de doble imposición." />
         {costes != null && (
-          <Kpi etiqueta="Costes" valor={costes}
+          <Kpi etiqueta="Costes" significa="Lo que te cobra DEGIRO por el saldo y los datos" valor={costes}
                sub={`${divs?.n_costes ?? 0} apunte(s) · intereses y conectividad`}
                ayuda="Intereses por operar con el saldo en negativo y conectividad con mercados, sacados del Account.csv. No incluye las comisiones de compraventa, que ya están descontadas en cada operación. Es lo que separa tu total del Total P/L de DEGIRO." />
         )}
@@ -1746,7 +1753,7 @@ export default function VentasView() {
             la pantalla que NO depende del método: como el realizado y el latente van en la
             misma base, lo que un método se apunta de más en uno se lo guarda en el otro y
             la suma sale igual. Por eso no hay que activar nada para leerla. */}
-        <Kpi etiqueta="Total" valor={total}
+        <Kpi etiqueta="Total" significa="Todo junto: tu resultado en esta cuenta" valor={total}
              ayuda="Todo lo que llevas ganado o perdido en esta cuenta: lo realizado en ventas, lo latente de lo que sigue abierto, los dividendos cobrados y los costes. NO cambia con el método ni con el interruptor de DEGIRO: FIFO, LIFO y media ponderada reparten lo mismo de otra forma entre realizado y latente, pero suman igual. Si alguna vez cambia, es un fallo."
              sub={[
                "realizado + latente",
@@ -1754,7 +1761,7 @@ export default function VentasView() {
                costes != null ? "+ costes" : null,
              ].filter(Boolean).join(" ")} />
         {tot?.efecto_divisa_eur != null && Math.abs(tot.efecto_divisa_eur) >= 0.01 && (
-          <Kpi etiqueta="Efecto del euro" valor={tot.efecto_divisa_eur}
+          <Kpi etiqueta="Efecto del euro" significa="Cuánto de tu resultado es el euro y no la acción" valor={tot.efecto_divisa_eur}
                sub="incluido en el realizado"
                ayuda="Cuánto de tu ganancia realizada viene del movimiento del euro frente al dólar, y no de que la acción subiera." />
         )}
