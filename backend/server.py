@@ -35,6 +35,7 @@ import signal_table
 import daily_analyst
 import sp500_rsi_watch
 import vigia_modelo
+import riesgo_cartera
 import ventas as ventas_mod
 import cartera_api
 import degiro_csv
@@ -51,6 +52,7 @@ import mem
 import levels_engine
 import estado_accion
 import veto_compra
+import vigilancia_veto
 import auth
 
 ROOT_DIR = Path(__file__).parent
@@ -170,6 +172,11 @@ DASHBOARD_TTL = int(os.environ.get("DASHBOARD_TTL", 900))  # 15 min
 # Cuánto tiempo una alerta disparada sigue mereciendo la portada. NO depende de la
 # última visita: mirar la pantalla no es haber actuado.
 VENTANA_ALERTAS_HORAS = int(os.environ.get("VENTANA_ALERTAS_HORAS", 24))
+# Cada cuánto se comprueba si el veto de una acción vigilada se ha levantado. Media hora es
+# holgado a propósito: la condición son dos medias móviles sobre cierres DIARIOS, así que
+# dentro de una misma sesión apenas cambia. Bajarlo no adelantaría el aviso, solo repetiría
+# la misma lectura.
+VIGILANCIA_VETO_CADENCIA = int(os.environ.get("VIGILANCIA_VETO_CADENCIA", 1800))  # 30 min
 
 
 def _umbral_prewarm() -> int:
@@ -326,6 +333,9 @@ async def lifespan(app: FastAPI):
     await db.analyses.create_index([("symbol", 1), ("created_at", -1)])
     await db.watchlist.create_index("symbol")
     await db.chartist_state.create_index("symbol", unique=True)
+    # Único: armar dos veces la misma acción daría dos avisos idénticos. El endpoint ya lo
+    # comprueba, pero entre la comprobación y el insert cabe una segunda petición.
+    await db.vigilancia_veto.create_index("symbol", unique=True)
     await db.alerts.create_index("symbol")
     # Libro de operaciones: todo se consulta por símbolo y se ordena por fecha.
     await db.isin_map.create_index("isin", unique=True)
@@ -667,6 +677,55 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_prewarm_chartist())
 
+    # VIGILANCIA DE VETADAS: avisa cuando una acción que no se podía comprar vuelve a
+    # tendencia alcista. El porqué está en `vigilancia_veto.py`; aquí solo el bucle.
+    #
+    # COSTE: `tendencia_de` lee el histórico diario GRATUITO y cacheado. Ni Finnhub ni
+    # Gemini. Por eso este bucle puede ir cada 30 minutos sobre 40 acciones sin competir con
+    # nada — a diferencia del pre-cálculo del Chartista, que va al ritmo de su caché porque
+    # cada vuelta suya gasta cuota de IA.
+    async def _vigilar_vetadas():
+        await asyncio.sleep(180)  # después del arranque y del prewarm
+        while True:
+            try:
+                now = datetime.now(timezone.utc)
+                # Solo en sesión: la tendencia se mueve con los cierres, y comprobarla de
+                # madrugada gastaría vueltas para releer el mismo cierre de ayer. El aviso
+                # llega igual, como muy tarde a la apertura siguiente.
+                if now.weekday() < 5 and 13 <= now.hour < 22:
+                    vigiladas = await db.vigilancia_veto.find({}, {"_id": 0}).to_list(200)
+                    for v in vigiladas:
+                        sym = (v.get("symbol") or "").upper()
+                        if not sym:
+                            continue
+                        try:
+                            estado_t = await asyncio.to_thread(market_data.tendencia_de, sym)
+                            if not vigilancia_veto.se_levanta(estado_t):
+                                continue
+                            import telegram_notifier
+                            msg = vigilancia_veto.mensaje(sym, v.get("estado_al_armar"))
+                            ok, err = await telegram_notifier.send_message(
+                                msg, parse_mode="", grupo="ideas_javi")
+                            # Se retira SOLO si el aviso salió. Igual que en
+                            # `_chartist_vigilante`: `send_message` no lanza, así que
+                            # borrando antes un fallo de Telegram perdería el aviso para
+                            # siempre y la vigilancia se habría consumido sin avisar.
+                            if ok:
+                                await db.vigilancia_veto.delete_one({"symbol": sym})
+                                logger.info("Vigilancia: veto levantado en %s, avisado", sym)
+                            else:
+                                logger.warning("Vigilancia %s: Telegram falló (%s); "
+                                               "reintentaré", sym, str(err)[:120])
+                        except Exception as e:
+                            logger.warning("Vigilancia de %s falló: %s", sym, str(e)[:120])
+                        await asyncio.sleep(2)  # espacia las lecturas de histórico
+                    mem.trim()
+            except Exception as e:
+                logger.warning("Bucle de vigilancia de vetadas: %s", e)
+            await asyncio.sleep(VIGILANCIA_VETO_CADENCIA)
+
+    asyncio.create_task(_vigilar_vetadas())
+
     # Trimmer periódico: devuelve al SO la memoria libre que glibc retiene tras los jobs
     # pesados (pandas). Coste ínfimo (1 vez cada 10 min) y evita que la RSS se quede en el
     # máximo alcanzado y trepe hacia el límite de 512MB.
@@ -942,7 +1001,11 @@ class SignalEntryCreate(BaseModel):
     alert_venta2: Optional[bool] = True
     alert_venta3: Optional[bool] = True
     riesgo: Optional[str] = ""
+    # La letra A-D del modelo de MARGEN de DEGIRO. Sin declararla aquí, Pydantic la
+    # descarta en silencio y el desplegable de la Cartera no guarda nada.
+    categoria_degiro: Optional[str] = ""
     sector: Optional[str] = ""
+    sector_degiro: Optional[str] = None
     posibles_ganancias: Optional[float] = None
     notes: Optional[str] = ""
     active: Optional[bool] = True
@@ -985,7 +1048,11 @@ class SignalEntryUpdate(BaseModel):
     alert_venta2: Optional[bool] = None
     alert_venta3: Optional[bool] = None
     riesgo: Optional[str] = None
+    # La letra A-D del modelo de MARGEN de DEGIRO. Sin declararla aquí, Pydantic la
+    # descarta en silencio y el desplegable de la Cartera no guarda nada.
+    categoria_degiro: Optional[str] = None
     sector: Optional[str] = None
+    sector_degiro: Optional[str] = None
     posibles_ganancias: Optional[float] = None
     notes: Optional[str] = None
     active: Optional[bool] = None
@@ -2856,6 +2923,39 @@ async def crear_compra(item: CompraCreate, _user: str = Depends(auth.get_current
     return compra
 
 
+class CompraMultinivel(BaseModel):
+    """Una orden repartida en varios niveles: 12 acciones que son 6 del Nivel 1 y 6 del 2."""
+    symbol: str
+    precio: float
+    reparto: List[dict]                  # [{"nivel": "nivel1", "acciones": 6}, ...]
+    fecha: Optional[str] = None
+    comision: Optional[float] = None     # de la orden ENTERA; se prorratea
+    divisa: Optional[str] = None
+    tasa: Optional[float] = None
+    notas: Optional[str] = ""
+
+
+@api_router.post("/cartera/compras/multinivel")
+async def crear_compra_multinivel(item: CompraMultinivel,
+                                  _user: str = Depends(auth.get_current_user)):
+    """Registra UNA compra repartida en varios niveles, como lotes separados.
+
+    La comisión se cobra una sola vez y se prorratea: los 2 € fijos de DEGIRO son por
+    operación, no por lote.
+    """
+    try:
+        r = await cartera_api.registrar_compra_multinivel(
+            db, item.symbol,
+            [(d.get("nivel"), d.get("acciones")) for d in (item.reparto or [])],
+            item.precio, fecha=item.fecha, comision=item.comision,
+            divisa=item.divisa, tasa=item.tasa, notas=item.notas or "")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    for k in ("signals_list", "signals_hot"):
+        _cache._store.pop(k, None)
+    return r
+
+
 @api_router.delete("/cartera/compras/{compra_id}")
 async def eliminar_compra(compra_id: str, forzar: bool = False,
                           _user: str = Depends(auth.get_current_user)):
@@ -2903,6 +3003,22 @@ async def crear_venta(item: VentaLoteCreate, _user: str = Depends(auth.get_curre
     for k in ("signals_list", "signals_hot"):
         _cache._store.pop(k, None)
     return estado
+
+
+@api_router.post("/cartera/estimar-comisiones")
+async def estimar_comisiones(aplicar: bool = False,
+                             _user: str = Depends(auth.get_current_user)):
+    """Pone la comisión estimada a los apuntes tecleados que se quedaron a cero.
+
+    Dos pasos a propósito: sin `aplicar` solo dice qué tocaría y cuánto suma, porque esto
+    reescribe apuntes del usuario. Nunca toca lo que vino del CSV: ahí la comisión es la
+    del fichero, y un cero real es un dato, no un hueco.
+    """
+    r = await cartera_api.estimar_comisiones_pendientes(db, aplicar=aplicar)
+    if aplicar:
+        for k in ("signals_list", "signals_hot"):
+            _cache._store.pop(k, None)
+    return r
 
 
 @api_router.delete("/cartera/ventas/{venta_id}")
@@ -3006,6 +3122,239 @@ async def resumen_cartera(_user: str = Depends(auth.get_current_user)):
     return await cartera_api.resumen_cartera(db, precios)
 
 
+def _hoy() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+class ExtractoMargen(BaseModel):
+    """El «Margin statement» de DEGIRO, copiado a mano.
+
+    Es lo que permite comprobar si el modelo reproduce el riesgo real. Sin esto no se da
+    ninguna cifra: las categorías A-D y la taxonomía sectorial del bróker no se pueden
+    consultar por API, así que la única forma honesta de dar euros es demostrar antes que
+    los números salen.
+    """
+    riesgo_eur: float
+    valor_cartera_eur: Optional[float] = None
+    # Las dos líneas del desglose de «Portfolio Risk». Opcionales, pero son las que
+    # convierten «mira a ver si son las categorías o los sectores» en «te faltan 6.684 € en
+    # categoría D»: su resta es el 15% de lo que NO está en D, así que despeja lo que hay.
+    riesgo_neto_eur: Optional[float] = None
+    riesgo_bruto_eur: Optional[float] = None
+    riesgo_sector_eur: Optional[float] = None
+    saldo_eur: Optional[float] = None
+    margen_eur: Optional[float] = None
+    fecha: Optional[str] = None          # YYYY-MM-DD; vacío = hoy
+
+
+@api_router.get("/cartera/margen")
+async def leer_extracto_margen(_user: str = Depends(auth.get_current_user)):
+    doc = await db.margen_degiro.find_one({"id": "actual"}, {"_id": 0})
+    return doc or {}
+
+
+@api_router.put("/cartera/margen")
+async def guardar_extracto_margen(item: ExtractoMargen,
+                                  _user: str = Depends(auth.get_current_user)):
+    datos = item.model_dump()
+    datos["fecha"] = (datos.get("fecha") or "")[:10] or _hoy()
+    datos["id"] = "actual"
+    await db.margen_degiro.update_one({"id": "actual"}, {"$set": datos}, upsert=True)
+    return datos
+
+
+async def _posiciones_con_riesgo():
+    """Las posiciones abiertas con lo que el modelo de margen necesita.
+
+    El sector y la categoría no viajan en `resumen_cartera` —viven en la ficha de la
+    Cartera—, así que se unen aquí. Es la única razón de que esto no esté dentro de
+    `cartera_api`: ese módulo es el libro de operaciones y no sabe de `signal_entries`.
+    """
+    precios, fichas = {}, {}
+    try:
+        for e in await signal_table.list_entries(db):
+            s = (e.get("symbol") or "").upper()
+            if not s:
+                continue
+            if e.get("last_price") is not None:
+                precios[s] = e["last_price"]
+            fichas[s] = e
+    except Exception as exc:
+        logger.warning("No se pudieron leer las fichas para el riesgo de venta: %s", exc)
+    resumen = await cartera_api.resumen_cartera(db, precios)
+    posiciones = []
+    for p in (resumen.get("posiciones") or []):
+        sym = (p.get("symbol") or "").upper()
+        f = fichas.get(sym, {})
+        posiciones.append({
+            "symbol": sym,
+            "valor_eur": p.get("valor_eur"),
+            "acciones": p.get("acciones"),
+            # El sector con el que agrupa DEGIRO, si se ha rellenado; si no, el propio.
+            # La distinción importa: el suyo es mucho más grueso, y su límite de
+            # concentración se calcula sobre SUS grupos, no sobre los del usuario.
+            "sector": ((f.get("sector_degiro") or "").strip()
+                       or (f.get("sector") or "").strip()),
+            # La letra que DEGIRO enseña junto al producto. Se teclea a mano porque no hay
+            # API que la sirva; sin ella se asume la categoría más baja y la calibración
+            # se encarga de delatarlo.
+            "categoria": (f.get("categoria_degiro") or "").strip().upper(),
+            "divisa": (p.get("divisa") or "USD").upper(),
+        })
+    return posiciones
+
+
+@api_router.post("/cartera/agrupar-sector")
+async def agrupar_sector_como_degiro(aplicar: bool = False,
+                                     _user: str = Depends(auth.get_current_user)):
+    """Propone —y opcionalmente aplica— la agrupación sectorial que reproduce el extracto.
+
+    El bróker no publica su taxonomía, pero sí publica cuánto suma su mayor sector. Con eso
+    y el valor de cada posición, la pregunta se convierte en una suma con solución. Va en
+    dos pasos porque escribe en fichas del usuario: sin `aplicar` solo dice qué haría.
+    """
+    posiciones = await _posiciones_con_riesgo()
+    extracto = await db.margen_degiro.find_one({"id": "actual"}, {"_id": 0})
+    implicita = riesgo_cartera.categoria_d_implicita(extracto)
+    if not implicita:
+        raise HTTPException(400, "Faltan las líneas «Net investment» y «Gross investment» "
+                                 "del extracto: sin ellas no se sabe cuánto es categoría D "
+                                 "y el objetivo del sector no se puede despejar.")
+    comps = riesgo_cartera.componentes(posiciones)
+    objetivo = riesgo_cartera.sector_implicito(extracto, implicita["categoria_d_eur"],
+                                              comps.get("divisa") or 0.0)
+    if not objetivo:
+        raise HTTPException(400, "Falta la línea «Largest sector risk» del extracto.")
+
+    plan = riesgo_cartera.agrupar_como_degiro(
+        posiciones, objetivo,
+        tolerancia_eur=riesgo_cartera.tolerancia_de_sector(extracto.get("riesgo_eur")))
+    if not plan:
+        raise HTTPException(400, "No hay posiciones abiertas que agrupar.")
+    if aplicar and plan.get("propuesta"):
+        for p in plan["propuesta"]:
+            await db.signal_entries.update_one(
+                {"symbol": p["symbol"]},
+                {"$set": {"sector_degiro": plan["grupo"], "updated_at": _hoy()}})
+        for k in ("signals_list", "signals_hot"):
+            _cache._store.pop(k, None)
+        plan["aplicado"] = True
+    return plan
+
+
+@api_router.get("/cartera/riesgo-venta/{symbol}")
+async def riesgo_de_vender(symbol: str, acciones: Optional[float] = None,
+                           _user: str = Depends(auth.get_current_user)):
+    """Cuánto margen libre debería devolver vender esto.
+
+    Da euros SOLO si el modelo reproduce el riesgo del último extracto de margen dentro de
+    su tolerancia. Si no, devuelve el motivo por el que se calla.
+    """
+    posiciones = await _posiciones_con_riesgo()
+    extracto = await db.margen_degiro.find_one({"id": "actual"}, {"_id": 0})
+    return riesgo_cartera.estimar(posiciones, (symbol or "").strip().upper(),
+                                  acciones=acciones, extracto=extracto, hoy=_hoy())
+
+
+async def _importe_de_acciones(sym: str, acciones: float, posiciones: list):
+    """Cuántos euros son `acciones` de `sym`. None si no se puede saber el precio.
+
+    Si el valor está en la cartera se divide `valor_eur` entre las acciones: así el precio
+    unitario es EXACTAMENTE el que usa el modelo, y 15 acciones simuladas valen lo mismo
+    que 15 acciones vendidas. Cualquier otra fuente introduciría una segunda verdad sobre
+    el mismo número.
+    """
+    for p in posiciones:
+        if p["symbol"] == sym and (p.get("acciones") or 0) > 0 and p.get("valor_eur"):
+            return float(p["valor_eur"]) / float(p["acciones"]) * acciones
+    # No está en la cartera: hay que cotizarlo y pasarlo a euros.
+    try:
+        q = await asyncio.to_thread(market_data.get_quote, sym)
+        precio = float((q or {}).get("price") or 0)
+        divisa = ((q or {}).get("currency") or "USD").upper()
+    except Exception as exc:
+        logger.info("Sin cotización para simular %s: %s", sym, exc)
+        return None
+    if precio <= 0:
+        return None
+    if divisa == "EUR":
+        return precio * acciones
+    try:
+        tasa = await asyncio.to_thread(fx.tasa_actual, divisa)
+    except Exception:
+        tasa = None
+    return (precio * acciones / tasa) if tasa else None
+
+
+@api_router.get("/cartera/simular-margen/{symbol}")
+async def simular_margen(symbol: str, accion: str, importe: Optional[float] = None,
+                         acciones: Optional[float] = None,
+                         categoria: Optional[str] = None,
+                         _user: str = Depends(auth.get_current_user)):
+    """Qué le pasa a tu margen si compras o vendes esto. ANTES de decidir.
+
+    Para comprar algo que no tienes hace falta su sector, que sí se puede consultar. Su
+    categoría A-D no: sin ella `simular` devuelve el rango entre la más barata y la más
+    cara en vez de elegir una, porque esa letra decide casi todo el resultado.
+    """
+    sym = (symbol or "").strip().upper()
+    posiciones = await _posiciones_con_riesgo()
+    extracto = await db.margen_degiro.find_one({"id": "actual"}, {"_id": 0})
+
+    sector = None
+    if not any(p["symbol"] == sym for p in posiciones):
+        # No está en la cartera: hay que averiguar en qué sector cae, porque comprarla
+        # engorda ese sector y puede ser justo el que marca el máximo.
+        ficha = await db.signal_entries.find_one({"symbol": sym}, {"_id": 0})
+        sector = (ficha or {}).get("sector") or None
+        if not sector:
+            try:
+                q = await asyncio.to_thread(market_data.get_quote, sym)
+                sector = (q or {}).get("sector") or None
+            except Exception as exc:
+                logger.info("Sin sector para simular %s: %s", sym, exc)
+        if not categoria:
+            categoria = ((ficha or {}).get("categoria_degiro") or "").strip().upper() or None
+
+    # En acciones, que es como se teclea una orden. El importe se deriva aquí para que no
+    # haya dos precios distintos para el mismo número.
+    if importe is None and acciones:
+        importe = await _importe_de_acciones(sym, float(acciones), posiciones)
+        if importe is None:
+            return {"estado": riesgo_cartera.FALTAN_DATOS, "symbol": sym,
+                    "motivo": (f"No se ha podido saber a cuánto cotiza {sym}, así que no "
+                               f"se puede pasar de acciones a euros.")}
+
+    r = riesgo_cartera.simular(posiciones, sym, accion, importe,
+                               categoria=categoria, sector=sector, extracto=extracto,
+                               hoy=_hoy())
+    if acciones and r.get("importe_eur"):
+        # Lo que se simula puede ser MENOS de lo pedido: vender no puede pasar de lo que
+        # tienes. Se devuelven las acciones que corresponden al importe realmente simulado.
+        r["acciones"] = round(float(acciones) * r["importe_eur"] / importe, 6) if importe else None
+    return r
+
+
+@api_router.get("/cartera/riesgo-ranking")
+async def ranking_de_riesgo(_user: str = Depends(auth.get_current_user)):
+    """Todas las posiciones ordenadas por cuánto margen libera vender cada una.
+
+    Es lo que DEGIRO no da: su pantalla solo calcula el impacto de la orden que ya estás
+    componiendo, una a una.
+    """
+    posiciones = await _posiciones_con_riesgo()
+    extracto = await db.margen_degiro.find_one({"id": "actual"}, {"_id": 0})
+    filas = [riesgo_cartera.estimar(posiciones, p["symbol"], extracto=extracto, hoy=_hoy())
+             for p in posiciones]
+    validas = [f for f in filas if f.get("estado") == riesgo_cartera.OK]
+    if not validas:
+        return {"estado": (filas[0]["estado"] if filas else riesgo_cartera.FALTAN_DATOS),
+                "motivo": (filas[0].get("motivo") if filas else None), "posiciones": []}
+    validas.sort(key=lambda f: f.get("pct_del_importe") or 0, reverse=True)
+    return {"estado": riesgo_cartera.OK, "posiciones": validas,
+            "calibracion": validas[0].get("calibracion")}
+
+
 class PrecioManual(BaseModel):
     symbol: str
     precio: Optional[float] = None       # 0 o vacío = quitarlo
@@ -3051,6 +3400,16 @@ async def guardar_ajustes(item: AjusteMetodo, _user: str = Depends(auth.get_curr
 async def importar_degiro(archivo: UploadFile = File(...),
                           mapeo: Optional[str] = None,
                           confirmar: bool = False,
+                          # Repara las que ya estaban en vez de solo saltarlas. Existe
+                          # porque saltarlas —correcto para no duplicar— dejaba intacto lo
+                          # que se importó mal: cientos de operaciones con comisión cero
+                          # que reimportar no arreglaba.
+                          actualizar: bool = False,
+                          # Sustituye tus apuntes tecleados por la fila equivalente del
+                          # fichero. Sin esto, una fila tapada por un apunte tuyo no entra
+                          # NUNCA —y de paso bloquea el borrado de los lotes de la foto,
+                          # porque el CSV "no cubre" unas acciones que sí trae.
+                          sustituir: bool = False,
                           _user: str = Depends(auth.get_current_user)):
     """Importa el CSV de Transacciones de DEGIRO.
 
@@ -3090,7 +3449,8 @@ async def importar_degiro(archivo: UploadFile = File(...),
         return {**prep, "resumen": degiro_csv.resumen(leido["operaciones"]),
                 "errores": leido["errores"], "confirmado": False}
 
-    r = await cartera_api.importar_degiro(db, leido["operaciones"], mapa)
+    r = await cartera_api.importar_degiro(db, leido["operaciones"], mapa,
+                                          actualizar=actualizar, sustituir=sustituir)
     for k in ("signals_list", "signals_hot"):
         _cache._store.pop(k, None)
     return {**r, "resumen": degiro_csv.resumen(leido["operaciones"]),
@@ -3733,7 +4093,81 @@ async def remove_watchlist(symbol: str, _user: str = Depends(auth.get_current_us
     return {"deleted": symbol.upper()}
 
 
+# ---------- Vigilancia de acciones vetadas ----------
+#
+# La otra mitad del veto: `veto_compra` dice que no, y esto avisa el día que deja de decirlo.
+# El razonamiento completo —y por qué el vigilante del Chartista no cubría este caso— está en
+# la cabecera de `vigilancia_veto.py`.
+
+
+class VigilanciaCreate(BaseModel):
+    symbol: str
+
+
+@api_router.get("/vigilancia-veto")
+async def listar_vigilancia_veto(_user: str = Depends(auth.get_current_user)):
+    """Las acciones vetadas que están esperando aviso, con el estado que tenían al armarlas.
+
+    No se recalcula la tendencia al listar. Sería una lectura de histórico por acción cada
+    vez que la pantalla se pinta, para enseñar un dato que el bucle ya refresca solo; y si
+    algo hubiera cambiado, lo correcto no es enseñarlo aquí de pasada sino mandar el aviso,
+    que es lo que hace el bucle.
+    """
+    items = await db.vigilancia_veto.find({}, {"_id": 0}).sort("creada_en", -1).to_list(200)
+    return {"vigiladas": items, "maximo": vigilancia_veto.MAX_VIGILADAS}
+
+
+@api_router.post("/vigilancia-veto")
+async def armar_vigilancia_veto(item: VigilanciaCreate,
+                                _user: str = Depends(auth.get_current_user)):
+    """Arma el aviso «avísame cuando esta acción se pueda comprar».
+
+    Se comprueba la tendencia AQUÍ y no se acepta la palabra de la pantalla. El veredicto
+    del Chartista se cachea hasta 4 horas, así que el `vetado_por_tendencia` que ve el
+    usuario puede venir de antes de que la acción se girara a favor. Armar sobre eso dejaría
+    una vigilancia que se cumple en la primera vuelta y manda un aviso de que se levantó un
+    veto que ya no existía cuando se pidió.
+    """
+    symbol = item.symbol.upper().strip()
+    if not symbol:
+        raise HTTPException(400, "Falta el símbolo")
+    if await db.vigilancia_veto.find_one({"symbol": symbol}):
+        raise HTTPException(409, f"Ya estás vigilando {symbol}")
+    # El tope se comprueba antes de pagar la lectura de histórico: si no cabe, no cabe.
+    if await db.vigilancia_veto.count_documents({}) >= vigilancia_veto.MAX_VIGILADAS:
+        raise HTTPException(409, f"Ya estás vigilando {vigilancia_veto.MAX_VIGILADAS} "
+                                 "acciones, que es el máximo. Retira alguna primero.")
+
+    estado_t = await asyncio.to_thread(market_data.tendencia_de, symbol)
+    if not vigilancia_veto.puede_vigilarse(estado_t):
+        # 409 y no 400: la petición está bien formada, lo que pasa es que el recurso está en
+        # un estado donde no tiene sentido. Mismo criterio que el 409 del veto.
+        raise HTTPException(409, {"error": "sin_veto_que_levantar", "symbol": symbol,
+                                  "mensaje": vigilancia_veto.motivo_no_armable(estado_t)})
+
+    doc = {"symbol": symbol,
+           "estado_al_armar": estado_t,
+           "creada_en": datetime.now(timezone.utc).isoformat()}
+    await db.vigilancia_veto.insert_one(dict(doc))
+    return doc
+
+
+@api_router.delete("/vigilancia-veto/{symbol}")
+async def retirar_vigilancia_veto(symbol: str, _user: str = Depends(auth.get_current_user)):
+    res = await db.vigilancia_veto.delete_one({"symbol": symbol.upper().strip()})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "No estabas vigilando esa acción")
+    return {"deleted": symbol.upper().strip()}
+
+
 # ---------- Correlación de la cartera (#22) ----------
+#: Cuántos valores entran en la matriz de correlación. Cada uno descarga un año de
+#: histórico, así que el techo es de memoria y de tiempo, no de criterio. Lo que importa no
+#: es el número sino QUIÉNES: con las posiciones abiertas primero, 25 cubre de sobra una
+#: cartera normal, y lo que se queda fuera es lista de seguimiento.
+TECHO_CORRELACION = 25
+
+
 @api_router.get("/portfolio/correlation")
 async def portfolio_correlation(_user: str = Depends(auth.get_current_user)):
     """Correlación entre las acciones de la Cartera: detecta 'concentración oculta' —
@@ -3745,16 +4179,39 @@ async def portfolio_correlation(_user: str = Depends(auth.get_current_user)):
     import pandas as pd
     import numpy as np
 
-    rows = await db.signal_entries.find({"active": True}, {"_id": 0, "symbol": 1}).to_list(200)
-    syms, seen = [], set()
+    rows = await db.signal_entries.find({"active": True},
+                                        {"_id": 0, "symbol": 1, "acciones": 1}).to_list(200)
+    # QUÉ 25, que era el problema. El techo existe porque cada símbolo descarga un año de
+    # histórico, pero antes se cogían los 25 primeros que devolvía Mongo —orden arbitrario y
+    # ni siquiera estable entre llamadas—. Con 83 valores en la Cartera, eso medía la
+    # diversificación de un trozo cualquiera y la enseñaba como si fuera la cartera entera.
+    #
+    # Ahora mandan las posiciones que TIENES ABIERTAS: "si cae una, caen todas" es una
+    # pregunta sobre el dinero que está puesto, no sobre una lista de seguimiento. Las que
+    # solo vigilas rellenan lo que sobre, y dentro de cada grupo el orden es alfabético para
+    # que dos llamadas seguidas den el mismo resultado.
+    def _acc(r):
+        try:
+            return float(r.get("acciones") or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    vistos, candidatos = set(), []
     for r in rows:
-        s = (r.get("symbol") or "").upper()
-        if s and s not in seen:
-            seen.add(s)
-            syms.append(s)
-    syms = syms[:25]  # techo: bounded en memoria
+        sym = (r.get("symbol") or "").upper()
+        if not sym or sym in vistos:
+            continue
+        vistos.add(sym)
+        candidatos.append((0 if _acc(r) > 0 else 1, sym))
+    candidatos.sort()
+    total, en_cartera = len(candidatos), sum(1 for c in candidatos if c[0] == 0)
+    syms = [sym for _, sym in candidatos[:TECHO_CORRELACION]]
+    # Cuántas se han mirado de cuántas hay. Sin esto, un número calculado sobre un tercio
+    # de la cartera se lee como si fuera sobre toda.
+    alcance = {"analizadas": len(syms), "total": total, "en_cartera": en_cartera,
+               "truncado": total > len(syms)}
     if len(syms) < 2:
-        return {"pairs": [], "avg_corr": None, "n": len(syms),
+        return {"pairs": [], "avg_corr": None, "n": len(syms), **alcance,
                 "message": "Necesitas al menos 2 acciones en la Cartera para medir la correlación."}
 
     loop = asyncio.get_running_loop()
@@ -3769,11 +4226,11 @@ async def portfolio_correlation(_user: str = Depends(auth.get_current_user)):
             continue
     mem.trim()
     if len(series) < 2:
-        return {"pairs": [], "avg_corr": None, "n": len(series),
+        return {"pairs": [], "avg_corr": None, "n": len(series), **alcance,
                 "message": "No hay histórico suficiente para las acciones de la Cartera."}
     mat = pd.DataFrame(series).dropna()
     if len(mat) < 20:
-        return {"pairs": [], "avg_corr": None, "n": len(series),
+        return {"pairs": [], "avg_corr": None, "n": len(series), **alcance,
                 "message": "Histórico común insuficiente entre las acciones."}
     corr = mat.pct_change().dropna().corr()
     cols = list(corr.columns)
@@ -3786,6 +4243,7 @@ async def portfolio_correlation(_user: str = Depends(auth.get_current_user)):
     pairs.sort(key=lambda x: x["corr"], reverse=True)
     avg = round(float(np.mean([p["corr"] for p in pairs])), 2) if pairs else None
     result = {
+        **alcance,
         "n": len(cols),
         "avg_corr": avg,
         "pairs": pairs[:8],

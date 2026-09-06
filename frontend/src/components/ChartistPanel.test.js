@@ -136,3 +136,52 @@ describe("la pantalla no decide", () => {
     }
   });
 });
+
+describe("el veto ofrece una salida", () => {
+  // Sin el botón, «Compra vetada por la tendencia» era un «no» sin fecha: la única forma de
+  // saber que la acción ya se podía comprar era reanalizarla a mano, sin saber cuándo.
+  const bloque = CODIGO.slice(CODIGO.indexOf("chartista-vetado"),
+                              CODIGO.indexOf("{/* Plan accionable */}") > -1
+                                ? CODIGO.indexOf("{/* Plan accionable */}")
+                                : CODIGO.indexOf("ACCION_COLOR[plan.accion]"));
+
+  test("el botón de aviso vive DENTRO del recuadro del veto", () => {
+    // Es la respuesta a lo que se acaba de leer. Colgado del plan quedaría separado del
+    // motivo que lo justifica.
+    expect(bloque).toContain("vigilar-veto");
+  });
+
+  test("el botón no escribe en la Cartera", () => {
+    const cuerpo = CODIGO.slice(CODIGO.indexOf("async function vigilarVeto"));
+    const hasta = cuerpo.slice(0, cuerpo.indexOf("} finally"));
+    expect(hasta).not.toContain("signalsCreate");
+    expect(hasta).toContain("vigilanciaVeto.armar");
+  });
+
+  test("«ya no hay veto» no se pinta como un error", () => {
+    // Es una BUENA noticia: la acción se giró a favor. Un toast rojo diría lo contrario de
+    // lo que ha pasado.
+    const cuerpo = CODIGO.slice(CODIGO.indexOf("async function vigilarVeto"));
+    const rama = cuerpo.slice(cuerpo.indexOf('detail?.error === "sin_veto_que_levantar"'));
+    // Hasta la siguiente sentencia, NO hasta la primera `}`: la rama contiene un literal
+    // de plantilla y `${symbol}` cierra una llave que no es la del bloque.
+    const hastaElCierre = rama.slice(0, rama.indexOf("const msg"));
+    expect(hastaElCierre).not.toContain("toast.error");
+    expect(hastaElCierre).toMatch(/return;/);
+  });
+
+  test("al cambiar de acción el estado del aviso se limpia", () => {
+    // Sin esto, el «Te avisaré» de la acción anterior se quedaría pintado sobre la nueva.
+    const efecto = CODIGO.slice(CODIGO.indexOf("setAddedCartera(false)"));
+    expect(efecto.slice(0, 200)).toContain("setVigilada(false)");
+  });
+
+  test("la pantalla sigue sin decidir cuándo se levanta el veto", () => {
+    // El mismo contrato que el resto del panel: aquí se pide el aviso, la condición la
+    // evalúa `vigilancia_veto` en el servidor.
+    const cuerpo = CODIGO.slice(CODIGO.indexOf("async function vigilarVeto"));
+    // Mayúsculas a propósito, igual que el bloque «la pantalla no decide»: lo prohibido es
+    // el ESTADO `ALCISTA` como valor comparado, no la palabra en un texto para el usuario.
+    expect(cuerpo.slice(0, cuerpo.indexOf("} finally"))).not.toMatch(/ALCISTA|SMA200|sma200/);
+  });
+});

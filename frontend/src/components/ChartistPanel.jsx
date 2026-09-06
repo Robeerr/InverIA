@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { FolderSimplePlus, Calculator, Check } from "@phosphor-icons/react";
+import { FolderSimplePlus, Calculator, Check, BellSimple } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 
@@ -24,6 +24,39 @@ export default function ChartistPanel({ symbol, runSignal }) {
   const [capital, setCapital] = useState("");
   const [addedCartera, setAddedCartera] = useState(false);
   const [addingCartera, setAddingCartera] = useState(false);
+  const [vigilada, setVigilada] = useState(false);
+  const [vigilando, setVigilando] = useState(false);
+
+  // Arma el aviso de «esta acción ya se puede comprar». No guarda nada en la Cartera: el
+  // veto sigue en pie y sigue impidiendo escribir niveles. Lo único que queda registrado es
+  // que quieres enterarte el día que deje de estarlo.
+  async function vigilarVeto() {
+    if (!symbol || vigilando || vigilada) return;
+    setVigilando(true);
+    try {
+      await api.vigilanciaVeto.armar(symbol);
+      setVigilada(true);
+      toast.success(`Te avisaré cuando ${symbol} vuelva a tendencia alcista`);
+    } catch (e) {
+      const detail = e?.response?.data?.detail;
+      // Dos 409 distintos, igual que en `addToCartera` y por el mismo motivo. Aquí uno de
+      // ellos es una BUENA noticia —ya no hay veto—, así que pintarlo como error sería
+      // exactamente al revés de lo que ha pasado.
+      if (detail?.error === "sin_veto_que_levantar") {
+        toast(detail.mensaje || `${symbol} ya está en tendencia alcista`);
+        return;
+      }
+      const msg = typeof detail === "string" ? detail : "";
+      if (e?.response?.status === 409 && /ya estás vigilando/i.test(msg)) {
+        setVigilada(true);
+        toast(`Ya estabas vigilando ${symbol}`);
+      } else {
+        toast.error(msg || "No se pudo armar el aviso");
+      }
+    } finally {
+      setVigilando(false);
+    }
+  }
 
   // #11 Añadir a Cartera: crea una entrada en tu Cartera con los niveles de compra del plan
   // del Chartista ya rellenados (nivel1..5), y el objetivo como nivel deseado de venta.
@@ -90,8 +123,19 @@ export default function ChartistPanel({ symbol, runSignal }) {
     setErr(null);
     setLoading(false);
     setAddedCartera(false);
+    setVigilada(false);
     if (!symbol) return;
     let ok = true;
+    // Si ya armaste el aviso en otra visita, el botón tiene que salir ya marcado. Sin esto,
+    // volver a la acción ofrecía armarlo otra vez y el intento moría en un 409 — un error
+    // por hacer algo que ya estaba bien hecho.
+    api.vigilanciaVeto.lista()
+      .then((r) => {
+        if (!ok) return;
+        const syms = (r?.vigiladas || []).map((v) => v.symbol);
+        if (syms.includes(symbol.toUpperCase())) setVigilada(true);
+      })
+      .catch(() => {});
     api.chartistCached(symbol)
       .then((d) => {
         if (ok && d && d.cached !== false && (d.sentido || d.veredicto || d.plan)) {
@@ -194,6 +238,27 @@ export default function ChartistPanel({ symbol, runSignal }) {
               <span className="text-tinta-3">
                 {data.veto_motivo || "La acción no está en tendencia alcista."}
               </span>
+              {/* La salida del callejón. Sin esto, el veto era un «no» sin fecha: la única
+                  forma de enterarse de que la acción ya se podía comprar era volver a
+                  analizarla a mano, sin saber cuándo. Va DENTRO del aviso y no al lado del
+                  plan porque es la respuesta a lo que se acaba de leer. */}
+              <div className="mt-2">
+                <button
+                  data-testid="vigilar-veto"
+                  onClick={vigilarVeto}
+                  disabled={vigilando || vigilada}
+                  title="Recibirás un aviso en Telegram cuando esta acción vuelva a tendencia alcista"
+                  className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono font-semibold transition-colors ${
+                    vigilada
+                      ? "bg-sube/10 text-sube"
+                      : "border border-linea text-tinta hover:bg-fondo disabled:opacity-50"
+                  }`}
+                >
+                  {vigilada
+                    ? <><Check size={12} /> Te avisaré cuando se pueda comprar</>
+                    : <><BellSimple size={12} /> Avísame cuando se pueda comprar</>}
+                </button>
+              </div>
             </div>
           )}
 
