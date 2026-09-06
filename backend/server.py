@@ -52,6 +52,7 @@ import mem
 import levels_engine
 import estado_accion
 import veto_compra
+import vigilancia_veto
 import auth
 
 ROOT_DIR = Path(__file__).parent
@@ -171,6 +172,11 @@ DASHBOARD_TTL = int(os.environ.get("DASHBOARD_TTL", 900))  # 15 min
 # Cuánto tiempo una alerta disparada sigue mereciendo la portada. NO depende de la
 # última visita: mirar la pantalla no es haber actuado.
 VENTANA_ALERTAS_HORAS = int(os.environ.get("VENTANA_ALERTAS_HORAS", 24))
+# Cada cuánto se comprueba si el veto de una acción vigilada se ha levantado. Media hora es
+# holgado a propósito: la condición son dos medias móviles sobre cierres DIARIOS, así que
+# dentro de una misma sesión apenas cambia. Bajarlo no adelantaría el aviso, solo repetiría
+# la misma lectura.
+VIGILANCIA_VETO_CADENCIA = int(os.environ.get("VIGILANCIA_VETO_CADENCIA", 1800))  # 30 min
 
 
 def _umbral_prewarm() -> int:
@@ -327,6 +333,9 @@ async def lifespan(app: FastAPI):
     await db.analyses.create_index([("symbol", 1), ("created_at", -1)])
     await db.watchlist.create_index("symbol")
     await db.chartist_state.create_index("symbol", unique=True)
+    # Único: armar dos veces la misma acción daría dos avisos idénticos. El endpoint ya lo
+    # comprueba, pero entre la comprobación y el insert cabe una segunda petición.
+    await db.vigilancia_veto.create_index("symbol", unique=True)
     await db.alerts.create_index("symbol")
     # Libro de operaciones: todo se consulta por símbolo y se ordena por fecha.
     await db.isin_map.create_index("isin", unique=True)
@@ -667,6 +676,55 @@ async def lifespan(app: FastAPI):
             await asyncio.sleep(CHARTIST_TTL)  # el ciclo va al ritmo de la caché
 
     asyncio.create_task(_prewarm_chartist())
+
+    # VIGILANCIA DE VETADAS: avisa cuando una acción que no se podía comprar vuelve a
+    # tendencia alcista. El porqué está en `vigilancia_veto.py`; aquí solo el bucle.
+    #
+    # COSTE: `tendencia_de` lee el histórico diario GRATUITO y cacheado. Ni Finnhub ni
+    # Gemini. Por eso este bucle puede ir cada 30 minutos sobre 40 acciones sin competir con
+    # nada — a diferencia del pre-cálculo del Chartista, que va al ritmo de su caché porque
+    # cada vuelta suya gasta cuota de IA.
+    async def _vigilar_vetadas():
+        await asyncio.sleep(180)  # después del arranque y del prewarm
+        while True:
+            try:
+                now = datetime.now(timezone.utc)
+                # Solo en sesión: la tendencia se mueve con los cierres, y comprobarla de
+                # madrugada gastaría vueltas para releer el mismo cierre de ayer. El aviso
+                # llega igual, como muy tarde a la apertura siguiente.
+                if now.weekday() < 5 and 13 <= now.hour < 22:
+                    vigiladas = await db.vigilancia_veto.find({}, {"_id": 0}).to_list(200)
+                    for v in vigiladas:
+                        sym = (v.get("symbol") or "").upper()
+                        if not sym:
+                            continue
+                        try:
+                            estado_t = await asyncio.to_thread(market_data.tendencia_de, sym)
+                            if not vigilancia_veto.se_levanta(estado_t):
+                                continue
+                            import telegram_notifier
+                            msg = vigilancia_veto.mensaje(sym, v.get("estado_al_armar"))
+                            ok, err = await telegram_notifier.send_message(
+                                msg, parse_mode="", grupo="ideas_javi")
+                            # Se retira SOLO si el aviso salió. Igual que en
+                            # `_chartist_vigilante`: `send_message` no lanza, así que
+                            # borrando antes un fallo de Telegram perdería el aviso para
+                            # siempre y la vigilancia se habría consumido sin avisar.
+                            if ok:
+                                await db.vigilancia_veto.delete_one({"symbol": sym})
+                                logger.info("Vigilancia: veto levantado en %s, avisado", sym)
+                            else:
+                                logger.warning("Vigilancia %s: Telegram falló (%s); "
+                                               "reintentaré", sym, str(err)[:120])
+                        except Exception as e:
+                            logger.warning("Vigilancia de %s falló: %s", sym, str(e)[:120])
+                        await asyncio.sleep(2)  # espacia las lecturas de histórico
+                    mem.trim()
+            except Exception as e:
+                logger.warning("Bucle de vigilancia de vetadas: %s", e)
+            await asyncio.sleep(VIGILANCIA_VETO_CADENCIA)
+
+    asyncio.create_task(_vigilar_vetadas())
 
     # Trimmer periódico: devuelve al SO la memoria libre que glibc retiene tras los jobs
     # pesados (pandas). Coste ínfimo (1 vez cada 10 min) y evita que la RSS se quede en el
@@ -4033,6 +4091,73 @@ async def remove_watchlist(symbol: str, _user: str = Depends(auth.get_current_us
         raise HTTPException(404, "No encontrado")
     _cache._store.pop("watchlist_with_quotes", None)
     return {"deleted": symbol.upper()}
+
+
+# ---------- Vigilancia de acciones vetadas ----------
+#
+# La otra mitad del veto: `veto_compra` dice que no, y esto avisa el día que deja de decirlo.
+# El razonamiento completo —y por qué el vigilante del Chartista no cubría este caso— está en
+# la cabecera de `vigilancia_veto.py`.
+
+
+class VigilanciaCreate(BaseModel):
+    symbol: str
+
+
+@api_router.get("/vigilancia-veto")
+async def listar_vigilancia_veto(_user: str = Depends(auth.get_current_user)):
+    """Las acciones vetadas que están esperando aviso, con el estado que tenían al armarlas.
+
+    No se recalcula la tendencia al listar. Sería una lectura de histórico por acción cada
+    vez que la pantalla se pinta, para enseñar un dato que el bucle ya refresca solo; y si
+    algo hubiera cambiado, lo correcto no es enseñarlo aquí de pasada sino mandar el aviso,
+    que es lo que hace el bucle.
+    """
+    items = await db.vigilancia_veto.find({}, {"_id": 0}).sort("creada_en", -1).to_list(200)
+    return {"vigiladas": items, "maximo": vigilancia_veto.MAX_VIGILADAS}
+
+
+@api_router.post("/vigilancia-veto")
+async def armar_vigilancia_veto(item: VigilanciaCreate,
+                                _user: str = Depends(auth.get_current_user)):
+    """Arma el aviso «avísame cuando esta acción se pueda comprar».
+
+    Se comprueba la tendencia AQUÍ y no se acepta la palabra de la pantalla. El veredicto
+    del Chartista se cachea hasta 4 horas, así que el `vetado_por_tendencia` que ve el
+    usuario puede venir de antes de que la acción se girara a favor. Armar sobre eso dejaría
+    una vigilancia que se cumple en la primera vuelta y manda un aviso de que se levantó un
+    veto que ya no existía cuando se pidió.
+    """
+    symbol = item.symbol.upper().strip()
+    if not symbol:
+        raise HTTPException(400, "Falta el símbolo")
+    if await db.vigilancia_veto.find_one({"symbol": symbol}):
+        raise HTTPException(409, f"Ya estás vigilando {symbol}")
+    # El tope se comprueba antes de pagar la lectura de histórico: si no cabe, no cabe.
+    if await db.vigilancia_veto.count_documents({}) >= vigilancia_veto.MAX_VIGILADAS:
+        raise HTTPException(409, f"Ya estás vigilando {vigilancia_veto.MAX_VIGILADAS} "
+                                 "acciones, que es el máximo. Retira alguna primero.")
+
+    estado_t = await asyncio.to_thread(market_data.tendencia_de, symbol)
+    if not vigilancia_veto.puede_vigilarse(estado_t):
+        # 409 y no 400: la petición está bien formada, lo que pasa es que el recurso está en
+        # un estado donde no tiene sentido. Mismo criterio que el 409 del veto.
+        raise HTTPException(409, {"error": "sin_veto_que_levantar", "symbol": symbol,
+                                  "mensaje": vigilancia_veto.motivo_no_armable(estado_t)})
+
+    doc = {"symbol": symbol,
+           "estado_al_armar": estado_t,
+           "creada_en": datetime.now(timezone.utc).isoformat()}
+    await db.vigilancia_veto.insert_one(dict(doc))
+    return doc
+
+
+@api_router.delete("/vigilancia-veto/{symbol}")
+async def retirar_vigilancia_veto(symbol: str, _user: str = Depends(auth.get_current_user)):
+    res = await db.vigilancia_veto.delete_one({"symbol": symbol.upper().strip()})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "No estabas vigilando esa acción")
+    return {"deleted": symbol.upper().strip()}
 
 
 # ---------- Correlación de la cartera (#22) ----------

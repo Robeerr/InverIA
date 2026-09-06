@@ -56,6 +56,13 @@ export const api = {
     add: (symbol) => client.post(`/watchlist`, { symbol }).then((r) => r.data),
     remove: (symbol) => client.delete(`/watchlist/${symbol}`).then((r) => r.data),
   },
+  // Avisar cuando el veto de tendencia se levante sobre una acción que hoy no se puede
+  // comprar. Ver `backend/vigilancia_veto.py`.
+  vigilanciaVeto: {
+    lista: () => client.get(`/vigilancia-veto`).then((r) => r.data),
+    armar: (symbol) => client.post(`/vigilancia-veto`, { symbol }).then((r) => r.data),
+    retirar: (symbol) => client.delete(`/vigilancia-veto/${symbol}`).then((r) => r.data),
+  },
   indicators: (symbol) => client.get(`/indicators/${symbol}`).then((r) => r.data),
   news: (symbol) => client.get(`/news/${symbol}`).then((r) => r.data),
   analyze: (symbol, model) =>
