@@ -1,0 +1,30 @@
+# Finales de linea: LF en el repositorio, nativo en el disco de cada uno.
+# Evita que Windows marque todo el repo como modificado.
+* text=auto eol=lf
+
+# Scripts que exigen CRLF en Windows
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Scripts de shell siempre LF
+*.sh   text eol=lf
+
+# Binarios: no tocar nunca
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.svgz binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.otf  binary
+*.eot  binary
+*.pdf  binary
+*.zip  binary
+*.gz   binary
+*.xlsx binary
+*.xls  binary
