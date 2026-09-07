@@ -219,7 +219,24 @@ function AppInner() {
 function App() {
   return (
     <BrowserRouter>
-      <Toaster position="bottom-right" />
+      {/* Los avisos salían con el blanco por defecto de sonner: una tarjeta clara
+          sobre una app verde-negra, y encima es lo ÚLTIMO que aparece en pantalla,
+          así que la incoherencia se veía siempre. Se pintan con los mismos tokens
+          que todo lo demás, de modo que siguen al tema sin saber cuál está activo. */}
+      <Toaster
+        position="bottom-right"
+        toastOptions={{
+          className: "iv-aviso-flotante",
+          style: {
+            background: "rgb(var(--iv-superficie))",
+            border: "1px solid rgb(var(--iv-linea-fuerte))",
+            borderRadius: "var(--iv-radio)",
+            color: "rgb(var(--iv-tinta))",
+            fontFamily: "'Archivo', ui-sans-serif, system-ui, sans-serif",
+            fontSize: "13px",
+          },
+        }}
+      />
       <AuthProvider>
         <AppInner />
       </AuthProvider>

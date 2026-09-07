@@ -67,22 +67,25 @@ export default function QuoteHeader({ quote }) {
   };
 
   return (
-    <section data-testid="quote-header" className="iv-panel p-6 animate-fade-up">
+    /* Masthead editorial, no tarjeta. Es la cabecera de la pagina: va a sangre con
+       el filete champan encima, igual que el veredicto de la portada.
+       Se retira el cuadrado relleno con las tres primeras letras del ticker. Era el
+       mismo gesto generico que se quito del rail —un cuadro de color de marca con
+       algo dentro—, y ademas competia con el ticker que tenia al lado, que es el
+       dato de verdad. El ticker sube a mono grande y manda el solo. */
+    <section data-testid="quote-header" className="iv-veredicto animate-fade-up">
       <div className="flex items-start justify-between gap-6 flex-wrap">
         <div className="flex items-start gap-4 min-w-0">
-          <div className="w-14 h-14 rounded-iv bg-marca text-marca-tinta flex items-center justify-center font-mono font-bold text-lg shrink-0">
-            {/* `?.` a propósito: un quote sin symbol tumbaba la vista ENTERA con un
-                TypeError, y el usuario solo veía "algo se ha roto". Aunque el Dashboard ya
-                garantiza que el symbol viene del servidor, un dato raro debe degradar lo
-                que toca, no llevarse la pantalla por delante. */}
-            {(quote.symbol || "—").slice(0, 3)}
-          </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 data-testid="quote-symbol" className="font-heading font-bold text-2xl md:text-3xl text-tinta">
-                {quote.symbol}
+            <div className="flex items-center gap-2.5 flex-wrap">
+              {/* `||` a proposito: un quote sin symbol tumbaba la vista ENTERA con un
+                  TypeError, y el usuario solo veia "algo se ha roto". Aunque el Dashboard
+                  ya garantiza que el symbol viene del servidor, un dato raro debe degradar
+                  lo que toca, no llevarse la pantalla por delante. */}
+              <h2 data-testid="quote-symbol" className="font-mono font-semibold text-2xl md:text-[28px] tracking-[0.01em] text-tinta">
+                {quote.symbol || "—"}
               </h2>
-              <span className="text-[10px] uppercase tracking-[0.2em] text-tinta-3 border border-linea rounded-full px-2 py-0.5">
+              <span className="text-[10px] uppercase tracking-[0.2em] text-tinta-3 border border-linea px-2 py-0.5">
                 {quote.exchange || "NASDAQ"}
               </span>
               <span className="text-[10px] uppercase tracking-[0.2em] text-tinta-3">
@@ -115,7 +118,7 @@ export default function QuoteHeader({ quote }) {
         </div>
 
         <div className="text-right flex flex-col items-end gap-2">
-          <p data-testid="quote-price" className="font-mono font-semibold text-3xl md:text-4xl text-tinta leading-none">
+          <p data-testid="quote-price" className="font-mono font-semibold text-4xl md:text-5xl text-tinta leading-none tracking-[-0.02em]">
             ${fmtPrice(quote.price)}
           </p>
           <div className={`font-mono text-sm flex items-center justify-end gap-1 ${Color}`}>

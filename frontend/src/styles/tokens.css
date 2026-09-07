@@ -18,10 +18,11 @@
 
    CÓMO CONVIVE CON LO QUE YA HAY
 
-   Esta capa se AÑADE, no sustituye. El bloque `!important` de index.css sigue en
-   pie y las pantallas actuales siguen exactamente igual. Cada pantalla borrará su
-   parte del parche cuando se migre, dentro de su propia fase. No hay ningún día
-   en que cambie todo a la vez.
+   Esta capa empezó AÑADIÉNDOSE, sin sustituir nada, y hoy manda ya en toda la web:
+   el bloque `!important` de index.css, los tokens de shadcn y la cinta de watchlist
+   —que tenían cada uno su propia paleta— se pintan con estas variables. Sus
+   selectores siguen en pie porque están indexados por valor hex y esos hex viven
+   todavía en BrainView; caerán con su reescritura.
 
    FORMATO: TRIPLETES RGB, NO HEX
 
@@ -33,10 +34,14 @@
    CONTRASTE
 
    Todos los roles de texto llegan a 4.5:1 sobre las tres superficies de su tema
-   (comprobado, no estimado: lo verifica tests/tokens.test.js). El peor caso es
-   5.30:1 en oscuro y 4.62:1 en claro. `--iv-linea-marcada` llega a 3:1 sobre su
-   superficie para cuando un límite tiene que percibirse de verdad; `--iv-linea`
-   es deliberadamente sutil, para separar sin dibujar rejas.
+   (comprobado, no estimado: lo verifica styles/tokens.test.js en cada ejecución).
+   Con la paleta actual el peor caso es 5.45:1 en oscuro y 5.13:1 en claro, y en
+   los dos es `--iv-baja`, que es el que más cuesta: un rojo legible sobre fondo
+   claro Y sobre fondo oscuro tiene poco margen por arriba y por abajo.
+
+   `--iv-linea-marcada` llega a 3:1 sobre su superficie para cuando un límite tiene
+   que percibirse de verdad (3.40:1 en claro, 4.40:1 en oscuro); `--iv-linea` es
+   deliberadamente sutil, para separar sin dibujar rejas.
    ───────────────────────────────────────────────────────────────────────────── */
 
 /* ── Tema claro · la versión de día de la misma marca ───────────────────────
@@ -255,6 +260,15 @@
     letter-spacing: -0.022em;
     display: block;
 }
+
+/* ── Avisos flotantes ───────────────────────────────────────────────────────
+   `sonner` pinta los iconos de exito/error con su propia paleta, que no conoce
+   la nuestra. El contenedor ya va con tokens desde `App.js`; esto alcanza a lo
+   que se dibuja DENTRO y que no admite estilos en linea. */
+.iv-aviso-flotante [data-icon] svg { color: rgb(var(--iv-marca)); }
+.iv-aviso-flotante[data-type="success"] [data-icon] svg { color: rgb(var(--iv-sube)); }
+.iv-aviso-flotante[data-type="error"] [data-icon] svg { color: rgb(var(--iv-baja)); }
+.iv-aviso-flotante [data-description] { color: rgb(var(--iv-tinta-2)); }
 
 /* Etiqueta de dato: el suelo de 11px es absoluto. Por debajo hay texto que
    simplemente no se lee, y hoy la app tiene `text-[9px]` en sitios de lectura. */

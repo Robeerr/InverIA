@@ -62,6 +62,29 @@ function HuecoGrafico() {
   );
 }
 
+/** Cabecera de seccion de la ficha.
+ *
+ * La pagina ya venia ordenada en catorce bloques —lo dicen los comentarios «01 ·
+ * Cabecera viva», «05 · Niveles»— pero ese orden NO se veia: por fuera era una pila
+ * de paneles iguales, y el lector no tenia forma de saber que la parte de arriba
+ * decide y la de abajo solo documenta. Aqui ese orden se hace visible, con el mismo
+ * gesto que el resto de la web: etiqueta en versalitas y filete corrido.
+ *
+ * `acento` se reserva al plan de entrada, que es la seccion por la que se entra a
+ * esta pagina. Si lo llevaran todas no distinguiria ninguna.
+ */
+function Seccion({ titulo, nota, acento = false, children }) {
+  return (
+    <section>
+      <div className={`iv-seccion${acento ? " iv-seccion-acento" : ""}`}>
+        <h2 className="iv-etiqueta tracking-[0.18em] text-tinta-2">{titulo}</h2>
+        {nota && <span className="text-etiqueta text-tinta-3 whitespace-nowrap hidden sm:inline">{nota}</span>}
+      </div>
+      <div className="space-y-4 sm:space-y-6">{children}</div>
+    </section>
+  );
+}
+
 export default function Dashboard({ symbol, setSymbol, model, setModel }) {
   const [timeframe, setTimeframe] = useState(TIMEFRAME_BASE);
   const [runAllTrigger, setRunAllTrigger] = useState(0);  // #3 dispara los 3 análisis a la vez
@@ -399,6 +422,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
         <QuoteHeader quote={quote} />
       ) : null}
 
+      <Seccion titulo="Veredicto" nota="Lectura determinista, sin pulsar nada">
       {/* ══ 02 · Tesis ══
           Interpretación determinista, disponible al abrir y sin pulsar nada. Lleva
           dentro el aviso de fiabilidad y el botón de IA como acción secundaria. */}
@@ -418,7 +442,9 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
           Régimen, ADX, ATR%, OBV, VWAP anclado y media de 10 semanas. Todo ya viajaba
           en la respuesta y no tenía una sola lectura en el frontend. */}
       <EstadoTecnico indicators={indicators} quote={quote} marketRegime={marketRegime} />
+      </Seccion>
 
+      <Seccion titulo="Tu posición" nota="Un nivel no significa lo mismo con dinero dentro">
       {/* ══ 04 · Tu posición ══
           Antes de los niveles: un nivel al 5% no significa lo mismo con dinero dentro.
           Sale de /signals, que ya estaba cargado y no se cruzaba con el ticker abierto. */}
@@ -431,7 +457,9 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
           acción. El aviso de los formularios de venta llega cuando ya has decidido;
           esto contesta antes, y también para comprar, que allí no se cubre. */}
       <SimuladorMargen symbol={sym} />
+      </Seccion>
 
+      <Seccion titulo="Plan de entrada" nota="Dónde comprar, y qué lo invalida" acento>
       {/* ══ 05 · Niveles ══ buy_levels es la autoridad única de zonas de compra.
           Sin tendencia alcista no se presentan: en su lugar va el motivo. Es un `o`, no
           un `y` — enseñar las dos cosas sería contradecirse en la misma pantalla. */}
@@ -462,10 +490,15 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
           setTimeframe={refreshTimeframe}
         />
       </Suspense>
+      </Seccion>
 
+      <Seccion titulo="Tus fuentes" nota="Tu inteligencia propia, antes que la de terceros">
       {/* ══ 07 · Tus fuentes ══ Tu inteligencia propia, por encima de la de terceros. */}
       <SourcesPanel symbol={symbol} />
 
+      </Seccion>
+
+      <Seccion titulo="Análisis con IA" nota="Solo existe si lo pides">
       {/* ══ 08 a 11 · Capa de IA ══
           Solo existe si la pides. Lo que aporta y la tesis no puede: juicio, causa del
           movimiento, síntesis multiescala y prospectiva. */}
@@ -492,19 +525,25 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
         />
       )}
 
-      {/* ══ 12 · Analistas y fundamentales ══ Opinión de terceros y marcha del negocio. */}
+      </Seccion>
+
+      <Seccion titulo="Analistas y fundamentales" nota="Opinión de terceros y marcha del negocio">
       <FuerzaRelativa rs={relativeStrength} />
       <AnalystConsensusCard data={analystData} />
       <FundamentalsCard quote={quote} analysis={analysis} />
+      </Seccion>
 
-      {/* ══ 13 · Noticias ══ */}
+      <Seccion titulo="Noticias">
       <NewsFeed news={news} />
+      </Seccion>
 
+      <Seccion titulo="Detalle" nota="Lo comprobable, después de lo interpretado">
       {/* ══ 14 · Detalle ══
           Lo comprobable, después de lo interpretado. No se borra nada: baja de sitio. */}
       <IndicatorsPanel indicators={indicators} analysis={analysis} />
       <AlternativePanel symbol={symbol} onPick={setSymbol} />
       {quote && <BacktestCard symbol={symbol} />}
+      </Seccion>
 
       {/* Espacio para que la barra de señal fija no tape el contenido */}
       {quote && <div className="h-16" />}

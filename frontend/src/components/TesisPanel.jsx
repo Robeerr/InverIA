@@ -4,15 +4,18 @@ import { fmtHace } from "../lib/format";
 import { titularVivo } from "../lib/tesisVivo";
 
 /* ── Superficie ──────────────────────────────────────────────────────────────
-   Estos bloques usan `iv-panel` y no `card-flat`. En CLARO son idénticos —
-   #ffffff, borde #e5e0d8, radio 6px—, así que el cambio no se nota. La
-   diferencia está en OSCURO: `card-flat` se remapea con `!important` a #131a23,
-   un pizarra azulado, mientras el token es #1e2c28, el verde de la identidad.
+   Estos bloques usan `iv-panel` y no `card-flat`, y conviene saber por qué sigue
+   importando aunque las dos ya se pinten igual.
 
-   Mezclar los dos dentro de un mismo componente deja texto de una paleta sobre
-   una superficie de la otra, así que la migración va componente entero o no va.
-   Las 50 reglas `!important` siguen en pie: están indexadas por valor hex y esos
-   hex viven todavía en ocho pantallas más. Se borrarán cuando no quede ninguna.
+   Cuando se escribió esto, `card-flat` se remapeaba con `!important` a un pizarra
+   azulado ajeno a la paleta, así que mezclarlas dentro de un componente dejaba
+   texto de un mundo sobre la superficie de otro. Hoy ese bloque legado está
+   repintado con los tokens y las dos resuelven al mismo verde, así que el riesgo
+   ya no es visual: es que `card-flat` no ADMITE opacidad (`bg-superficie/60`) ni
+   se mueve si mañana cambia la escala de superficies. `iv-panel` sí.
+
+   Las reglas `!important` siguen en pie porque están indexadas por valor hex y
+   esos hex viven todavía en BrainView. Se borrarán con su reescritura.
    ────────────────────────────────────────────────────────────────────────── */
 
 /**
