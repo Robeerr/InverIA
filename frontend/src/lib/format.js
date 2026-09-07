@@ -116,12 +116,20 @@ export const fmtDateTime = (d) => {
  *  Hace falta en más sitios de los que parece: un análisis puede ser de hace media
  *  hora y hoy la pantalla lo enseña como si acabara de calcularse. Saber si un dato
  *  está fresco es parte de poder fiarte de él. */
+/** Desfase de reloj que se absorbe antes de admitir que un sello es del futuro. */
+const TOLERANCIA_RELOJ_S = 86400;
+
 export const fmtHace = (d, ahora = Date.now()) => {
   if (esNulo(d)) return SIN_DATO;
   const t = new Date(d).getTime();
   if (isNaN(t)) return SIN_DATO;
   const seg = Math.floor((ahora - t) / 1000);
-  if (seg < 0) return "en el futuro";
+  // Un sello "en el futuro" casi nunca es un dato del futuro: es el reloj del
+  // servidor (UTC) contra el del navegador, o unos segundos de desfase al guardar.
+  // Decirle al usuario que su analisis se calculo en el futuro le hace desconfiar
+  // de un dato que esta bien, asi que el desfase razonable se absorbe. Mas alla de
+  // un dia ya no es desfase: es un dato malo y se dice.
+  if (seg < 0) return seg > -TOLERANCIA_RELOJ_S ? "hace un momento" : "en el futuro";
   if (seg < 60) return "hace un momento";
   const min = Math.floor(seg / 60);
   if (min < 60) return `hace ${min} min`;
