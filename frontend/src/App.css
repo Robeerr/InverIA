@@ -12,28 +12,38 @@
 }
 
 .card-flat {
-    background: #ffffff;
-    border: 1px solid #e5e0d8;
-    border-radius: 6px;
+    background: rgb(var(--iv-superficie));
+    border: 1px solid rgb(var(--iv-linea));
+    border-radius: var(--iv-radio);
 }
 
 .card-hover {
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 .card-hover:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px -12px rgba(14, 31, 26, 0.15);
+    border-color: rgb(var(--iv-linea-fuerte));
+    box-shadow: 0 12px 30px -18px rgb(var(--iv-tinta) / 0.35);
 }
 
 .label-small {
     text-transform: uppercase;
-    letter-spacing: 0.2em;
-    font-size: 0.65rem;
-    color: #5c6b66;
-    font-weight: 500;
+    letter-spacing: 0.16em;
+    font-size: 0.6875rem;
+    color: rgb(var(--iv-tinta-3));
+    font-weight: 600;
 }
 
 .divider-soft {
     height: 1px;
-    background: #e5e0d8;
+    background: rgb(var(--iv-linea));
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+    }
 }
