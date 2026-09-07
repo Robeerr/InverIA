@@ -96,6 +96,17 @@ describe("tiempo", () => {
     expect(fmtHace(ahora - 86400_000, ahora)).toBe("hace 1 día");
   });
 
+  test("el desfase de reloj no se anuncia como el futuro", () => {
+    // El servidor sella en UTC y el navegador compara con su propio reloj: unos
+    // segundos por delante no son un dato del futuro, son ruido.
+    expect(fmtHace(ahora + 30_000, ahora)).toBe("hace un momento");
+    expect(fmtHace(ahora + 2 * 3600_000, ahora)).toBe("hace un momento");
+  });
+
+  test("un sello absurdo si se dice", () => {
+    expect(fmtHace(ahora + 5 * 86400_000, ahora)).toBe("en el futuro");
+  });
+
   test("los días que faltan se dicen en lenguaje normal", () => {
     expect(fmtEnDias(ahora + 1000, ahora)).toBe("hoy");
     expect(fmtEnDias(ahora + 86400_000, ahora)).toBe("mañana");

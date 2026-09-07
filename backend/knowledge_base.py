@@ -14,8 +14,27 @@ import re
 
 logger = logging.getLogger("inveria.knowledge")
 
-_CATEGORIAS = {"selección", "seleccion", "valoración", "valoracion", "riesgo",
-               "psicología", "psicologia", "macro", "método", "metodo", "sectores"}
+# La IA escribe la categoria unas veces con tilde y otras sin ella. Aceptar las dos
+# formas y guardar la que llegue partia cada categoria en dos cubos: "metodo" con 51
+# principios vivia escondido al lado de "método" con 209, en un filtro que nadie pulsa
+# porque en pantalla se lee igual. Se sigue aceptando cualquier grafia, pero solo se
+# guarda la CANONICA.
+_CANONICA = {
+    "seleccion": "selección",
+    "valoracion": "valoración",
+    "riesgo": "riesgo",
+    "psicologia": "psicología",
+    "macro": "macro",
+    "metodo": "método",
+    "sectores": "sectores",
+}
+_CATEGORIAS = set(_CANONICA.values()) | set(_CANONICA)
+
+
+def categoria_canonica(cat: str) -> str:
+    """La forma unica con la que se guarda una categoria. Cualquier grafia entra,
+    una sola sale; lo que no reconoce cae en "método", como antes."""
+    return _CANONICA.get(_norm(cat), "método")
 
 # Cache en memoria del digest inyectable. Módulo-level para que analyze_stock lo lea
 # sin necesitar acceso a la BD.
@@ -82,9 +101,7 @@ async def add_learnings(db, aprendizajes: list, source: str = "") -> int:
         principio = fix_mojibake((a.get("principio") or "").strip())
         if not tema or not principio:
             continue
-        cat = fix_mojibake((a.get("categoria") or "método").strip().lower())
-        if cat not in _CATEGORIAS:
-            cat = "método"
+        cat = categoria_canonica(fix_mojibake(a.get("categoria") or ""))
         detalle = fix_mojibake((a.get("detalle") or "").strip())
         k = _key(cat, tema)
         try:
@@ -154,12 +171,17 @@ async def get_overview(db) -> dict:
     try:
         async for d in db.investing_knowledge.aggregate([
             {"$group": {"_id": "$categoria", "n": {"$sum": 1}}}, {"$sort": {"n": -1}}]):
-            por_categoria[fix_mojibake(d["_id"] or "?")] = d["n"]
+            # Se pliega al leer, no solo al escribir: los principios guardados antes
+            # de esto siguen en la BD con la grafia vieja y tienen que sumar al mismo
+            # cubo, o el arreglo no se nota hasta que se reescriba toda la base.
+            etiqueta = categoria_canonica(fix_mojibake(d["_id"] or ""))
+            por_categoria[etiqueta] = por_categoria.get(etiqueta, 0) + d["n"]
+        por_categoria = dict(sorted(por_categoria.items(), key=lambda kv: -kv[1]))
     except Exception:
         pass
     try:
         docs = await db.investing_knowledge.find({}, {"_id": 0}).sort("refuerzos", -1).to_list(60)
-        top = [{"categoria": fix_mojibake(d.get("categoria") or ""),
+        top = [{"categoria": categoria_canonica(fix_mojibake(d.get("categoria") or "")),
                 "tema": fix_mojibake(d.get("tema") or ""),
                 "principio": fix_mojibake(d.get("principio") or ""),
                 "detalle": fix_mojibake(d.get("detalle") or ""),

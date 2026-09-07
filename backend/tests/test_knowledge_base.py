@@ -142,3 +142,20 @@ def test_digest_incluye_principios_tras_aprender():
     d = kb.digest_for_prompt()
     assert "CONOCIMIENTO ACUMULADO" in d
     assert "5%" in d
+
+
+def test_la_tilde_no_parte_la_categoria_en_dos():
+    """La IA escribe "metodo" o "método" segun le da. Las dos tienen que caer en el
+    mismo cubo: si no, la mitad de los principios acaba en un filtro que nadie pulsa."""
+    assert kb.categoria_canonica("metodo") == "método"
+    assert kb.categoria_canonica("método") == "método"
+    assert kb.categoria_canonica("  MÉTODO  ") == "método"
+    assert kb.categoria_canonica("seleccion") == "selección"
+    assert kb.categoria_canonica("Selección") == "selección"
+    assert kb.categoria_canonica("psicologia") == "psicología"
+    assert kb.categoria_canonica("valoracion") == "valoración"
+
+
+def test_una_categoria_desconocida_cae_en_metodo():
+    assert kb.categoria_canonica("") == "método"
+    assert kb.categoria_canonica("cualquier cosa") == "método"
