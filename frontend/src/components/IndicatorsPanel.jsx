@@ -34,10 +34,10 @@ export function FuerzaRelativa({ rs }) {
   // funciona con selectores de clase (.dark .text-sube), así que un color en línea se lo
   // salta y se queda en 3,6:1 sobre el fondo oscuro — por debajo del mínimo legible.
   const tono = {
-    "LÍDER":       { c: "text-sube", bg: "bg-sube/10", i: "🏆" },
+    "LÍDER":       { c: "text-sube", bg: "bg-sube/10", i: "▲" },
     "POR DELANTE": { c: "text-sube", bg: "bg-sube/5",  i: "↗" },
     "POR DETRÁS":  { c: "text-aviso", bg: "bg-aviso/10", i: "↘" },
-    "REZAGADA":    { c: "text-baja", bg: "bg-baja/10", i: "⚠️" },
+    "REZAGADA":    { c: "text-baja", bg: "bg-baja/10", i: "▼" },
   }[rs.veredicto] || { c: "text-tinta-3", bg: "", i: "" };
   const orden = ["1m", "3m", "6m"];
   return (

@@ -36,8 +36,8 @@ export default function SourcesPanel({ symbol }) {
 
       <div className="flex items-center gap-3 mb-3 text-etiqueta font-semibold">
         <span className="text-tinta-3">{data.n} mención{data.n === 1 ? "" : "es"}</span>
-        {data.positivos > 0 && <span className="text-sube">👍 {data.positivos}</span>}
-        {data.negativos > 0 && <span className="text-baja">👎 {data.negativos}</span>}
+        {data.positivos > 0 && <span className="text-sube">{data.positivos} a favor</span>}
+        {data.negativos > 0 && <span className="text-baja">{data.negativos} en contra</span>}
       </div>
       <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
         {data.menciones.map((m, i) => {

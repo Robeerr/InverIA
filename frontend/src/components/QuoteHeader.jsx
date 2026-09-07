@@ -131,7 +131,7 @@ export default function QuoteHeader({ quote }) {
             <span data-testid="quote-fuente"
                   title="Finnhub no respondió (cuota) y el precio viene de la fuente de respaldo, que puede ir con retraso. Se corrige solo en unos segundos."
                   className="font-mono text-[10px] uppercase tracking-wider text-aviso bg-aviso/15 rounded px-1.5 py-0.5">
-              ⚠ precio de respaldo
+              precio de respaldo
             </span>
           )}
           {(() => {

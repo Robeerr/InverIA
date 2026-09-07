@@ -111,7 +111,7 @@ export default function TrackRecordView() {
                 <Stat label="S&P 500" value={`${s.benchmark.spy_medio > 0 ? "+" : ""}${s.benchmark.spy_medio}%`}
                   sub="misma ventana" color={s.benchmark.spy_medio >= 0 ? "rgb(var(--iv-sube))" : "rgb(var(--iv-baja))"} />
                 <Stat label="Alpha" value={`${s.benchmark.alpha > 0 ? "+" : ""}${s.benchmark.alpha}%`}
-                  sub={s.benchmark.alpha >= 0 ? "de más 🎯" : "de menos"}
+                  sub={s.benchmark.alpha >= 0 ? "de más" : "de menos"}
                   color={s.benchmark.alpha >= 0 ? "rgb(var(--iv-sube))" : "rgb(var(--iv-baja))"} />
               </div>
               <p className="text-etiqueta text-tinta-3 leading-relaxed mt-3">

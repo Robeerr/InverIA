@@ -1,4 +1,5 @@
 import React from "react";
+import { Warning, X } from "@phosphor-icons/react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "../lib/api";
@@ -379,7 +380,7 @@ function FilaVenta({ v, metodo, comoBroker, onBorrar }) {
               {v.ponderada && (difiere || v.ponderada.ganancia_eur != null) && (
                 <p className="text-[11px] text-tinta-3 pt-1 leading-snug">
                   {v.metodos_incoherentes
-                    ? "⚠ Esta venta debería haber cerrado la posición, y entonces los tres "
+                    ? "Esta venta debería haber cerrado la posición, y entonces los tres "
                       + "métodos darían por fuerza el mismo número — pero no coinciden. Eso "
                       + "solo pasa si el libro tiene lotes de esta acción que no deberían "
                       + "estar, o le faltan: la cifra de arriba está calculada sobre un "
@@ -546,7 +547,7 @@ function ImportarDegiro({ onCerrar }) {
     <div className="iv-panel p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="font-heading font-bold text-sm">Importar el CSV de DEGIRO</h3>
-        <button type="button" onClick={onCerrar} className="text-tinta-3 text-sm">✕</button>
+        <button type="button" onClick={onCerrar} className="text-tinta-3 hover:text-tinta"><X size={16} /></button>
       </div>
 
       <p className="text-[11px] text-tinta-3 leading-relaxed">
@@ -1108,7 +1109,7 @@ function FormularioPorNiveles({ onCerrar }) {
     <div className="iv-panel p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="font-heading font-bold text-sm">Dar de alta las compras por niveles</h3>
-        <button type="button" onClick={onCerrar} className="text-tinta-3 text-sm">✕</button>
+        <button type="button" onClick={onCerrar} className="text-tinta-3 hover:text-tinta"><X size={16} /></button>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1274,10 +1275,13 @@ function Plegable({ id, titulo, cabeceraExtra, abierta: porDefecto = true, child
   };
   return (
     <div className="iv-panel overflow-hidden">
+      {/* El titulo va en la etiqueta monoespaciada de seccion, no en la serif: dentro
+          de un panel plegable es un CONTROL, y la serif esta reservada a los titulares
+          de pantalla. El triangulo se queda porque dice si esta abierto o cerrado. */}
       <div className="px-4 py-3 border-b border-linea flex items-center justify-between flex-wrap gap-2">
-        <button onClick={alternar} className="flex items-center gap-2 text-left">
-          <span className="text-tinta-3 text-[10px]">{abierta ? "▲" : "▼"}</span>
-          <h2 className="font-heading font-bold text-sm">{titulo}</h2>
+        <button onClick={alternar} className="flex items-center gap-2.5 text-left group">
+          <span className="text-tinta-3 text-[9px] group-hover:text-marca transition-colors">{abierta ? "▲" : "▼"}</span>
+          <h2 className="iv-etiqueta tracking-[0.16em] text-tinta-2 group-hover:text-tinta transition-colors">{titulo}</h2>
         </button>
         {cabeceraExtra}
       </div>
@@ -1368,7 +1372,7 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
       // Cartera a comprobar que ha pasado — que era justo la duda ("¿y las campanas?").
       if (tipo === "venta" && r?.campanas?.reactivadas?.length) {
         toast.info(
-          `🔔 ${r.campanas.reactivadas.join(" y ")} de ${r.symbol} vendido(s) entero(s) — `
+          `${r.campanas.reactivadas.join(" y ")} de ${r.symbol} vendido(s) entero(s) — `
           + "campana reactivada: volverá a avisarte si el precio cae ahí.",
           { duration: 10000 });
       }
@@ -1451,7 +1455,7 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
         <h3 className="font-heading font-bold text-sm">
           {tipo === "compra" ? "Registrar una compra" : "Registrar una venta"}
         </h3>
-        <button type="button" onClick={onCerrar} className="text-tinta-3 text-sm">✕</button>
+        <button type="button" onClick={onCerrar} className="text-tinta-3 hover:text-tinta"><X size={16} /></button>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1776,10 +1780,11 @@ export default function VentasView() {
 
   return (
     <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-5">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="font-heading font-bold text-2xl">Ventas y ganancias</h1>
-          <p className="text-sm text-tinta-3 mt-0.5">
+      <div className="iv-veredicto flex items-end justify-between gap-6 flex-wrap">
+        <div className="min-w-0">
+          <p className="iv-etiqueta tracking-[0.16em] text-tinta-3 mb-1">Operaciones</p>
+          <h1 className="iv-verbo text-tinta">Ventas y ganancias</h1>
+          <p className="text-cuerpo text-tinta-2 mt-3 max-w-[58ch]">
             Lo que llevas ganado de verdad, en euros, con el tipo de cambio de cada operación.
           </p>
         </div>
@@ -1825,7 +1830,7 @@ export default function VentasView() {
                  comoBroker && hist?.resumen?.ponderada?.ganancia_eur != null
                    ? "media ponderada" : metodo.toUpperCase()}`,
                hist?.resumen?.sin_cubrir_acciones
-                 ? `⚠ ${hist.resumen.sin_cubrir_acciones} acción(es) vendidas sin compra registrada`
+                 ? `${hist.resumen.sin_cubrir_acciones} acción(es) vendidas sin compra registrada`
                    + ` (${(hist.resumen.sin_cubrir_por_symbol || []).map((s) => s.symbol).join(", ")})`
                    + ` — hasta ${eur(hist.resumen.sin_cubrir_eur_aprox)} de esta cifra pueden sobrar`
                    + (hist.resumen.sin_cubrir_sin_tasa
@@ -1848,9 +1853,9 @@ export default function VentasView() {
                // distinto: decir siempre "sin precio" mandaba a buscar el problema donde
                // no estaba (el precio estaba; lo que faltaba era el cambio).
                resumen?.posiciones_sin_precio
-                 ? `⚠ ${resumen.posiciones_sin_precio} sin precio, fuera del total` : null,
+                 ? `${resumen.posiciones_sin_precio} sin precio, fuera del total` : null,
                resumen?.posiciones_sin_tipo_de_cambio
-                 ? `⚠ ${resumen.posiciones_sin_tipo_de_cambio} sin tipo de cambio, fuera del total` : null,
+                 ? `${resumen.posiciones_sin_tipo_de_cambio} sin tipo de cambio, fuera del total` : null,
                // Con el interruptor puesto, el de al lado ya ES el del bróker: lo que
                // hace falta enseñar entonces es el otro, no repetir el mismo.
                (usaPmp ? resumen?.latente_eur : latenteBroker) != null
@@ -1871,7 +1876,7 @@ export default function VentasView() {
                    divs?.retenido_eur ? `${eur(divs.retenido_eur)} retenidos` : null,
                    // Los que no se pudieron pasar a euros quedan FUERA del total. Callarlo
                    // haria que el numero pareciera completo cuando no lo es.
-                   divs?.sin_convertir ? `⚠ ${divs.sin_convertir} sin convertir` : null,
+                   divs?.sin_convertir ? `${divs.sin_convertir} sin convertir` : null,
                  ].filter(Boolean).join(" · ")}
              ayuda="Cobrado por dividendos, ya descontada la retención en origen. Los dividendos NO están en el Transactions.csv: hay que subir además el Account.csv (Actividad → Cuenta). Se cuentan aparte porque fiscalmente no son ganancias patrimoniales sino rendimientos del capital mobiliario, y van a otra casilla de la declaración. La retención de EE.UU. es recuperable en parte con el convenio de doble imposición." />
         {costes != null && (
@@ -1906,7 +1911,7 @@ export default function VentasView() {
       {!!hist?.ventas_sin_comision && (
         <div className="iv-panel px-4 py-2.5 border border-aviso/40 bg-aviso/[0.06]">
           <p className="text-apoyo text-aviso leading-snug">
-            ⚠ <b>{hist.ventas_sin_comision} venta(s) registradas sin comisión.</b> DEGIRO
+            <Warning size={12} weight="fill" className="inline mb-px mr-1" /><b>{hist.ventas_sin_comision} venta(s) registradas sin comisión.</b> DEGIRO
             cobra 2 € por operación más el 0,25% de AutoFX, así que tu ganancia realizada
             está inflada en unos{" "}
             <b className="font-mono">{eur(hist.comision_no_contada_eur)}</b>.
@@ -1951,7 +1956,7 @@ export default function VentasView() {
       {!!hist?.ventas_antiguas && (
         <div className="iv-panel px-4 py-3 border-l-4 border-l-amber-500">
           <p className="text-sm font-semibold mb-1">
-            ⚠ {hist.ventas_antiguas} venta(s) del sistema antiguo, fuera de estas cifras
+            <Warning size={12} weight="fill" className="inline mb-px mr-1" />{hist.ventas_antiguas} venta(s) del sistema antiguo, fuera de estas cifras
           </p>
           <p className="text-xs text-tinta-3">
             Se registraron con el botón «Vender» de la Cartera cuando ese botón llevaba su
@@ -1968,7 +1973,7 @@ export default function VentasView() {
       {!!hist?.posibles_duplicadas?.length && (
         <div className="iv-panel px-4 py-3 border-l-4 border-l-amber-500">
           <p className="text-sm font-semibold mb-1">
-            ⚠ {hist.posibles_duplicadas.length} venta(s) posiblemente contadas dos veces
+            <Warning size={12} weight="fill" className="inline mb-px mr-1" />{hist.posibles_duplicadas.length} venta(s) posiblemente contadas dos veces
           </p>
           <p className="text-xs text-tinta-3 mb-2">
             Estas ventas están una vez metidas a mano y otra vez traídas del CSV de DEGIRO
@@ -1993,7 +1998,7 @@ export default function VentasView() {
       {!!hist?.posibles_compras_duplicadas?.length && (
         <div className="iv-panel px-4 py-3 border-l-4 border-l-amber-500">
           <p className="text-sm font-semibold mb-1">
-            ⚠ {hist.posibles_compras_duplicadas.length} compra(s) posiblemente contadas dos veces
+            <Warning size={12} weight="fill" className="inline mb-px mr-1" />{hist.posibles_compras_duplicadas.length} compra(s) posiblemente contadas dos veces
           </p>
           <p className="text-xs text-tinta-3 mb-2">
             Cada una está metida a mano y además traída del CSV de DEGIRO: misma acción,
@@ -2051,7 +2056,7 @@ export default function VentasView() {
                   className={`text-[11px] rounded px-2 py-1 border ${comoBroker
                     ? "bg-marca text-marca-tinta border-marca font-semibold"
                     : "border-linea text-tinta-3"}`}>
-            {comoBroker ? "✓ Como en DEGIRO (media ponderada)" : "Ver como en DEGIRO"}
+            {comoBroker ? "Como en DEGIRO (media ponderada)" : "Ver como en DEGIRO"}
           </button>
           {cambiarMetodo.isPending && (
             <span className="text-[11px] text-tinta-3">Recalculando…</span>
@@ -2090,7 +2095,7 @@ export default function VentasView() {
 
       {hist?.resumen?.aviso && (
         <div className="iv-panel px-4 py-2.5 border border-aviso/40 bg-aviso/[0.06] flex items-start gap-2">
-          <span>⚠️</span>
+          <Warning size={14} weight="fill" />
           <span className="text-[11px] text-aviso leading-snug">{hist.resumen.aviso}</span>
         </div>
       )}
@@ -2161,7 +2166,7 @@ export default function VentasView() {
         return (
           <div className="iv-panel px-4 py-3 border border-aviso/40 bg-aviso/[0.06] mb-3">
             <p className="text-apoyo text-aviso leading-snug mb-2">
-            ⚠ <b>{sospechosas.length} posición(es) con lotes que no vienen del CSV.</b>{" "}
+            <Warning size={12} weight="fill" className="inline mb-px mr-1" /><b>{sospechosas.length} posición(es) con lotes que no vienen del CSV.</b>{" "}
             Esos lotes llevan la fecha en que se dieron de alta, no la de tu compra, así
             que su coste se pasó a euros al cambio de ese día. Por eso el latente puede
             no cuadrar con DEGIRO teniendo el mismo precio y las mismas acciones. Se

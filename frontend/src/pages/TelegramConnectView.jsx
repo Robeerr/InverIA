@@ -190,7 +190,7 @@ export default function TelegramConnectView() {
 
       {status && (
         <p className="text-etiqueta text-tinta-3 text-center">
-          Sesión: {status.sesion_guardada ? "✅ conectada" : "—"} · Capturando: {status.canales_capturando?.length || 0} canal(es)
+          Sesión: {status.sesion_guardada ? "conectada" : "—"} · Capturando: {status.canales_capturando?.length || 0} canal(es)
         </p>
       )}
     </div>

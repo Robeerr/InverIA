@@ -172,7 +172,7 @@ export default function ChartistPanel({ symbol, runSignal }) {
   return (
     <div className="iv-panel p-3">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-sm font-semibold text-tinta">🎯 Chartista IA</span>
+        <span className="text-sm font-semibold text-tinta">Chartista IA</span>
         {data?.sentido && (
           <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold ${SENT_COLOR[data.sentido] || SENT_COLOR.neutro}`}>
             {data.sentido.toUpperCase()}
@@ -180,7 +180,7 @@ export default function ChartistPanel({ symbol, runSignal }) {
         )}
         {data?._ai_tier && <TierBadge tier={data._ai_tier} model={data._ai_model} />}
         {data?._precomputed && (
-          <span title="Pre-calculado en segundo plano para tu watchlist" className="text-[9px] font-mono text-aviso">⚡ listo</span>
+          <span title="Pre-calculado en segundo plano para tu watchlist" className="text-[9px] font-mono text-aviso">listo</span>
         )}
         <button
           onClick={() => run(!!data)}
@@ -334,7 +334,6 @@ export default function ChartistPanel({ symbol, runSignal }) {
           {/* Enseñanza */}
           {data.para_aprender && (
             <div className="text-[11px] text-tinta-3 flex gap-1.5">
-              <span>🎓</span>
               <span><b className="text-tinta">Para aprender:</b> {data.para_aprender}</span>
             </div>
           )}

@@ -1,4 +1,5 @@
 import React from "react";
+import { Warning } from "@phosphor-icons/react";
 import { fmtPrice } from "../lib/format";
 import InfoDot from "./InfoDot";
 
@@ -142,7 +143,7 @@ export default function EstadoTecnico({ indicators, quote, marketRegime }) {
           className="mt-3 pt-3 border-t border-linea text-apoyo text-baja font-medium flex gap-1.5"
           data-testid="et-recien-perdida"
         >
-          <span aria-hidden="true">⚠️</span>
+          <Warning size={13} weight="fill" aria-hidden="true" />
           <span>Acaba de perder la media de 10 semanas — es la señal de salida del método.</span>
         </p>
       )}

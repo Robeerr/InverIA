@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo, Suspense } from "react";
+import { Warning } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import QuoteHeader from "../components/QuoteHeader";
@@ -31,7 +32,7 @@ function DataHealthBar({ health }) {
   if (!health || !health.degraded) return null;
   return (
     <div className="iv-panel px-4 py-2 flex items-center gap-2 border border-aviso/40 bg-aviso/[0.06]">
-      <span className="text-sm">⚠️</span>
+      <Warning size={14} weight="fill" />
       <span className="text-[11px] text-aviso leading-snug">
         <b>Datos de respaldo o con retraso</b>{health.note ? ` · ${health.note}` : ""}.
       </span>

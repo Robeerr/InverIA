@@ -33,8 +33,8 @@ function StockCard({ row, onPick }) {
       {/* Sentimiento de las fuentes: hablan bien/mal de la empresa */}
       {(row.positivos > 0 || row.negativos > 0) && (
         <div className="flex items-center gap-2 mb-1.5 text-etiqueta font-semibold">
-          {row.positivos > 0 && <span className="text-sube">👍 {row.positivos} la ven bien</span>}
-          {row.negativos > 0 && <span className="text-baja">👎 {row.negativos} la ven mal</span>}
+          {row.positivos > 0 && <span className="text-sube">{row.positivos} la ven bien</span>}
+          {row.negativos > 0 && <span className="text-baja">{row.negativos} la ven mal</span>}
         </div>
       )}
 
@@ -110,11 +110,11 @@ export default function RadarView({ setSymbol }) {
         <div className="flex items-center gap-1 mt-4 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-iv p-1 w-fit">
           <button onClick={() => setTab("acciones")}
             className={`px-4 py-2 rounded-iv text-sm font-medium ${tab === "acciones" ? "bg-marca text-marca-tinta" : "text-tinta-3"}`}>
-            📈 Acciones ({acciones.length})
+            Acciones ({acciones.length})
           </button>
           <button onClick={() => setTab("info")}
             className={`px-4 py-2 rounded-iv text-sm font-medium ${tab === "info" ? "bg-marca text-marca-tinta" : "text-tinta-3"}`}>
-            📰 Titulares ({info.length})
+            Titulares ({info.length})
           </button>
         </div>
       </section>

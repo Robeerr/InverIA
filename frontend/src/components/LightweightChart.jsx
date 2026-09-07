@@ -264,7 +264,7 @@ export default function LightweightChart({ candles, buyLevels, lines, timeframe,
             <span className="px-1.5 py-0.5 rounded bg-fondo text-tinta-3 text-[9px] font-mono uppercase tracking-wide shrink-0">auto</span>
             <span className="text-tinta-3 flex-1">{lines.pattern.descripcion}</span>
           </div>
-          <p className="text-[10px] text-tinta-3 italic">Detección automática por geometría (puede fallar). El veredicto fiable lo da el 🎯 Chartista IA de abajo.</p>
+          <p className="text-[10px] text-tinta-3 italic">Detección automática por geometría (puede fallar). El veredicto fiable lo da el Chartista IA de abajo.</p>
         </div>
       )}
       <p className="text-[10px] text-tinta-3 mt-2">Diagonales: directrices · Azul: zonas de compra · Verde/rojo punteado: soporte/resistencia · SMA 50 (azul) / 200 (dorado).</p>

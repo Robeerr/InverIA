@@ -1,4 +1,5 @@
 import React from "react";
+import { Warning } from "@phosphor-icons/react";
 
 // Red de seguridad: si cualquier componente lanza una excepción al renderizar, en vez de
 // dejar la PANTALLA EN BLANCO (especialmente en el iPhone), mostramos un mensaje amable con
@@ -27,7 +28,7 @@ export default class ErrorBoundary extends React.Component {
     if (this.state.hasError) {
       return (
         <div className="max-w-md mx-auto mt-20 px-6 text-center">
-          <p className="text-4xl mb-3">😵‍💫</p>
+          <p className="mb-3 flex justify-center"><Warning size={34} weight="light" className="text-baja" /></p>
           <h2 className="font-heading font-bold text-lg text-tinta mb-2">Algo se ha roto en esta vista</h2>
           <p className="text-sm text-tinta-3 mb-5">
             No te preocupes, tus datos están a salvo. Prueba a recargar o volver a la pantalla principal.

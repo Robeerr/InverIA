@@ -1,5 +1,5 @@
 import React from "react";
-import { ArrowUpRight, ArrowDownRight, Minus, Target, Shield, TrendUp, TrendDown, Crosshair, Star } from "@phosphor-icons/react";
+import { ArrowUpRight, ArrowDownRight, Minus, Target, Shield, TrendUp, TrendDown, Crosshair, Star, Warning, CheckCircle} from "@phosphor-icons/react";
 import { fmtPrice } from "../lib/format";
 import InfoDot from "./InfoDot";
 
@@ -406,7 +406,9 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
               : "bg-sube/[0.07]"
           }`}
         >
-          <span className="text-sm leading-none mt-0.5">{analysis.rr_bajo ? "⚠️" : "✅"}</span>
+          <span className="leading-none mt-0.5">{analysis.rr_bajo
+                ? <Warning size={14} weight="fill" />
+                : <CheckCircle size={14} weight="fill" />}</span>
           <div className="flex-1 min-w-[200px]">
             <span className="text-[11px] uppercase tracking-[0.18em] text-tinta-3 font-mono">
               Riesgo / Recompensa

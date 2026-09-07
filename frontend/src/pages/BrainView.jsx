@@ -65,11 +65,11 @@ function YouTubeBox({ onDone }) {
       )}
       {res?.ok && (
         <div className="mt-3 border-l-2 border-[#4a7c59] pl-3 py-1">
-          <p className="text-etiqueta font-semibold text-[#1a3a32]">✅ Conseguido del vídeo (vía {res.via}):</p>
+          <p className="text-etiqueta font-semibold text-[#1a3a32]">Conseguido del vídeo (vía {res.via}):</p>
           {res.resumen && <p className="text-apoyo text-[#0e1f1a] leading-snug mt-1">{res.resumen}</p>}
           <div className="flex flex-wrap gap-1.5 mt-2 text-etiqueta">
-            <span className="px-1.5 py-0.5 rounded-full bg-[#4a7c5915] text-[#4a7c59] font-semibold">🧠 {res.aprendidos} aprendizajes</span>
-            <span className="px-1.5 py-0.5 rounded-full bg-[#2563eb15] text-[#2563eb] font-semibold">📈 {res.acciones} picks</span>
+            <span className="px-1.5 py-0.5 rounded-full bg-[#4a7c5915] text-[#4a7c59] font-semibold">{res.aprendidos} aprendizajes</span>
+            <span className="px-1.5 py-0.5 rounded-full bg-[#2563eb15] text-[#2563eb] font-semibold">{res.acciones} picks</span>
             {(res.tickers || []).map((t) => (
               <span key={t} className="px-1.5 py-0.5 rounded-full bg-[#f0ece3] text-[#5c6b66] font-mono">{t}</span>
             ))}

@@ -143,9 +143,9 @@ function ScreenerCard({ row, onPick, top }) {
             {row.fuentes && (
               <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded-full text-etiqueta font-bold bg-info/10 text-info border border-info/20"
                 title={`Mencionada por tus fuentes: ${(row.fuentes.fuentes || []).join(", ")}`}>
-                📣 Tus fuentes ({row.fuentes.menciones})
-                {row.fuentes.positivos > 0 && ` 👍${row.fuentes.positivos}`}
-                {row.fuentes.negativos > 0 && ` 👎${row.fuentes.negativos}`}
+                Tus fuentes ({row.fuentes.menciones})
+                {row.fuentes.positivos > 0 && ` · ${row.fuentes.positivos} a favor`}
+                {row.fuentes.negativos > 0 && ` · ${row.fuentes.negativos} en contra`}
               </span>
             )}
           </div>
@@ -198,7 +198,7 @@ function ScreenerCard({ row, onPick, top }) {
       )}
       {row.earnings_days != null && (
         <p className="text-etiqueta font-mono mb-2 text-baja bg-baja/10 border border-baja/30 rounded px-2 py-1">
-          ⚠ Resultados {row.earnings_days === 0 ? "HOY" : row.earnings_days === 1 ? "mañana" : `en ${row.earnings_days} días`} — riesgo binario
+          Resultados {row.earnings_days === 0 ? "HOY" : row.earnings_days === 1 ? "mañana" : `en ${row.earnings_days} días`} — riesgo binario
         </p>
       )}
 
@@ -569,7 +569,7 @@ export default function OpportunitiesView({ setSymbol }) {
               {(screener.sectores_calientes || []).length > 0 && (
                 <div className="iv-panel p-3 mb-3 border-l-4 border-aviso">
                   <p className="text-etiqueta text-tinta">
-                    🔥 <b>El dinero va hacia:</b>{" "}
+                    <b>El dinero va hacia:</b>{" "}
                     {screener.sectores_calientes.slice(0, 4).map((s, i) => (
                       <span key={s.sector}>{i > 0 ? " · " : ""}{s.sector}</span>
                     ))}
@@ -596,7 +596,7 @@ export default function OpportunitiesView({ setSymbol }) {
               )}
               {(screener.con_fuentes || []).length > 0 && (
                 <p className="text-etiqueta text-info bg-info/10 border border-info/20 rounded-iv px-3 py-2 mb-3">
-                  📣 <b>{screener.con_fuentes.length}</b> de estas acciones las mencionan tus fuentes de pago — salen primero, marcadas.
+                  <b>{screener.con_fuentes.length}</b> de estas acciones las mencionan tus fuentes de pago — salen primero, marcadas.
                 </p>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">

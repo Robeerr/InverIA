@@ -1,4 +1,5 @@
 import React from "react";
+import { Warning } from "@phosphor-icons/react";
 import { fmtHace } from "../lib/format";
 import { titularVivo } from "../lib/tesisVivo";
 
@@ -102,7 +103,7 @@ export default function TesisPanel({
           className="text-[12.5px] text-aviso leading-snug mt-3 pt-3 border-t border-linea flex gap-1.5"
           data-testid="tesis-limita-confianza"
         >
-          <span className="shrink-0" aria-hidden="true">⚠️</span>
+          <Warning size={13} weight="fill" className="shrink-0 mt-px" aria-hidden="true" />
           <span>{limita.texto}</span>
         </p>
       )}
@@ -119,8 +120,8 @@ export default function TesisPanel({
             {loadingAnalysis
               ? "Analizando…"
               : tieneAnalisis
-                ? "🧠 Rehacer análisis IA"
-                : "🧠 Ampliar con IA"}
+                ? "Rehacer análisis IA"
+                : "Ampliar con IA"}
           </button>
           <span className="text-[11px] text-tinta-3">
             Añade juicio, causa del movimiento, chartista y riesgos. Lo de arriba ya está calculado.
