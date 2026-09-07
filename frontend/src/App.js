@@ -24,9 +24,10 @@ const EstilosView      = React.lazy(() => import("./pages/EstilosView"));
 const HoyView          = React.lazy(() => import("./pages/HoyView"));
 
 const PageLoader = () => (
-  <div className="min-h-[60vh] flex items-center justify-center">
-    <div className="w-8 h-8 rounded-lg bg-[#1a3a32] animate-pulse flex items-center justify-center">
-      <span className="text-[#f5f3ef] font-bold text-sm">I</span>
+  <div className="min-h-[60vh] flex items-center justify-center" role="status" aria-live="polite">
+    <div className="flex items-center gap-3 text-tinta-3">
+      <span className="size-3 rounded-full bg-marca animate-pulse" aria-hidden="true" />
+      <span className="iv-etiqueta">Cargando vista</span>
     </div>
   </div>
 );
@@ -140,12 +141,10 @@ function AppInner() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#f5f3ef] flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 rounded-xl bg-[#1a3a32] flex items-center justify-center mx-auto mb-3 animate-pulse">
-            <span className="text-[#f5f3ef] font-bold text-lg">I</span>
-          </div>
-          <p className="text-[#5c6b66] font-mono text-sm">Cargando InverIA...</p>
+      <div className="min-h-screen bg-fondo flex items-center justify-center">
+        <div className="flex items-center gap-3 text-tinta-3" role="status" aria-live="polite">
+          <span className="size-3 rounded-full bg-marca animate-pulse" aria-hidden="true" />
+          <span className="iv-etiqueta">Cargando InverIA</span>
         </div>
       </div>
     );
@@ -204,12 +203,12 @@ function AppInner() {
       </Suspense>
       </ErrorBoundary>
 
-      <footer className="border-t border-linea mt-12 py-6 text-center space-y-1.5">
+      <footer className="border-t border-linea mt-12 py-6 text-center flex flex-col gap-1.5">
         <p className="text-apoyo text-tinta-3">
           InverIA · Datos en vivo de Yahoo Finance + Finnhub · IA con Groq, OpenAI, Anthropic &amp; Google
         </p>
         <p className="text-apoyo text-tinta-3 max-w-2xl mx-auto px-6 opacity-80">
-          ⚠️ Solo con fines educativos. Esta aplicación no constituye asesoramiento financiero, fiscal o legal.
+          Solo con fines educativos. Esta aplicación no constituye asesoramiento financiero, fiscal o legal.
         </p>
       </footer>
       </div>
