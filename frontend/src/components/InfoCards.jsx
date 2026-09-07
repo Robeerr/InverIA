@@ -15,7 +15,7 @@ export function PricePredictionCard({ analysis, quote }) {
   const Cell = ({ label, val }) => {
     const d = current && val ? ((val - current) / current) * 100 : null;
     return (
-      <div className="bg-fondo border border-linea rounded-md px-2 py-3 text-center">
+      <div className="bg-fondo border border-linea rounded-iv px-2 py-3 text-center">
         <p className="text-[10px] uppercase tracking-wider text-tinta-3">{label}</p>
         <p className="font-mono font-bold text-lg text-tinta mt-1">{val != null ? `$${fmtPrice(val)}` : "—"}</p>
         {d != null && (
@@ -105,7 +105,7 @@ export function NewsFeed({ news }) {
             href={n.url}
             target="_blank"
             rel="noreferrer"
-            className="group block p-3 bg-fondo border border-linea rounded-md hover:border-marca transition-colors"
+            className="group block p-3 bg-fondo border border-linea rounded-iv hover:border-marca transition-colors"
           >
             <div className="flex items-start justify-between gap-2">
               <p className="text-sm text-tinta leading-snug group-hover:text-marca line-clamp-2">
@@ -143,7 +143,7 @@ export function FundamentalsCard({ quote, analysis }) {
           ["52W Bajo", `$${fmtPrice(quote.low_52w)}`],
           ["Vol. Prom.", fmtNum(quote.avg_volume)],
         ].map(([label, val]) => (
-          <div key={label} className="bg-fondo border border-linea rounded-md px-3 py-2">
+          <div key={label} className="bg-fondo border border-linea rounded-iv px-3 py-2">
             <p className="label-small">{label}</p>
             <p className="font-mono text-sm text-tinta mt-1">{val}</p>
           </div>
@@ -156,19 +156,19 @@ export function FundamentalsCard({ quote, analysis }) {
         </>
       )}
       {analysis?.fundamentals_view && (
-        <div className="mt-3 p-3 bg-fondo border border-linea rounded-md">
+        <div className="mt-3 p-3 bg-fondo border border-linea rounded-iv">
           <p className="label-small mb-1">Visión IA</p>
           <p className="text-xs text-tinta leading-relaxed">{analysis.fundamentals_view}</p>
         </div>
       )}
       {analysis?.insider_view && (
-        <div className="mt-3 p-3 bg-fondo border border-linea rounded-md">
+        <div className="mt-3 p-3 bg-fondo border border-linea rounded-iv">
           <p className="label-small mb-1">Insider Trading (directivos)</p>
           <p className="text-xs text-tinta leading-relaxed">{analysis.insider_view}</p>
         </div>
       )}
       {analysis?.earnings_view && (
-        <div className="mt-3 p-3 bg-fondo border border-linea rounded-md">
+        <div className="mt-3 p-3 bg-fondo border border-linea rounded-iv">
           <p className="label-small mb-1">Historial de Resultados</p>
           <p className="text-xs text-tinta leading-relaxed">{analysis.earnings_view}</p>
         </div>
@@ -187,7 +187,7 @@ export function MarketSignalsCard({ insider, earningsHistory }) {
       </h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {insider && (
-          <div data-testid="insider-card" className="border border-linea rounded-md p-4">
+          <div data-testid="insider-card" className="border border-linea rounded-iv p-4">
             <div className="flex items-center gap-2 mb-3">
               <Users size={14} weight="bold" className="text-marca" />
               <p className="label-small">Insider Trading (6 meses)</p>
@@ -218,7 +218,7 @@ export function MarketSignalsCard({ insider, earningsHistory }) {
           </div>
         )}
         {earningsHistory && (
-          <div data-testid="earnings-card" className="border border-linea rounded-md p-4">
+          <div data-testid="earnings-card" className="border border-linea rounded-iv p-4">
             <div className="flex items-center gap-2 mb-3">
               <ChartLineUp size={14} weight="bold" className="text-marca" />
               <p className="label-small">Historial Resultados (EPS)</p>
@@ -285,7 +285,7 @@ export function RisksCatalystsCard({ analysis }) {
         </div>
       </div>
       {analysis.technical_analysis && (
-        <div className="mt-4 p-3 bg-fondo border border-linea rounded-md">
+        <div className="mt-4 p-3 bg-fondo border border-linea rounded-iv">
           <p className="label-small mb-1">Análisis Técnico Detallado</p>
           <p className="text-xs text-tinta leading-relaxed">{analysis.technical_analysis}</p>
         </div>
@@ -293,13 +293,13 @@ export function RisksCatalystsCard({ analysis }) {
       {(analysis.fibonacci_analysis || analysis.pattern_analysis) && (
         <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
           {analysis.fibonacci_analysis && (
-            <div className="p-3 bg-fondo border border-linea rounded-md">
+            <div className="p-3 bg-fondo border border-linea rounded-iv">
               <p className="label-small mb-1">Fibonacci</p>
               <p className="text-xs text-tinta leading-relaxed">{analysis.fibonacci_analysis}</p>
             </div>
           )}
           {analysis.pattern_analysis && (
-            <div className="p-3 bg-fondo border border-linea rounded-md">
+            <div className="p-3 bg-fondo border border-linea rounded-iv">
               <p className="label-small mb-1">Patrones Técnicos</p>
               <p className="text-xs text-tinta leading-relaxed">{analysis.pattern_analysis}</p>
             </div>

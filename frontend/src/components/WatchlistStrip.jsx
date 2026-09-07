@@ -116,7 +116,7 @@ export default function WatchlistStrip({ symbol, setSymbol, vertical = false, cl
             onMouseEnter={() => precargar(s)}
             onMouseLeave={cancelar}
             onFocus={() => precargar(s)}
-            className={`rounded-lg border px-3 py-1.5 text-left transition-colors ${vertical ? "w-full" : "shrink-0"}`}
+            className={`rounded-iv border px-3 py-1.5 text-left transition-colors ${vertical ? "w-full" : "shrink-0"}`}
             style={{
               borderColor: v("border"),
               background: v("bg"),

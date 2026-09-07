@@ -35,13 +35,13 @@ export default class ErrorBoundary extends React.Component {
           <div className="flex gap-2 justify-center">
             <button
               onClick={() => window.location.reload()}
-              className="px-4 py-2 rounded-md bg-marca text-marca-tinta text-sm font-mono hover:bg-marca/90 transition-colors"
+              className="px-4 py-2 rounded-iv bg-marca text-marca-tinta text-sm font-mono hover:bg-marca/90 transition-colors"
             >
               Recargar
             </button>
             <button
               onClick={() => { this.handleReset(); window.location.href = "/"; }}
-              className="px-4 py-2 rounded-md border border-linea text-tinta-3 text-sm font-mono hover:border-marca transition-colors"
+              className="px-4 py-2 rounded-iv border border-linea text-tinta-3 text-sm font-mono hover:border-marca transition-colors"
             >
               Ir al inicio
             </button>
@@ -56,7 +56,7 @@ export default class ErrorBoundary extends React.Component {
               <summary className="text-etiqueta font-mono text-tinta-3 cursor-pointer select-none">
                 Detalle técnico
               </summary>
-              <pre className="mt-2 p-3 rounded-md bg-superficie-alt text-tinta text-etiqueta font-mono whitespace-pre-wrap break-words select-all max-h-48 overflow-auto">
+              <pre className="mt-2 p-3 rounded-iv bg-superficie-alt text-tinta text-etiqueta font-mono whitespace-pre-wrap break-words select-all max-h-48 overflow-auto">
                 {String(this.state.error?.message || this.state.error)}
               </pre>
             </details>

@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
 import {
   House, Lightning, MagnifyingGlass, Bell, Coins, CalendarBlank,
-  ChartLineUp, Brain, ChartLineUp as Marca, Stethoscope, TelegramLogo, Palette, X,
+  ChartLineUp, Brain, Stethoscope, TelegramLogo, Palette, X,
 } from "@phosphor-icons/react";
 
 /**
@@ -70,13 +70,18 @@ function Item({ n, activo, onNavigate }) {
       data-testid={n.testId}
       onClick={onNavigate}
       aria-current={activo ? "page" : undefined}
-      className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-iv-sm text-apoyo transition-colors ${
+      /* El activo se marca con un filete champán a la izquierda y la superficie
+         apenas levantada. Sin relleno de color ni negrita: en una terminal, lo que
+         señala es la línea, no el peso de la letra. */
+      className={`flex items-center gap-2.5 pl-2.5 pr-2.5 py-[7px] text-apoyo transition-colors
+                  border-l-2 ${
         activo
-          ? "bg-marca/10 text-marca font-semibold shadow-[inset_2px_0_0_rgb(var(--iv-marca))]"
-          : "text-tinta-2 hover:bg-superficie-alt hover:text-tinta"
+          ? "border-marca bg-superficie-alt text-tinta"
+          : "border-transparent text-tinta-2 hover:bg-superficie-alt hover:text-tinta"
       }`}
     >
-      <Icon size={15} weight={activo ? "bold" : "regular"} className="shrink-0" />
+      <Icon size={15} weight="regular"
+            className={`shrink-0 ${activo ? "text-marca" : "text-tinta-3"}`} />
       <span className="truncate">{n.label}</span>
     </Link>
   );
@@ -91,24 +96,32 @@ export function RailContenido({ onNavigate }) {
 
   return (
     <>
+      {/* El logotipo es tipográfico. El cuadrado relleno de color de marca con un
+          icono dentro es el gesto de identidad más genérico que existe; una serif
+          de display con las dos letras del acento en champán dice más y ocupa menos. */}
       <Link
         to="/"
         onClick={onNavigate}
-        className="flex items-center gap-2.5 px-2.5 pt-1 pb-4 shrink-0"
+        className="block px-2.5 pt-1 pb-4 shrink-0 border-b border-linea mb-1"
       >
-        <span className="w-[18px] h-[18px] rounded-iv-sm bg-marca flex items-center justify-center text-marca-tinta shrink-0">
-          <Marca size={12} weight="bold" />
+        <span className="font-heading text-[21px] leading-none text-tinta">
+          Inver<b className="font-semibold text-marca">IA</b>
         </span>
-        <span className="font-heading font-bold text-cuerpo tracking-tight text-tinta">InverIA</span>
+        <span className="iv-etiqueta block mt-2 text-[9px] tracking-[0.22em] text-tinta-3">
+          Terminal privada
+        </span>
       </Link>
 
-      <nav className="flex-1 min-h-0 overflow-y-auto">
+      <nav className="flex-1 min-h-0 overflow-y-auto -mx-2.5">
         {GRUPOS.map((g) => (
           <div key={g.titulo}>
-            <p className="iv-etiqueta px-2.5 pt-3.5 pb-1.5 tracking-[0.14em] text-linea-marcada">
+            {/* pl-3 = los 12px a los que empieza el texto de un ítem (2px de filete
+                + 10px de sangría). Sin esto las etiquetas de grupo quedaban 2px a la
+                izquierda de los enlaces que encabezan. */}
+            <p className="iv-etiqueta pl-3 pr-2.5 pt-4 pb-1.5 tracking-[0.16em] text-tinta-3">
               {g.titulo}
             </p>
-            <div className="space-y-0.5">
+            <div>
               {g.items.map((n) => (
                 <Item key={n.to} n={n} activo={esActivo(n.to)} onNavigate={onNavigate} />
               ))}
@@ -118,7 +131,7 @@ export function RailContenido({ onNavigate }) {
       </nav>
 
       {/* Herramientas: se llega, pero no compiten. Antes no se llegaba de ninguna forma. */}
-      <div className="border-t border-linea pt-2 mt-2 space-y-0.5 shrink-0">
+      <div className="border-t border-linea pt-2 mt-2 shrink-0 -mx-2.5">
         {HERRAMIENTAS.map((n) => (
           <Item key={n.to} n={n} activo={esActivo(n.to)} onNavigate={onNavigate} />
         ))}

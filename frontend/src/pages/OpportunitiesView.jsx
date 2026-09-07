@@ -28,7 +28,7 @@ function OpportunityCard({ op, onPick }) {
     >
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="w-10 h-10 rounded-md bg-marca text-marca-tinta flex items-center justify-center font-mono font-bold text-xs shrink-0">
+          <div className="w-10 h-10 rounded-iv bg-marca text-marca-tinta flex items-center justify-center font-mono font-bold text-xs shrink-0">
             {op.symbol.slice(0, 3)}
           </div>
           <div className="min-w-0">
@@ -134,7 +134,7 @@ function ScreenerCard({ row, onPick, top }) {
       )}
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="w-10 h-10 rounded-md bg-marca text-marca-tinta flex items-center justify-center font-mono font-bold text-xs shrink-0">
+          <div className="w-10 h-10 rounded-iv bg-marca text-marca-tinta flex items-center justify-center font-mono font-bold text-xs shrink-0">
             {row.symbol.slice(0, 3)}
           </div>
           <div className="min-w-0">
@@ -371,7 +371,7 @@ export default function OpportunitiesView({ setSymbol }) {
   const TabButton = ({ id, icon: Icon, children }) => (
     <button
       onClick={() => setMode(id)}
-      className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-mono border transition-all ${
+      className={`flex items-center gap-2 px-4 py-2 rounded-iv text-sm font-mono border transition-all ${
         mode === id
           ? "bg-marca text-marca-tinta border-marca"
           : "bg-superficie text-tinta-3 border-linea hover:border-marca"
@@ -529,7 +529,7 @@ export default function OpportunitiesView({ setSymbol }) {
               const rg = screener.market_regime;
               const c = { verde: "var(--iv-sube)", amarillo: "var(--iv-aviso)", rojo: "var(--iv-baja)" }[rg.light] || "var(--iv-tinta-3)";
               return (
-                <div className="flex items-center gap-2 mt-4 px-3 py-2 rounded-lg" style={{ background: `rgb(${c} / 0.08)`, border: `1px solid rgb(${c} / 0.25)` }}>
+                <div className="flex items-center gap-2 mt-4 px-3 py-2 rounded-iv" style={{ background: `rgb(${c} / 0.08)`, border: `1px solid rgb(${c} / 0.25)` }}>
                   <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: `rgb(${c})` }} />
                   <span className="text-xs font-semibold" style={{ color: `rgb(${c})` }}>{rg.label}</span>
                   <span className="text-etiqueta text-tinta-3 hidden sm:inline">— {rg.advice}</span>
@@ -595,7 +595,7 @@ export default function OpportunitiesView({ setSymbol }) {
                 </div>
               )}
               {(screener.con_fuentes || []).length > 0 && (
-                <p className="text-etiqueta text-info bg-info/10 border border-info/20 rounded-md px-3 py-2 mb-3">
+                <p className="text-etiqueta text-info bg-info/10 border border-info/20 rounded-iv px-3 py-2 mb-3">
                   📣 <b>{screener.con_fuentes.length}</b> de estas acciones las mencionan tus fuentes de pago — salen primero, marcadas.
                 </p>
               )}

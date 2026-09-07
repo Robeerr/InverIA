@@ -225,7 +225,7 @@ export default function DiagnosticoView() {
                 leerlo como si fuera el tiempo de carga lleva a la conclusión contraria:
                 todo lo que consiste en dejar de repetir trabajo es invisible ahí. */}
             {carga.experiencia_real && (
-              <div className="mb-3 p-3 rounded-md border border-linea bg-superficie-alt">
+              <div className="mb-3 p-3 rounded-iv border border-linea bg-superficie-alt">
                 <p className="text-etiqueta uppercase tracking-[0.15em] text-tinta-3 font-mono mb-1">
                   Lo que tardas tú al elegir esta acción
                 </p>

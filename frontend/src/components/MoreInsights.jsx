@@ -41,7 +41,7 @@ export function AlternativePanel({ symbol, onPick }) {
             del borde se conserva; en un div funciona igual. */}
         {d.alternativas.map((a) => (
           <div key={a.symbol}
-            className="flex items-start justify-between gap-2 px-3 py-2 rounded-md border border-linea hover:border-aviso transition-colors">
+            className="flex items-start justify-between gap-2 px-3 py-2 rounded-iv border border-linea hover:border-aviso transition-colors">
             {/* `flex-1` y `self-stretch` no son adorno: sin ellos el boton se dimensiona
                 a su contenido —el ticker y el nombre— y el resto de la fila queda muerto.
                 Antes toda la fila era el boton, asi que pulsar en el hueco central

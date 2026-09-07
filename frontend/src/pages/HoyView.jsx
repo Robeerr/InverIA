@@ -93,10 +93,12 @@ export default function HoyView() {
           Cintillo, saludo y las dos acciones. El saludo no informa de nada —para eso
           está el desglose de más abajo— pero sitúa: dice de quién es esta pantalla y
           en qué momento del día se abre. */}
-      <header className="mb-6 flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+      {/* Cabecera editorial, no una barra de título. Va a sangre sobre el lienzo con
+          un filete champán encima: es lo primero que existe en la pantalla, y el
+          saludo en la serif de display a tamaño grande fija el tono de toda la web. */}
+      <header className="iv-veredicto mb-8 flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
         <div className="min-w-0">
-          <p className="flex items-center gap-2.5 mb-1.5">
-            <span className="inline-block w-6 h-px bg-marca shrink-0" aria-hidden="true" />
+          <p className="flex items-center gap-2.5 mb-1">
             <span className="iv-etiqueta tracking-[0.16em] text-tinta-3">Panel de control</span>
             {!isLoading && !error && (
               <span className="iv-etiqueta tracking-[0.12em] text-sube border border-sube/40 rounded-iv-sm px-1.5 py-px">
@@ -104,10 +106,8 @@ export default function HoyView() {
               </span>
             )}
           </p>
-          <h1 className="font-heading text-cifra font-bold text-tinta leading-[1.15]">
-            {saludoDeLaHora()}
-          </h1>
-          <p className="text-apoyo text-tinta-2 mt-1">
+          <h1 className="iv-verbo text-tinta">{saludoDeLaHora()}</h1>
+          <p className="text-cuerpo text-tinta-2 mt-3 max-w-[58ch]">
             El contexto que necesitas para decidir mejor hoy.
           </p>
         </div>
@@ -142,10 +142,14 @@ export default function HoyView() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
         {/* Columna principal */}
         <div className="min-w-0">
+          {/* La cabecera de sección con filete corrido, en su variante de acento: esta
+              es la sección PRINCIPAL de la portada y la única que lo lleva. */}
+          <div className="iv-seccion iv-seccion-acento">
+            <span className="iv-etiqueta tracking-[0.18em] text-tinta-2">Lo que importa hoy</span>
+          </div>
           <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1 mb-3">
             <div className="min-w-0">
-              <p className="iv-etiqueta tracking-[0.16em] text-tinta-3 mb-1">Lo que importa hoy</p>
-              <h2 className="font-heading text-titulo font-bold text-tinta leading-tight">
+              <h2 className="font-heading text-titulo text-tinta leading-tight">
                 {titular ? "Decisiones que requieren tu atención" : "Hoy no hay decisiones pendientes"}
               </h2>
               {/* El desglose por tipo: es el dato que antes iba en el titular grande. */}
@@ -196,7 +200,10 @@ export default function HoyView() {
             </div>
           ) : (
             <>
-              <div className="space-y-3">
+              {/* Sin separación entre filas: cada una trae su filete inferior, así que
+                  los bordes se encadenan y la lista se lee como una sola tabla. El
+                  filete de arriba cierra la primera. */}
+              <div className="border-t border-linea">
                 {importa.map((t, i) => (
                   <TarjetaAtencion key={`${t.symbol}-${t.tipo}`} tarjeta={t} orden={i + 1} />
                 ))}

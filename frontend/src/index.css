@@ -36,7 +36,7 @@ body {
     margin: 0;
     background-color: rgb(var(--iv-fondo));
     color: rgb(var(--iv-tinta));
-    font-family: 'IBM Plex Sans', sans-serif;
+    font-family: 'Archivo', ui-sans-serif, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     transition: background-color 0.25s ease, color 0.25s ease;
@@ -76,47 +76,51 @@ body {
    documentadas allí y no dependen de este bloque.
    ────────────────────────────────────────────────────────────────────────── */
 .dark .card-flat {
-    background: #131a23 !important;
-    border-color: #283341 !important;
-    color: #e5e7eb;
+    background: rgb(var(--iv-superficie)) !important;
+    border-color: rgb(var(--iv-linea)) !important;
+    color: rgb(var(--iv-tinta));
 }
 
-.dark .text-\[\#0e1f1a\] { color: #f1f5f9 !important; }
-.dark .text-\[\#5c6b66\] { color: #94a3b8 !important; }
-.dark .bg-\[\#f5f3ef\] { background-color: #1c2530 !important; }
-.dark .border-\[\#e5e0d8\] { border-color: #283341 !important; }
-.dark .bg-white { background-color: #131a23 !important; }
-.dark .bg-\[\#1a3a32\] { background-color: #f59e0b !important; color: #0a0e13 !important; }
-.dark .bg-\[\#1a3a32\]:hover { background-color: #fbbf24 !important; }
-.dark .text-\[\#1a3a32\] { color: #fbbf24 !important; }
-.dark .divider-soft { background: #283341 !important; }
-.dark .label-small { color: #94a3b8 !important; }
+.dark .text-\[\#0e1f1a\] { color: rgb(var(--iv-tinta)) !important; }
+.dark .text-\[\#5c6b66\] { color: rgb(var(--iv-tinta-3)) !important; }
+.dark .bg-\[\#f5f3ef\] { background-color: rgb(var(--iv-superficie-2)) !important; }
+.dark .border-\[\#e5e0d8\] { border-color: rgb(var(--iv-linea)) !important; }
+.dark .bg-white { background-color: rgb(var(--iv-superficie)) !important; }
+.dark .bg-\[\#1a3a32\] { background-color: rgb(var(--iv-marca)) !important; color: rgb(var(--iv-marca-tinta)) !important; }
+.dark .bg-\[\#1a3a32\]:hover { background-color: rgb(var(--iv-marca) / 0.85) !important; }
+.dark .text-\[\#1a3a32\] { color: rgb(var(--iv-marca)) !important; }
+.dark .divider-soft { background: rgb(var(--iv-linea)) !important; }
+.dark .label-small { color: rgb(var(--iv-tinta-3)) !important; }
 .dark input, .dark select, .dark textarea {
-    background-color: #1c2530 !important;
-    color: #f1f5f9 !important;
-    border-color: #283341 !important;
+    background-color: rgb(var(--iv-superficie-2)) !important;
+    color: rgb(var(--iv-tinta)) !important;
+    border-color: rgb(var(--iv-linea)) !important;
 }
-.dark input::placeholder, .dark textarea::placeholder { color: #64748b !important; }
+.dark input::placeholder, .dark textarea::placeholder { color: rgb(var(--iv-tinta-3)) !important; }
 .dark ::-webkit-scrollbar-thumb {
-    background: #334155 !important;
+    background: rgb(var(--iv-linea-fuerte)) !important;
 }
 .dark ::-webkit-scrollbar-thumb:hover {
-    background: #475569 !important;
+    background: rgb(var(--iv-linea-marcada)) !important;
 }
 /* Maintain buy/sell colors slightly adjusted for dark */
-.dark .text-\[\#4a7c59\] { color: #4ade80 !important; }
-.dark .text-\[\#d85c41\] { color: #f87171 !important; }
-.dark .border-\[\#4a7c59\] { border-color: #4ade80 !important; }
+.dark .text-\[\#4a7c59\] { color: rgb(var(--iv-sube)) !important; }
+.dark .text-\[\#d85c41\] { color: rgb(var(--iv-baja)) !important; }
+.dark .border-\[\#4a7c59\] { border-color: rgb(var(--iv-sube)) !important; }
 
 /* Estos dos daban 3,39:1 y 3,29:1 sobre la tarjeta oscura, por debajo del 4,5:1
    que necesita un texto. Los paneles para los que se escribieron ya usan tokens;
    los dos selectores sobreviven solo por BrainView. Contraste medido, no estimado. */
-.dark .text-\[\#2563eb\] { color: #60a5fa !important; }
-.dark .text-\[\#c9a14a\] { color: #fbbf24 !important; }
+.dark .text-\[\#2563eb\] { color: rgb(var(--iv-info)) !important; }
+.dark .text-\[\#c9a14a\] { color: rgb(var(--iv-aviso)) !important; }
 
+/* `font-heading` está en decenas de sitios ya escritos. En vez de tocarlos todos,
+   la clase cambia de cara aquí: donde antes salía una sans compacta ahora sale la
+   serif de display, y toda la app hereda la jerarquía nueva de una vez. */
 .font-heading {
-    font-family: 'Manrope', sans-serif;
-    letter-spacing: -0.01em;
+    font-family: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+    font-weight: 400;
+    letter-spacing: -0.015em;
 }
 
 .font-mono {
@@ -125,55 +129,61 @@ body {
 
 @layer base {
     :root {
-        --background: 42 27% 95%;
-        --foreground: 162 38% 9%;
+        --background: 41 27% 93%;
+        --foreground: 158 33% 9%;
         --card: 0 0% 100%;
-        --card-foreground: 162 38% 9%;
+        --card-foreground: 158 33% 9%;
         --popover: 0 0% 100%;
-        --popover-foreground: 162 38% 9%;
-        --primary: 164 35% 16%;
-        --primary-foreground: 42 27% 95%;
-        --secondary: 39 24% 87%;
-        --secondary-foreground: 162 38% 9%;
-        --muted: 39 24% 92%;
-        --muted-foreground: 162 8% 39%;
-        --accent: 39 24% 87%;
-        --accent-foreground: 162 38% 9%;
+        --popover-foreground: 158 33% 9%;
+        --primary: 164 44% 14%;
+        --primary-foreground: 41 27% 93%;
+        --secondary: 41 25% 88%;
+        --secondary-foreground: 158 33% 9%;
+        --muted: 41 25% 92%;
+        --muted-foreground: 158 8% 37%;
+        --accent: 41 25% 88%;
+        --accent-foreground: 158 33% 9%;
         --destructive: 11 64% 55%;
         --destructive-foreground: 0 0% 98%;
-        --border: 39 24% 87%;
-        --input: 39 24% 87%;
-        --ring: 164 35% 16%;
+        --border: 41 25% 85%;
+        --input: 41 25% 85%;
+        --ring: 164 44% 14%;
         --chart-1: 138 25% 39%;
         --chart-2: 11 64% 55%;
         --chart-3: 164 35% 16%;
         --chart-4: 39 24% 70%;
         --chart-5: 162 8% 39%;
-        --radius: 0.375rem;
+        --radius: 0.125rem;
     }
 
+    /* Los tokens de shadcn, en los MISMOS colores que la capa `--iv-*`.
+       Estaban en tono 215 —azul de pizarra—, heredado de la plantilla. Como los
+       consumen `ui/input`, `ui/button` y `ui/tabs`, el buscador de la cabecera
+       salia azulado en medio de una interfaz verde-negra: la fuga de color mas
+       visible de toda la app. Aqui se traducen a HSL los mismos hex del tema
+       oscuro, para que no haya dos paletas conviviendo. */
     .dark {
-        --bg: #0a0e13;
-        --surface: #131a23;
-        --background: 215 30% 6%;
-        --foreground: 210 20% 95%;
-        --card: 215 25% 11%;
-        --card-foreground: 210 20% 95%;
-        --popover: 215 25% 11%;
-        --popover-foreground: 210 20% 95%;
-        --primary: 38 92% 55%;
-        --primary-foreground: 215 30% 6%;
-        --secondary: 215 20% 18%;
-        --secondary-foreground: 210 20% 95%;
-        --muted: 215 20% 15%;
-        --muted-foreground: 215 15% 65%;
-        --accent: 215 20% 18%;
-        --accent-foreground: 210 20% 95%;
-        --destructive: 11 64% 55%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 215 20% 22%;
-        --input: 215 20% 22%;
-        --ring: 38 92% 55%;
+        --bg: #0a1210;
+        --surface: #0f1a17;
+        --background: 165 29% 6%;      /* #0a1210 */
+        --foreground: 41 34% 87%;      /* #eae3d4 */
+        --card: 164 27% 8%;            /* #0f1a17 */
+        --card-foreground: 41 34% 87%;
+        --popover: 164 27% 8%;
+        --popover-foreground: 41 34% 87%;
+        --primary: 42 41% 64%;         /* #c9b37e champan */
+        --primary-foreground: 165 29% 6%;
+        --secondary: 160 24% 11%;      /* #16241f */
+        --secondary-foreground: 41 34% 87%;
+        --muted: 160 24% 11%;
+        --muted-foreground: 154 7% 57%; /* #8a9a93 */
+        --accent: 160 20% 15%;         /* #1f2e29 */
+        --accent-foreground: 41 34% 87%;
+        --destructive: 13 68% 63%;     /* #e07a5f */
+        --destructive-foreground: 165 29% 6%;
+        --border: 160 20% 15%;
+        --input: 160 20% 15%;
+        --ring: 42 41% 64%;
     }
 }
 
@@ -297,22 +307,25 @@ body {
     --wl-active-badge-bg: rgba(255, 255, 255, 0.10);
 }
 .dark {
-    --wl-bg: #131a23;          /* mismo fondo que .card-flat en oscuro */
-    --wl-border: #283341;
-    --wl-symbol: #f1f5f9;
-    --wl-muted: #94a3b8;
-    --wl-up: #4ade80;
-    --wl-down: #f87171;
-    --wl-badge-text: #fbbf24;
-    --wl-badge-bg: rgba(251, 191, 36, 0.16);
-    /* Seleccionada en oscuro: verde MÁS claro que el fondo para que destaque (en claro
-       destacaba por ser oscura sobre blanco; en oscuro hay que invertir el recurso). */
-    --wl-active-bg: #1f4d42;
-    --wl-active-border: #4ade80;
-    --wl-active-symbol: #ecfdf5;
-    --wl-active-muted: #cdd8d2;
-    --wl-active-up: #8fd6a6;
-    --wl-active-down: #f0a598;
-    --wl-active-badge-text: #e6c98a;
-    --wl-active-badge-bg: rgba(255, 255, 255, 0.12);
+    /* Repintada con los tokens: antes tenía su propia paleta azul-pizarra y su
+       propio ámbar, que era una tercera identidad conviviendo con las otras dos. */
+    --wl-bg: rgb(var(--iv-superficie));
+    --wl-border: rgb(var(--iv-linea));
+    --wl-symbol: rgb(var(--iv-tinta));
+    --wl-muted: rgb(var(--iv-tinta-3));
+    --wl-up: rgb(var(--iv-sube));
+    --wl-down: rgb(var(--iv-baja));
+    --wl-badge-text: rgb(var(--iv-marca));
+    --wl-badge-bg: rgb(var(--iv-marca) / 0.14);
+    /* Seleccionada en oscuro: la superficie sube un escalón y el filete pasa a
+       champán. En claro destacaba por ser oscura sobre blanco; aquí el recurso se
+       invierte, pero ahora sin inventar un verde que no está en la paleta. */
+    --wl-active-bg: rgb(var(--iv-superficie-2));
+    --wl-active-border: rgb(var(--iv-marca));
+    --wl-active-symbol: rgb(var(--iv-tinta));
+    --wl-active-muted: rgb(var(--iv-tinta-2));
+    --wl-active-up: rgb(var(--iv-sube));
+    --wl-active-down: rgb(var(--iv-baja));
+    --wl-active-badge-text: rgb(var(--iv-marca));
+    --wl-active-badge-bg: rgb(var(--iv-marca) / 0.16);
 }

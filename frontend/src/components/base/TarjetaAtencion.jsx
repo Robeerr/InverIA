@@ -157,12 +157,16 @@ export default function TarjetaAtencion({ tarjeta, orden }) {
   return (
     <article
       className={cn(
-        "relative rounded-iv border border-linea bg-superficie transition-colors border-l-[3px]",
+        // Fila rayada, no tarjeta. Antes cada decisión iba en su caja con borde
+        // completo; cinco cajas seguidas leen como cinco objetos sueltos y no como
+        // UNA lista ordenada por urgencia, que es lo que esto es. Con un filete
+        // inferior y el filo de tipo a la izquierda, la lista se lee de arriba abajo.
+        "relative border-b border-linea transition-colors border-l-[3px] hover:bg-superficie",
         // El filo dice el TIPO, y por eso hay varios colores en pantalla. La #1 se
-        // distingue por el fondo, no por el color: si el ámbar señalara a la vez «esta
-        // es la primera» y «esto es una alerta», dejaría de señalar cualquiera de las dos.
+        // distingue por el fondo, no por el color: si el champán señalara a la vez «esta
+        // es la primera» y «esto es un nivel», dejaría de señalar cualquiera de las dos.
         meta.filo || "border-l-linea-fuerte",
-        destacada && "bg-superficie-alt/30 shadow-[0_1px_0_rgb(var(--iv-linea))]"
+        destacada && "bg-superficie/60"
       )}
       data-testid={`tarjeta-hoy-${tarjeta.symbol}`}
     >
@@ -170,9 +174,13 @@ export default function TarjetaAtencion({ tarjeta, orden }) {
         {/* El ordinal, en su propia columna. Fuera del texto se lee como índice —01, 02,
             03— y no compite con el ticker, que es lo que se busca al barrer la lista. */}
         {orden != null && (
-          <div className="hidden md:flex w-11 shrink-0 items-start justify-center pt-3.5">
-            <span className="iv-cifra text-etiqueta text-tinta-3 tabular-nums">
-              {String(orden).padStart(2, "0")}
+          <div className="hidden md:flex w-12 shrink-0 items-start justify-center pt-3">
+            {/* En la serif de display y en champán. El orden ES un dato —la lista va
+                por urgencia— y merece leerse como cifra editorial, no como un índice
+                gris de tres píxeles. Sin el cero delante: «01» es una referencia de
+                catálogo, «1» es un puesto. */}
+            <span className="font-heading text-[26px] leading-none text-marca tabular-nums">
+              {orden}
             </span>
           </div>
         )}
@@ -181,8 +189,8 @@ export default function TarjetaAtencion({ tarjeta, orden }) {
         <div className="flex-1 min-w-0 px-4 py-3 md:pl-0">
           <div className="flex items-baseline gap-2 min-w-0">
             {orden != null && (
-              <span className="iv-cifra text-etiqueta text-tinta-3 tabular-nums shrink-0 md:hidden">
-                {String(orden).padStart(2, "0")}
+              <span className="font-heading text-[19px] leading-none text-marca tabular-nums shrink-0 md:hidden">
+                {orden}
               </span>
             )}
             <Link
@@ -242,7 +250,7 @@ export default function TarjetaAtencion({ tarjeta, orden }) {
             que convierte la tarjeta de prosa en una fila de terminal. */}
         {lecturas.length > 0 && (
           <div className="grid grid-cols-2 md:grid-cols-1 gap-x-4 gap-y-2 px-4 py-3 border-t md:border-t-0 md:border-l border-linea
-                          md:w-[172px] md:shrink-0 content-start bg-superficie-alt/40 rounded-b-iv md:rounded-b-none md:rounded-r-iv">
+                          md:w-[172px] md:shrink-0 content-start bg-superficie-alt/30">
             {lecturas.map((l) => (
               <Lectura key={l.etiqueta} {...l} />
             ))}

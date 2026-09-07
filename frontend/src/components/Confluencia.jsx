@@ -61,7 +61,7 @@ export default function Confluencia({ confluencia, compacto = false, className =
   return (
     <div
       data-testid={`confluencia-${confluencia.estado.toLowerCase()}`}
-      className={`rounded-md border px-3 py-2 ${estilo.fondo} ${estilo.borde} ${className}`}
+      className={`rounded-iv border px-3 py-2 ${estilo.fondo} ${estilo.borde} ${className}`}
     >
       <div className="flex items-baseline gap-2 flex-wrap">
         <span className={`text-etiqueta font-mono font-bold uppercase tracking-wider ${estilo.texto}`}>

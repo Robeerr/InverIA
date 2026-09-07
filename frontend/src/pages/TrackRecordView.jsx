@@ -50,7 +50,7 @@ export default function TrackRecordView() {
             <p className="text-etiqueta text-tinta-3">¿Funcionan las señales de COMPRA del motor? Sin autoengaño.</p>
           </div>
         </div>
-        <button onClick={() => load(days, true)} className="shrink-0 p-2 rounded-md border border-linea text-marca" title="Recargar (datos frescos)">
+        <button onClick={() => load(days, true)} className="shrink-0 p-2 rounded-iv border border-linea text-marca" title="Recargar (datos frescos)">
           <ArrowClockwise size={16} weight="bold" className={loading ? "animate-spin" : ""} />
         </button>
       </div>

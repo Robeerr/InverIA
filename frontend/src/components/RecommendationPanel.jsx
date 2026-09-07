@@ -53,7 +53,7 @@ function ModelSelector({ model, setModel, disabled }) {
         value={model}
         onChange={(e) => setModel(e.target.value)}
         disabled={disabled}
-        className="w-full bg-fondo border border-linea rounded-md px-3 py-2 font-mono text-sm text-tinta focus:outline-none focus:border-marca disabled:opacity-50"
+        className="w-full bg-fondo border border-linea rounded-iv px-3 py-2 font-mono text-sm text-tinta focus:outline-none focus:border-marca disabled:opacity-50"
       >
         {FREE_MODELS.map((m) => (
           <option key={m.id} value={m.id}>{etiquetas[m.id] || m.label}</option>
@@ -106,7 +106,7 @@ export default function RecommendationPanel({ analysis, isLoading, onAnalyze, mo
     return (
       <section data-testid="recommendation-panel-empty" className="iv-panel p-6">
         <div className="flex items-center gap-2 mb-3">
-          <div className="w-8 h-8 rounded-md bg-marca text-marca-tinta flex items-center justify-center">
+          <div className="w-8 h-8 rounded-iv bg-marca text-marca-tinta flex items-center justify-center">
             <Brain size={18} weight="bold" />
           </div>
           <h3 className="font-heading font-semibold text-lg text-tinta">
@@ -133,7 +133,7 @@ export default function RecommendationPanel({ analysis, isLoading, onAnalyze, mo
     return (
       <section data-testid="recommendation-loading" className="iv-panel p-6">
         <div className="flex items-center gap-2 mb-4">
-          <div className="w-8 h-8 rounded-md bg-marca text-marca-tinta flex items-center justify-center animate-pulse">
+          <div className="w-8 h-8 rounded-iv bg-marca text-marca-tinta flex items-center justify-center animate-pulse">
             <Brain size={18} weight="bold" />
           </div>
           <h3 className="font-heading font-semibold text-lg text-tinta">
@@ -157,7 +157,7 @@ export default function RecommendationPanel({ analysis, isLoading, onAnalyze, mo
     <section data-testid="recommendation-panel" className="iv-panel p-6 animate-fade-up">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-md bg-marca text-marca-tinta flex items-center justify-center">
+          <div className="w-8 h-8 rounded-iv bg-marca text-marca-tinta flex items-center justify-center">
             <Brain size={18} weight="bold" />
           </div>
           <h3 className="font-heading font-semibold text-lg text-tinta">
@@ -171,15 +171,15 @@ export default function RecommendationPanel({ analysis, isLoading, onAnalyze, mo
       <ConfidenceBar value={analysis.confidence} />
 
       <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-        <div className="bg-fondo border border-linea rounded-md px-2 py-2">
+        <div className="bg-fondo border border-linea rounded-iv px-2 py-2">
           <p className="label-small">Tendencia</p>
           <p data-testid="trend" className="font-mono text-xs font-semibold mt-1 text-tinta">{analysis.trend}</p>
         </div>
-        <div className="bg-fondo border border-linea rounded-md px-2 py-2">
+        <div className="bg-fondo border border-linea rounded-iv px-2 py-2">
           <p className="label-small">Horizonte</p>
           <p className="font-mono text-xs font-semibold mt-1 text-tinta">{analysis.timeframe?.replace("_", " ")}</p>
         </div>
-        <div className="bg-fondo border border-linea rounded-md px-2 py-2">
+        <div className="bg-fondo border border-linea rounded-iv px-2 py-2">
           <p className="label-small">R/R</p>
           <p data-testid="risk-reward" className="font-mono text-xs font-semibold mt-1 text-tinta">
             {analysis.risk_reward_ratio ? `1:${analysis.risk_reward_ratio}` : "—"}
@@ -255,7 +255,7 @@ function LevelRow({ icon, label, value, tone, testId }) {
     neutral: "text-tinta",
   };
   return (
-    <div data-testid={testId} className="flex items-center justify-between py-2 px-3 bg-fondo border border-linea rounded-md">
+    <div data-testid={testId} className="flex items-center justify-between py-2 px-3 bg-fondo border border-linea rounded-iv">
       <span className={`flex items-center gap-2 text-xs ${colors[tone]} font-medium`}>
         {icon}
         {label}

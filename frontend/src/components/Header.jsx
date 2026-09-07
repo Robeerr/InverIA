@@ -134,7 +134,7 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
               />
             </form>
             {showSug && suggestions.length > 0 && (
-              <div className="absolute z-50 left-0 right-0 mt-1 bg-superficie border border-linea rounded-md shadow-lg overflow-hidden max-h-72 overflow-y-auto">
+              <div className="absolute z-50 left-0 right-0 mt-1 bg-superficie border border-linea rounded-iv-sm shadow-lg overflow-hidden max-h-72 overflow-y-auto">
                 {suggestions.map((s) => (
                   <button
                     key={s.symbol}
@@ -156,9 +156,9 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
           {/* Status indicator */}
           <div
             title={backendOk === null ? "Comprobando backend..." : backendOk ? "Backend activo ✓" : "Backend no responde"}
-            className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md border border-linea bg-superficie text-xs font-mono"
+            className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-iv-sm border border-linea bg-superficie text-xs font-mono"
           >
-            <span className={`w-2 h-2 rounded-full ${backendOk === null ? "bg-yellow-400 animate-pulse" : backendOk ? "bg-green-500" : "bg-red-500 animate-pulse"}`} />
+            <span className={`w-2 h-2 rounded-full ${backendOk === null ? "bg-aviso animate-pulse" : backendOk ? "bg-sube" : "bg-baja animate-pulse"}`} />
             <span className="text-tinta-3 hidden lg:inline">{backendOk === null ? "..." : backendOk ? "Online" : "Offline"}</span>
           </div>
           <Button
@@ -182,10 +182,10 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
             <TelegramLogo size={15} />
           </Button>
           {/* User + logout */}
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-linea bg-superficie text-xs font-mono text-tinta-3">
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-iv-sm border border-linea bg-superficie text-xs font-mono text-tinta-3">
             <User size={13} />
             <span className="hidden md:inline">{user}</span>
-            <button onClick={logout} title="Cerrar sesión" className="ml-1 hover:text-red-500 transition-colors">
+            <button onClick={logout} title="Cerrar sesión" className="ml-1 hover:text-baja transition-colors">
               <SignOut size={13} />
             </button>
           </div>

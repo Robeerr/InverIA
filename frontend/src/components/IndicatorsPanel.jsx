@@ -41,7 +41,7 @@ export function FuerzaRelativa({ rs }) {
   }[rs.veredicto] || { c: "text-tinta-3", bg: "", i: "" };
   const orden = ["1m", "3m", "6m"];
   return (
-    <div data-testid="fuerza-relativa" className={`mb-4 rounded-lg px-3 py-2.5 ${tono.bg}`}>
+    <div data-testid="fuerza-relativa" className={`mb-4 rounded-iv px-3 py-2.5 ${tono.bg}`}>
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <span className="text-sm leading-none">{tono.i}</span>
@@ -80,7 +80,7 @@ export default function IndicatorsPanel({ indicators, analysis }) {
   return (
     <section data-testid="indicators-panel" className="iv-panel p-6 animate-fade-up">
       <div className="flex items-center gap-2 mb-4">
-        <div className="w-8 h-8 rounded-md bg-marca text-marca-tinta flex items-center justify-center">
+        <div className="w-8 h-8 rounded-iv bg-marca text-marca-tinta flex items-center justify-center">
           <ChartBar size={18} weight="bold" />
         </div>
         <h3 className="font-heading font-semibold text-lg text-tinta">
@@ -150,7 +150,7 @@ export default function IndicatorsPanel({ indicators, analysis }) {
         <TabsContent value="patterns" className="space-y-2">
           {(patterns || []).length > 0 ? (
             (patterns || []).map((p, i) => (
-              <div key={i} data-testid={`pattern-${i}`} className="flex items-center gap-2 px-3 py-2 bg-fondo border border-linea rounded-md">
+              <div key={i} data-testid={`pattern-${i}`} className="flex items-center gap-2 px-3 py-2 bg-fondo border border-linea rounded-iv">
                 <Triangle size={14} weight="bold" className="text-marca" />
                 <span className="text-sm text-tinta">{p}</span>
               </div>
@@ -159,7 +159,7 @@ export default function IndicatorsPanel({ indicators, analysis }) {
             <p className="text-xs text-tinta-3">Sin patrones detectados actualmente.</p>
           )}
           {analysis?.pattern_analysis && (
-            <div className="mt-3 p-3 bg-fondo border border-linea rounded-md">
+            <div className="mt-3 p-3 bg-fondo border border-linea rounded-iv">
               <p className="label-small mb-1">Visión IA</p>
               <p className="text-xs text-tinta leading-relaxed">{analysis.pattern_analysis}</p>
             </div>

@@ -28,7 +28,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-marca flex items-center justify-center mb-4 shadow-lg">
+          <div className="w-16 h-16 rounded-iv-lg bg-marca flex items-center justify-center mb-4 shadow-lg">
             <ChartLineUp size={32} weight="bold" className="text-marca-tinta" />
           </div>
           <h1 className="font-heading font-bold text-3xl text-tinta tracking-tight">InverIA</h1>
@@ -36,7 +36,7 @@ export default function LoginPage() {
         </div>
 
         {/* Card */}
-        <div className="bg-superficie border border-linea rounded-xl shadow-sm p-8">
+        <div className="bg-superficie border border-linea rounded-iv-lg shadow-sm p-8">
           <div className="flex items-center gap-2 mb-6">
             <LockKey size={18} className="text-marca" weight="bold" />
             <h2 className="font-heading font-semibold text-lg text-tinta">Iniciar sesión</h2>
@@ -53,7 +53,7 @@ export default function LoginPage() {
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="tu usuario"
                 autoComplete="username"
-                className="w-full h-11 px-3 rounded-md border border-linea bg-superficie-alt font-mono text-sm text-tinta placeholder:text-tinta-3/70 focus:outline-none focus:ring-2 focus:ring-marca focus:border-transparent transition"
+                className="w-full h-11 px-3 rounded-iv border border-linea bg-superficie-alt font-mono text-sm text-tinta placeholder:text-tinta-3/70 focus:outline-none focus:ring-2 focus:ring-marca focus:border-transparent transition"
               />
             </div>
 
@@ -68,7 +68,7 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   autoComplete="current-password"
-                  className="w-full h-11 px-3 pr-10 rounded-md border border-linea bg-superficie-alt font-mono text-sm text-tinta placeholder:text-tinta-3/70 focus:outline-none focus:ring-2 focus:ring-marca focus:border-transparent transition"
+                  className="w-full h-11 px-3 pr-10 rounded-iv border border-linea bg-superficie-alt font-mono text-sm text-tinta placeholder:text-tinta-3/70 focus:outline-none focus:ring-2 focus:ring-marca focus:border-transparent transition"
                 />
                 <button
                   type="button"
@@ -83,7 +83,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full h-11 bg-marca hover:bg-marca/90 text-marca-tinta font-mono font-semibold text-sm rounded-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed mt-2"
+              className="w-full h-11 bg-marca hover:bg-marca/90 text-marca-tinta font-mono font-semibold text-sm rounded-iv transition-colors disabled:opacity-60 disabled:cursor-not-allowed mt-2"
             >
               {loading ? "Entrando..." : "Entrar"}
             </button>

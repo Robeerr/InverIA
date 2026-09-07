@@ -87,7 +87,7 @@ export function SectorHeatmap({ data, onPick }) {
             key={s.symbol}
             onClick={() => onPick && onPick(s.symbol)}
             title={`${s.sector} (${s.symbol})`}
-            className="rounded-md px-2 py-1.5 text-left transition-transform hover:scale-[1.03]"
+            className="rounded-iv px-2 py-1.5 text-left transition-transform hover:scale-[1.03]"
             style={{ background: tone(s.change_percent) }}
           >
             <div className="text-apoyo font-semibold text-tinta truncate leading-tight">{s.sector}</div>

@@ -36,7 +36,7 @@ export default function MiniChart({ symbol, height = 140 }) {
   const src = `https://s.tradingview.com/embed-widget/mini-symbol-overview/?locale=es#${encodeURIComponent(JSON.stringify(config))}`;
 
   return (
-    <div ref={ref} style={{ height }} className="w-full rounded-md overflow-hidden mt-2">
+    <div ref={ref} style={{ height }} className="w-full rounded-iv overflow-hidden mt-2">
       {visible && (
         <iframe
           title={`chart-${symbol}`}

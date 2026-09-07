@@ -56,7 +56,7 @@ function ExtendedBadge({ entry }) {
     <div className="flex flex-col gap-0.5">
       {dailyPct != null && (
         <div
-          className={`text-[10px] font-mono ${dayUp ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+          className={`text-[10px] font-mono ${dayUp ? "text-sube" : "text-baja"}`}
           title="Variación sesión regular vs cierre anterior"
         >
           {dayUp ? "+" : ""}{dailyPct.toFixed(2)}% hoy
@@ -64,7 +64,7 @@ function ExtendedBadge({ entry }) {
       )}
       {ext && (
         <div
-          className={`text-[10px] font-mono ${ahUp ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+          className={`text-[10px] font-mono ${ahUp ? "text-sube" : "text-baja"}`}
           title={`${ext.label === "PRE" ? "Pre-market" : "After-hours"} vs cierre regular`}
         >
           {ext.label} ${Number(ext.price).toFixed(2)}{ahPct != null ? ` (${ahUp ? "+" : ""}${ahPct.toFixed(2)}%)` : ""}
@@ -124,7 +124,7 @@ function PnlText({ abs, pct, size = "sm", eur = null, tasa = null }) {
   const principal = hayEur ? eur.pnl_eur : aprox ? abs / tasa : abs;
   const principalPct = hayEur ? eur.pct_eur : pct;   // el % no cambia al convertir
   const up = principal >= 0;
-  const color = up ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400";
+  const color = up ? "text-sube" : "text-baja";
   const enEuros = hayEur || aprox;
   return (
     <span className="inline-flex flex-col items-end leading-tight"
@@ -220,7 +220,7 @@ function PortfolioSummary({ entries }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-[minmax(0,320px)_1fr] gap-3">
       {/* P&L total */}
-      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
+      <div className="rounded-iv-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
         <p className="text-[11px] uppercase tracking-wide text-neutral-400 font-mono mb-1">Rendimiento de la cartera</p>
         {conPos.length === 0 ? (
           <p className="text-xs text-neutral-400 mt-2">Añade tu <b>precio de compra</b> y <b>nº de acciones</b> en cada acción para ver tu P&amp;L real.</p>
@@ -243,11 +243,11 @@ function PortfolioSummary({ entries }) {
         )}
       </div>
       {/* Diversificación */}
-      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
+      <div className="rounded-iv-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
         <div className="flex items-center justify-between mb-2">
           <p className="text-[11px] uppercase tracking-wide text-neutral-400 font-mono">Diversificación {useValue ? "(por valor)" : "(por nº acciones)"}</p>
           {topPct >= 40 && (
-            <span className="text-[10px] font-bold text-baja bg-red-50 dark:bg-red-900/30 px-2 py-0.5 rounded-full">
+            <span className="text-[10px] font-bold text-baja bg-baja/30 px-2 py-0.5 rounded-full">
               ⚠ Concentración alta: {topPct.toFixed(0)}% en {sectors[0].name}
             </span>
           )}
@@ -264,7 +264,7 @@ function PortfolioSummary({ entries }) {
             <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
               {sectors.slice(0, 6).map((s, i) => (
                 <span key={s.name} className="flex items-center gap-1 text-neutral-600 dark:text-neutral-300">
-                  <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: SECTOR_COLORS[i % SECTOR_COLORS.length] }} />
+                  <span className="w-2.5 h-2.5 rounded-iv-sm inline-block" style={{ background: SECTOR_COLORS[i % SECTOR_COLORS.length] }} />
                   {s.name} <b>{s.pct.toFixed(0)}%</b>
                 </span>
               ))}
@@ -279,10 +279,10 @@ function PortfolioSummary({ entries }) {
 // ── Correlación de la cartera (#22): detecta acciones que se mueven a la vez ─────
 function corrNivel(avg) {
   if (avg == null) return { txt: "—", cls: "text-neutral-400" };
-  if (avg < 0.3) return { txt: "Bien diversificada", cls: "text-green-600 dark:text-green-400" };
+  if (avg < 0.3) return { txt: "Bien diversificada", cls: "text-sube" };
   if (avg < 0.5) return { txt: "Diversificación moderada", cls: "text-aviso" };
-  if (avg < 0.7) return { txt: "Poco diversificada", cls: "text-orange-500" };
-  return { txt: "Muy correlacionada (riesgo de bloque)", cls: "text-red-600 dark:text-red-400" };
+  if (avg < 0.7) return { txt: "Poco diversificada", cls: "text-aviso" };
+  return { txt: "Muy correlacionada (riesgo de bloque)", cls: "text-baja" };
 }
 
 function CorrelationCard() {
@@ -302,7 +302,7 @@ function CorrelationCard() {
 
   const nivel = corrNivel(data?.avg_corr);
   return (
-    <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
+    <div className="rounded-iv-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
       <div className="flex items-center justify-between gap-2 mb-1">
         <p className="text-[11px] uppercase tracking-wide text-neutral-400 font-mono">🔗 Correlación (concentración oculta)</p>
         <button onClick={run} disabled={loading}
@@ -340,14 +340,14 @@ function CorrelationCard() {
               <p className="text-[10px] uppercase text-neutral-400 font-mono mb-1">Se mueven casi igual (riesgo de bloque)</p>
               <div className="flex flex-wrap gap-1.5">
                 {data.high.slice(0, 6).map((p) => (
-                  <span key={`${p.a}-${p.b}`} className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-300">
+                  <span key={`${p.a}-${p.b}`} className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-baja/30 text-baja">
                     {p.a} ↔ {p.b} · {p.corr}
                   </span>
                 ))}
               </div>
             </div>
           ) : (
-            <p className="text-xs text-green-600 dark:text-green-400">✓ Ningún par se mueve en exceso al unísono. Buena señal.</p>
+            <p className="text-xs text-sube">✓ Ningún par se mueve en exceso al unísono. Buena señal.</p>
           )}
         </div>
       )}
@@ -356,9 +356,9 @@ function CorrelationCard() {
 }
 
 const RIESGO_STYLE = {
-  BAJO:  { bg: "bg-green-100 dark:bg-green-900/40",  text: "text-green-700 dark:text-green-300" },
-  MEDIO: { bg: "bg-yellow-100 dark:bg-yellow-900/40", text: "text-yellow-700 dark:text-yellow-300" },
-  ALTO:  { bg: "bg-red-100 dark:bg-red-900/40",       text: "text-red-600 dark:text-red-400" },
+  BAJO:  { bg: "bg-sube/40",  text: "text-sube" },
+  MEDIO: { bg: "bg-aviso/40", text: "text-aviso" },
+  ALTO:  { bg: "bg-baja/40",       text: "text-baja" },
 };
 
 // La letra A-D del modelo de MARGEN de DEGIRO, que NO es el campo `riesgo` de al lado.
@@ -401,7 +401,7 @@ function BellToggle({ active, onClick, title }) {
     <button
       onClick={onClick}
       title={title || (active ? "Alerta activa — clic para desactivar" : "Alerta inactiva — clic para activar")}
-      className={`p-1 rounded transition-colors ${active ? "text-aviso hover:text-yellow-600" : "text-neutral-300 hover:text-neutral-500"}`}
+      className={`p-1 rounded transition-colors ${active ? "text-aviso hover:text-aviso" : "text-neutral-300 hover:text-neutral-500"}`}
     >
       {active ? <Bell size={14} weight="fill" /> : <BellSlash size={14} />}
     </button>
@@ -426,7 +426,7 @@ function EditableCell({ value, onChange, isNumber = true, placeholder = "—", c
   if (editing) return (
     <input
       ref={inputRef}
-      className={`w-full bg-white dark:bg-neutral-800 border border-blue-400 rounded px-1 py-0.5 text-sm outline-none ${className}`}
+      className={`w-full bg-white dark:bg-neutral-800 border border-info/30 rounded px-1 py-0.5 text-sm outline-none ${className}`}
       // NUNCA type="number": el teclado numérico de un teléfono en español ofrece coma, y
       // ese campo la descarta —el valor llega vacío y el nivel no se puede escribir—.
       // `inputMode="decimal"` da el mismo teclado sin la validación del navegador.
@@ -443,7 +443,7 @@ function EditableCell({ value, onChange, isNumber = true, placeholder = "—", c
   return (
     <span
       onClick={() => { setDraft(value ?? ""); setEditing(true); }}
-      className={`cursor-pointer hover:underline hover:text-blue-600 dark:hover:text-blue-400 select-none ${!value && value !== 0 ? "text-neutral-400" : ""} ${className}`}
+      className={`cursor-pointer hover:underline hover:text-info dark:hover:text-info select-none ${!value && value !== 0 ? "text-neutral-400" : ""} ${className}`}
       title="Clic para editar"
     >
       {display}
@@ -770,13 +770,13 @@ export default function SignalsView({ setSymbol }) {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button onClick={fetchEntries} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors">
+          <button onClick={fetchEntries} className="flex items-center gap-1.5 px-3 py-2 rounded-iv border border-neutral-200 dark:border-neutral-700 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors">
             <ArrowClockwise size={14} /> Refrescar
           </button>
-          <button onClick={() => setShowImport(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors">
+          <button onClick={() => setShowImport(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-iv border border-neutral-200 dark:border-neutral-700 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors">
             <UploadSimple size={14} /> Importar Excel
           </button>
-          <button onClick={() => imageInputRef.current?.click()} disabled={importing} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50">
+          <button onClick={() => imageInputRef.current?.click()} disabled={importing} className="flex items-center gap-1.5 px-3 py-2 rounded-iv border border-neutral-200 dark:border-neutral-700 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50">
             <Camera size={14} /> {importing ? "Leyendo…" : "Importar foto"}
           </button>
           <input
@@ -786,7 +786,7 @@ export default function SignalsView({ setSymbol }) {
             className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; doImportImage(f); }}
           />
-          <button onClick={() => { setNewEntry(EMPTY); setShowAdd(true); }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-marca hover:bg-marca/90 text-marca-tinta text-sm font-medium transition-colors">
+          <button onClick={() => { setNewEntry(EMPTY); setShowAdd(true); }} className="flex items-center gap-1.5 px-4 py-2 rounded-iv bg-marca hover:bg-marca/90 text-marca-tinta text-sm font-medium transition-colors">
             <Plus size={14} weight="bold" /> Añadir acción
           </button>
         </div>
@@ -794,7 +794,7 @@ export default function SignalsView({ setSymbol }) {
 
       {/* Sub-tabs (solo si hay más de un grupo) */}
       {GRUPOS.length > 1 && (
-      <div className="flex items-center gap-1 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg p-1 w-fit">
+      <div className="flex items-center gap-1 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-iv p-1 w-fit">
         {GRUPOS.map((g) => {
           const Icon = g.icon;
           const active = grupo === g.key;
@@ -803,7 +803,7 @@ export default function SignalsView({ setSymbol }) {
               key={g.key}
               onClick={() => switchGrupo(g.key)}
               data-testid={`signals-tab-${g.key}`}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-iv text-sm font-medium transition-colors ${
                 active ? "bg-marca text-marca-tinta" : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
               }`}
             >
@@ -826,39 +826,39 @@ export default function SignalsView({ setSymbol }) {
       <div className="flex flex-wrap gap-4 text-xs text-neutral-500">
         <span className="flex items-center gap-1"><Bell size={12} weight="fill" className="text-aviso" /> Alerta activa</span>
         <span className="flex items-center gap-1"><BellSlash size={12} className="text-neutral-300" /> Alerta inactiva</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100 dark:bg-blue-900/40 border border-blue-300 inline-block"></span> Nivel Deseado / Venta</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-50 dark:bg-green-900/20 border border-green-200 inline-block"></span> Niveles de Compra</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-info/40 border border-info/30 inline-block"></span> Nivel Deseado / Venta</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-sube/20 border border-sube/30 inline-block"></span> Niveles de Compra</span>
       </div>
 
       {/* Import panel */}
       {showImport && (
-        <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 p-4 space-y-3">
+        <div className="rounded-iv-lg border border-info/30 bg-info/30 p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-blue-800 dark:text-blue-200">📥 Importar desde Excel</p>
-            <button onClick={() => { setShowImport(false); setImportText(""); }}><X size={16} className="text-blue-600" /></button>
+            <p className="text-sm font-semibold text-info">📥 Importar desde Excel</p>
+            <button onClick={() => { setShowImport(false); setImportText(""); }}><X size={16} className="text-info" /></button>
           </div>
-          <p className="text-xs text-blue-600 dark:text-blue-400">
+          <p className="text-xs text-info">
             Abre tu Excel, selecciona todas las celdas incluyendo cabecera y pégalas aquí (Ctrl+V).<br />
             Columnas reconocidas: <code>Acción, Mercado, Ticker/ISIN, Nivel Deseado/Venta, Nivel 1–5, Riesgo, Sector, Posibles Ganancias</code>
           </p>
           <textarea
-            className="w-full h-40 p-3 rounded-lg border border-blue-300 dark:border-blue-700 bg-white dark:bg-neutral-900 text-sm font-mono resize-none outline-none"
+            className="w-full h-40 p-3 rounded-iv border border-info/30 bg-white dark:bg-neutral-900 text-sm font-mono resize-none outline-none"
             placeholder={"Acción\tMercado\tTicker/ISIN\tNivel Deseado/Venta\tNivel 1\tNivel 2\tNivel 3\tNivel 4\tNivel 5 EXTRA\tRiesgo\tSector\nORACLE\tNYSE\tORCL\t300\t220\t200\t180\t160\tNO\tMEDIO\tTECH"}
             value={importText}
             onChange={(e) => setImportText(e.target.value)}
           />
           <div className="flex gap-2">
-            <button onClick={doImport} disabled={importing || !importText.trim()} className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium">
+            <button onClick={doImport} disabled={importing || !importText.trim()} className="px-4 py-2 rounded-iv bg-info/10 hover:bg-info/10 disabled:opacity-50 text-white text-sm font-medium">
               {importing ? "Importando…" : "Importar"}
             </button>
-            <button onClick={() => { setShowImport(false); setImportText(""); }} className="px-4 py-2 rounded-lg border border-neutral-300 text-sm hover:bg-neutral-100">Cancelar</button>
+            <button onClick={() => { setShowImport(false); setImportText(""); }} className="px-4 py-2 rounded-iv border border-neutral-300 text-sm hover:bg-neutral-100">Cancelar</button>
           </div>
         </div>
       )}
 
       {/* Add panel */}
       {showAdd && (
-        <div className="rounded-xl border border-marca/30 bg-fondo p-4 space-y-3">
+        <div className="rounded-iv-lg border border-marca/30 bg-fondo p-4 space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold text-tinta">➕ Nueva acción · Cartera</p>
             <button onClick={() => setShowAdd(false)}><X size={16} /></button>
@@ -868,7 +868,7 @@ export default function SignalsView({ setSymbol }) {
               <div key={key} className="flex flex-col gap-1">
                 <label className="text-xs text-neutral-500">{label}</label>
                 <input
-                  className="border border-neutral-200 dark:border-neutral-600 rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-neutral-800 outline-none focus:border-marca focus:ring-1 focus:ring-marca/20"
+                  className="border border-neutral-200 dark:border-neutral-600 rounded-iv px-2 py-1.5 text-sm bg-white dark:bg-neutral-800 outline-none focus:border-marca focus:ring-1 focus:ring-marca/20"
                   placeholder={placeholder}
                   value={newEntry[key] ?? ""}
                   onChange={(e) => setNewEntry((p) => ({ ...p, [key]: e.target.value }))}
@@ -877,8 +877,8 @@ export default function SignalsView({ setSymbol }) {
             ))}
           </div>
           <div className="flex gap-2">
-            <button onClick={addEntry} className="px-4 py-2 rounded-lg bg-marca hover:bg-marca/90 text-marca-tinta text-sm font-medium">Guardar</button>
-            <button onClick={() => setShowAdd(false)} className="px-4 py-2 rounded-lg border border-neutral-300 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800">Cancelar</button>
+            <button onClick={addEntry} className="px-4 py-2 rounded-iv bg-marca hover:bg-marca/90 text-marca-tinta text-sm font-medium">Guardar</button>
+            <button onClick={() => setShowAdd(false)} className="px-4 py-2 rounded-iv border border-neutral-300 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800">Cancelar</button>
           </div>
         </div>
       )}
@@ -944,7 +944,7 @@ function DialogoVenta({ entry, onClose, onHecho }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white dark:bg-neutral-900 rounded-xl p-5 w-full max-w-md" onClick={(ev) => ev.stopPropagation()}>
+      <div className="bg-white dark:bg-neutral-900 rounded-iv-lg p-5 w-full max-w-md" onClick={(ev) => ev.stopPropagation()}>
         {!res ? (
           <>
             <div className="flex items-center justify-between mb-1">
@@ -983,7 +983,7 @@ function DialogoVenta({ entry, onClose, onHecho }) {
               <RiesgoVenta symbol={entry.symbol} acciones={aNumero(acciones) || undefined} />
             </div>
             <button onClick={enviar} disabled={enviando}
-                    className="w-full mt-4 bg-marca text-marca-tinta rounded-lg py-2 font-semibold disabled:opacity-60">
+                    className="w-full mt-4 bg-marca text-marca-tinta rounded-iv py-2 font-semibold disabled:opacity-60">
               {enviando ? "Calculando…" : "Registrar venta"}
             </button>
           </>
@@ -994,11 +994,11 @@ function DialogoVenta({ entry, onClose, onHecho }) {
             </h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-neutral-500">Ganancia en {res.divisa}</span>
-                <span className={`font-mono font-bold ${res.ganancia_divisa >= 0 ? "text-green-600" : "text-red-600"}`}>
+                <span className={`font-mono font-bold ${res.ganancia_divisa >= 0 ? "text-sube" : "text-baja"}`}>
                   {res.ganancia_divisa >= 0 ? "+" : ""}{res.ganancia_divisa} ({res.ganancia_pct}%)</span></div>
               <div className="flex justify-between items-baseline border-t pt-2 dark:border-neutral-700">
                 <span className="text-neutral-500 font-semibold">Ganancia en EUROS</span>
-                <span className={`font-mono font-bold text-lg ${(res.ganancia_eur ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}>
+                <span className={`font-mono font-bold text-lg ${(res.ganancia_eur ?? 0) >= 0 ? "text-sube" : "text-baja"}`}>
                   {eur(res.ganancia_eur)}</span></div>
               {res.efecto_divisa_eur != null && (
                 <div className="flex justify-between text-xs">
@@ -1012,7 +1012,7 @@ function DialogoVenta({ entry, onClose, onHecho }) {
               )}
               <p className="text-xs text-neutral-500 pt-1">Te quedan <b>{res.acciones_restantes}</b> acciones.</p>
             </div>
-            <button onClick={onClose} className="w-full mt-4 border rounded-lg py-2 dark:border-neutral-700">Cerrar</button>
+            <button onClick={onClose} className="w-full mt-4 border rounded-iv py-2 dark:border-neutral-700">Cerrar</button>
           </>
         )}
       </div>
@@ -1032,7 +1032,7 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
       {/* MOBILE CARDS */}
       <div className="lg:hidden space-y-3">
         {entries.map((e) => (
-          <div key={e.id} className={`rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 space-y-3 ${!e.active ? "opacity-50" : ""}`}>
+          <div key={e.id} className={`rounded-iv-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 space-y-3 ${!e.active ? "opacity-50" : ""}`}>
             <div className="flex items-start justify-between gap-2">
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
@@ -1059,11 +1059,11 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                     <CurrencyEur size={13} weight="bold" /> Vender
                   </button>
                 )}
-                <button onClick={() => deleteEntry(e.id)} className="text-neutral-300 hover:text-red-500 text-xl p-1"><Trash size={16} /></button>
+                <button onClick={() => deleteEntry(e.id)} className="text-neutral-300 hover:text-baja text-xl p-1"><Trash size={16} /></button>
               </div>
             </div>
             {/* Posición + P&L (#20) */}
-            <div className="flex items-center justify-between bg-neutral-50 dark:bg-neutral-800/40 border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-2">
+            <div className="flex items-center justify-between bg-neutral-50 dark:bg-neutral-800/40 border border-neutral-200 dark:border-neutral-700 rounded-iv px-3 py-2">
               <div className="flex gap-4">
                 <div>
                   <p className="text-[9px] text-neutral-400 uppercase font-mono">Compra</p>
@@ -1079,13 +1079,13 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                 <PnlText abs={pnlAbs(e)} pct={pnlPct(e)} eur={pnlEur.porSymbol[(e.symbol || "").toUpperCase()]} tasa={pnlEur.tasaUSD} />
               </div>
             </div>
-            <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg px-3 py-2">
+            <div className="flex items-center justify-between bg-info/20 border border-info/30 rounded-iv px-3 py-2">
               <div>
-                <p className="text-[10px] text-blue-500 uppercase font-mono font-bold">Deseado / Venta</p>
-                <EditableCell value={e.deseado} onChange={(v) => updateField(e.id, "deseado", v)} className="font-mono font-bold text-blue-700 dark:text-blue-300 text-sm" />
+                <p className="text-[10px] text-info uppercase font-mono font-bold">Deseado / Venta</p>
+                <EditableCell value={e.deseado} onChange={(v) => updateField(e.id, "deseado", v)} className="font-mono font-bold text-info text-sm" />
               </div>
               <div className="flex items-center gap-1">
-                {e.posibles_ganancias != null && <span className="text-xs text-green-600 font-bold">{fmtPct(e.posibles_ganancias)}</span>}
+                {e.posibles_ganancias != null && <span className="text-xs text-sube font-bold">{fmtPct(e.posibles_ganancias)}</span>}
                 {/* El estado que se NIEGA debe ser el mismo que se PINTA. Con `!e.alert_deseado`, una
     fila antigua sin el campo (undefined) se veía encendida (undefined !== false) pero al
     pulsar mandaba `!undefined` = true: seguía encendida y el primer clic no hacía nada. */}
@@ -1101,12 +1101,12 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                 const d = nivelDist(e, n);
                 const isNext = n === nextN;
                 return (
-                  <div key={n} className={`bg-green-50 dark:bg-green-900/20 rounded-lg p-2 ${isNext ? "border-2 border-aviso" : "border border-green-200 dark:border-green-800"}`}>
+                  <div key={n} className={`bg-sube/20 rounded-iv p-2 ${isNext ? "border-2 border-aviso" : "border border-sube/30"}`}>
                     <div className="flex items-center justify-between mb-0.5">
-                      <p className="text-[9px] text-green-600 uppercase font-mono font-bold">Nivel {n}{isNext ? " ◀" : ""}</p>
+                      <p className="text-[9px] text-sube uppercase font-mono font-bold">Nivel {n}{isNext ? " ◀" : ""}</p>
                       <BellToggle active={alertOn} onClick={() => updateField(e.id, alertKey, !alertOn)} />
                     </div>
-                    <EditableCell value={val} onChange={(v) => updateField(e.id, `nivel${n}`, v)} className="font-mono font-bold text-green-800 dark:text-green-300 text-sm" />
+                    <EditableCell value={val} onChange={(v) => updateField(e.id, `nivel${n}`, v)} className="font-mono font-bold text-sube text-sm" />
                     {d != null && <p className="text-[9px] font-mono text-neutral-400 mt-0.5">{d >= 0 ? "+" : ""}{d.toFixed(1)}%</p>}
                   </div>
                 );
@@ -1118,7 +1118,7 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
       </div>
 
       {/* DESKTOP TABLE */}
-      <div className="hidden lg:block rounded-xl border border-neutral-200 dark:border-neutral-700 overflow-x-auto shadow-sm">
+      <div className="hidden lg:block rounded-iv-lg border border-neutral-200 dark:border-neutral-700 overflow-x-auto shadow-sm">
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="text-left border-b-2 border-neutral-200 dark:border-neutral-700">
@@ -1129,9 +1129,9 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
               <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Compra</th>
               <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Acc.</th>
               <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">P&amp;L</th>
-              <th className="px-2 py-2.5 text-xs whitespace-nowrap text-right bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 font-bold border-l border-blue-200 dark:border-blue-800">Deseado</th>
+              <th className="px-2 py-2.5 text-xs whitespace-nowrap text-right bg-info/40 text-info font-bold border-l border-info/30">Deseado</th>
               {[1,2,3,4,5].map((n) => (
-                <th key={n} className="px-2 py-2.5 text-xs whitespace-nowrap text-right bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 font-bold border-l border-green-200 dark:border-green-800">N{n}{n === 5 ? "⭐" : ""}</th>
+                <th key={n} className="px-2 py-2.5 text-xs whitespace-nowrap text-right bg-sube/30 text-sube font-bold border-l border-sube/30">N{n}{n === 5 ? "⭐" : ""}</th>
               ))}
               <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800 border-l border-neutral-200">Riesgo</th>
               <th title="Categoría de riesgo de DEGIRO (A-D). Determina cuánto margen libera vender esta acción." className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Cat.</th>
@@ -1145,7 +1145,7 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                 el sector sigue alimentando el modelo de riesgo igual, esté a la vista o
                 no. */}
             {entries.map((e, idx) => (
-              <tr key={e.id} className={`border-t border-neutral-100 dark:border-neutral-800 transition-colors group ${!e.active ? "opacity-40" : ""} ${idx % 2 === 0 ? "bg-white dark:bg-neutral-900" : "bg-neutral-50 dark:bg-neutral-800/40"} hover:bg-amber-50/60 dark:hover:bg-neutral-700/40`}>
+              <tr key={e.id} className={`border-t border-neutral-100 dark:border-neutral-800 transition-colors group ${!e.active ? "opacity-40" : ""} ${idx % 2 === 0 ? "bg-white dark:bg-neutral-900" : "bg-neutral-50 dark:bg-neutral-800/40"} hover:bg-aviso/60 dark:hover:bg-neutral-700/40`}>
                 <td className="px-2 py-2.5 text-center">
                   <input type="checkbox" checked={e.active} onChange={(ev) => updateField(e.id, "active", ev.target.checked)} className="w-4 h-4 cursor-pointer accent-marca" title={e.active ? "Monitorización activa" : "Monitorización pausada"} />
                 </td>
@@ -1172,9 +1172,9 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                 <td className="px-2 py-2.5 text-right whitespace-nowrap">
                   <PnlText abs={pnlAbs(e)} pct={pnlPct(e)} eur={pnlEur.porSymbol[(e.symbol || "").toUpperCase()]} tasa={pnlEur.tasaUSD} />
                 </td>
-                <td className="px-2 py-2.5 bg-blue-50 dark:bg-blue-900/20 border-l border-blue-100 dark:border-blue-900">
+                <td className="px-2 py-2.5 bg-info/20 border-l border-info/30">
                   <div className="flex items-center justify-end gap-1">
-                    <EditableCell value={e.deseado} onChange={(v) => updateField(e.id, "deseado", v)} className="font-mono text-sm font-bold text-blue-800 dark:text-blue-200" />
+                    <EditableCell value={e.deseado} onChange={(v) => updateField(e.id, "deseado", v)} className="font-mono text-sm font-bold text-info" />
                     {/* El estado que se NIEGA debe ser el mismo que se PINTA. Con `!e.alert_deseado`, una
     fila antigua sin el campo (undefined) se veía encendida (undefined !== false) pero al
     pulsar mandaba `!undefined` = true: seguía encendida y el primer clic no hacía nada. */}
@@ -1188,9 +1188,9 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                   const d = nivelDist(e, n);
                   const isNext = n === nextN;
                   return (
-                    <td key={n} className={`px-2 py-2.5 border-l border-green-100 dark:border-green-900 ${isNext ? "bg-aviso/15" : "bg-green-50 dark:bg-green-900/10"}`}>
+                    <td key={n} className={`px-2 py-2.5 border-l border-sube/30 ${isNext ? "bg-aviso/15" : "bg-sube/10"}`}>
                       <div className="flex items-center justify-end gap-1">
-                        <EditableCell value={val} onChange={(v) => updateField(e.id, `nivel${n}`, v)} className="font-mono text-sm font-semibold text-green-900 dark:text-green-300" />
+                        <EditableCell value={val} onChange={(v) => updateField(e.id, `nivel${n}`, v)} className="font-mono text-sm font-semibold text-sube" />
                         <BellToggle active={alertOn} onClick={() => updateField(e.id, alertKey, !alertOn)} />
                       </div>
                       {d != null && <p className={`text-[9px] font-mono text-right mt-0.5 ${isNext ? "text-aviso font-bold" : "text-neutral-400"}`}>{isNext ? "◀ " : ""}{d >= 0 ? "+" : ""}{d.toFixed(1)}%</p>}
@@ -1200,7 +1200,7 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                 <td className="px-2 py-2.5 whitespace-nowrap border-l border-neutral-100 dark:border-neutral-800"><RiesgoBadge value={e.riesgo} /></td>
                 <td className="px-2 py-2.5 whitespace-nowrap"><CategoriaDegiro value={e.categoria_degiro} onChange={(v) => updateField(e.id, "categoria_degiro", v)} /></td>
                 <td className="px-2 py-2.5 text-center">
-                  <button onClick={() => deleteEntry(e.id)} className="text-neutral-300 hover:text-red-500 transition-colors p-1 opacity-0 group-hover:opacity-100" title="Eliminar"><Trash size={14} /></button>
+                  <button onClick={() => deleteEntry(e.id)} className="text-neutral-300 hover:text-baja transition-colors p-1 opacity-0 group-hover:opacity-100" title="Eliminar"><Trash size={14} /></button>
                 </td>
               </tr>
             ))}

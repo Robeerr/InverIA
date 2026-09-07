@@ -29,19 +29,19 @@
  */
 
 export const RESPALDOS = {
-  "--iv-fondo": "245 243 239",
+  "--iv-fondo": "242 239 231",
   "--iv-superficie": "255 255 255",
-  "--iv-superficie-2": "250 248 244",
-  "--iv-linea": "229 224 216",
-  "--iv-linea-fuerte": "176 166 146",
-  "--iv-tinta": "14 31 26",
-  "--iv-tinta-2": "70 86 79",
-  "--iv-tinta-3": "92 107 102",
-  "--iv-marca": "26 58 50",
-  "--iv-sube": "47 107 69",
-  "--iv-baja": "192 68 42",
-  "--iv-aviso": "138 101 8",
-  "--iv-info": "26 106 148",
+  "--iv-superficie-2": "248 245 237",
+  "--iv-linea": "226 220 207",
+  "--iv-linea-fuerte": "176 165 143",
+  "--iv-tinta": "15 30 26",
+  "--iv-tinta-2": "62 79 72",
+  "--iv-tinta-3": "88 103 97",
+  "--iv-marca": "20 51 43",
+  "--iv-sube": "42 100 64",
+  "--iv-baja": "176 62 38",
+  "--iv-aviso": "122 90 18",
+  "--iv-info": "24 98 138",
 };
 
 /**

@@ -70,7 +70,7 @@ export default function QuoteHeader({ quote }) {
     <section data-testid="quote-header" className="iv-panel p-6 animate-fade-up">
       <div className="flex items-start justify-between gap-6 flex-wrap">
         <div className="flex items-start gap-4 min-w-0">
-          <div className="w-14 h-14 rounded-md bg-marca text-marca-tinta flex items-center justify-center font-mono font-bold text-lg shrink-0">
+          <div className="w-14 h-14 rounded-iv bg-marca text-marca-tinta flex items-center justify-center font-mono font-bold text-lg shrink-0">
             {/* `?.` a propósito: un quote sin symbol tumbaba la vista ENTERA con un
                 TypeError, y el usuario solo veía "algo se ha roto". Aunque el Dashboard ya
                 garantiza que el symbol viene del servidor, un dato raro debe degradar lo
@@ -153,7 +153,7 @@ export default function QuoteHeader({ quote }) {
           {/* Quick alert button */}
           <button
             onClick={() => { setAlertOpen((o) => !o); setAlertPrice(fmtPrice(quote.price)); }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-mono border transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-iv text-xs font-mono border transition-all ${
               alertOpen
                 ? "bg-marca text-marca-tinta border-marca"
                 : "border-linea text-tinta-3 hover:border-marca hover:text-tinta"
@@ -167,7 +167,7 @@ export default function QuoteHeader({ quote }) {
 
       {/* Inline alert form */}
       {alertOpen && (
-        <form onSubmit={createAlert} className="mt-4 p-4 bg-fondo rounded-lg border border-linea flex flex-wrap items-end gap-3">
+        <form onSubmit={createAlert} className="mt-4 p-4 bg-fondo rounded-iv border border-linea flex flex-wrap items-end gap-3">
           <div>
             <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-1.5">Dirección</p>
             <div className="flex gap-1">
@@ -195,7 +195,7 @@ export default function QuoteHeader({ quote }) {
               min="0.01"
               value={alertPrice}
               onChange={(e) => setAlertPrice(e.target.value)}
-              className="w-32 bg-white border border-linea rounded-md px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-marca"
+              className="w-32 bg-white border border-linea rounded-iv px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-marca"
               placeholder="0.00"
             />
           </div>
@@ -203,7 +203,7 @@ export default function QuoteHeader({ quote }) {
             <button
               type="submit"
               disabled={saving}
-              className="flex items-center gap-1.5 px-4 py-1.5 bg-marca text-marca-tinta rounded-md text-xs font-mono hover:bg-tinta transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-marca text-marca-tinta rounded-iv text-xs font-mono hover:bg-tinta transition-colors disabled:opacity-50"
             >
               <Check size={12} />
               {saving ? "Guardando…" : "Crear alerta"}
@@ -211,7 +211,7 @@ export default function QuoteHeader({ quote }) {
             <button
               type="button"
               onClick={() => setAlertOpen(false)}
-              className="flex items-center gap-1 px-3 py-1.5 border border-linea text-tinta-3 rounded-md text-xs font-mono hover:border-marca transition-colors"
+              className="flex items-center gap-1 px-3 py-1.5 border border-linea text-tinta-3 rounded-iv text-xs font-mono hover:border-marca transition-colors"
             >
               <X size={12} />
               Cancelar

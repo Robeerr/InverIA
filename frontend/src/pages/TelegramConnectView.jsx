@@ -94,7 +94,7 @@ export default function TelegramConnectView() {
   const Field = ({ label, ...p }) => (
     <label className="block mb-3">
       <span className="text-etiqueta uppercase tracking-wider text-tinta-3 font-mono">{label}</span>
-      <input {...p} className="w-full mt-1 px-3 py-2 rounded-md border border-linea bg-superficie text-tinta text-sm" />
+      <input {...p} className="w-full mt-1 px-3 py-2 rounded-iv border border-linea bg-superficie text-tinta text-sm" />
     </label>
   );
 
@@ -118,7 +118,7 @@ export default function TelegramConnectView() {
         <div className="iv-panel p-5">
           <Field label="Token de acceso" type="password" value={token} placeholder="tu INBOUND_SECRET"
             onChange={(e) => setToken(e.target.value)} />
-          <button onClick={submitToken} disabled={busy} className="w-full py-2 rounded-md bg-marca text-marca-tinta text-sm font-semibold disabled:opacity-50">
+          <button onClick={submitToken} disabled={busy} className="w-full py-2 rounded-iv bg-marca text-marca-tinta text-sm font-semibold disabled:opacity-50">
             Continuar
           </button>
         </div>
@@ -129,7 +129,7 @@ export default function TelegramConnectView() {
           <p className="text-xs text-tinta-3 mb-3">Introduce tu número de Telegram. Te llegará un código dentro de la propia app de Telegram.</p>
           <Field label="Teléfono (con prefijo)" type="tel" value={phone} placeholder="+34600000000"
             onChange={(e) => setPhone(e.target.value)} />
-          <button onClick={sendCode} disabled={busy} className="w-full py-2 rounded-md bg-marca text-marca-tinta text-sm font-semibold disabled:opacity-50">
+          <button onClick={sendCode} disabled={busy} className="w-full py-2 rounded-iv bg-marca text-marca-tinta text-sm font-semibold disabled:opacity-50">
             {busy ? "Enviando…" : "Enviar código"}
           </button>
         </div>
@@ -142,7 +142,7 @@ export default function TelegramConnectView() {
             onChange={(e) => setCode(e.target.value)} />
           <Field label="Contraseña 2FA (si tienes)" type="password" value={password} placeholder="opcional"
             onChange={(e) => setPassword(e.target.value)} />
-          <button onClick={submitCode} disabled={busy} className="w-full py-2 rounded-md bg-marca text-marca-tinta text-sm font-semibold disabled:opacity-50">
+          <button onClick={submitCode} disabled={busy} className="w-full py-2 rounded-iv bg-marca text-marca-tinta text-sm font-semibold disabled:opacity-50">
             {busy ? "Verificando…" : "Conectar"}
           </button>
         </div>
@@ -152,7 +152,7 @@ export default function TelegramConnectView() {
         <div className="iv-panel p-5">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-semibold text-tinta">Elige qué capturar</p>
-            <button onClick={() => loadDialogs(token)} className="p-1.5 rounded-md border border-linea" title="Recargar">
+            <button onClick={() => loadDialogs(token)} className="p-1.5 rounded-iv border border-linea" title="Recargar">
               <ArrowClockwise size={14} weight="bold" className={busy ? "animate-spin" : ""} />
             </button>
           </div>
@@ -161,7 +161,7 @@ export default function TelegramConnectView() {
             {dialogs.length === 0 && !busy && <p className="text-xs text-tinta-3">No hay canales o aún cargando…</p>}
             {dialogs.map((c) => (
               <button key={c.id} onClick={() => toggle(c.id)}
-                className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md border text-left"
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-iv border text-left"
                 /* Va en línea y no en clases porque el color depende del estado de
                    selección. Los hex fijos que había aquí NO los alcanzaba el
                    remapeo de oscuro —solo actúa sobre clases—, así que un canal
@@ -179,7 +179,7 @@ export default function TelegramConnectView() {
               </button>
             ))}
           </div>
-          <button onClick={saveCapture} disabled={busy} className="w-full py-2 rounded-md bg-marca text-marca-tinta text-sm font-semibold disabled:opacity-50">
+          <button onClick={saveCapture} disabled={busy} className="w-full py-2 rounded-iv bg-marca text-marca-tinta text-sm font-semibold disabled:opacity-50">
             Guardar y empezar a capturar ({selected.size})
           </button>
           <button onClick={() => setStep("phone")} className="w-full mt-2 py-2 text-tinta-3 text-xs underline">

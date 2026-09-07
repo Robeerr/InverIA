@@ -70,7 +70,7 @@ export default function WhyMovingCard({ symbol, model, runSignal }) {
           data-testid="why-moving-btn"
           onClick={run}
           disabled={loading || !symbol}
-          className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md bg-marca text-marca-tinta hover:bg-marca/60 disabled:opacity-50 transition-colors"
+          className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-iv bg-marca text-marca-tinta hover:bg-marca/60 disabled:opacity-50 transition-colors"
         >
           <Sparkle size={14} weight="bold" />
           {loading ? "Analizando…" : data ? "Actualizar" : "Explicar movimiento"}

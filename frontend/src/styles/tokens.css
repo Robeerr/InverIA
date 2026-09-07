@@ -39,80 +39,99 @@
    es deliberadamente sutil, para separar sin dibujar rejas.
    ───────────────────────────────────────────────────────────────────────────── */
 
-/* ── Tema claro ─────────────────────────────────────────────────────────────
+/* ── Tema claro · la versión de día de la misma marca ───────────────────────
    Deriva del oscuro, pero se define ENTERO y por separado. Un token que solo
    existe en un tema es justo el fallo que esta capa viene a corregir, así que
-   no hay ni un valor que se herede a medias. */
+   no hay ni un valor que se herede a medias.
+
+   POR QUÉ AQUÍ NO HAY CHAMPÁN
+
+   El acento de InverIA es champán (#c9b37e), y sobre papel claro no llega ni de
+   lejos a 4,5:1 — como el pan de oro, necesita fondo oscuro para leerse. En vez
+   de falsear un champán apagado que ya no sería el color de la marca, el tema
+   claro usa el verde profundo como `--iv-marca` y reserva el bronce para
+   `--iv-aviso`. Es la misma identidad a la luz del día, no otra paleta. */
 :root {
     /* Superficies */
-    --iv-fondo:          245 243 239;   /* #f5f3ef */
+    --iv-fondo:          242 239 231;   /* #f2efe7 · marfil de papel */
     --iv-superficie:     255 255 255;   /* #ffffff */
-    --iv-superficie-2:   250 248 244;   /* #faf8f4 */
+    --iv-superficie-2:   248 245 237;   /* #f8f5ed */
 
     /* Líneas */
-    --iv-linea:          229 224 216;   /* #e5e0d8 · separación sutil */
-    --iv-linea-fuerte:   176 166 146;   /* #b0a692 · borde con presencia */
-    --iv-linea-marcada:  156 146 128;   /* #9c9280 · 3:1, límite que significa algo */
+    --iv-linea:          226 220 207;   /* #e2dccf · separación sutil */
+    --iv-linea-fuerte:   176 165 143;   /* #b0a58f · borde con presencia */
+    --iv-linea-marcada:  150 138 116;   /* #968a74 · 3,40:1, límite que significa algo */
 
     /* Tinta */
-    --iv-tinta:           14  31  26;   /* #0e1f1a · lectura principal */
-    --iv-tinta-2:         70  86  79;   /* #46564f · secundario */
-    --iv-tinta-3:         92 107 102;   /* #5c6b66 · etiquetas y apoyo */
+    --iv-tinta:           15  30  26;   /* #0f1e1a · lectura principal */
+    --iv-tinta-2:         62  79  72;   /* #3e4f48 · secundario */
+    --iv-tinta-3:         88 103  97;   /* #586761 · etiquetas y apoyo */
 
     /* Marca */
-    --iv-marca:           26  58  50;   /* #1a3a32 */
-    --iv-marca-tinta:    245 243 239;   /* #f5f3ef · texto sobre marca */
+    --iv-marca:           20  51  43;   /* #14332b · verde profundo */
+    --iv-marca-tinta:    242 239 231;   /* #f2efe7 · texto sobre marca */
 
     /* Semánticos financieros */
-    --iv-sube:            47 107  69;   /* #2f6b45 */
-    --iv-baja:           192  68  42;   /* #c0442a */
-    --iv-aviso:          138 101   8;   /* #8a6508 */
-    --iv-info:            26 106 148;   /* #1a6a94 */
-    --iv-neutro:          92 107 102;   /* #5c6b66 */
+    --iv-sube:            42 100  64;   /* #2a6440 */
+    --iv-baja:           176  62  38;   /* #b03e26 */
+    --iv-aviso:          122  90  18;   /* #7a5a12 · bronce */
+    --iv-info:            24  98 138;   /* #18628a */
+    --iv-neutro:          88 103  97;   /* #586761 */
 
     /* Foco visible — mismo token en los dos temas para que nunca falte */
-    --iv-foco:            26  58  50;
+    --iv-foco:            20  51  43;
 
-    /* Radio y densidad */
-    --iv-radio:        6px;
-    --iv-radio-sm:     4px;
-    --iv-radio-lg:    10px;
+    /* Radio y densidad.
+       Bajan de 6/4/10 px a 2/1/3 px. No es un ajuste fino: el radio es lo que
+       hacía que todo pareciera una tarjeta, y el encargo pide precisamente lo
+       contrario. Con un filete recto, lo que separa las cosas es el espacio y
+       la línea, no la esquina. */
+    --iv-radio:        2px;
+    --iv-radio-sm:     1px;
+    --iv-radio-lg:     3px;
 }
 
 /* ── Tema oscuro · la identidad de InverIA ──────────────────────────────────
    Este es el tema de referencia: el que define la marca y sobre el que se
-   diseña primero. El ámbar deja de ser un accidente del parche y pasa a ser
-   `--iv-marca`, un color con nombre que se puede usar a propósito. */
+   diseña primero.
+
+   QUÉ CAMBIA RESPECTO DE LA VERSIÓN ANTERIOR
+
+   El fondo baja de #0e1f1a a #0a1210: verde-negro profundo en vez de verde
+   oscuro. Y las superficies, que antes SUBÍAN a #1e2c28 —tarjetas más claras
+   que el fondo—, ahora se quedan casi a su altura (#0f1a17). Es el cambio que
+   más se nota: sin ese escalón de luminosidad, una superficie deja de leerse
+   como una tarjeta flotando y pasa a leerse como una zona del mismo lienzo,
+   separada por un filete. Es lo que distingue una terminal de un dashboard.
+
+   Y el ámbar #f59e0b pasa a champán #c9b37e. El ámbar era el color de un aviso
+   usado como marca: saturado, caliente y compitiendo con `--iv-aviso`, que es
+   casi el mismo color. El champán está desaturado, así que puede recorrer toda
+   la interfaz —filetes de sección, navegación activa, cifras destacadas— sin
+   gritar, y deja el ámbar libre para lo que de verdad avisa. */
 .dark {
-    /* El verde vive en el FONDO, no en las superficies.
-       El fondo conserva el #0e1f1a de la paleta (H162 S38%) y es lo que da la
-       identidad. Las superficies —donde vive el contenido y donde está la mayor
-       parte de los píxeles— bajan a S19%: leen como tarjetas oscuras neutras con
-       un matiz verde en vez de como una interfaz verde. Con la saturación alta
-       original, el color competía con los datos, que es justo lo que no puede
-       pasar en una pantalla que existe para que se lean números. */
-    --iv-fondo:           14  31  26;   /* #0e1f1a · H162 S38% */
-    --iv-superficie:      30  44  40;   /* #1e2c28 · H163 S19% */
-    --iv-superficie-2:    39  56  51;   /* #273833 */
+    --iv-fondo:           10  18  16;   /* #0a1210 · verde-negro profundo */
+    --iv-superficie:      15  26  23;   /* #0f1a17 · apenas por encima del fondo */
+    --iv-superficie-2:    22  36  31;   /* #16241f */
 
-    --iv-linea:           44  58  53;   /* #2c3a35 */
-    --iv-linea-fuerte:    68  85  79;   /* #44554f */
-    --iv-linea-marcada:  101 122 115;   /* #657a73 · 3,17:1 */
+    --iv-linea:           31  46  41;   /* #1f2e29 */
+    --iv-linea-fuerte:    44  64  58;   /* #2c403a */
+    --iv-linea-marcada:  110 131 123;   /* #6e837b · 4,37:1 */
 
-    --iv-tinta:          238 243 240;   /* #eef3f0 */
-    --iv-tinta-2:        179 197 189;   /* #b3c5bd */
-    --iv-tinta-3:        148 173 162;   /* #94ada2 */
+    --iv-tinta:          234 227 212;   /* #eae3d4 · marfil, no blanco */
+    --iv-tinta-2:        168 181 174;   /* #a8b5ae */
+    --iv-tinta-3:        138 154 147;   /* #8a9a93 */
 
-    --iv-marca:          245 158  11;   /* #f59e0b */
-    --iv-marca-tinta:     14  31  26;   /* #0e1f1a */
+    --iv-marca:          201 179 126;   /* #c9b37e · champán */
+    --iv-marca-tinta:     10  18  16;   /* #0a1210 */
 
-    --iv-sube:            95 208 138;   /* #5fd08a */
-    --iv-baja:           250 140 124;   /* #fa8c7c */
-    --iv-aviso:          240 180  41;   /* #f0b429 */
-    --iv-info:           108 182 240;   /* #6cb6f0 */
-    --iv-neutro:         148 173 162;   /* #94ada2 */
+    --iv-sube:            91 183 124;   /* #5bb77c */
+    --iv-baja:           224 122  95;   /* #e07a5f */
+    --iv-aviso:          217 164  65;   /* #d9a441 */
+    --iv-info:           127 178 217;   /* #7fb2d9 */
+    --iv-neutro:         138 154 147;   /* #8a9a93 */
 
-    --iv-foco:           245 158  11;
+    --iv-foco:           201 179 126;
 }
 
 /* ── Superficie SIEMPRE oscura ───────────────────────────────────────────────
@@ -137,23 +156,23 @@
    vigila con un test que compara los dos bloques.
    ────────────────────────────────────────────────────────────────────────── */
 .iv-oscuro {
-    --iv-fondo: 14  31  26;
-    --iv-superficie: 30  44  40;
-    --iv-superficie-2: 39  56  51;
-    --iv-linea: 44  58  53;
-    --iv-linea-fuerte: 68  85  79;
-    --iv-linea-marcada: 101 122 115;
-    --iv-tinta: 238 243 240;
-    --iv-tinta-2: 179 197 189;
-    --iv-tinta-3: 148 173 162;
-    --iv-marca: 245 158  11;
-    --iv-marca-tinta: 14  31  26;
-    --iv-sube: 95 208 138;
-    --iv-baja: 250 140 124;
-    --iv-aviso: 240 180  41;
-    --iv-info: 108 182 240;
-    --iv-neutro: 148 173 162;
-    --iv-foco: 245 158  11;
+    --iv-fondo: 10  18  16;
+    --iv-superficie: 15  26  23;
+    --iv-superficie-2: 22  36  31;
+    --iv-linea: 31  46  41;
+    --iv-linea-fuerte: 44  64  58;
+    --iv-linea-marcada: 110 131 123;
+    --iv-tinta: 234 227 212;
+    --iv-tinta-2: 168 181 174;
+    --iv-tinta-3: 138 154 147;
+    --iv-marca: 201 179 126;
+    --iv-marca-tinta: 10  18  16;
+    --iv-sube: 91 183 124;
+    --iv-baja: 224 122  95;
+    --iv-aviso: 217 164  65;
+    --iv-info: 127 178 217;
+    --iv-neutro: 138 154 147;
+    --iv-foco: 201 179 126;
 }
 
 
@@ -190,6 +209,51 @@
 .iv-fila {
     background: transparent;
     border-bottom: 1px solid rgb(var(--iv-linea));
+}
+
+/* ── Cabecera de sección ────────────────────────────────────────────────────
+   El gesto que se repite en toda la web y sustituye a los títulos sueltos: una
+   etiqueta en versalitas monoespaciadas y un filete que corre hasta el borde
+   derecho. Estructural, no decorativo — marca dónde empieza cada bloque sin
+   necesidad de meterlo en una caja.
+
+   El filete se dibuja con un pseudoelemento que se come el espacio sobrante, así
+   que la línea siempre llega al final por ancha que sea la columna. */
+.iv-seccion {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 16px;
+}
+.iv-seccion::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: rgb(var(--iv-linea));
+}
+/* Variante con acento: el filete arranca en champán y se apaga. Se reserva para
+   la sección PRINCIPAL de cada pantalla — si lo llevaran todas, no distinguiría
+   ninguna. */
+.iv-seccion-acento::after {
+    background: linear-gradient(90deg, rgb(var(--iv-marca)), rgb(var(--iv-linea)) 45%);
+}
+
+/* ── Veredicto ──────────────────────────────────────────────────────────────
+   La cabecera editorial que abre cada pantalla: filete champán arriba y el verbo
+   —COMPRAR, ESPERAR, REDUCIR RIESGO— en la serif de display a tamaño grande.
+   Deliberadamente NO es una tarjeta: va a sangre sobre el lienzo, porque es lo
+   único que el usuario tiene que leer antes que nada. */
+.iv-veredicto {
+    border-top: 1px solid rgb(var(--iv-marca));
+    padding-top: 20px;
+}
+.iv-verbo {
+    font-family: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+    font-weight: 300;
+    font-size: clamp(40px, 5.6vw, 68px);
+    line-height: 0.94;
+    letter-spacing: -0.022em;
+    display: block;
 }
 
 /* Etiqueta de dato: el suelo de 11px es absoluto. Por debajo hay texto que

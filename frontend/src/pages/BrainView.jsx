@@ -42,8 +42,8 @@ function YouTubeBox({ onDone }) {
       </div>
       <div className="flex gap-2">
         <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://youtu.be/..."
-          className="flex-1 px-3 py-2 rounded-md border border-[#e5e0d8] bg-white text-[#0e1f1a] text-sm min-w-0" />
-        <button onClick={go} disabled={busy} className="px-4 py-2 rounded-md bg-[#1a3a32] text-white text-sm font-semibold disabled:opacity-50 shrink-0">
+          className="flex-1 px-3 py-2 rounded-iv border border-[#e5e0d8] bg-white text-[#0e1f1a] text-sm min-w-0" />
+        <button onClick={go} disabled={busy} className="px-4 py-2 rounded-iv bg-[#1a3a32] text-white text-sm font-semibold disabled:opacity-50 shrink-0">
           {busy ? "Procesando…" : "Procesar"}
         </button>
       </div>
@@ -55,10 +55,10 @@ function YouTubeBox({ onDone }) {
       {manual && (
         <div className="mt-2 space-y-2">
           <input value={fuente} onChange={(e) => setFuente(e.target.value)} placeholder="Fuente (ej. Vídeo JaviZone) — opcional"
-            className="w-full px-3 py-2 rounded-md border border-[#e5e0d8] bg-white text-[#0e1f1a] text-sm" />
+            className="w-full px-3 py-2 rounded-iv border border-[#e5e0d8] bg-white text-[#0e1f1a] text-sm" />
           <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={5} placeholder="Pega aquí la transcripción del vídeo, o cualquier texto (artículo, análisis)…"
-            className="w-full px-3 py-2 rounded-md border border-[#e5e0d8] bg-white text-[#0e1f1a] text-sm" />
-          <button onClick={goText} disabled={busy} className="w-full py-2 rounded-md bg-[#1a3a32] text-white text-sm font-semibold disabled:opacity-50">
+            className="w-full px-3 py-2 rounded-iv border border-[#e5e0d8] bg-white text-[#0e1f1a] text-sm" />
+          <button onClick={goText} disabled={busy} className="w-full py-2 rounded-iv bg-[#1a3a32] text-white text-sm font-semibold disabled:opacity-50">
             {busy ? "Procesando…" : "Procesar texto"}
           </button>
         </div>
@@ -197,7 +197,7 @@ export default function BrainView() {
             <p className="text-etiqueta text-[#5c6b66]">Lo que InverIA aprende de tus fuentes (Telegram + newsletters).</p>
           </div>
         </div>
-        <button onClick={load} className="shrink-0 p-2 rounded-md border border-[#e5e0d8] text-[#1a3a32]" title="Recargar">
+        <button onClick={load} className="shrink-0 p-2 rounded-iv border border-[#e5e0d8] text-[#1a3a32]" title="Recargar">
           <ArrowClockwise size={16} weight="bold" className={loading ? "animate-spin" : ""} />
         </button>
       </div>

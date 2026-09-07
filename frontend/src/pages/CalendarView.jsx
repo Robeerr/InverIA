@@ -74,7 +74,7 @@ export default function CalendarView({ setSymbol }) {
             </p>
           </div>
           <button onClick={() => setRefreshN((n) => n + 1)} title="Recargar (datos frescos)"
-            className="p-2 rounded-md border border-linea text-marca mr-1">
+            className="p-2 rounded-iv border border-linea text-marca mr-1">
             <ArrowClockwise size={16} weight="bold" className={loading ? "animate-spin" : ""} />
           </button>
           <select
@@ -113,7 +113,7 @@ export default function CalendarView({ setSymbol }) {
                    espera quien pulsa una fila del calendario. */
                 onClick={() => setSymbol(it.symbol)}
               >
-                <div className="w-11 h-11 rounded-md bg-marca text-marca-tinta flex items-center justify-center font-mono font-bold text-xs shrink-0">
+                <div className="w-11 h-11 rounded-iv bg-marca text-marca-tinta flex items-center justify-center font-mono font-bold text-xs shrink-0">
                   {it.symbol.slice(0, 4)}
                 </div>
                 <div className="flex-1 min-w-0">

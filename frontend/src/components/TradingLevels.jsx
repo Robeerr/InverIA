@@ -149,7 +149,7 @@ function SmartBuyLevels({ levels }) {
   const profundo = plan.length ? plan[plan.length - 1] : null;
 
   return (
-    <div data-testid="smart-buy-levels" className="mb-5 p-4 bg-sube/[0.04] border border-sube/25 rounded-md">
+    <div data-testid="smart-buy-levels" className="mb-5 p-4 bg-sube/[0.04] border border-sube/25 rounded-iv">
       <div className="flex items-center gap-2 mb-1">
         <Crosshair size={14} weight="bold" className="text-sube" />
         <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-sube">
@@ -202,7 +202,7 @@ function SmartBuyLevels({ levels }) {
 function RecBig({ rec }) {
   if (rec === "COMPRAR") {
     return (
-      <div data-testid="rec-big" className="bg-sube text-marca-tinta px-5 py-3 rounded-md flex items-center gap-2">
+      <div data-testid="rec-big" className="bg-sube text-marca-tinta px-5 py-3 rounded-iv flex items-center gap-2">
         <ArrowUpRight size={28} weight="bold" />
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.2em] opacity-80">Recomendación</p>
@@ -213,7 +213,7 @@ function RecBig({ rec }) {
   }
   if (rec === "VENDER") {
     return (
-      <div data-testid="rec-big" className="bg-baja text-marca-tinta px-5 py-3 rounded-md flex items-center gap-2">
+      <div data-testid="rec-big" className="bg-baja text-marca-tinta px-5 py-3 rounded-iv flex items-center gap-2">
         <ArrowDownRight size={28} weight="bold" />
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.2em] opacity-80">Recomendación</p>
@@ -223,7 +223,7 @@ function RecBig({ rec }) {
     );
   }
   return (
-    <div data-testid="rec-big" className="bg-tinta-3 text-marca-tinta px-5 py-3 rounded-md flex items-center gap-2">
+    <div data-testid="rec-big" className="bg-tinta-3 text-marca-tinta px-5 py-3 rounded-iv flex items-center gap-2">
       <Minus size={28} weight="bold" />
       <div>
         <p className="font-mono text-[10px] uppercase tracking-[0.2em] opacity-80">Recomendación</p>
@@ -241,7 +241,7 @@ function LevelCard({ icon, label, primary, sub, tone, testId }) {
   };
   const c = colors[tone] || colors.neutral;
   return (
-    <div data-testid={testId} className={`${c.bg} border ${c.border} rounded-md p-4`}>
+    <div data-testid={testId} className={`${c.bg} border ${c.border} rounded-iv p-4`}>
       <div className={`flex items-center gap-1.5 ${c.text}`}>
         {icon}
         <p className="font-mono text-[10px] uppercase tracking-[0.2em] font-medium">{label}</p>
@@ -304,7 +304,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
 
       {/* Volume Profile bar — the real high-volume price levels */}
       {hasVp && (
-        <div data-testid="volume-profile-bar" className="mb-5 p-3 bg-aviso/5 border border-aviso/20 rounded-md">
+        <div data-testid="volume-profile-bar" className="mb-5 p-3 bg-aviso/5 border border-aviso/20 rounded-iv">
           <div className="flex items-center gap-2 mb-2">
             <Star size={12} weight="fill" className="text-aviso" />
             <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-aviso">
@@ -400,7 +400,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
       {analysis?.risk_reward_ratio != null && (
         <div
           data-testid="level-rr"
-          className={`mt-3 px-4 py-2.5 rounded-lg flex items-start gap-2.5 flex-wrap ${
+          className={`mt-3 px-4 py-2.5 rounded-iv flex items-start gap-2.5 flex-wrap ${
             analysis.rr_bajo
               ? "border border-aviso/40 bg-aviso/[0.07]"
               : "bg-sube/[0.07]"
@@ -432,7 +432,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
       {analysis && (analysis.entry_zones?.length || analysis.stop_losses?.length || analysis.take_profits?.length) && (
         <div className="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-4">
           {analysis.entry_zones?.length > 0 && (
-            <div data-testid="entry-zones-list" className="border border-linea rounded-md p-4">
+            <div data-testid="entry-zones-list" className="border border-linea rounded-iv p-4">
               <div className="flex items-center gap-2 mb-3">
                 <Target size={14} weight="bold" className="text-marca" />
                 <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-tinta-3">Zonas de Entrada</p>
@@ -466,7 +466,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
           )}
 
           {analysis.stop_losses?.length > 0 && (
-            <div data-testid="stop-losses-list" className="border border-linea rounded-md p-4">
+            <div data-testid="stop-losses-list" className="border border-linea rounded-iv p-4">
               <div className="flex items-center gap-2 mb-3">
                 <Shield size={14} weight="bold" className="text-baja" />
                 <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-tinta-3">Stop Losses</p>
@@ -492,7 +492,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
           )}
 
           {analysis.take_profits?.length > 0 && (
-            <div data-testid="take-profits-list" className="border border-linea rounded-md p-4">
+            <div data-testid="take-profits-list" className="border border-linea rounded-iv p-4">
               <div className="flex items-center gap-2 mb-3">
                 <TrendUp size={14} weight="bold" className="text-sube" />
                 <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-tinta-3">Take Profits</p>
@@ -522,7 +522,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
       {/* Support / Resistance bands */}
       {analysis?.key_levels && (
         <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div data-testid="key-supports" className="border border-linea rounded-md p-4">
+          <div data-testid="key-supports" className="border border-linea rounded-iv p-4">
             <div className="flex items-center gap-2 mb-3">
               <TrendDown size={14} weight="bold" className="text-sube" />
               <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-tinta-3">Soportes (compra)</p>
@@ -542,7 +542,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
               })}
             </div>
           </div>
-          <div data-testid="key-resistances" className="border border-linea rounded-md p-4">
+          <div data-testid="key-resistances" className="border border-linea rounded-iv p-4">
             <div className="flex items-center gap-2 mb-3">
               <TrendUp size={14} weight="bold" className="text-baja" />
               <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-tinta-3">Resistencias (venta)</p>
@@ -567,7 +567,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
 
       {/* Analyst price target band */}
       {priceTarget && priceTarget.target_mean && (
-        <div data-testid="price-target" className="mt-5 p-4 bg-marca/5 border border-marca/20 rounded-md">
+        <div data-testid="price-target" className="mt-5 p-4 bg-marca/5 border border-marca/20 rounded-iv">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
               <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-tinta-3">
