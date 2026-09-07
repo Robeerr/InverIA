@@ -81,6 +81,24 @@ const pnlAbs = (e) => (Number(e.acciones) > 0 && Number(e.compra) > 0 && e.last_
 const pnlPct = (e) => (Number(e.compra) > 0 && e.last_price != null) ? ((Number(e.last_price) - Number(e.compra)) / Number(e.compra)) * 100 : null;
 const eur0 = (x) => x == null ? "—" : x.toLocaleString("es-ES", { maximumFractionDigits: 0 });
 
+/** Simbolo de la divisa en la que esta expresado un importe. */
+const SIMBOLO_DIVISA = { USD: "$", EUR: "€", GBP: "£", CHF: "CHF", JPY: "¥" };
+
+/** Importe con su divisa DELANTE.
+ *
+ *  El total de esta cabecera se suma en la moneda de cotizacion —dolares, para casi
+ *  toda la cartera— pero se escribia sin simbolo, justo encima de un P&L convertido a
+ *  euros. Dos magnitudes distintas, la misma pinta, y ningun sitio donde enterarse:
+ *  quien mirase leia "Invertido 28.308" y lo daba por euros. El numero nunca estuvo
+ *  mal; lo que faltaba era decir de que moneda es. */
+const importe = (x, divisa) => {
+  if (x == null) return "—";
+  const cifra = eur0(x);
+  if (!divisa) return cifra;
+  const simbolo = SIMBOLO_DIVISA[divisa] || divisa;
+  return simbolo.length === 1 ? `${simbolo}${cifra}` : `${cifra} ${simbolo}`;
+};
+
 // Distancia % del precio a un nivel de compra (negativo = el nivel está por debajo, aún sin tocar).
 const nivelDist = (e, n) => {
   const px = Number(e.last_price), lv = Number(e[`nivel${n}`]);
@@ -200,6 +218,9 @@ function PortfolioSummary({ entries }) {
   // Aviso de DIVISAS: sumar EUR con USD y etiquetarlo todo con "$" da un total sin sentido.
   const divisas = new Set(conPos.map((e) => (e.divisa || "").toUpperCase() || (/(\.MC|\.PA|\.DE|\.MI|\.AS)$/i.test(e.symbol || "") ? "EUR" : "USD")));
   const multiDivisa = divisas.size > 1;
+  // Con una sola divisa se puede etiquetar el total; con varias, la suma no es de
+  // ninguna moneda y el aviso de abajo es lo unico honesto que se puede decir.
+  const divisaUnica = divisas.size === 1 ? [...divisas][0] : null;
 
   // Diversificación: por valor de mercado si hay posiciones; si no, por nº de acciones.
   const useValue = totalValue > 0;
@@ -230,8 +251,8 @@ function PortfolioSummary({ entries }) {
               <PnlText abs={totalPnl} pct={totalPnlPct} size="base" tasa={tasaResumen} />
             </div>
             <div className="grid grid-cols-2 gap-2 mt-2 text-[11px] font-mono">
-              <div><span className="text-neutral-400">Invertido</span><br /><b>{eur0(totalCost)}</b></div>
-              <div><span className="text-neutral-400">Valor actual</span><br /><b>{eur0(totalValue)}</b></div>
+              <div><span className="text-neutral-400">Invertido</span><br /><b>{importe(totalCost, divisaUnica)}</b></div>
+              <div><span className="text-neutral-400">Valor actual</span><br /><b>{importe(totalValue, divisaUnica)}</b></div>
             </div>
             {(incompletas > 0 || multiDivisa) && (
               <p className="text-[10px] text-aviso mt-2 leading-snug">
@@ -1122,8 +1143,8 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="text-left border-b-2 border-neutral-200 dark:border-neutral-700">
-              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap w-10 bg-neutral-100 dark:bg-neutral-800">⚡</th>
-              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Acción</th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap w-10 bg-neutral-100 dark:bg-neutral-800 sticky left-0 z-20">⚡</th>
+              <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800 sticky left-10 z-20 border-r border-neutral-200 dark:border-neutral-700">Acción</th>
               <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap bg-neutral-100 dark:bg-neutral-800">Mdo.</th>
               <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Precio</th>
               <th className="px-2 py-2.5 font-bold text-neutral-700 dark:text-neutral-200 text-xs whitespace-nowrap text-right bg-neutral-100 dark:bg-neutral-800">Compra</th>
@@ -1146,10 +1167,14 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                 no. */}
             {entries.map((e, idx) => (
               <tr key={e.id} className={`border-t border-neutral-100 dark:border-neutral-800 transition-colors group ${!e.active ? "opacity-40" : ""} ${idx % 2 === 0 ? "bg-white dark:bg-neutral-900" : "bg-neutral-50 dark:bg-neutral-800/40"} hover:bg-amber-50/60 dark:hover:bg-neutral-700/40`}>
-                <td className="px-2 py-2.5 text-center">
+                {/* Las dos primeras columnas van fijas: la tabla tiene quince columnas y
+                    desborda a lo ancho, asi que al desplazarse quedaban treinta filas de
+                    precios y niveles sin saber de que accion eran. El fondo va OPACO a
+                    proposito —translucido dejaba ver por debajo lo que pasa al lado. */}
+                <td className={`px-2 py-2.5 text-center sticky left-0 z-10 ${idx % 2 === 0 ? "bg-white dark:bg-neutral-900" : "bg-neutral-50 dark:bg-[#1e1e1e]"} group-hover:bg-amber-50 dark:group-hover:bg-neutral-700`}>
                   <input type="checkbox" checked={e.active} onChange={(ev) => updateField(e.id, "active", ev.target.checked)} className="w-4 h-4 cursor-pointer accent-marca" title={e.active ? "Monitorización activa" : "Monitorización pausada"} />
                 </td>
-                <td className="px-2 py-2.5 whitespace-nowrap">
+                <td className={`px-2 py-2.5 whitespace-nowrap sticky left-10 z-10 border-r border-neutral-200 dark:border-neutral-700 ${idx % 2 === 0 ? "bg-white dark:bg-neutral-900" : "bg-neutral-50 dark:bg-[#1e1e1e]"} group-hover:bg-amber-50 dark:group-hover:bg-neutral-700`}>
                   <div className="flex items-center gap-1.5">
                     <span className="font-bold text-marca cursor-pointer hover:underline text-sm" onClick={() => setSymbol && setSymbol(e.symbol)}>{e.symbol}</span>
                     {saving[e.id] && <span className="text-[10px] text-neutral-400 animate-pulse">·</span>}
