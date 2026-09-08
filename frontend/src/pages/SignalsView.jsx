@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { aNumero } from "../lib/format";
 import RiesgoVenta from "../components/RiesgoVenta";
+import CarteraCabecera from "../components/CarteraCabecera";
 
 const API = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
 const authHeaders = () => {
@@ -223,100 +224,18 @@ const SECTOR_COLORS = [
   "#8fa89e",  // salvia
   "#c97b8e",  // rosa apagado
 ];
-function PortfolioSummary({ entries }) {
-  // El total en euros, igual que las filas: si una cosa va en euros y la otra en dólares
-  // en la misma pantalla, el número grande deja de poder compararse con la suma de abajo.
-  const { tasaUSD: tasaResumen } = usePnlEnEuros();
-  // Solo posiciones COMPLETAS (acciones + precio de compra + precio actual). Antes bastaba
-  // con tener acciones: una recién añadida sin last_price sumaba al coste pero 0 al valor,
-  // y el total anunciaba un -100% falso.
-  const conPos = entries.filter((e) => Number(e.acciones) > 0 && Number(e.compra) > 0 && e.last_price != null);
-  const incompletas = entries.filter((e) => Number(e.acciones) > 0 && !(Number(e.compra) > 0 && e.last_price != null)).length;
-  const totalCost = conPos.reduce((s, e) => s + posCost(e), 0);
-  const totalValue = conPos.reduce((s, e) => s + posValue(e), 0);
-  const totalPnl = conPos.length ? totalValue - totalCost : null;
-  const totalPnlPct = totalCost > 0 && totalPnl != null ? (totalPnl / totalCost) * 100 : null;
-  // Aviso de DIVISAS: sumar EUR con USD y etiquetarlo todo con "$" da un total sin sentido.
-  const divisas = new Set(conPos.map((e) => (e.divisa || "").toUpperCase() || (/(\.MC|\.PA|\.DE|\.MI|\.AS)$/i.test(e.symbol || "") ? "EUR" : "USD")));
-  const multiDivisa = divisas.size > 1;
-  // Con una sola divisa se puede etiquetar el total; con varias, la suma no es de
-  // ninguna moneda y el aviso de abajo es lo unico honesto que se puede decir.
-  const divisaUnica = divisas.size === 1 ? [...divisas][0] : null;
+/* `PortfolioSummary` se ha retirado: lo sustituye `CarteraCabecera`, que dice lo
+   mismo mejor y con datos del servidor en vez de recalculados en el navegador.
 
-  // Diversificación: por valor de mercado si hay posiciones; si no, por nº de acciones.
-  const useValue = totalValue > 0;
-  const bySector = {};
-  for (const e of entries) {
-    const sec = (e.sector || "Sin sector").trim() || "Sin sector";
-    const w = useValue ? posValue(e) : 1;
-    if (w > 0) bySector[sec] = (bySector[sec] || 0) + w;
-  }
-  const totalW = Object.values(bySector).reduce((s, v) => s + v, 0);
-  const sectors = Object.entries(bySector)
-    .map(([name, w]) => ({ name, pct: totalW > 0 ? (w / totalW) * 100 : 0 }))
-    .sort((a, b) => b.pct - a.pct);
-  const topPct = sectors[0]?.pct || 0;
-
-  if (!entries.length) return null;
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-[minmax(0,320px)_1fr] gap-3">
-      {/* P&L total */}
-      <div className="rounded-iv-lg border border-linea bg-superficie p-4">
-        <p className="text-[11px] uppercase tracking-wide text-tinta-3 font-mono mb-1">Rendimiento de la cartera</p>
-        {conPos.length === 0 ? (
-          <p className="text-xs text-tinta-3 mt-2">Añade tu <b>precio de compra</b> y <b>nº de acciones</b> en cada acción para ver tu P&amp;L real.</p>
-        ) : (
-          <>
-            <div className="flex items-baseline gap-2">
-              <PnlText abs={totalPnl} pct={totalPnlPct} size="base" tasa={tasaResumen} />
-            </div>
-            <div className="grid grid-cols-2 gap-2 mt-2 text-[11px] font-mono">
-              <div><span className="text-tinta-3">Invertido</span><br /><b>{importe(totalCost, divisaUnica)}</b></div>
-              <div><span className="text-tinta-3">Valor actual</span><br /><b>{importe(totalValue, divisaUnica)}</b></div>
-            </div>
-            {(incompletas > 0 || multiDivisa) && (
-              <p className="text-[10px] text-aviso mt-2 leading-snug">
-                {incompletas > 0 && <><Warning size={12} weight="fill" className="inline mb-px mr-1" />{incompletas} posición{incompletas > 1 ? "es" : ""} sin precio de compra o sin cotización — no cuenta{incompletas > 1 ? "n" : ""} en el total. </>}
-                {multiDivisa && <><Warning size={12} weight="fill" className="inline mb-px mr-1" />Hay varias divisas ({[...divisas].join(", ")}): el total es una suma sin convertir.</>}
-              </p>
-            )}
-          </>
-        )}
-      </div>
-      {/* Diversificación */}
-      <div className="rounded-iv-lg border border-linea bg-superficie p-4">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-[11px] uppercase tracking-wide text-tinta-3 font-mono">Diversificación {useValue ? "(por valor)" : "(por nº acciones)"}</p>
-          {topPct >= 40 && (
-            <span className="text-[10px] font-bold text-baja bg-baja/30 px-2 py-0.5 rounded-full">
-              Concentración alta: {topPct.toFixed(0)}% en {sectors[0].name}
-            </span>
-          )}
-        </div>
-        {sectors.length === 0 ? (
-          <p className="text-xs text-tinta-3">Añade el <b>sector</b> a tus acciones para ver el reparto.</p>
-        ) : (
-          <>
-            <div className="flex h-3 rounded-full overflow-hidden mb-2">
-              {sectors.map((s, i) => (
-                <div key={s.name} style={{ width: `${s.pct}%`, background: SECTOR_COLORS[i % SECTOR_COLORS.length] }} title={`${s.name}: ${s.pct.toFixed(0)}%`} />
-              ))}
-            </div>
-            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
-              {sectors.slice(0, 6).map((s, i) => (
-                <span key={s.name} className="flex items-center gap-1 text-tinta-2">
-                  <span className="w-2.5 h-2.5 rounded-iv-sm inline-block" style={{ background: SECTOR_COLORS[i % SECTOR_COLORS.length] }} />
-                  {s.name} <b>{s.pct.toFixed(0)}%</b>
-                </span>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
+     · El P&L salia de sumar coste y valor posicion a posicion en el cliente;
+       ahora viene de `/cartera/resumen`, que es la MISMA fuente que usa la
+       pagina de Operaciones. Tener dos sumas del mismo dinero calculadas en
+       sitios distintos era una discrepancia esperando a ocurrir.
+     · La diversificacion caia a "por numero de acciones" cuando faltaban
+       posiciones valoradas, y cien acciones de 2 EUR pesaban mas que dos de 500.
+       La nueva es siempre por VALOR.
+     · Los avisos de divisas mezcladas y posiciones incompletas siguen, en el
+       panel de senales, y tambien salen del servidor. */
 
 // ── Correlación de la cartera (#22): detecta acciones que se mueven a la vez ─────
 function corrNivel(avg) {
@@ -801,13 +720,30 @@ export default function SignalsView({ setSymbol }) {
   return (
     <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
 
+      {/* ── LECTURA ─────────────────────────────────────────────────────────
+          Patrimonio, señales, distribución y posiciones. Va ARRIBA porque es a lo
+          que se entra: antes la pantalla abría directamente con la tabla de quince
+          columnas, que sirve para editar y no para enterarse de nada. */}
+      <CarteraCabecera
+        entries={entries}
+        onAnadir={() => setShowAdd(true)}
+        onImportar={() => setShowImport(true)}
+        onAnalizarCorrelacion={() =>
+          document.getElementById("bloque-correlacion")?.scrollIntoView({ behavior: "smooth" })}
+      />
+
+      {/* ── EDICIÓN ─────────────────────────────────────────────────────────── */}
+      <div className="iv-seccion">
+        <span className="iv-etiqueta tracking-[0.18em] text-tinta-2">Niveles y alertas</span>
+        <span className="text-etiqueta text-tinta-3 whitespace-nowrap hidden sm:inline">
+          Aquí se edita: toca cualquier valor
+        </span>
+      </div>
+
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-tinta">
-            Cartera
-          </h1>
-          <p className="text-sm text-tinta-3 mt-0.5">
+          <p className="text-sm text-tinta-3">
             Activa la <Bell size={13} weight="fill" className="inline text-aviso mb-px" /> en cada nivel para recibir alerta por Telegram y email cuando el precio lo alcance.
           </p>
         </div>
@@ -859,9 +795,9 @@ export default function SignalsView({ setSymbol }) {
       )}
 
       {/* Resumen de cartera: P&L total + diversificación (#20 + #21) */}
-      {!loading && visible.length > 0 && <PortfolioSummary entries={visible} />}
 
       {/* Correlación de la cartera (#22) */}
+      <div id="bloque-correlacion" />
       {!loading && visible.length >= 2 && <CorrelationCard />}
 
       {/* Legend */}
