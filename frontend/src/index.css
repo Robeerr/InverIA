@@ -3,25 +3,13 @@
 
 /* Capa de tokens semánticos. Va PRIMERO a propósito: define variables y clases
    base, y al ir antes que `@tailwind utilities` cualquier utilidad de Tailwind
-   sigue pudiendo pisarlas. Se añade a lo que ya hay; el bloque `!important` de
-   más abajo sigue vivo hasta que cada pantalla se migre en su propia fase. */
+   sigue pudiendo pisarlas. Hoy manda en toda la app: el bloque de remapeos por hex
+   que vivía más abajo se ha retirado entero. */
 @import "./styles/tokens.css";
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-:root {
-    --bg: #f5f3ef;
-    --surface: #ffffff;
-    --primary: #1a3a32;
-    --secondary: #e5e0d8;
-    --buy: #4a7c59;
-    --sell: #d85c41;
-    --text-main: #0e1f1a;
-    --text-muted: #5c6b66;
-    --border: #e5e0d8;
-}
 
 html {
     background: rgb(var(--iv-fondo));
@@ -47,50 +35,22 @@ body {
     color: rgb(var(--iv-tinta));
 }
 
-/* ── LO QUE QUEDA DEL PARCHE, Y POR QUÉ ───────────────────────────────────────
-   Este bloque eran 50 reglas indexadas por VALOR HEX. Migradas las nueve
-   pantallas a tokens, se han retirado las 24 cuyo selector ya no aparece en
-   ninguna parte del código: eran remapeos de colores que ya no existen.
+/* ── LO QUE QUEDA DEL PARCHE ──────────────────────────────────────────────────
+   Este bloque eran ~50 reglas indexadas por VALOR HEX: «cuando veas #5c6b66,
+   píntalo así». Ya no queda ninguna — sus hex no aparecen en una sola línea del
+   código, porque las nueve pantallas y BrainView usan tokens. Tampoco `card-flat`,
+   que era la última clase que las mantenía en pie.
 
-   Las que siguen NO son residuo: cada una tiene todavía a alguien detrás, y
-   borrarla rompe ese sitio en oscuro. Se van solas cuando se vaya su motivo.
+   Lo que sobrevive NO está indexado por color, y por eso no cae con ellas:
 
-     · BrainView.jsx (74 hex) sostiene la mayoría. Está FUERA de la migración a
-       propósito: se va a reescribir en cuatro pestañas, y pintarlo dos veces
-       no tiene sentido. Sus reglas caen con esa reescritura.
-     · App.js (9 hex) nunca entró en ninguna tanda: no es una pantalla, es el
-       armazón (pantalla de carga y pie de página). Sostiene bg-[#f5f3ef],
-       bg-[#1a3a32], text-[#5c6b66] y border-[#e5e0d8].
-     · `card-flat` sigue en BrainView y en LightweightChart.
-     · `bg-white` a secas sigue en BrainView, QuoteHeader y ChartistPanel.
-     · `divider-soft` y `label-small` no están indexadas por hex: son clases de
-       utilidad vivas en cinco componentes ya migrados. No son parte de la deuda.
+     · `divider-soft` y `label-small` son clases de utilidad vivas en varios
+       componentes ya migrados. Nunca fueron deuda.
      · Las reglas de `input`, `select`, `textarea`, `::placeholder` y la barra de
-       desplazamiento van por ELEMENTO, no por color. Quitarlas no destapa el
-       token: deja los campos con el blanco por defecto del navegador sobre la
-       página oscura. Necesitan estilo propio en la capa de tokens, que es
-       trabajo aparte y no una retirada.
-
-   Nada de esto son las excepciones de marca (el azul de Telegram, el morado
-   del gráfico, la paleta de sectores): aquellas viven en su componente, están
-   documentadas allí y no dependen de este bloque.
+       desplazamiento van por ELEMENTO. Quitarlas no destapa el token: deja el
+       blanco por defecto del navegador sobre la página oscura. Necesitan estilo
+       propio en la capa de tokens, que es trabajo aparte y no una retirada.
    ────────────────────────────────────────────────────────────────────────── */
-.dark .card-flat {
-    background: rgb(var(--iv-superficie)) !important;
-    border-color: rgb(var(--iv-linea)) !important;
-    color: rgb(var(--iv-tinta));
-}
 
-.dark .text-\[\#0e1f1a\] { color: rgb(var(--iv-tinta)) !important; }
-.dark .text-\[\#5c6b66\] { color: rgb(var(--iv-tinta-3)) !important; }
-.dark .bg-\[\#f5f3ef\] { background-color: rgb(var(--iv-superficie-2)) !important; }
-.dark .border-\[\#e5e0d8\] { border-color: rgb(var(--iv-linea)) !important; }
-.dark .bg-white { background-color: rgb(var(--iv-superficie)) !important; }
-.dark .bg-\[\#1a3a32\] { background-color: rgb(var(--iv-marca)) !important; color: rgb(var(--iv-marca-tinta)) !important; }
-.dark .bg-\[\#1a3a32\]:hover { background-color: rgb(var(--iv-marca) / 0.85) !important; }
-.dark .text-\[\#1a3a32\] { color: rgb(var(--iv-marca)) !important; }
-.dark .divider-soft { background: rgb(var(--iv-linea)) !important; }
-.dark .label-small { color: rgb(var(--iv-tinta-3)) !important; }
 .dark input, .dark select, .dark textarea {
     background-color: rgb(var(--iv-superficie-2)) !important;
     color: rgb(var(--iv-tinta)) !important;
@@ -103,17 +63,6 @@ body {
 .dark ::-webkit-scrollbar-thumb:hover {
     background: rgb(var(--iv-linea-marcada)) !important;
 }
-/* Maintain buy/sell colors slightly adjusted for dark */
-.dark .text-\[\#4a7c59\] { color: rgb(var(--iv-sube)) !important; }
-.dark .text-\[\#d85c41\] { color: rgb(var(--iv-baja)) !important; }
-.dark .border-\[\#4a7c59\] { border-color: rgb(var(--iv-sube)) !important; }
-
-/* Estos dos daban 3,39:1 y 3,29:1 sobre la tarjeta oscura, por debajo del 4,5:1
-   que necesita un texto. Los paneles para los que se escribieron ya usan tokens;
-   los dos selectores sobreviven solo por BrainView. Contraste medido, no estimado. */
-.dark .text-\[\#2563eb\] { color: rgb(var(--iv-info)) !important; }
-.dark .text-\[\#c9a14a\] { color: rgb(var(--iv-aviso)) !important; }
-
 /* `font-heading` está en decenas de sitios ya escritos. En vez de tocarlos todos,
    la clase cambia de cara aquí: donde antes salía una sans compacta ahora sale la
    serif de display, y toda la app hereda la jerarquía nueva de una vez. */
@@ -198,8 +147,8 @@ body {
 
 /* Custom selection */
 ::selection {
-    background-color: #1a3a32;
-    color: #f5f3ef;
+    background-color: rgb(var(--iv-marca));
+    color: rgb(var(--iv-marca-tinta));
 }
 
 /* Scrollbars */
@@ -211,11 +160,11 @@ body {
     background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-    background: #c8c1b3;
-    border-radius: 4px;
+    background: rgb(var(--iv-linea-fuerte));
+    border-radius: var(--iv-radio-sm);
 }
 ::-webkit-scrollbar-thumb:hover {
-    background: #5c6b66;
+    background: rgb(var(--iv-linea-marcada));
 }
 
 /* Animations */
@@ -241,30 +190,6 @@ body {
 @keyframes pulse-sell {
     0%, 100% { background-color: rgba(216, 92, 65, 0); }
     50% { background-color: rgba(216, 92, 65, 0.18); }
-}
-
-.flash-buy {
-    animation: pulse-buy 0.5s ease-out;
-}
-.flash-sell {
-    animation: pulse-sell 0.5s ease-out;
-}
-
-/* Ticker grain texture overlay (subtle) */
-.grain {
-    position: relative;
-}
-.grain::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background-image: radial-gradient(rgba(0,0,0,0.04) 1px, transparent 1px);
-    background-size: 3px 3px;
-    opacity: 0.5;
-}
-.dark .grain::before {
-    background-image: radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px);
 }
 
 /* Hide debug wrapper */

@@ -9,9 +9,9 @@ const SENT_COLOR = {
   neutro: "text-tinta-3 bg-fondo",
 };
 const ACCION_COLOR = {
-  COMPRAR: "bg-sube text-white",
+  COMPRAR: "bg-sube text-marca-tinta",
   ESPERAR: "bg-aviso text-tinta",
-  EVITAR: "bg-baja text-white",
+  EVITAR: "bg-baja text-marca-tinta",
 };
 
 // Chartista IA: veredicto técnico multi-timeframe con plan accionable y explicación
@@ -185,7 +185,7 @@ export default function ChartistPanel({ symbol, runSignal }) {
         <button
           onClick={() => run(!!data)}
           disabled={loading}
-          className="ml-auto px-2.5 py-1 rounded text-[11px] font-mono font-semibold bg-marca text-white disabled:opacity-50"
+          className="ml-auto px-2.5 py-1 rounded text-[11px] font-mono font-semibold bg-marca text-marca-tinta disabled:opacity-50"
         >
           {loading ? "Analizando…" : data ? "Recalcular" : "Analizar"}
         </button>
@@ -278,7 +278,7 @@ export default function ChartistPanel({ symbol, runSignal }) {
                     className={`ml-auto shrink-0 flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono font-semibold transition-colors ${
                       addedCartera
                         ? "bg-sube/10 text-sube"
-                        : "bg-marca text-white hover:bg-tinta disabled:opacity-50"
+                        : "bg-marca text-marca-tinta hover:bg-tinta disabled:opacity-50"
                     }`}
                   >
                     {addedCartera ? <><Check size={12} /> En Cartera</> : <><FolderSimplePlus size={12} /> Añadir a Cartera</>}
@@ -401,7 +401,7 @@ function PositionCalc({ niveles, invalidacion, objetivo, capital, setCapital }) 
             value={capital}
             onChange={(e) => setCapital(e.target.value)}
             placeholder="1000"
-            className="w-24 bg-white border border-linea rounded px-2 py-1 font-mono text-[12px] focus:outline-none focus:border-marca"
+            className="w-24 bg-superficie border border-linea rounded px-2 py-1 font-mono text-[12px] focus:outline-none focus:border-marca"
           />
         </div>
       </div>

@@ -4,14 +4,14 @@ import { fmtHace } from "../lib/format";
 import { titularVivo } from "../lib/tesisVivo";
 
 /* ── Superficie ──────────────────────────────────────────────────────────────
-   Estos bloques usan `iv-panel` y no `card-flat`, y conviene saber por qué sigue
+   Estos bloques usan `iv-panel` y no `iv-panel`, y conviene saber por qué sigue
    importando aunque las dos ya se pinten igual.
 
-   Cuando se escribió esto, `card-flat` se remapeaba con `!important` a un pizarra
+   Cuando se escribió esto, `iv-panel` se remapeaba con `!important` a un pizarra
    azulado ajeno a la paleta, así que mezclarlas dentro de un componente dejaba
    texto de un mundo sobre la superficie de otro. Hoy ese bloque legado está
    repintado con los tokens y las dos resuelven al mismo verde, así que el riesgo
-   ya no es visual: es que `card-flat` no ADMITE opacidad (`bg-superficie/60`) ni
+   ya no es visual: es que `iv-panel` no ADMITE opacidad (`bg-superficie/60`) ni
    se mueve si mañana cambia la escala de superficies. `iv-panel` sí.
 
    Las reglas `!important` siguen en pie porque están indexadas por valor hex y

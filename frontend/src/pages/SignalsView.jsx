@@ -278,7 +278,7 @@ function CorrelationCard() {
       {done && data && data.avg_corr != null && (
         <div className="space-y-2 mt-1">
           <div className="flex items-baseline gap-2">
-            <span className="font-mono font-bold text-lg text-tinta dark:text-white">{data.avg_corr}</span>
+            <span className="font-mono font-bold text-lg text-tinta">{data.avg_corr}</span>
             <span className={`text-xs font-semibold ${nivel.cls}`}>{nivel.txt}</span>
             {/* De cuántas. Con 83 valores en la Cartera y un techo de 25, decir solo "25
                 acciones" hace leer como veredicto de toda la cartera lo que es de una
@@ -826,7 +826,7 @@ export default function SignalsView({ setSymbol }) {
             onChange={(e) => setImportText(e.target.value)}
           />
           <div className="flex gap-2">
-            <button onClick={doImport} disabled={importing || !importText.trim()} className="px-4 py-2 rounded-iv bg-info/10 hover:bg-info/10 disabled:opacity-50 text-white text-sm font-medium">
+            <button onClick={doImport} disabled={importing || !importText.trim()} className="px-4 py-2 rounded-iv bg-info/10 hover:bg-info/10 disabled:opacity-50 text-marca-tinta text-sm font-medium">
               {importing ? "Importando…" : "Importar"}
             </button>
             <button onClick={() => { setShowImport(false); setImportText(""); }} className="px-4 py-2 rounded-iv border border-linea text-sm hover:bg-superficie-alt">Cancelar</button>
@@ -1142,7 +1142,7 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                   <span className="text-[11px] font-mono font-semibold bg-linea px-2 py-0.5 rounded text-tinta-2">{e.mercado || "—"}</span>
                 </td>
                 <td className="px-2 py-2.5 text-right whitespace-nowrap">
-                  <span className="font-mono font-bold text-tinta dark:text-white text-sm">{fmtP(e.last_price)}</span>
+                  <span className="font-mono font-bold text-tinta text-sm">{fmtP(e.last_price)}</span>
                   <ExtendedBadge entry={e} />
                 </td>
                 <td className="px-2 py-2.5 text-right whitespace-nowrap">

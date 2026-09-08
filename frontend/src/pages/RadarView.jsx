@@ -107,7 +107,7 @@ export default function RadarView({ setSymbol }) {
           </button>
         </div>
 
-        <div className="flex items-center gap-1 mt-4 bg-white bg-superficie border border-linea rounded-iv p-1 w-fit">
+        <div className="flex items-center gap-1 mt-4 bg-superficie border border-linea rounded-iv p-1 w-fit">
           <button onClick={() => setTab("acciones")}
             className={`px-4 py-2 rounded-iv text-sm font-medium ${tab === "acciones" ? "bg-marca text-marca-tinta" : "text-tinta-3"}`}>
             Acciones ({acciones.length})

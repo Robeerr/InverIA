@@ -198,7 +198,7 @@ export default function QuoteHeader({ quote }) {
               min="0.01"
               value={alertPrice}
               onChange={(e) => setAlertPrice(e.target.value)}
-              className="w-32 bg-white border border-linea rounded-iv px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-marca"
+              className="w-32 bg-superficie border border-linea rounded-iv px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-marca"
               placeholder="0.00"
             />
           </div>

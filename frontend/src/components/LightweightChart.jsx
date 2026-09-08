@@ -246,11 +246,11 @@ export default function LightweightChart({ candles, buyLevels, lines, timeframe,
   }, [candles, buyLevels, lines]);
 
   return (
-    <div className="card-flat p-3">
+    <div className="iv-panel p-3">
       <div className="flex items-center gap-1 mb-2 flex-wrap">
         {TIMEFRAMES.map((tf) => (
           <button key={tf} onClick={() => setTimeframe?.(tf)}
-            className={`px-2 py-1 rounded text-[11px] font-mono font-semibold ${timeframe === tf ? "bg-marca text-white" : "bg-fondo text-tinta-3"}`}>
+            className={`px-2 py-1 rounded text-[11px] font-mono font-semibold ${timeframe === tf ? "bg-marca text-marca-tinta" : "bg-fondo text-tinta-3"}`}>
             {tf}
           </button>
         ))}
