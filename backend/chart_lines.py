@@ -320,6 +320,12 @@ def _eval_hch(sign, peak_vals, valley_vals, closes, atr, price_range):
                         "pHI": pHI, "pA1": pA1, "pC": pC, "pA2": pA2, "pHD": pHD,
                         "altura": altura, "brk": brk, "confirmado": confirmado,
                         "nl_at": nl_at,
+                        # Se guardan para poder puntuar el patrón. Ya estaban calculadas
+                        # —`sym` decide cuál gana entre varios candidatos— pero se perdían
+                        # al salir de la función, así que el detector sabía lo bueno que
+                        # era su hallazgo y no había forma de preguntárselo.
+                        "asimetria": sym,
+                        "prominencia_rel": prom / abs(ref_price) if ref_price else 0.0,
                     }
 
     if best is None:
@@ -370,6 +376,8 @@ def _eval_hch(sign, peak_vals, valley_vals, closes, atr, price_range):
 
     return {
         "confirmado": best["confirmado"],
+        "asimetria": best.get("asimetria", 0.0),
+        "prominencia_rel": best.get("prominencia_rel", 0.0),
         "puntos": {"pivotes": pivotes, "neckline": neckline, "objetivo": objetivo},
     }
 
@@ -403,8 +411,21 @@ def _detect_head_shoulders(highs, lows, closes, price_range):
         else:
             confirm = (" Formación aún NO confirmada: espera el cierre más allá de la línea "
                        "clavicular (con filtro > 0.5% o 0.5·ATR) para validarla.")
+        # ── Confianza ───────────────────────────────────────────────────────────
+        # Tres factores, y el que más pesa es que la clavicular YA se haya perdido:
+        # un hombro-cabeza-hombro sin confirmar es una forma en el gráfico; confirmado
+        # es un patrón. La diferencia entre los dos es mayor que cualquier matiz de
+        # simetría, y por eso vale 0.14 frente a 0.06 y 0.05.
+        _cf = 0.70
+        _cf += 0.14 if res["confirmado"] else 0.0
+        # Simetría: `asimetria` es 0 en el patrón perfecto. 0.15 ya es notable.
+        _cf += 0.06 * max(0.0, 1.0 - min(1.0, res.get("asimetria", 0.0) / 0.15))
+        # Prominencia: el mínimo para no ser un triple techo es 3 %. A partir del 10 %
+        # la cabeza destaca sin discusión.
+        _cf += 0.05 * min(1.0, max(0.0, (res.get("prominencia_rel", 0.0) - 0.03) / 0.07))
         return {
             "tipo": tipo, "nombre": nombre, "sentido": sentido,
+            "confianza": round(min(_cf, 0.96), 3),
             "descripcion": base_desc + confirm,
             "confirmado": res["confirmado"],
             "puntos": res["puntos"],
@@ -636,8 +657,30 @@ def _detect_cup_handle(closes, highs=None, lows=None, volumes=None):
     ]
 
     nota = " Base ancha/laxa (profundidad >33%, típica de mercado bajista)." if b["wide"] else ""
+
+    # ── Confianza ───────────────────────────────────────────────────────────────
+    # No mide "cuánto sube", mide CUÁNTO SE PARECE a la taza del libro. Sale de las
+    # mismas magnitudes que ya se han calculado para aceptarla, así que no añade
+    # cálculo: lo que hace es EXPONER lo que el detector ya sabía y se guardaba.
+    #
+    # La base es 0.70 —por debajo del prior 0.85 de la cascada antigua— a propósito:
+    # una taza que apenas pasa los filtros NO debe ganarle a un doble suelo, y solo
+    # una que se acerca al canon (O'Neil: profundidad ~22 %, asa entre el 5 y el 15 %)
+    # se gana el derecho a adelantarlo.
+    _cf = 0.70
+    # Profundidad: 22 % es el centro del rango de O'Neil. Se premia la cercanía, no
+    # el estar dentro del rango, que es un requisito ya cumplido para llegar aquí.
+    _cf += 0.14 * (1.0 - min(1.0, abs(b["depth"] - 0.22) / 0.22))
+    # Asa: canon 5-15 %. Fuera de eso se aceptó por tolerancia (3-18 %), y eso resta.
+    _cf += 0.08 if 0.05 <= b["hdepth"] <= 0.15 else 0.01
+    # Base ancha (>33 %) es taza de mercado bajista: válida, pero menos fiable.
+    _cf += 0.00 if b["wide"] else 0.04
+    # Volumen seco en el asa YA es requisito cuando hay datos; que los haya suma.
+    _cf += 0.03 if volumes else 0.0
+
     return {
         "tipo": "taza_asa", "nombre": "Taza con asa", "sentido": "alcista",
+        "confianza": round(min(_cf, 0.98), 3),
         "descripcion": (
             "Fondo redondeado en 'U' (taza) seguido de una pequeña consolidación de deriva "
             "plana/bajista en la mitad superior (asa). Patrón alcista de continuación (O'Neil). "
@@ -3095,65 +3138,76 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
 
     levels = _horizontal_levels(highs, lows, closes, current_price)
 
-    # Doble suelo (W) / doble techo (M) — detector RIGUROSO (extremos ~iguales, cuello,
-    # tendencia previa, simetría; rechaza V, redondeado, triple, H&S y fakeout).
+    # ── ELECCIÓN DEL PATRÓN · competición, no cascada ───────────────────────
+    #
+    # Antes esto eran diecinueve `if pattern is None:` en fila: GANABA EL PRIMERO QUE
+    # RESPONDIERA. Eso hacía que un doble suelo mediocre se impusiera siempre a una
+    # taza con asa de libro, solo por estar antes en la lista. No competían.
+    #
+    # Ahora cada detector puede devolver `confianza` (0-1) midiendo lo bien que
+    # encaja SU geometría, y gana la más alta. El que no la trae usa su `prior`.
+    #
+    # LOS PRIORS REPRODUCEN EL ORDEN ANTIGUO, y eso es deliberado: mientras ningún
+    # detector puntúe, esta función devuelve exactamente lo mismo que antes. La
+    # migración es detector a detector y cada uno empieza a competir el día que
+    # aprende a medirse, sin un salto en el que cambie todo a la vez.
+    #
+    # `techo` es lo máximo que ese detector puede llegar a reclamar. Sirve para PODAR:
+    # si el mejor que llevamos ya supera el techo de todo lo que queda, no hace falta
+    # evaluarlo. Sin eso, pasar de cascada a competición multiplicaría por diecinueve
+    # el coste de una función que se llama una vez por temporalidad y por símbolo.
     price_range = max(highs) - min(lows) if highs else 0
     _atr14v = _atr(highs, lows, closes, 14)
-    pattern = _detect_double(highs, lows, closes)
-    # Triple techo / triple suelo (reversión mayor de 5 pivotes): prioridad alta.
-    if pattern is None:
-        pattern = _detect_triple_top_bottom(highs, lows, closes)
-    # Isla de vuelta y pipe (reversiones potentes por huecos / velas gemelas): prioridad alta.
-    if pattern is None:
-        pattern = _detect_island(highs, lows, closes, _atr14v)
-    if pattern is None:
-        pattern = _detect_pipe(highs, lows, closes)
-    # BANDERA / BANDERÍN RIGUROSO (mástil impulsivo + consolidación breve contra-tendencia).
-    if pattern is None:
-        pattern = _detect_flag_pennant(highs, lows, closes, volumes)
 
-    # Taza con asa y base plana (favoritos de ruptura de máximos): prioridad alta.
-    if pattern is None:
-        pattern = _detect_cup_handle(closes, highs, lows, volumes)
-    if pattern is None:
-        pattern = _detect_cup_no_handle(closes, highs, lows)
-    if pattern is None:
-        pattern = _detect_flat_base(closes, highs, lows, volumes)
-    # Cabeza y hombros y diamante (reversión) antes de los patrones de directriz.
-    if pattern is None:
-        pattern = _detect_head_shoulders(highs, lows, closes, price_range)
-    if pattern is None:
-        pattern = _detect_diamond(highs, lows, closes)
-    # Suelo/techo redondeado (parábola).
-    if pattern is None:
-        pattern = _detect_rounding(highs, lows, closes)
-    # Triángulos y cuñas RIGUROSOS (regresión + apex + toques): tienen prioridad sobre la
-    # lógica laxa de _detect_pattern. Cuña primero (más restrictiva), luego triángulo.
-    if pattern is None:
-        pattern = _detect_wedge(highs, lows, closes)
-    if pattern is None:
-        pattern = _detect_triangles(highs, lows, closes)
-    # Canal ASC/DESC (rectas paralelas): antes de la lógica laxa de directrices.
-    if pattern is None:
-        pattern = _detect_channel(highs, lows, closes)
-    # Rectángulo / rango lateral horizontal.
-    if pattern is None:
-        pattern = _detect_rectangle(highs, lows, closes, volumes)
-    # Tres valles/picos: patrón DÉBIL (solo 3 swings), fallback tras las estructuras claras
-    # (triángulo/cuña/canal también tienen mínimos crecientes pero son más específicos).
-    if pattern is None:
-        pattern = _detect_three_rising(highs, lows, closes)
-    # Si nada de lo anterior, prueba la lógica laxa de directrices (canal/consolidación).
-    if pattern is None:
-        pattern = _detect_pattern(trendlines, levels, closes, current_price)
-    # Megáfono (a evitar): último recurso, solo si no hay nada mejor. Dibuja sus dos rectas.
-    if pattern is None:
-        pattern = _detect_broadening(highs, lows, closes)
-        if pattern:
-            trendlines.extend(pattern.pop("trendlines", []))
-    # Hueco reciente significativo: informativo, solo si no hay estructura mayor.
-    if pattern is None:
-        pattern = _detect_gap(highs, lows, closes, volumes, _atr14v)
+    _CANDIDATOS = [
+        # (nombre,          detector,                                                    prior, techo)
+        ("doble",        lambda: _detect_double(highs, lows, closes),                     0.90, 0.90),
+        ("triple",       lambda: _detect_triple_top_bottom(highs, lows, closes),          0.89, 0.89),
+        ("isla",         lambda: _detect_island(highs, lows, closes, _atr14v),            0.88, 0.88),
+        ("pipe",         lambda: _detect_pipe(highs, lows, closes),                       0.87, 0.87),
+        ("bandera",      lambda: _detect_flag_pennant(highs, lows, closes, volumes),      0.86, 0.86),
+        ("taza_asa",     lambda: _detect_cup_handle(closes, highs, lows, volumes),        0.85, 0.98),
+        ("taza_sin_asa", lambda: _detect_cup_no_handle(closes, highs, lows),              0.84, 0.84),
+        ("base_plana",   lambda: _detect_flat_base(closes, highs, lows, volumes),         0.83, 0.83),
+        ("hch",          lambda: _detect_head_shoulders(highs, lows, closes, price_range),0.82, 0.96),
+        ("diamante",     lambda: _detect_diamond(highs, lows, closes),                    0.81, 0.81),
+        ("redondeado",   lambda: _detect_rounding(highs, lows, closes),                   0.80, 0.80),
+        ("cuna",         lambda: _detect_wedge(highs, lows, closes),                      0.79, 0.79),
+        ("triangulo",    lambda: _detect_triangles(highs, lows, closes),                  0.78, 0.78),
+        ("canal",        lambda: _detect_channel(highs, lows, closes),                    0.77, 0.77),
+        ("rectangulo",   lambda: _detect_rectangle(highs, lows, closes, volumes),         0.76, 0.76),
+        ("tres_valles",  lambda: _detect_three_rising(highs, lows, closes),               0.55, 0.55),
+        ("directriz",    lambda: _detect_pattern(trendlines, levels, closes, current_price), 0.45, 0.45),
+        ("megafono",     lambda: _detect_broadening(highs, lows, closes),                 0.35, 0.35),
+        ("hueco",        lambda: _detect_gap(highs, lows, closes, volumes, _atr14v),      0.25, 0.25),
+    ]
+
+    pattern = None
+    _mejor = -1.0
+    for _i, (_nombre, _fn, _prior, _techo) in enumerate(_CANDIDATOS):
+        # Poda: nada de lo que queda puede ya ganar.
+        if _mejor >= max((c[3] for c in _CANDIDATOS[_i:]), default=0.0):
+            break
+        try:
+            _cand = _fn()
+        except Exception:
+            # Un detector que revienta no puede llevarse la pantalla por delante: se
+            # descarta ese candidato y la competición sigue. Antes, con la cascada,
+            # una excepción aquí subía hasta el llamador.
+            continue
+        if not _cand:
+            continue
+        _c = _cand.get("confianza")
+        _c = float(_c) if isinstance(_c, (int, float)) else _prior
+        _c = max(0.0, min(_c, _techo))       # nadie puede reclamar más que su techo
+        _cand["confianza"] = round(_c, 3)
+        _cand["detector"] = _nombre
+        if _c > _mejor:                       # `>` estricto: a igualdad gana el de antes,
+            _mejor, pattern = _c, _cand       # que es el orden de la cascada original
+
+    # El megáfono aporta sus dos rectas al dibujo, pero solo si es el que gana.
+    if pattern is not None and pattern.get("detector") == "megafono":
+        trendlines.extend(pattern.pop("trendlines", []))
 
     # Patrón de VELAS reciente (independiente del patrón chartista de estructura).
     candlestick = _detect_candlesticks(candles)

@@ -53,6 +53,7 @@ import levels_engine
 import estado_accion
 import veto_compra
 import vigilancia_veto
+import patrones_registro
 import auth
 
 ROOT_DIR = Path(__file__).parent
@@ -336,6 +337,11 @@ async def lifespan(app: FastAPI):
     # Único: armar dos veces la misma acción daría dos avisos idénticos. El endpoint ya lo
     # comprueba, pero entre la comprobación y el insert cabe una segunda petición.
     await db.vigilancia_veto.create_index("symbol", unique=True)
+    # Se consulta por (símbolo, temporalidad, tipo, estado) al comprobar si ese patrón
+    # ya está anotado, y el pre-cálculo lo hace por cada acción y cada temporalidad en
+    # cada vuelta. Sin índice serían cinco barridos completos por acción.
+    await db.patrones_detectados.create_index(
+        [("symbol", 1), ("timeframe", 1), ("tipo", 1), ("estado", 1)])
     await db.alerts.create_index("symbol")
     # Libro de operaciones: todo se consulta por símbolo y se ordena por fecha.
     await db.isin_map.create_index("isin", unique=True)
@@ -657,6 +663,7 @@ async def lifespan(app: FastAPI):
                             continue  # ya está fresco en caché
                         try:
                             result = await chartist.analyze(sym, free_only=True)
+                            await _anotar_patrones(sym, _extraer_fichas(result))
                             _cache.set(f"chartist:{sym}", result, ttl=CHARTIST_TTL)
                             await _chartist_vigilante(sym, result)  # #1 avisa si cambia algo
                             logger.info("Chartista pre-calculado para %s (gratis)", sym)
@@ -1389,6 +1396,7 @@ async def chartist_verdict(symbol: str, refresh: bool = False, cached_only: bool
     if result is None:
         try:
             result = await chartist.analyze(sym)
+            await _anotar_patrones(sym, _extraer_fichas(result))
         except RuntimeError as e:
             raise HTTPException(422, str(e))
         except Exception as e:
@@ -4091,6 +4099,69 @@ async def remove_watchlist(symbol: str, _user: str = Depends(auth.get_current_us
         raise HTTPException(404, "No encontrado")
     _cache._store.pop("watchlist_with_quotes", None)
     return {"deleted": symbol.upper()}
+
+
+# ---------- Rendimiento de los detectores de patrones ----------
+#
+# `chart_lines` tiene diecinueve detectores y hasta ahora NADIE medía si acertaban: el
+# orden en que se prefieren unos a otros era una creencia razonable sin un dato detrás.
+# Esto recoge cada patrón detectado y, cuando pasa el tiempo, comprueba lo único que el
+# propio patrón prometió: si llegó a su objetivo antes de perder su invalidación.
+
+
+
+def _extraer_fichas(result: dict) -> list:
+    """Saca las anotaciones de patrón del veredicto y lo deja limpio para servir.
+
+    Muta `result` a propósito: es el mismo objeto que se va a cachear y a devolver al
+    navegador, y la ficha no pinta nada allí. Devolverla por separado deja claro quién
+    se hace cargo de ella — el servidor, que es el único con base de datos.
+    """
+    fichas = []
+    for s in (result or {}).get("snapshots") or []:
+        f = s.pop("_ficha_patron", None) if isinstance(s, dict) else None
+        if f:
+            fichas.append(f)
+    return fichas
+
+
+async def _anotar_patrones(sym: str, fichas: list) -> None:
+    """Guarda las fichas que trae el Chartista. Best-effort y en silencio.
+
+    Se ignora el símbolo+temporalidad+tipo que ya esté PENDIENTE: el pre-cálculo pasa
+    por las mismas acciones cada pocas horas y sin esto la colección tendría una fila
+    por vuelta del mismo patrón, lo que inflaría el porcentaje de acierto del detector
+    más madrugador en vez de medir nada.
+    """
+    try:
+        for f in fichas or []:
+            ya = await db.patrones_detectados.find_one(
+                {"symbol": f["symbol"], "timeframe": f["timeframe"],
+                 "tipo": f["tipo"], "estado": "pendiente"})
+            if ya:
+                continue
+            await db.patrones_detectados.insert_one(dict(f))
+    except Exception as e:
+        logger.warning("No se pudieron anotar los patrones de %s: %s", sym, str(e)[:120])
+
+
+@api_router.get("/patrones/rendimiento")
+async def rendimiento_patrones(_user: str = Depends(auth.get_current_user)):
+    """Qué detector acierta y cuál no. La respuesta a «¿cuál de los diecinueve sirve?».
+
+    Devuelve también `listos_para_decidir`: si NINGÚN detector llega a la muestra
+    mínima, cualquier reordenación de los priors de `chart_lines` seguiría siendo una
+    opinión, solo que con una tabla al lado. El campo existe para que eso se vea antes
+    de tocar nada.
+    """
+    regs = await db.patrones_detectados.find({}, {"_id": 0}).to_list(5000)
+    filas = patrones_registro.rendimiento(regs)
+    return {
+        "detectores": filas,
+        "total": len(regs),
+        "muestra_minima": patrones_registro.MUESTRA_MINIMA,
+        "listos_para_decidir": any(f["suficiente"] for f in filas),
+    }
 
 
 # ---------- Vigilancia de acciones vetadas ----------

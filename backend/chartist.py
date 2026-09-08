@@ -14,6 +14,7 @@ import json
 
 import market_data
 import chart_lines
+import patrones_registro
 import knowledge_base
 import ai_analysis
 import levels_engine
@@ -109,7 +110,14 @@ def _tf_snapshot(sym: str, tf: str) -> dict | None:
         return {
             "timeframe": tf,
             "precio": round(float(px), 2) if px is not None else None,
-            "patron_candidato_algoritmo": {"nombre": pat.get("nombre"), "sentido": pat.get("sentido")} if pat else None,
+            # Viaja con la CONFIANZA: hasta ahora el modelo recibía un nombre a secas y
+            # no tenía forma de saber si venía de una taza de manual o de un megáfono
+            # aceptado por descarte. El prompt le dice que el algoritmo se equivoca a
+            # menudo, pero no CUÁNDO; esta cifra es esa diferencia.
+            "patron_candidato_algoritmo": {
+                "nombre": pat.get("nombre"), "sentido": pat.get("sentido"),
+                "confianza": pat.get("confianza"), "detector": pat.get("detector"),
+            } if pat else None,
             "vela": {"nombre": cs.get("nombre"), "sentido": cs.get("sentido")} if cs else None,
             "resistencia": res.get("price") if res else None,
             "soporte": sop.get("price") if sop else None,
@@ -119,6 +127,11 @@ def _tf_snapshot(sym: str, tf: str) -> dict | None:
             "nivel_patron": niv_patron,
             "directrices": tls,
             "forma_precio_0a100": _silhouette(closes),
+            # Anotación para el registro de aciertos. Viaja con guion bajo porque NO va
+            # al modelo: se la queda el servidor, que es quien tiene base de datos. Sin
+            # esto no hay forma de saber, dentro de tres meses, qué detector acierta —
+            # y los priors de `chart_lines` seguirían siendo una creencia.
+            "_ficha_patron": patrones_registro.ficha(pat, sym, tf, px) if pat else None,
         }
     except Exception:
         return None
@@ -226,10 +239,16 @@ async def analyze(symbol: str, free_only: bool = False) -> dict:
     if not brain.strip():
         brain = "(sin principios específicos; usa tu criterio técnico estándar)"
 
+    # Al modelo se le manda la radiografía SIN las claves internas. `_ficha_patron` es
+    # contabilidad para el registro de aciertos: no dice nada del gráfico, y mandarla
+    # gastaría tokens en cada llamada por cada temporalidad para que el modelo lea una
+    # anotación de base de datos. El guion bajo marca eso y aquí se respeta.
+    snaps_modelo = [{k: v for k, v in s.items() if not k.startswith("_")} for s in snaps]
+
     user_msg = _PROMPT.format(
         symbol=sym,
         zonas=json.dumps(zonas, ensure_ascii=False, indent=2) if zonas else "(sin zonas de confluencia; usa soportes diarios/semanales)",
-        snapshots=json.dumps(snaps, ensure_ascii=False, indent=2),
+        snapshots=json.dumps(snaps_modelo, ensure_ascii=False, indent=2),
         brain=brain,
     )
     system_prompt = "Eres un analista técnico senior, honesto y didáctico. Respondes SOLO con JSON válido."
