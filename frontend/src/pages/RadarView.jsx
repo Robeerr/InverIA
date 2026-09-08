@@ -102,12 +102,12 @@ export default function RadarView({ setSymbol }) {
             </p>
           </div>
           <button onClick={load} disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-iv border border-neutral-200 dark:border-neutral-700 text-sm hover:bg-neutral-50 transition-colors disabled:opacity-50">
+            className="flex items-center gap-1.5 px-3 py-2 rounded-iv border border-linea text-sm hover:bg-superficie-alt transition-colors disabled:opacity-50">
             <ArrowClockwise size={14} className={loading ? "animate-spin" : ""} /> Refrescar
           </button>
         </div>
 
-        <div className="flex items-center gap-1 mt-4 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-iv p-1 w-fit">
+        <div className="flex items-center gap-1 mt-4 bg-white bg-superficie border border-linea rounded-iv p-1 w-fit">
           <button onClick={() => setTab("acciones")}
             className={`px-4 py-2 rounded-iv text-sm font-medium ${tab === "acciones" ? "bg-marca text-marca-tinta" : "text-tinta-3"}`}>
             Acciones ({acciones.length})

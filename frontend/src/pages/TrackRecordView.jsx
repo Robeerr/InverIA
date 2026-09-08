@@ -42,13 +42,13 @@ export default function TrackRecordView() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <ChartLineUp size={22} weight="bold" className="text-marca shrink-0" />
-          <div className="min-w-0">
-            <h1 className="font-heading font-bold text-lg text-tinta leading-tight">Track record del sistema</h1>
-            <p className="text-etiqueta text-tinta-3">¿Funcionan las señales de COMPRA del motor? Sin autoengaño.</p>
-          </div>
+      <div className="iv-veredicto flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <p className="iv-etiqueta tracking-[0.16em] text-tinta-3 mb-1">Histórico</p>
+          <h1 className="iv-verbo text-tinta">Track record</h1>
+          <p className="text-cuerpo text-tinta-2 mt-3 max-w-[58ch]">
+            ¿Funcionan las señales de COMPRA del motor? Sin autoengaño.
+          </p>
         </div>
         <button onClick={() => load(days, true)} className="shrink-0 p-2 rounded-iv border border-linea text-marca" title="Recargar (datos frescos)">
           <ArrowClockwise size={16} weight="bold" className={loading ? "animate-spin" : ""} />

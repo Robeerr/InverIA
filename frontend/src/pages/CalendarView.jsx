@@ -63,14 +63,12 @@ export default function CalendarView({ setSymbol }) {
   return (
     <div data-testid="calendar-view" className="space-y-6">
       <section className="iv-panel p-6">
-        <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <CalendarBlank size={20} weight="bold" className="text-marca" />
-              <h2 className="font-heading font-bold text-2xl text-tinta">Calendario de Resultados</h2>
-            </div>
-            <p className="text-sm text-tinta-3 mt-1">
-              Próximos earnings de tus acciones en Señales.
+        <div className="iv-veredicto flex items-end justify-between flex-wrap gap-3 mb-6">
+          <div className="min-w-0">
+            <p className="iv-etiqueta tracking-[0.16em] text-tinta-3 mb-1">Agenda</p>
+            <h2 className="iv-verbo text-tinta">Calendario de resultados</h2>
+            <p className="text-cuerpo text-tinta-2 mt-3 max-w-[58ch]">
+              Próximos earnings de las acciones que tienes en Cartera.
             </p>
           </div>
           <button onClick={() => setRefreshN((n) => n + 1)} title="Recargar (datos frescos)"

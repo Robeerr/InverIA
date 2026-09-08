@@ -398,14 +398,12 @@ export default function OpportunitiesView({ setSymbol }) {
       {/* ============ SIGNALS MODE ============ */}
       {mode === "signals" && (
         <>
-          <section className="iv-panel p-6">
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <Lightning size={20} weight="fill" className="text-aviso" />
-                  <h2 className="font-heading font-bold text-2xl text-tinta">Oportunidades del Día</h2>
-                </div>
-                <p className="text-sm text-tinta-3">
+          <section className="iv-veredicto mb-8">
+            <div className="flex items-end justify-between flex-wrap gap-3">
+              <div className="min-w-0">
+                <p className="iv-etiqueta tracking-[0.16em] text-tinta-3 mb-1">Radar</p>
+                <h2 className="iv-verbo text-tinta">Oportunidades del día</h2>
+                <p className="text-cuerpo text-tinta-2 mt-3 max-w-[58ch]">
                   Escaneo de {data?.universe_size || 30} acciones · Detecta sobrecompras, caídas fuertes, momentum y breakouts.
                 </p>
               </div>
@@ -502,14 +500,12 @@ export default function OpportunitiesView({ setSymbol }) {
       {/* ============ SCREENER MODE ============ */}
       {mode === "screener" && (
         <>
-          <section className="iv-panel p-6">
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <Funnel size={20} weight="fill" className="text-marca" />
-                  <h2 className="font-heading font-bold text-2xl text-tinta">Screener de Crecimiento</h2>
-                </div>
-                <p className="text-sm text-tinta-3">
+          <section className="iv-veredicto mb-8">
+            <div className="flex items-end justify-between flex-wrap gap-3">
+              <div className="min-w-0">
+                <p className="iv-etiqueta tracking-[0.16em] text-tinta-3 mb-1">Radar</p>
+                <h2 className="iv-verbo text-tinta">Screener de crecimiento</h2>
+                <p className="text-cuerpo text-tinta-2 mt-3 max-w-[58ch]">
                   {screener?.universe_size || 120} acciones del mercado, ordenadas por <span className="font-semibold text-marca">potencial</span> (crecimiento + valoración + punto de entrada).
                 </p>
               </div>
@@ -620,14 +616,13 @@ export default function OpportunitiesView({ setSymbol }) {
       {/* ============ MOVERS MODE ============ */}
       {mode === "movers" && (
         <>
-          <section className="iv-panel p-6">
-            <div className="flex items-center justify-between flex-wrap gap-3">
+          <section className="iv-veredicto mb-8">
+            <div className="flex items-end justify-between flex-wrap gap-3">
               <div>
                 <div className="flex items-center gap-2 mb-1">
-                  <Fire size={20} weight="fill" className="text-baja" />
-                  <h2 className="font-heading font-bold text-2xl text-tinta">Movers del Mercado</h2>
+                  <h2 className="iv-verbo text-tinta">Movers del mercado</h2>
                 </div>
-                <p className="text-sm text-tinta-3">Mayores subidas, bajadas y más negociadas del mercado US hoy.</p>
+                <p className="text-cuerpo text-tinta-2 mt-3 max-w-[58ch]">Mayores subidas, bajadas y más negociadas del mercado US hoy.</p>
               </div>
               <Button onClick={loadMovers} disabled={moversLoading} variant="outline" className="border-linea font-mono text-xs">
                 <ArrowClockwise size={14} weight="bold" className="mr-1" />

@@ -102,11 +102,16 @@ export default function TelegramConnectView() {
     <div className="max-w-lg mx-auto space-y-4">
       <div className="flex items-center gap-2">
         {/* EXCEPCIÓN DE MARCA · #229ED9 es el azul de Telegram, no un color de
-            InverIA. Se queda fijo en los dos temas, igual que el morado #7c5cbf
-            del gráfico: un logo que cambia de color con el tema deja de ser el
-            logo. Tampoco lo toca el parche `!important`, y así debe seguir.
-            Contraste comprobado como elemento gráfico (umbral 3:1): 3,02:1
-            sobre el blanco de claro y 4,81:1 sobre el #1e2c28 de oscuro. */}
+            InverIA. Se queda fijo en los dos temas porque un logo que cambia de
+            color con el tema deja de ser el logo. Es, con el rojo de YouTube en
+            BrainView, uno de los DOS únicos hex que sobreviven fuera de la paleta
+            de sectores — y los dos por el mismo motivo: identifican un servicio
+            ajeno, no un papel dentro de InverIA.
+
+            Contraste como elemento gráfico (umbral 3:1): 3,02:1 sobre el blanco de
+            claro y 5,90:1 sobre la superficie oscura. La cifra de oscuro subió al
+            bajar el fondo a verde-negro; la de claro no se mueve y sigue siendo la
+            justa, así que el logo no debe encogerse por debajo de 24 px. */}
         <TelegramLogo size={24} weight="fill" className="text-[#229ED9]" />
         <div>
           <h1 className="font-heading font-bold text-lg text-tinta leading-tight">Conectar Telegram</h1>

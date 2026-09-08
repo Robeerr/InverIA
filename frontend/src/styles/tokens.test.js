@@ -44,9 +44,13 @@ function ratio(a, b) {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
+// Cualquier token que acabe pintando TEXTO entra aquí. Añadir uno a tokens.css y
+// olvidarse de esta lista deja el color sin verificar y el fichero afirmando una
+// garantía que nadie comprueba — que es exactamente como `--iv-alerta` llegó a
+// escribirse a mano en #e08a3c con 2,67:1 sobre blanco.
 const ROLES_TEXTO = [
   "--iv-tinta", "--iv-tinta-2", "--iv-tinta-3",
-  "--iv-sube", "--iv-baja", "--iv-aviso", "--iv-info", "--iv-marca",
+  "--iv-sube", "--iv-baja", "--iv-aviso", "--iv-alerta", "--iv-info", "--iv-marca",
 ];
 const SUPERFICIES = ["--iv-fondo", "--iv-superficie", "--iv-superficie-2"];
 

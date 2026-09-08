@@ -80,6 +80,10 @@
     --iv-sube:            42 100  64;   /* #2a6440 */
     --iv-baja:           176  62  38;   /* #b03e26 */
     --iv-aviso:          122  90  18;   /* #7a5a12 · bronce */
+    --iv-alerta:         154  74  16;   /* #9a4a10 · naranja quemado, 6,25:1 sobre blanco.
+                                           Cuarto peldaño del termómetro: entre `baja` y
+                                           `aviso`. Sin él, los tramos 25-45 y 45-55 salían
+                                           del mismo color y la escala perdía resolución. */
     --iv-info:            24  98 138;   /* #18628a */
     --iv-neutro:          88 103  97;   /* #586761 */
 
@@ -133,6 +137,7 @@
     --iv-sube:            91 183 124;   /* #5bb77c */
     --iv-baja:           224 122  95;   /* #e07a5f */
     --iv-aviso:          217 164  65;   /* #d9a441 */
+    --iv-alerta:         232 148  90;   /* #e8945a · 6,75:1 sobre la superficie alterna */
     --iv-info:           127 178 217;   /* #7fb2d9 */
     --iv-neutro:         138 154 147;   /* #8a9a93 */
 
@@ -175,6 +180,7 @@
     --iv-sube: 91 183 124;
     --iv-baja: 224 122  95;
     --iv-aviso: 217 164  65;
+    --iv-alerta: 232 148  90;
     --iv-info: 127 178 217;
     --iv-neutro: 138 154 147;
     --iv-foco: 201 179 126;

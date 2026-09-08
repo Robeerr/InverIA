@@ -57,6 +57,7 @@ module.exports = {
         sube: 'rgb(var(--iv-sube) / <alpha-value>)',
         baja: 'rgb(var(--iv-baja) / <alpha-value>)',
         aviso: 'rgb(var(--iv-aviso) / <alpha-value>)',
+        alerta: 'rgb(var(--iv-alerta) / <alpha-value>)',
         info: 'rgb(var(--iv-info) / <alpha-value>)',
         neutro: 'rgb(var(--iv-neutro) / <alpha-value>)',
 

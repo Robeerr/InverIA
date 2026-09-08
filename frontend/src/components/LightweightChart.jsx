@@ -200,10 +200,12 @@ export default function LightweightChart({ candles, buyLevels, lines, timeframe,
         if (t.includes("resist") || t.includes("buy")) return leerToken("--iv-baja");
         if (t.includes("sop")) return leerToken("--iv-sube");
         if (t.includes("base")) return leerToken("--iv-tinta-3");
-        // Sin token: la paleta no tiene morado. El arco de la taza necesita un color
-        // que no choque con objetivo (info), invalidacion (baja) ni soporte (sube), y
-        // añadir un token nuevo es una decision de diseño, no una migracion de color.
-        if (t.includes("arco") || t.includes("taza")) return "#7c5cbf";
+        // El arco de la taza necesita un color que no choque con objetivo (info),
+        // invalidacion (baja) ni soporte (sube). Estaba en un morado escrito a mano
+        // porque la paleta no tenia ninguno libre; ahora usa el champan de marca, que
+        // en el grafico no lo reclama ninguna otra linea y ademas es el unico color
+        // que dice «esto lo ha encontrado InverIA» en vez de nombrar un nivel.
+        if (t.includes("arco") || t.includes("taza")) return leerToken("--iv-marca");
         return pd.sentido === "bajista" ? leerToken("--iv-baja")
           : pd.sentido === "alcista" ? leerToken("--iv-sube") : leerToken("--iv-tinta-3");
       };

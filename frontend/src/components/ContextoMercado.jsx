@@ -42,13 +42,14 @@ export function MarketFuturesBar({ futures }) {
 export function FearGreedBar({ data }) {
   if (!data || data.score == null) return null;
   const s = data.score;
-  // La escala tiene CUATRO peldaños y la paleta semántica solo tres colores, así que
-  // el naranja intermedio se queda como está: colapsarlo en `aviso` dejaría los tramos
-  // 25-45 y 45-55 del mismo color y el termómetro perdería un peldaño de resolución.
-  // Es una excepción anotada, no un descuido — y arrastra un defecto PREEXISTENTE:
-  // #e08a3c da 2,67:1 sobre el blanco de claro, por debajo del 4,5:1 que necesita un
-  // texto. Se arregla con un token propio, que no toca crear en esta tanda.
-  const color = s < 25 ? "rgb(var(--iv-baja))" : s < 45 ? "#e08a3c"
+  // La escala tiene CUATRO peldaños y la paleta semántica tenía tres colores, así que
+  // el naranja intermedio estaba escrito a mano en #e08a3c. Colapsarlo en `aviso`
+  // habría dejado los tramos 25-45 y 45-55 del mismo color, perdiendo un peldaño de
+  // resolución; dejarlo a mano arrastraba un defecto real: 2,67:1 sobre el blanco de
+  // claro, por debajo del 4,5:1 que necesita un texto. Ahora ese peldaño EXISTE como
+  // token —`--iv-alerta`, 6,25:1 en claro y 6,75:1 en oscuro— y el termómetro conserva
+  // sus cuatro tramos sin excepciones escritas a mano.
+  const color = s < 25 ? "rgb(var(--iv-baja))" : s < 45 ? "rgb(var(--iv-alerta))"
     : s <= 55 ? "rgb(var(--iv-aviso))" : "rgb(var(--iv-sube))";
   return (
     <div className="iv-panel px-4 py-2.5 flex items-center gap-3 flex-wrap">
