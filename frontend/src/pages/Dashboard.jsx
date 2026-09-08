@@ -468,6 +468,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
           estado={estado}
           motivo={estadoMotivo}
           soportes={analysis?.key_levels?.support}
+          symbol={symbol}
         />
       ) : (
         <TradingLevels

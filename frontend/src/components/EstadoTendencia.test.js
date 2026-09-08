@@ -74,3 +74,36 @@ describe("el dashboard elige uno u otro", () => {
     expect(DASH_COD).toContain("res.zonas_ocultas_por_tendencia");
   });
 });
+
+describe("el veto ofrece una salida donde de verdad se lee", () => {
+  // El aviso existía solo en el panel del Chartista, y ese panel NO aparece hasta que
+  // se pulsa «Ampliar con IA». Así que en el caso normal —abres una acción vetada sin
+  // gastar una llamada de IA— el veto se leía sin ninguna salida. Justo lo contrario
+  // de lo que la vigilancia venía a resolver.
+
+  test("el botón vive en el panel que dice «No comprar»", () => {
+    expect(PANEL_COD).toContain("vigilar-veto-estado");
+    expect(PANEL_COD).toContain("vigilanciaVeto.armar");
+  });
+
+  test("el dashboard le pasa el símbolo", () => {
+    // Sin `symbol` el botón no se pinta: no habría nada que vigilar. Es un fallo mudo,
+    // así que se ata aquí y no se descubre abriendo una acción bajista.
+    const uso = DASH_COD.slice(DASH_COD.indexOf("<EstadoTendencia"));
+    expect(uso.slice(0, 260)).toContain("symbol={symbol}");
+  });
+
+  test("«ya no hay veto» no se pinta como un error", () => {
+    // Es una BUENA noticia: la acción se giró a favor mientras la mirabas.
+    const cuerpo = PANEL_COD.slice(PANEL_COD.indexOf("async function vigilar"));
+    const rama = cuerpo.slice(cuerpo.indexOf('detail?.error === "sin_veto_que_levantar"'));
+    expect(rama.slice(0, rama.indexOf("const msg"))).not.toContain("toast.error");
+  });
+
+  test("el panel sigue sin decidir el veto por su cuenta", () => {
+    // Mismo contrato que antes: aquí se PIDE el aviso; quién puede comprar lo decide
+    // `tendencia.py`, y el momento de levantarlo, `vigilancia_veto.py`.
+    expect(PANEL_COD).not.toContain("sma200");
+    expect(PANEL_COD).not.toContain("ALCISTA");
+  });
+});
