@@ -818,10 +818,22 @@ def _validar_caja_darvas(t, techo, closes, highs, lows, volumes, n):
         "ruptura": ({"index": int(brk), "price": round(float(closes[brk]), 2)} if brk is not None else None),
     }
 
+    # ── Confianza ───────────────────────────────────────────────────────────────
+    # Una base plana vale por lo ESTRECHA que es: cuanto menos profunda, menos dudas
+    # tuvo el precio mientras consolidaba. Es al reves que en la taza, donde la
+    # profundidad es la forma; aqui la profundidad es ruido.
+    _cf = 0.68
+    _cf += 0.12 * (1.0 - min(1.0, depth / 0.15)) if depth is not None else 0.0
+    # Toques: cada vez que el precio respeta el techo o el suelo, confirma la caja.
+    _cf += 0.06 * min(1.0, max(0.0, (min(len(toques_techo), len(toques_suelo)) - 2) / 2.0))
+    # Y la ruptura, que es lo que convierte una caja en una entrada.
+    _cf += 0.06 if brk is not None else 0.0
+
     return {
         "tipo": "base_plana",
         "nombre": "Base plana / Caja de Darvas",
         "sentido": "alcista",
+        "confianza": round(min(_cf, 0.90), 3),
         "descripcion": ("Rectángulo horizontal de consolidación (caja de Darvas) tras un avance alcista: "
                         "techo y suelo planos y paralelos, profundidad %.0f%%, %d velas. Patrón de "
                         "CONTINUACIÓN alcista; se compra en la ruptura del techo con volumen. %s%s"
@@ -2849,14 +2861,26 @@ def _detect_island(highs, lows, closes, atr):
                 continue
             if not techo and trend > -0.08:
                 continue
+            # ── Confianza ───────────────────────────────────────────────────
+            # Una isla la definen sus DOS huecos: cuanto mas grandes, mas limpia la
+            # separacion y menos discutible el patron. `gmin` es el minimo para que
+            # un hueco cuente, asi que se mide contra el. Dos restas: no recalcula
+            # nada, usa maximos y minimos que ya estan leidos.
+            _g2 = (lows[last - 1] - highs[last]) if techo else (lows[last] - highs[last - 1])
+            _g1 = (lows[first] - highs[first - 1]) if techo else (highs[first - 1] - lows[first])
+            _cf = 0.70
+            _cf += 0.10 * min(1.0, max(0.0, (_g2 / gmin - 1.0) / 2.0)) if gmin else 0.0
+            _cf += 0.08 * min(1.0, max(0.0, (_g1 / gmin - 1.0) / 2.0)) if gmin else 0.0
             r = lambda x: round(float(x), 2)
             isla = [{"index": int(i), "price": r(closes[i])} for i in range(first, last)]
             if techo:
                 return {"tipo": "isla_techo", "nombre": "Isla de vuelta (techo)", "sentido": "bajista",
+                        "confianza": round(min(_cf, 0.92), 3),
                         "descripcion": ("Grupo de velas aislado por dos huecos opuestos tras una subida: "
                                         "reversión BAJISTA potente. Confirma el hueco de ruptura a la baja."),
                         "puntos": isla}
             return {"tipo": "isla_suelo", "nombre": "Isla de vuelta (suelo)", "sentido": "alcista",
+                    "confianza": round(min(_cf, 0.92), 3),
                     "descripcion": ("Grupo de velas aislado por dos huecos opuestos tras una caída: "
                                     "reversión ALCISTA potente. Confirma el hueco de ruptura al alza."),
                     "puntos": isla}
@@ -2927,7 +2951,15 @@ def _detect_three_rising(highs, lows, closes):
                 and reciente and cur <= res_now * 1.01):
             r = lambda x: round(float(x), 2)
             pts = [{"index": int(p), "price": r(highs[p]), "punto": f"P{k+1}"} for k, p in enumerate((p1, p2, p3))]
+            # ── Confianza ───────────────────────────────────────────────────────
+            # Margen deliberadamente CORTO (0.55-0.62). Este detector solo mira tres
+            # swings y su propio comentario lo llama debil; distinguir una instancia
+            # limpia de una regular esta bien, pero dejarle adelantar a un triangulo
+            # riguroso seria confundir «encaja bien» con «es fiable». El techo mide el
+            # rigor del DETECTOR; la confianza, lo bien que encaja ESA figura.
+            _cf = 0.55 + 0.07 * min(1.0, (min(s1, s2) - 0.02) / 0.06)
             return {"tipo": "tres_picos", "nombre": "Tres picos descendentes", "sentido": "bajista",
+                    "confianza": round(min(max(_cf, 0.55), 0.62), 3),
                     "descripcion": ("Tres máximos consecutivos cada vez más bajos: la presión vendedora "
                                     "domina. Sesgo BAJISTA; pérdida del último valle lo confirma."),
                     "puntos": pts,
@@ -2962,13 +2994,23 @@ def _detect_pipe(highs, lows, closes, lookback: int = 52):
     trend = (closes[i] - pre[0]) / (abs(pre[0]) or 1)
     r = lambda x: round(float(x), 2)
     pts = [{"index": int(i), "price": r(lows[i])}, {"index": int(j), "price": r(lows[j])}]
+    # ── Confianza ───────────────────────────────────────────────────────────────
+    # Un pipe son dos velas GEMELAS: lo que lo define es cuanto se solapan. El filtro
+    # exige un 50%; dos velas identicas dan 100%. Y la tendencia previa, que es lo que
+    # convierte un par de velas largas en una REVERSION: el minimo es 8%.
+    _sol = overlap / min(rng_i, rng_j) if min(rng_i, rng_j) else 0.5
+    _cf = 0.68 + 0.12 * min(1.0, max(0.0, (_sol - 0.50) / 0.50))
+    _cf += 0.06 * min(1.0, max(0.0, (abs(trend) - 0.08) / 0.17))
+
     if trend < -0.08:                                # bajada previa → pipe bottom (alcista)
         return {"tipo": "pipe_bottom", "nombre": "Pipe bottom (suelo en tubo)", "sentido": "alcista",
+                "confianza": round(min(_cf, 0.90), 3),
                 "descripcion": ("Dos velas gemelas de rango muy largo tras una caída: suelo de reversión "
                                 "ALCISTA (Bulkowski). Compra sobre el máximo de las dos velas."),
                 "puntos": pts}
     if trend > 0.08:                                 # subida previa → pipe top (bajista)
         return {"tipo": "pipe_top", "nombre": "Pipe top (techo en tubo)", "sentido": "bajista",
+                "confianza": round(min(_cf, 0.90), 3),
                 "descripcion": ("Dos velas gemelas de rango muy largo tras una subida: techo de reversión "
                                 "BAJISTA (Bulkowski). Vende bajo el mínimo de las dos velas."),
                 "puntos": [{"index": int(i), "price": r(highs[i])}, {"index": int(j), "price": r(highs[j])}]}
@@ -3031,8 +3073,18 @@ def _detect_diamond(highs, lows, closes):
                 {"index": int(B[0] + off), "price": r(B[2]), "punto": "B"},
                 {"index": int(idxs[-1] + off), "price": r(seq[-1][2]), "punto": "R"}]
     sentido = "bajista" if up else "alcista"
+    # ── Confianza ───────────────────────────────────────────────────────────────
+    # Un diamante es ensanchamiento y DESPUES contraccion. Lo que lo distingue de un
+    # simple lateral es cuanto se abre y cuanto se cierra: si el centro apenas supera
+    # los extremos, el rombo esta ahi pero no dice gran cosa. Las tres amplitudes ya
+    # estan calculadas para aceptar el patron.
+    _cf = 0.68
+    if spread_c > 0:
+        _cf += 0.08 * min(1.0, max(0.0, (spread_c / spread_L - 1.0) / 0.6)) if spread_L else 0.0
+        _cf += 0.08 * min(1.0, max(0.0, (spread_c / spread_R - 1.0) / 0.6)) if spread_R else 0.0
     return {"tipo": "diamante", "nombre": "Diamante " + ("de techo" if up else "de suelo"),
             "sentido": sentido,
+            "confianza": round(min(_cf, 0.87), 3),
             "descripcion": ("Rombo: primero la volatilidad se ensancha (diverge) y luego se contrae "
                             "(converge). Reversión " + ("BAJISTA tras subida" if up else "ALCISTA tras caída") +
                             "; la ruptura de la directriz de la fase de contracción confirma."),
@@ -3098,7 +3150,15 @@ def _detect_cup_no_handle(closes, highs=None, lows=None):
     gi = lambda k: int(k + off)
     pivote = rim
     objetivo = pivote + depth_abs
+    # ── Confianza ───────────────────────────────────────────────────────────────
+    # La misma vara que la taza CON asa, para que las dos sean comparables: cercania
+    # al 22% de profundidad de O'Neil. Arranca mas bajo (0.68 frente a 0.70) porque
+    # sin asa falta la consolidacion que confirma que la oferta se ha secado — es una
+    # taza mas, no una taza mejor.
+    _prof = depth_abs / rim if rim else 0.22
+    _cf = 0.68 + 0.14 * (1.0 - min(1.0, abs(_prof - 0.22) / 0.22))
     return {"tipo": "taza_sin_asa", "nombre": "Taza sin asa", "sentido": "alcista",
+            "confianza": round(min(_cf, 0.86), 3),
             "descripcion": ("Fondo redondeado en 'U' con bordes al mismo nivel tras una subida previa, que "
                             "rompe la resistencia %.2f SIN consolidación (asa). Continuación alcista; objetivo "
                             "%.2f (pivote + profundidad)." % (round(pivote, 2), round(objetivo, 2))),
@@ -3293,20 +3353,33 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
         # (nombre,          detector,                                                    prior, techo)
         ("doble",        lambda: _detect_double(highs, lows, closes),                     0.90, 0.94),
         ("triple",       lambda: _detect_triple_top_bottom(highs, lows, closes),          0.89, 0.94),
-        ("isla",         lambda: _detect_island(highs, lows, closes, _atr14v),            0.88, 0.88),
-        ("pipe",         lambda: _detect_pipe(highs, lows, closes),                       0.87, 0.87),
+        ("isla",         lambda: _detect_island(highs, lows, closes, _atr14v),            0.88, 0.92),
+        ("pipe",         lambda: _detect_pipe(highs, lows, closes),                       0.87, 0.90),
         ("bandera",      lambda: _detect_flag_pennant(highs, lows, closes, volumes),      0.86, 0.90),
         ("taza_asa",     lambda: _detect_cup_handle(closes, highs, lows, volumes),        0.85, 0.98),
-        ("taza_sin_asa", lambda: _detect_cup_no_handle(closes, highs, lows),              0.84, 0.84),
-        ("base_plana",   lambda: _detect_flat_base(closes, highs, lows, volumes),         0.83, 0.83),
+        ("taza_sin_asa", lambda: _detect_cup_no_handle(closes, highs, lows),              0.84, 0.86),
+        ("base_plana",   lambda: _detect_flat_base(closes, highs, lows, volumes),         0.83, 0.90),
         ("hch",          lambda: _detect_head_shoulders(highs, lows, closes, price_range),0.82, 0.96),
-        ("diamante",     lambda: _detect_diamond(highs, lows, closes),                    0.81, 0.81),
+        ("diamante",     lambda: _detect_diamond(highs, lows, closes),                    0.81, 0.87),
         ("redondeado",   lambda: _detect_rounding(highs, lows, closes),                   0.80, 0.88),
         ("cuna",         lambda: _detect_wedge(highs, lows, closes),                      0.79, 0.93),
         ("triangulo",    lambda: _detect_triangles(highs, lows, closes),                  0.78, 0.92),
         ("canal",        lambda: _detect_channel(highs, lows, closes),                    0.77, 0.91),
         ("rectangulo",   lambda: _detect_rectangle(highs, lows, closes, volumes),         0.76, 0.88),
-        ("tres_valles",  lambda: _detect_three_rising(highs, lows, closes),               0.55, 0.55),
+        ("tres_valles",  lambda: _detect_three_rising(highs, lows, closes),               0.55, 0.62),
+        # ── Los tres ultimos NO se puntuan, y es una decision, no un olvido ──────
+        #
+        # Son los de ULTIMO RECURSO: solo llegan a evaluarse cuando ninguna estructura
+        # ha encajado. `directriz` es la logica laxa de directrices, `megafono` esta
+        # documentado como «patron a evitar» y `hueco` es informativo.
+        #
+        # Puntuarlos no cambiaria ninguna decision: van al final de la tabla, asi que
+        # una nota alta solo podria reordenarlos ENTRE ELLOS, y ese orden ya esta dado.
+        # Lo unico que anadiria es una cifra de confianza sobre un hallazgo que existe
+        # justamente porque no habia nada mejor — y eso confundiria «encaja bien» con
+        # «es fiable», que es la distincion que toda esta tabla existe para mantener.
+        #
+        # El techo igual al prior lo dice: estos no prometen medirse.
         ("directriz",    lambda: _detect_pattern(trendlines, levels, closes, current_price), 0.45, 0.45),
         ("megafono",     lambda: _detect_broadening(highs, lows, closes),                 0.35, 0.35),
         ("hueco",        lambda: _detect_gap(highs, lows, closes, volumes, _atr14v),      0.25, 0.25),

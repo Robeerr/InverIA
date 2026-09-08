@@ -197,14 +197,33 @@ def test_los_detectores_que_dicen_puntuarse_lo_hacen():
     assert not incumplen, f"prometen puntuarse y no lo hacen: {incumplen}"
 
 
-def test_la_migracion_avanza_pero_no_se_da_por_terminada():
-    """Los que aún no se puntúan usan su prior y el resultado es el de la cascada
-    antigua, así que NO es un fallo — es trabajo pendiente. Este test fija cuántos van
-    para que quede a la vista, y falla si alguien retira uno ya migrado.
+def test_la_migracion_esta_completa_salvo_los_de_ultimo_recurso():
+    """Los dieciséis detectores con estructura se puntúan. Los tres que no —directriz,
+    megáfono y hueco— NO se puntúan a propósito, y esa decisión también se ata aquí.
+
+    Puntuarlos no cambiaría ninguna decisión: van al final de la tabla, así que una
+    nota alta solo podría reordenarlos entre ellos, y ese orden ya está dado. Lo único
+    que añadiría es una cifra de confianza sobre un hallazgo que existe justamente
+    porque no había nada mejor — confundiendo «encaja bien» con «es fiable».
     """
     migrados = [n for n, prior, techo in _candidatos() if techo > prior]
-    assert len(migrados) >= 10, f"solo {len(migrados)} se puntúan: {migrados}"
-    # Los que más disparan y los que van primero en la cola: son los que más cambian
-    # el resultado, porque hoy ganan los empates.
-    for imprescindible in ("doble", "triple", "bandera", "taza_asa", "hch"):
-        assert imprescindible in migrados
+    sin_migrar = [n for n, prior, techo in _candidatos() if techo == prior]
+    assert len(migrados) == 16, f"{len(migrados)} puntúan: {migrados}"
+    assert sin_migrar == ["directriz", "megafono", "hueco"], sin_migrar
+
+
+def test_el_techo_mide_el_RIGOR_no_la_belleza_de_la_figura():
+    """La distinción que sostiene toda la tabla: el `techo` dice cuánto se puede fiar
+    uno de ESE DETECTOR; la `confianza`, lo bien que encaja ESA figura concreta.
+
+    Por eso `tres_valles` —tres swings, su propio código lo llama débil— tiene un
+    margen corto: una instancia limpia merece distinguirse de una regular, pero no
+    adelantar a un triángulo riguroso. Sin esta regla, la competición premiaría al
+    detector más laxo, porque es el que más fácil encuentra figuras «perfectas».
+    """
+    por = {n: (prior, techo) for n, prior, techo in _candidatos()}
+    prior_debil, techo_debil = por["tres_valles"]
+    assert techo_debil - prior_debil <= 0.10, "un detector débil no puede ganar tanto margen"
+    # Y no puede alcanzar a los rigurosos por muy bien que encaje su figura.
+    for riguroso in ("doble", "triple", "hch", "taza_asa", "cuna", "triangulo"):
+        assert techo_debil < por[riguroso][0], f"tres_valles podría adelantar a {riguroso}"
