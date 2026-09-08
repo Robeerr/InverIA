@@ -103,8 +103,23 @@ function Chip({ children, tono: t = "neutro", title }) {
 // cifra, y de paso funciona con teclado.
 function Kpi({ etiqueta, significa, valor, sub, acento = false, ayuda }) {
   const [abierta, setAbierta] = React.useState(false);
+  /* Filete superior de color. Va por el SIGNO del número, no por el concepto: un
+     latente de −1.630 € es rojo aunque «latente» no sea nada malo, y unos costes de
+     −476 € también. Es la misma lectura que ya hace el color de la cifra, subida al
+     borde para que la fila entera se lea de un vistazo sin leer un solo número.
+
+     La excepción es el KPI marcado con `acento`, que va en champán. Hoy es REALIZADO,
+     y no por casualidad: es la única cifra de esta fila que responde a «cuánto ha
+     entrado de verdad en mi cuenta al cerrar posiciones». Las demás son contexto —lo
+     latente aún puede evaporarse— así que la que manda se distingue por color en vez
+     de por estar la primera, que no lo dice.
+
+     Si algún día el acento se mueve a otro KPI, este comentario se mueve con él. */
+  const filete = acento ? "border-t-marca"
+    : valor == null ? "border-t-linea"
+    : valor > 0 ? "border-t-sube" : valor < 0 ? "border-t-baja" : "border-t-linea-fuerte";
   return (
-    <div className="iv-panel px-4 py-3 flex-1 min-w-[150px]">
+    <div className={`iv-panel border-t-2 ${filete} px-4 py-3 flex-1 min-w-[150px]`}>
       <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono flex items-center gap-1">
         {etiqueta}
         {ayuda && (
