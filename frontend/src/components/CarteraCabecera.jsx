@@ -11,14 +11,22 @@ import { fmtEur, fmtPct } from "../lib/format";
    el segundo, así que para saber cuánto tienes invertido había que sumar mentalmente
    una tabla pensada para otra cosa.
 
-   TRES CIFRAS DEL DISEÑO PEDIDO NO ESTÁN AQUÍ, Y ES A PROPÓSITO
+   LA EVOLUCIÓN Y LA SALUD YA EXISTEN, PERO NO COMO SE PIDIERON
 
-     · La barra de patrimonio MES A MES. No hay histórico del valor de la cartera:
-       nadie lo ha guardado nunca. Dibujarla exigiría inventarse doce meses.
-     · «Salud de cartera: 78/100». Es un número compuesto que no existe, y componerlo
-       aquí sería decidir en secreto cuánto pesa la concentración frente a la
-       volatilidad. Se sustituye por las tres señales que el backend SÍ calcula.
-     · «Volatilidad: Baja» y «Liquidez: Alta». Ninguna de las dos se mide hoy.
+   Las dos hacían falta y ninguna se podía dibujar: no había serie que graficar ni
+   índice que componer. Ahora `cartera_historico` guarda una foto diaria y calcula el
+   índice, así que las dos son reales — con dos diferencias respecto del diseño:
+
+     · La evolución EMPIEZA HOY. Nadie guardó nunca el valor de la cartera, así que
+       la serie arranca vacía y se llena a un punto por día. Dibujar doce meses habría
+       exigido inventárselos.
+     · El índice se puede ABRIR. Un «78/100» que no se desglosa es una métrica
+       inventada con otro nombre: nadie sabría si baja por concentración o por
+       estructura. Cada componente enseña su nota, su peso APLICADO y su porqué.
+
+   Y falta una que sigue sin poderse medir: la LIQUIDEZ. Necesita el saldo en
+   efectivo, y hoy eso solo entra pegado a mano en el extracto de margen — no es un
+   dato que el sistema tenga, es uno que el usuario escribe a veces.
 
    Lo demás del diseño está entero y sale de datos reales. */
 
@@ -74,6 +82,23 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
     staleTime: 60_000,
     retry: false,
   });
+  const { data: hist } = useQuery({
+    queryKey: ["cartera-historico"],
+    queryFn: () => api.cartera.historico(),
+    staleTime: 300_000,
+    retry: false,
+  });
+  // La salud cuesta una lectura de histórico por posición (la misma que paga el veto),
+  // así que se pide una vez y se guarda diez minutos. No se recalcula al repintar.
+  const { data: saludResp } = useQuery({
+    queryKey: ["cartera-salud"],
+    queryFn: () => api.cartera.salud(),
+    staleTime: 600_000,
+    retry: false,
+  });
+  const [abierta, setAbierta] = React.useState(false);
+  const salud = saludResp?.salud;
+  const serieHist = hist?.serie || [];
 
   const posiciones = React.useMemo(() => {
     const porSymbol = new Map(
@@ -119,8 +144,6 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
   }, [posiciones, totalValor]);
 
   const concentracion = sectores[0]?.pct ?? 0;
-  const sinValorar = resumen?.posiciones_sin_valorar ?? 0;
-  const divisasMezcladas = !!resumen?.divisas_mezcladas;
 
   return (
     <>
@@ -175,6 +198,30 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
           <p className={`text-apoyo mt-2 ${latente > 0 ? "text-sube" : latente < 0 ? "text-baja" : "text-tinta-3"}`}>
             {latente !== null ? `${fmtEur(latente)} · ${fmtPct(latentePct)} latente` : "—"}
           </p>
+          {/* Evolución. Barras y no una línea: la serie es DIARIA y con pocos puntos
+              una línea insinúa una continuidad entre días que no se ha medido. */}
+          {serieHist.length >= 2 ? (
+            <div className="mt-3 flex items-end gap-[2px] h-10" aria-hidden="true">
+              {serieHist.slice(-40).map((d, i, arr) => {
+                const vs = arr.map((x) => x.valor_eur);
+                const lo = Math.min(...vs), hi = Math.max(...vs);
+                const alto = hi > lo ? 15 + ((d.valor_eur - lo) / (hi - lo)) * 85 : 60;
+                return (
+                  <span key={d.dia} title={`${d.dia}: ${fmtEur(d.valor_eur).replace("+", "")}`}
+                        className="flex-1 min-w-[3px]"
+                        style={{ height: `${alto}%`,
+                                 background: i === arr.length - 1
+                                   ? "rgb(var(--iv-sube))" : "rgb(var(--iv-marca) / 0.55)" }} />
+                );
+              })}
+            </div>
+          ) : (
+            <p className="mt-3 text-etiqueta text-tinta-3 leading-relaxed">
+              La evolución empieza a dibujarse hoy: se guarda una foto por día tras el
+              cierre. {serieHist.length === 1 ? "Ya hay 1 día." : "Todavía no hay ninguna."}
+            </p>
+          )}
+
           <div className="mt-3 pt-3 border-t border-linea space-y-1.5">
             <div className="flex justify-between text-apoyo">
               <span className="text-tinta-3">Valor de mercado</span>
@@ -189,36 +236,64 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
           </div>
         </div>
 
-        {/* Señales de salud · SOLO las que el backend calcula de verdad */}
+        {/* Índice de salud · SIEMPRE con sus componentes detrás */}
         <div className="iv-panel p-4">
-          <p className="iv-etiqueta mb-3">Señales de la cartera</p>
-          <div className="space-y-3">
-            <div>
-              <div className="flex justify-between items-baseline text-apoyo mb-1.5">
-                <span className="text-tinta-3">Concentración</span>
-                <span className={`iv-cifra ${concentracion > 40 ? "text-baja"
-                  : concentracion > 30 ? "text-aviso" : "text-sube"}`}>
-                  {concentracion.toFixed(0)} %
-                </span>
-              </div>
-              <Barra pct={concentracion} ancho="w-full"
-                     color={concentracion > 40 ? "rgb(var(--iv-baja))"
-                       : concentracion > 30 ? "rgb(var(--iv-aviso))" : "rgb(var(--iv-sube))"} />
-              <p className="text-etiqueta text-tinta-3 mt-1">
-                {sectores[0]?.nombre || "—"}, tu sector mayor
-              </p>
-            </div>
-            <div className="flex justify-between items-baseline text-apoyo">
-              <span className="text-tinta-3">Posiciones sin valorar</span>
-              <span className={`iv-cifra ${sinValorar > 0 ? "text-aviso" : "text-sube"}`}>{sinValorar}</span>
-            </div>
-            <div className="flex justify-between items-baseline text-apoyo">
-              <span className="text-tinta-3">Divisas</span>
-              <span className={`iv-cifra ${divisasMezcladas ? "text-aviso" : "text-sube"}`}>
-                {divisasMezcladas ? "mezcladas" : "una sola"}
-              </span>
-            </div>
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <p className="iv-etiqueta">Salud de cartera</p>
+            {salud?.etiqueta && (
+              <span className="iv-etiqueta border border-linea-fuerte px-2 py-0.5">{salud.etiqueta}</span>
+            )}
           </div>
+          {salud?.puntuacion == null ? (
+            <p className="text-apoyo text-tinta-3">
+              Todavía no hay nada que medir: hacen falta posiciones valoradas.
+            </p>
+          ) : (
+            <>
+              <div className="flex items-baseline gap-2">
+                <span className="font-heading text-tinta" style={{ fontSize: 38, lineHeight: 1 }}>
+                  {salud.puntuacion}
+                </span>
+                <span className="iv-etiqueta text-tinta-3">/ 100</span>
+              </div>
+              {/* El número SIEMPRE se puede abrir. Un compuesto que no se desglosa es
+                  una métrica inventada con otro nombre: nadie sabría si baja por
+                  concentración o por estructura. */}
+              <button onClick={() => setAbierta((v) => !v)}
+                      aria-expanded={abierta}
+                      className="mt-2 text-etiqueta text-marca hover:underline flex items-center gap-1">
+                {abierta ? "Ocultar" : "De dónde sale"}
+                <CaretRight size={10} className={abierta ? "rotate-90 transition-transform" : "transition-transform"} />
+              </button>
+              <div className={`mt-3 space-y-2.5 ${abierta ? "" : "hidden"}`}>
+                {(salud.componentes || []).map((c) => (
+                  <div key={c.clave}>
+                    <div className="flex justify-between items-baseline text-apoyo gap-2">
+                      <span className={c.medible ? "text-tinta-2" : "text-tinta-3"}>
+                        {c.nombre}
+                        <span className="iv-etiqueta ml-1.5 text-linea-fuerte">{c.peso_efectivo || 0} %</span>
+                      </span>
+                      <span className={`iv-cifra shrink-0 ${!c.medible ? "text-tinta-3" : ""}`}>
+                        {c.medible ? `${Math.round(c.valor)} ${c.unidad}` : "sin medir"}
+                      </span>
+                    </div>
+                    {c.medible && (
+                      <Barra pct={c.nota} ancho="w-full"
+                             color={c.nota >= 70 ? "rgb(var(--iv-sube))"
+                               : c.nota >= 40 ? "rgb(var(--iv-aviso))" : "rgb(var(--iv-baja))"} />
+                    )}
+                    <p className="text-etiqueta text-tinta-3 mt-1 leading-snug">{c.explica}</p>
+                  </div>
+                ))}
+                {salud.medidos < salud.de && (
+                  <p className="text-etiqueta text-tinta-3 border-t border-linea pt-2">
+                    Se han podido medir {salud.medidos} de {salud.de}. Lo que no se mide no
+                    puntúa cero: sale del reparto, y los pesos de arriba son los aplicados.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Distribución por VALOR */}

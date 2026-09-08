@@ -142,6 +142,9 @@ export const api = {
   // DERIVAN de estos apuntes; no hay ningún saldo que actualizar por separado.
   cartera: {
     resumen: () => client.get(`/cartera/resumen`).then((r) => r.data),
+    historico: () => client.get(`/cartera/historico`).then((r) => r.data),
+    salud: () => client.get(`/cartera/salud`, { timeout: 45000 }).then((r) => r.data),
+    guardarFotoHoy: () => client.post(`/cartera/historico/ahora`).then((r) => r.data),
     // Cuánto RIESGO de cartera retira vender un valor. No es el margen libre de DEGIRO:
     // sin la categoría A-D del instrumento ni el efectivo de la cuenta, eso no se puede
     // calcular. Devuelve una clase (ALTO/MEDIO/BAJO) y el desglose que la produce.

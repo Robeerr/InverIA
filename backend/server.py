@@ -54,6 +54,7 @@ import estado_accion
 import veto_compra
 import vigilancia_veto
 import patrones_registro
+import cartera_historico
 import auth
 
 ROOT_DIR = Path(__file__).parent
@@ -340,6 +341,7 @@ async def lifespan(app: FastAPI):
     # Se consulta por (símbolo, temporalidad, tipo, estado) al comprobar si ese patrón
     # ya está anotado, y el pre-cálculo lo hace por cada acción y cada temporalidad en
     # cada vuelta. Sin índice serían cinco barridos completos por acción.
+    await db.cartera_historico.create_index("dia", unique=True)
     await db.patrones_detectados.create_index(
         [("symbol", 1), ("timeframe", 1), ("tipo", 1), ("estado", 1)])
     await db.alerts.create_index("symbol")
@@ -732,6 +734,39 @@ async def lifespan(app: FastAPI):
             await asyncio.sleep(VIGILANCIA_VETO_CADENCIA)
 
     asyncio.create_task(_vigilar_vetadas())
+
+    # FOTO DIARIA DE LA CARTERA. Es lo que convierte «cuánto vale hoy» en una serie:
+    # sin ella no hay grafico de evolucion ni volatilidad, y las dos cosas necesitan
+    # que alguien empiece a escribir.
+    #
+    # Se guarda TRAS EL CIERRE de Nueva York (22:00 UTC) porque una foto de media
+    # sesion mide el humor de la mañana, no el dia. Y se reescribe si ya habia una:
+    # la de las 22:00 vale mas que la de las 14:00.
+    #
+    # No cuesta cuota: los precios salen de `last_price`, que el worker de senales ya
+    # escribe en la base de datos cada 60 s.
+    async def _foto_diaria_cartera():
+        await asyncio.sleep(300)          # deja respirar el arranque
+        while True:
+            try:
+                ahora = datetime.now(timezone.utc)
+                if ahora.weekday() < 5 and ahora.hour >= 22:
+                    hoy = ahora.date().isoformat()
+                    ya = await db.cartera_historico.find_one({"dia": hoy}, {"_id": 0, "dia": 1})
+                    if not ya:
+                        snap = await _guardar_snapshot_cartera()
+                        if snap:
+                            logger.info("Foto de cartera %s: %.2f EUR en %d posiciones",
+                                        snap["dia"], snap["valor_eur"], snap["posiciones"])
+                # Purga: dos años bastan para cualquier gráfico de la pantalla.
+                if ahora.hour == 22:
+                    corte = (ahora.date() - timedelta(days=cartera_historico.DIAS_MAXIMOS)).isoformat()
+                    await db.cartera_historico.delete_many({"dia": {"$lt": corte}})
+            except Exception as e:
+                logger.warning("Bucle de la foto diaria: %s", str(e)[:150])
+            await asyncio.sleep(1800)     # media hora: la ventana de las 22h no se escapa
+
+    asyncio.create_task(_foto_diaria_cartera())
 
     # Trimmer periódico: devuelve al SO la memoria libre que glibc retiene tras los jobs
     # pesados (pandas). Coste ínfimo (1 vez cada 10 min) y evita que la RSS se quede en el
@@ -4099,6 +4134,126 @@ async def remove_watchlist(symbol: str, _user: str = Depends(auth.get_current_us
         raise HTTPException(404, "No encontrado")
     _cache._store.pop("watchlist_with_quotes", None)
     return {"deleted": symbol.upper()}
+
+
+# ---------- Histórico de la cartera y salud ----------
+#
+# Hasta hoy InverIA sabía cuánto vale tu cartera AHORA y nada más: nadie guardaba esa
+# cifra, así que no se podía dibujar su evolución ni medir su volatilidad. El bucle de
+# abajo empieza a escribir esa serie. Los primeros gráficos saldrán vacíos, y eso es
+# lo correcto: es lo que pasa cuando se empieza a medir algo.
+
+
+async def _guardar_snapshot_cartera() -> Optional[dict]:
+    """Escribe la foto de hoy. Un registro por día: si ya está, se actualiza.
+
+    Se sobrescribe en vez de saltarse porque la foto de las 22:00 vale más que la de
+    las 14:00 —el mercado ya ha cerrado— y porque un reinicio a media tarde no debe
+    dejar el día congelado en el valor de la mañana.
+    """
+    try:
+        precios = {}
+        for e in await signal_table.list_entries(db):
+            if e.get("symbol") and e.get("last_price") is not None:
+                precios[e["symbol"].upper()] = e["last_price"]
+        resumen = await cartera_api.resumen_cartera(db, precios)
+        pos = [p for p in (resumen.get("posiciones") or []) if p.get("valor_eur")]
+        valor = sum(p["valor_eur"] for p in pos)
+        snap = cartera_historico.snapshot(
+            valor_eur=valor,
+            invertido_eur=resumen.get("invertido_eur") or 0,
+            realizado_eur=resumen.get("realizado_eur") or 0,
+            posiciones=len(pos))
+        if not snap:
+            return None
+        await db.cartera_historico.update_one({"dia": snap["dia"]}, {"$set": snap}, upsert=True)
+        return snap
+    except Exception as e:
+        logger.warning("No se pudo guardar el histórico de la cartera: %s", str(e)[:150])
+        return None
+
+
+async def _salud_de_la_cartera() -> dict:
+    """El índice, con sus componentes. Nunca un número suelto.
+
+    La ESTRUCTURA —qué parte del dinero NO está en tendencia bajista— cuesta una
+    lectura de histórico por posición. Es la misma que paga el veto y va sobre datos
+    gratuitos y cacheados, pero con la cartera entera son varias, así que este cálculo
+    NO se hace en cada pintada: lo pide la pantalla de Cartera y poco más.
+    """
+    precios = {}
+    for e in await signal_table.list_entries(db):
+        if e.get("symbol") and e.get("last_price") is not None:
+            precios[e["symbol"].upper()] = e["last_price"]
+    resumen = await cartera_api.resumen_cartera(db, precios)
+    pos = [p for p in (resumen.get("posiciones") or []) if p.get("valor_eur")]
+    total = sum(p["valor_eur"] for p in pos)
+
+    sector_de = {}
+    for e in await signal_table.list_entries(db):
+        if e.get("symbol"):
+            sector_de[e["symbol"].upper()] = e.get("sector") or "Otros"
+
+    conc_sector = conc_posicion = pct_estructura = None
+    if total > 0:
+        por_sector = {}
+        for p in pos:
+            s = sector_de.get((p.get("symbol") or "").upper(), "Otros")
+            por_sector[s] = por_sector.get(s, 0) + p["valor_eur"]
+        conc_sector = max(por_sector.values()) / total * 100
+        conc_posicion = max(p["valor_eur"] for p in pos) / total * 100
+        # Estructura: se suma el valor de lo que NO está bajista. Un símbolo cuya
+        # tendencia no se puede comprobar NO cuenta como sano ni como enfermo — se
+        # queda fuera del numerador y del denominador, que es lo único honesto.
+        sano = comprobado = 0.0
+        for p in pos:
+            sym = (p.get("symbol") or "").upper()
+            try:
+                t = await asyncio.to_thread(market_data.tendencia_de, sym)
+            except Exception:
+                continue
+            # `no_verificable` ya contesta esto y es su dueño: cubre el SIN_DATOS, el
+            # None y cualquier etiqueta que nadie haya mapeado. Repetir la comprobación
+            # aquí sería una segunda implementación de una regla que ya tiene sitio.
+            if veto_compra.no_verificable(t):
+                continue
+            comprobado += p["valor_eur"]
+            if t != "BAJISTA":
+                sano += p["valor_eur"]
+        if comprobado > 0:
+            pct_estructura = sano / comprobado * 100
+
+    snaps = await db.cartera_historico.find({}, {"_id": 0}).sort("dia", 1).to_list(
+        cartera_historico.DIAS_MAXIMOS)
+    vol = cartera_historico.volatilidad_anualizada(snaps)
+    salud = cartera_historico.indice_salud(conc_sector, conc_posicion, pct_estructura, vol)
+    return {"salud": salud, "dias_de_historico": len(snaps),
+            "minimo_para_volatilidad": cartera_historico.MINIMO_PARA_VOLATILIDAD}
+
+
+@api_router.get("/cartera/historico")
+async def historico_cartera(_user: str = Depends(auth.get_current_user)):
+    """La serie diaria del valor de la cartera, para dibujarla."""
+    snaps = await db.cartera_historico.find({}, {"_id": 0}).sort("dia", 1).to_list(
+        cartera_historico.DIAS_MAXIMOS)
+    serie = cartera_historico.serie(snaps)
+    return {"serie": serie, "dias": len(serie),
+            "minimo_para_volatilidad": cartera_historico.MINIMO_PARA_VOLATILIDAD}
+
+
+@api_router.get("/cartera/salud")
+async def salud_cartera(_user: str = Depends(auth.get_current_user)):
+    return await _salud_de_la_cartera()
+
+
+@api_router.post("/cartera/historico/ahora")
+async def guardar_snapshot_ahora(_user: str = Depends(auth.get_current_user)):
+    """Fuerza la foto de hoy sin esperar al bucle. Útil el primer día, para no tener
+    que esperar a las 22:00 UTC para ver el primer punto."""
+    snap = await _guardar_snapshot_cartera()
+    if not snap:
+        raise HTTPException(409, "No hay posiciones valoradas todavía: no hay foto que guardar.")
+    return snap
 
 
 # ---------- Rendimiento de los detectores de patrones ----------
