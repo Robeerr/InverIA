@@ -1,6 +1,7 @@
 import React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, CaretRight, Warning } from "@phosphor-icons/react";
+import { toast } from "sonner";
 import { api } from "../lib/api";
 import { fmtEur, fmtPct } from "../lib/format";
 
@@ -96,7 +97,30 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
     staleTime: 600_000,
     retry: false,
   });
+  const qc = useQueryClient();
   const [abierta, setAbierta] = React.useState(false);
+  const [guardando, setGuardando] = React.useState(false);
+
+  /* Guardar la foto a mano. El bucle del servidor la escribe tras el cierre de Nueva
+     York (22:00 UTC), asi que el primer dia habria que esperar a la noche para ver un
+     solo punto. Esto NO es una via paralela: llama al MISMO endpoint que el bucle y
+     escribe el mismo registro del mismo dia, asi que pulsarlo dos veces no duplica
+     nada — sobrescribe. */
+  async function guardarFoto() {
+    if (guardando) return;
+    setGuardando(true);
+    try {
+      const snap = await api.cartera.guardarFotoHoy();
+      qc.invalidateQueries({ queryKey: ["cartera-historico"] });
+      qc.invalidateQueries({ queryKey: ["cartera-salud"] });
+      toast.success(`Foto de ${snap.dia} guardada: ${fmtEur(snap.valor_eur).replace("+", "")}`);
+    } catch (e) {
+      const d = e?.response?.data?.detail;
+      toast.error(typeof d === "string" ? d : "No se pudo guardar la foto de hoy");
+    } finally {
+      setGuardando(false);
+    }
+  }
   const salud = saludResp?.salud;
   const serieHist = hist?.serie || [];
 
@@ -216,10 +240,16 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
               })}
             </div>
           ) : (
-            <p className="mt-3 text-etiqueta text-tinta-3 leading-relaxed">
-              La evolución empieza a dibujarse hoy: se guarda una foto por día tras el
-              cierre. {serieHist.length === 1 ? "Ya hay 1 día." : "Todavía no hay ninguna."}
-            </p>
+            <div className="mt-3">
+              <p className="text-etiqueta text-tinta-3 leading-relaxed">
+                La evolución empieza a dibujarse hoy: se guarda una foto por día tras el
+                cierre. {serieHist.length === 1 ? "Ya hay 1 día." : "Todavía no hay ninguna."}
+              </p>
+              <button onClick={guardarFoto} disabled={guardando}
+                      className="mt-2 px-2.5 py-1 border border-linea-fuerte text-etiqueta hover:border-marca hover:text-marca transition-colors disabled:opacity-50">
+                {guardando ? "Guardando…" : "Guardar la foto de hoy"}
+              </button>
+            </div>
           )}
 
           <div className="mt-3 pt-3 border-t border-linea space-y-1.5">
