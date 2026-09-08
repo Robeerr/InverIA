@@ -1,5 +1,6 @@
 import React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { ArrowUpRight, CaretRight, Warning } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
@@ -66,10 +67,16 @@ function estadoDe(entrada, precio) {
 
 const RIESGO_TONO = { BAJO: "text-sube", MEDIO: "text-aviso", ALTO: "text-baja" };
 
-/** Barra de peso: la misma pieza para la tabla y para la distribución. */
+/** Barra de peso: la misma pieza para la tabla y para la distribución.
+ *
+ * La PISTA va en `bg-linea` y no en `bg-superficie-alt`: sobre el panel apenas se
+ * distinguían, así que una nota de 0 —concentración alta, por ejemplo— salía como un
+ * hueco y se leía como un fallo de dibujo en vez de como un cero. Con la pista
+ * visible, vacío significa vacío.
+ */
 function Barra({ pct, color, ancho = "w-16" }) {
   return (
-    <span className={`inline-block ${ancho} h-1 bg-superficie-alt align-middle overflow-hidden`}>
+    <span className={`inline-block ${ancho} h-1 bg-linea align-middle overflow-hidden`}>
       <span className="block h-full" style={{ width: `${Math.min(100, Math.max(0, pct))}%`,
                                               background: color || "rgb(var(--iv-marca))" }} />
     </span>
@@ -98,8 +105,12 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
     retry: false,
   });
   const qc = useQueryClient();
+  const navegar = useNavigate();
   const [abierta, setAbierta] = React.useState(false);
   const [guardando, setGuardando] = React.useState(false);
+  const [busca, setBusca] = React.useState("");
+  const [riesgoFiltro, setRiesgoFiltro] = React.useState("Todas");
+  const [rango, setRango] = React.useState("Todo");
 
   /* Guardar la foto a mano. El servidor ya la escribe solo al arrancar y cada media
      hora, asi que esto es para cuando NO quieres esperar: acabas de comprar y quieres
@@ -123,7 +134,16 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
     }
   }
   const salud = saludResp?.salud;
-  const serieHist = hist?.serie || [];
+  /* Rango del gráfico. Los días son de MERCADO, no naturales: la serie solo guarda
+     días de bolsa, así que «1M» son 22 puntos y no 30. Contar naturales dejaría un
+     mes corto de cinco sesiones. */
+  const DIAS = { "1M": 22, "3M": 66, "1A": 252, Todo: Infinity };
+  const serieCompleta = hist?.serie || [];
+  const serieHist = React.useMemo(() => {
+    const n = DIAS[rango] ?? Infinity;
+    return n === Infinity ? serieCompleta : serieCompleta.slice(-n);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serieCompleta, rango]);
 
   const posiciones = React.useMemo(() => {
     const porSymbol = new Map(
@@ -169,6 +189,18 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
   }, [posiciones, totalValor]);
 
   const concentracion = sectores[0]?.pct ?? 0;
+
+  /* Lo que se pinta en la tabla tras buscador y filtro. Los totales de arriba
+     —patrimonio, distribución, concentración— siguen saliendo de TODAS las
+     posiciones: filtrar la vista no cambia lo que tienes. */
+  const visibles = React.useMemo(() => {
+    const q = busca.trim().toLowerCase();
+    return posiciones.filter((p) => {
+      if (riesgoFiltro !== "Todas" && p.riesgo !== riesgoFiltro) return false;
+      if (!q) return true;
+      return `${p.symbol} ${p.nombre}`.toLowerCase().includes(q);
+    });
+  }, [posiciones, busca, riesgoFiltro]);
 
   return (
     <>
@@ -217,8 +249,15 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
         {/* Patrimonio */}
         <div className="iv-panel p-4">
           <p className="iv-etiqueta mb-3">Patrimonio invertido</p>
+          {/* Los céntimos, más pequeños. En una cifra que se lee de un vistazo los
+              dos últimos dígitos son ruido: ocupan el mismo espacio visual que los
+              miles y no cambian ninguna decisión. */}
           <p className="iv-cifra text-tinta" style={{ fontSize: 30, lineHeight: 1 }}>
-            {invertido !== null ? fmtEur(invertido).replace("+", "") : "—"}
+            {invertido === null ? "—" : (() => {
+              const t = fmtEur(invertido).replace("+", "");
+              const i = t.lastIndexOf(",");
+              return i < 0 ? t : (<>{t.slice(0, i)}<span style={{ fontSize: 19 }}>{t.slice(i)}</span></>);
+            })()}
           </p>
           <p className={`text-apoyo mt-2 ${latente > 0 ? "text-sube" : latente < 0 ? "text-baja" : "text-tinta-3"}`}>
             {latente !== null ? `${fmtEur(latente)} · ${fmtPct(latentePct)} latente` : "—"}
@@ -226,6 +265,7 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
           {/* Evolución. Barras y no una línea: la serie es DIARIA y con pocos puntos
               una línea insinúa una continuidad entre días que no se ha medido. */}
           {serieHist.length >= 2 ? (
+            <>
             <div className="mt-3 flex items-end gap-[2px] h-10" aria-hidden="true">
               {serieHist.slice(-40).map((d, i, arr) => {
                 const vs = arr.map((x) => x.valor_eur);
@@ -240,6 +280,18 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
                 );
               })}
             </div>
+              <div className="flex gap-1 mt-2">
+                {["1M", "3M", "1A", "Todo"].map((r) => (
+                  <button key={r} onClick={() => setRango(r)}
+                          aria-pressed={rango === r}
+                          disabled={serieCompleta.length < 2}
+                          className={`px-2 py-0.5 text-etiqueta transition-colors disabled:opacity-40 ${
+                            rango === r ? "text-marca" : "text-tinta-3 hover:text-tinta"}`}>
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </>
           ) : (
             <div className="mt-3">
               <p className="text-etiqueta text-tinta-3 leading-relaxed">
@@ -294,10 +346,13 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
               <button onClick={() => setAbierta((v) => !v)}
                       aria-expanded={abierta}
                       className="mt-2 text-etiqueta text-marca hover:underline flex items-center gap-1">
-                {abierta ? "Ocultar" : "De dónde sale"}
+                {abierta ? "Ocultar el porqué" : "Qué significa cada uno"}
                 <CaretRight size={10} className={abierta ? "rotate-90 transition-transform" : "transition-transform"} />
               </button>
-              <div className={`mt-3 space-y-2.5 ${abierta ? "" : "hidden"}`}>
+              {/* Los componentes se ven SIEMPRE: un índice cuyo desglose hay que
+                  desplegar sigue siendo un número opaco de un vistazo. Lo que se
+                  pliega es la EXPLICACIÓN de cada uno, que es lo que ocupa. */}
+              <div className="mt-3 space-y-2.5">
                 {(salud.componentes || []).map((c) => (
                   <div key={c.clave}>
                     <div className="flex justify-between items-baseline text-apoyo gap-2">
@@ -314,10 +369,12 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
                              color={c.nota >= 70 ? "rgb(var(--iv-sube))"
                                : c.nota >= 40 ? "rgb(var(--iv-aviso))" : "rgb(var(--iv-baja))"} />
                     )}
-                    <p className="text-etiqueta text-tinta-3 mt-1 leading-snug">{c.explica}</p>
+                    {abierta && (
+                      <p className="text-etiqueta text-tinta-3 mt-1 leading-snug">{c.explica}</p>
+                    )}
                   </div>
                 ))}
-                {salud.medidos < salud.de && (
+                {abierta && salud.medidos < salud.de && (
                   <p className="text-etiqueta text-tinta-3 border-t border-linea pt-2">
                     Se han podido medir {salud.medidos} de {salud.de}. Lo que no se mide no
                     puntúa cero: sale del reparto, y los pesos de arriba son los aplicados.
@@ -379,13 +436,51 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
             Revisa peso, riesgo y estado antes de decidir
           </span>
         </div>
-        {posiciones.length === 0 ? (
+        {/* Buscador y filtro por riesgo. Con once posiciones la tabla ya no se
+            abarca de un vistazo, y el riesgo es el corte que de verdad se usa:
+            «enséñame solo lo que tengo marcado como ALTO». */}
+        {posiciones.length > 3 && (
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+            <input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar activo"
+              aria-label="Buscar activo en tus posiciones"
+              className="px-3 py-1.5 bg-superficie border border-linea text-apoyo w-full sm:w-56 placeholder:text-tinta-3"
+            />
+            <div className="flex gap-1">
+              {["Todas", "BAJO", "MEDIO", "ALTO"].map((r) => (
+                <button key={r} onClick={() => setRiesgoFiltro(r)}
+                        aria-pressed={riesgoFiltro === r}
+                        className={`px-2.5 py-1.5 text-etiqueta border transition-colors ${
+                          riesgoFiltro === r ? "bg-marca text-marca-tinta border-marca"
+                                             : "border-linea text-tinta-3 hover:border-linea-fuerte hover:text-tinta"}`}>
+                  {r === "Todas" ? "Todas" : r.charAt(0) + r.slice(1).toLowerCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {visibles.length === 0 ? (
           <div className="border border-dashed border-linea-fuerte p-8 text-center">
-            <p className="text-cuerpo text-tinta">Todavía no hay posiciones valoradas.</p>
-            <p className="text-apoyo text-tinta-3 mt-1 max-w-[46ch] mx-auto">
-              En cuanto una acción tenga precio de compra y cotización, aparecerá aquí con su
-              peso y su resultado.
-            </p>
+            {posiciones.length === 0 ? (
+              <>
+                <p className="text-cuerpo text-tinta">Todavía no hay posiciones valoradas.</p>
+                <p className="text-apoyo text-tinta-3 mt-1 max-w-[46ch] mx-auto">
+                  En cuanto una acción tenga precio de compra y cotización, aparecerá aquí
+                  con su peso y su resultado.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-cuerpo text-tinta">Ninguna posición encaja con ese filtro.</p>
+                <button onClick={() => { setBusca(""); setRiesgoFiltro("Todas"); }}
+                        className="mt-3 px-3 py-1.5 border border-linea-fuerte text-apoyo hover:border-marca hover:text-marca transition-colors">
+                  Ver todas
+                </button>
+              </>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto border border-linea">
@@ -396,13 +491,16 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
                     <th key={h} className={`px-3 py-2.5 iv-etiqueta bg-superficie-alt border-b border-linea whitespace-nowrap ${
                       i >= 1 && i <= 3 ? "text-right" : "text-left"}`}>{h}</th>
                   ))}
+                  <th className="bg-superficie-alt border-b border-linea w-8" aria-label="Abrir" />
                 </tr>
               </thead>
               <tbody>
-                {posiciones.map((p) => {
+                {visibles.map((p) => {
                   const peso = totalValor ? (p.valor_eur / totalValor) * 100 : 0;
                   return (
-                    <tr key={p.symbol} className="border-b border-linea last:border-b-0 hover:bg-superficie-alt transition-colors">
+                    <tr key={p.symbol}
+                        onClick={() => navegar(`/accion/${p.symbol}`)}
+                        className="group border-b border-linea last:border-b-0 hover:bg-superficie-alt transition-colors cursor-pointer">
                       <td className="px-3 py-3">
                         <span className="font-mono font-semibold text-tinta">{p.symbol}</span>
                         <div className="text-etiqueta text-tinta-3 truncate max-w-[190px]">
@@ -429,6 +527,9 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
                       </td>
                       <td className={`px-3 py-3 whitespace-nowrap ${p.estado.tono}`}>
                         {p.estado.txt}
+                      </td>
+                      <td className="px-2 py-3 text-right">
+                        <CaretRight size={13} className="text-tinta-3 group-hover:text-marca transition-colors" />
                       </td>
                     </tr>
                   );
