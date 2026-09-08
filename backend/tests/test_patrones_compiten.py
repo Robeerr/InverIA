@@ -26,6 +26,7 @@ fiable. Al convertirlo en números, ese conocimiento pasa a los priors — y un 
 mal puesto reordenaría la preferencia sin que nadie lo note. Aquí se ata.
 """
 import os
+import ast
 import re
 import sys
 
@@ -156,3 +157,54 @@ def test_el_patron_elegido_dice_quien_lo_encontro_y_con_cuanta_fe():
     codigo = _fuente()
     assert '_cand["detector"] = _nombre' in codigo
     assert '_cand["confianza"] = round(_c, 3)' in codigo
+
+
+# ── 4 · Cuántos se puntúan de verdad ─────────────────────────────────────────
+
+def test_los_detectores_que_dicen_puntuarse_lo_hacen():
+    """Un `techo` por encima del `prior` es una PROMESA: dice que ese detector sabe
+    medirse. Si la promesa no se cumple, la tabla queda mintiendo —ese detector nunca
+    alcanzará su techo— y nadie se entera, porque el resultado sigue siendo válido.
+
+    Este test YA HA SERVIDO: cazó un canal con techo 0.91 y sin una sola línea de
+    confianza. El cambio se había perdido a medias y el fallo era invisible.
+
+    Se siguen DOS llamadas de profundidad porque varios detectores delegan su `return`
+    en un ayudante, y uno encadena dos: `_detect_double` llama a `_scan_double`, que a
+    su vez construye con `_build_double`, que es donde vive la nota. Mirar solo el
+    cuerpo del primero daría falsos positivos en la mitad de la tabla.
+    """
+    src = _fuente()
+    arbol = ast.parse(src)
+    cuerpos = {n.name: n for n in ast.walk(arbol) if isinstance(n, ast.FunctionDef)}
+
+    def emite_confianza(nombre, profundidad=2):
+        fn = cuerpos.get(nombre)
+        if fn is None:
+            return False
+        for nodo in ast.walk(fn):
+            if isinstance(nodo, ast.Constant) and nodo.value == "confianza":
+                return True
+        if profundidad <= 0:
+            return False
+        llamadas = {n.func.id for n in ast.walk(fn)
+                    if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+        return any(emite_confianza(c, profundidad - 1) for c in llamadas if c in cuerpos)
+
+    por_nombre = dict(re.findall(r'\("(\w+)",\s*lambda: (_detect_\w+)\(', src))
+    incumplen = [n for n, prior, techo in _candidatos()
+                 if techo > prior and not emite_confianza(por_nombre.get(n, ""))]
+    assert not incumplen, f"prometen puntuarse y no lo hacen: {incumplen}"
+
+
+def test_la_migracion_avanza_pero_no_se_da_por_terminada():
+    """Los que aún no se puntúan usan su prior y el resultado es el de la cascada
+    antigua, así que NO es un fallo — es trabajo pendiente. Este test fija cuántos van
+    para que quede a la vista, y falla si alguien retira uno ya migrado.
+    """
+    migrados = [n for n, prior, techo in _candidatos() if techo > prior]
+    assert len(migrados) >= 10, f"solo {len(migrados)} se puntúan: {migrados}"
+    # Los que más disparan y los que van primero en la cola: son los que más cambian
+    # el resultado, porque hoy ganan los empates.
+    for imprescindible in ("doble", "triple", "bandera", "taza_asa", "hch"):
+        assert imprescindible in migrados

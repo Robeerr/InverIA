@@ -1193,8 +1193,26 @@ def _validar_triple(seq, start, lado, highs, lows, closes,
     if not confirmado:
         desc += " Patrón aún PENDIENTE: falta el cierre de ruptura para confirmar."
 
+    # ── Confianza ───────────────────────────────────────────────────────────────
+    # Este detector va SEGUNDO en la competicion, asi que con un prior fijo de 0.89
+    # cualquier triple aceptado por los pelos le ganaba a casi todo lo demas.
+    #
+    # Lo que define el patron es que los tres extremos esten AL MISMO NIVEL. La
+    # tolerancia para aceptarlo es del 3%, pero ese numero se comparaba y se tiraba: un
+    # triple con 2,9% de dispersion valia igual que uno con 0,2%.
+    _disp = max(extremos) / min(extremos) - 1 if min(extremos) else tol_ig
+    _cf = 0.70
+    _cf += 0.12 * (1.0 - min(1.0, _disp / tol_ig)) if tol_ig else 0.0
+    # Y que la neckline sea horizontal de verdad: los dos puntos intermedios al mismo
+    # precio. Es lo que separa un triple de un canal con tres toques.
+    _nk = abs(c1 - c2) / con_media if con_media else tol_nk
+    _cf += 0.06 * (1.0 - min(1.0, _nk / tol_nk)) if tol_nk else 0.0
+    # Sin cierre de ruptura es una forma; confirmado es un patron.
+    _cf += 0.08 if confirmado else 0.0
+
     return {
         "tipo": tipo, "nombre": nombre, "sentido": sentido, "descripcion": desc,
+        "confianza": round(min(_cf, 0.94), 3),
         "confirmado": confirmado, "pivotes": pivotes,
         "lineas": [linea_extremos, linea_neckline], "ruptura": ruptura,
         "objetivo": objetivo, "altura": round(float(H), 2),
@@ -1392,9 +1410,20 @@ def _detect_rectangle(highs, lows, closes, volumes=None):
             "y paralelos (equilibrio). Patrón neutral/bilateral: la ruptura con volumen define el sesgo; "
             "objetivo = altura del rango proyectada. " + desc_rup)
 
+    # ── Confianza ───────────────────────────────────────────────────────────────
+    # Lo que hace bueno a un rectangulo es cuantas veces se ha RESPETADO: dos toques
+    # por lado es lo minimo para trazar las rectas, y con dos cualquier zigzag parece
+    # un rango. A partir de cuatro por lado es un nivel que el mercado esta usando.
+    _cf = 0.66
+    _cf += 0.12 * min(1.0, max(0.0, (min(len(res_touch), len(sup_touch)) - 2) / 2.0))
+    # Una ruptura confirmada convierte el rango en una direccion. Sin ella el patron es
+    # real pero NEUTRAL: describe donde esta el precio, no hacia donde va.
+    _cf += 0.10 if ruptura else 0.0
+
     return {
         "tipo": "rectangulo",
         "nombre": "Rectángulo (rango lateral)", "sentido": sentido, "descripcion": desc,
+        "confianza": round(min(_cf, 0.88), 3),
         "resistencia": round(float(R), 2), "soporte": round(float(S), 2),
         "altura_H": round(float(H), 2), "objetivo": objetivo, "ruptura": ruptura,
         "lineas": [linea_resistencia, linea_soporte],
@@ -2350,8 +2379,23 @@ def _detect_channel(highs, lows, closes, atr14=None):
                 "mínimos decrecientes. Vender en rechazos de la RESISTENCIA; los rebotes no son compras. "
                 "El cierre por encima de la resistencia avisa de giro alcista.")
 
+    # ── Confianza ───────────────────────────────────────────────────────────────
+    # Tres magnitudes que este detector YA calcula para aceptar el canal y despues
+    # tiraba. Lo que faltaba era distinguir el canal que cumple por los pelos del que
+    # se dibuja solo.
+    _cf = 0.68
+    # Ajuste de las dos paralelas. El minimo exigido es 0.90; 1.0 es la recta perfecta.
+    _cf += 0.10 * max(0.0, (min(r2_sup, r2_inf) - 0.90) / 0.10)
+    # Toques: cada vez que el precio respeta una linea, la confirma. Dos por lado es lo
+    # minimo para trazarla; cuatro es un canal que el mercado esta mirando.
+    _cf += 0.08 * min(1.0, max(0.0, (min(len(sup_touch), len(inf_touch)) - 2) / 2.0))
+    # Contencion: que parte de los cierres cae DENTRO del canal. El filtro exige 90%;
+    # un canal con el 99% dentro es otra cosa que uno con el 90% justo.
+    _cf += 0.09 * max(0.0, (inside / total - 0.90) / 0.10) if total else 0.0
+
     return {
         "tipo": tipo, "nombre": nombre, "sentido": sentido, "descripcion": desc,
+        "confianza": round(min(_cf, 0.91), 3),
         "ancho": round(float(mean_w), 2),
         "puntos_dibujo": {"resistencia": puntos_sup, "soporte": puntos_inf},
     }
@@ -2588,8 +2632,26 @@ def _detect_flag_pennant(highs, lows, closes, volumes=None):
     else:
         desc += " Aún sin confirmar: esperar cierre más allá de la recta (>=0.5xATR)."
 
+    # ── Confianza ───────────────────────────────────────────────────────────────
+    # `_score` ya existia y se usaba para elegir ENTRE candidatas, pero no salia de la
+    # funcion: el detector sabia cual era su mejor bandera y no lo buena que era. Se
+    # acota aqui a 0-1 en vez de exponer el bruto, porque `_score` es una suma sin
+    # techo definido y compararla con la confianza de otro detector no significaria
+    # nada. Su rango util va de ~0.6 (pasa por los pelos) a ~2.2 (mastil recto, poco
+    # retroceso, ruptura confirmada y volumen a favor).
+    _cf = 0.68 + 0.22 * min(1.0, max(0.0, (best["_score"] - 0.6) / 1.6))
+    # Sin confirmar es una forma; confirmada es un patron. Vale mas que cualquier matiz
+    # de geometria, igual que en el hombro-cabeza-hombro.
+    if not best["confirmada"]:
+        _cf -= 0.06
+    # `running flag`: la consolidacion se inclina A FAVOR de la tendencia. Vale, pero el
+    # propio texto ya avisa de que es menos fiable, asi que la nota lo dice tambien.
+    if best["running"]:
+        _cf -= 0.05
+
     return {
         "tipo": tipo, "nombre": nombre, "sentido": sentido, "descripcion": desc,
+        "confianza": round(max(0.55, min(_cf, 0.90)), 3),
         "confirmada": best["confirmada"], "retroceso": round(best["retro"], 2),
         "puntos": best["puntos"], "lineas": best["lineas"],
     }
@@ -2726,12 +2788,24 @@ def _detect_rounding(highs, lows, closes):
     r = lambda x: round(float(x), 2)
     arco = {"tipo": "arco", "points": _parabola_arc(
         int(off), C[0], int(off + vi), (min(C) if suelo else max(C)), int(n - 1), C[-1])}
+    # ── Confianza ───────────────────────────────────────────────────────────────
+    # Un redondeado es una parabola, asi que lo bien que encaja ES su R^2 — y ya se
+    # calcula para aceptarlo (minimo 0.85). Distinguir el 0.85 justo del 0.99 es toda
+    # la diferencia entre un platillo de manual y una serie que casualmente curva.
+    _cf = 0.68
+    _cf += 0.14 * max(0.0, (r2 - 0.85) / 0.15)
+    # Profundidad: el filtro rechaza por debajo del 6% por plano. Un giro del 20% sobre
+    # el precio es una reversion de verdad; uno del 7%, un bache con buena forma.
+    _cf += 0.06 * min(1.0, max(0.0, (depth / price - 0.06) / 0.14)) if price else 0.0
+
     if suelo:
         return {"tipo": "suelo_redondeado", "nombre": "Suelo redondeado", "sentido": "alcista",
+                "confianza": round(min(_cf, 0.88), 3),
                 "descripcion": ("Giro suave en 'U' ancha (platillo): reversión ALCISTA de largo plazo. "
                                 "Se compra en la ruptura del nivel del borde con volumen creciente."),
                 "puntos": [arco]}
     return {"tipo": "techo_redondeado", "nombre": "Techo redondeado", "sentido": "bajista",
+            "confianza": round(min(_cf, 0.88), 3),
             "descripcion": ("Giro suave en domo ('n'): reversión BAJISTA de largo plazo. Se vende al "
                             "perder el nivel del borde."),
             "puntos": [arco]}
@@ -3218,20 +3292,20 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
     _CANDIDATOS = [
         # (nombre,          detector,                                                    prior, techo)
         ("doble",        lambda: _detect_double(highs, lows, closes),                     0.90, 0.94),
-        ("triple",       lambda: _detect_triple_top_bottom(highs, lows, closes),          0.89, 0.89),
+        ("triple",       lambda: _detect_triple_top_bottom(highs, lows, closes),          0.89, 0.94),
         ("isla",         lambda: _detect_island(highs, lows, closes, _atr14v),            0.88, 0.88),
         ("pipe",         lambda: _detect_pipe(highs, lows, closes),                       0.87, 0.87),
-        ("bandera",      lambda: _detect_flag_pennant(highs, lows, closes, volumes),      0.86, 0.86),
+        ("bandera",      lambda: _detect_flag_pennant(highs, lows, closes, volumes),      0.86, 0.90),
         ("taza_asa",     lambda: _detect_cup_handle(closes, highs, lows, volumes),        0.85, 0.98),
         ("taza_sin_asa", lambda: _detect_cup_no_handle(closes, highs, lows),              0.84, 0.84),
         ("base_plana",   lambda: _detect_flat_base(closes, highs, lows, volumes),         0.83, 0.83),
         ("hch",          lambda: _detect_head_shoulders(highs, lows, closes, price_range),0.82, 0.96),
         ("diamante",     lambda: _detect_diamond(highs, lows, closes),                    0.81, 0.81),
-        ("redondeado",   lambda: _detect_rounding(highs, lows, closes),                   0.80, 0.80),
+        ("redondeado",   lambda: _detect_rounding(highs, lows, closes),                   0.80, 0.88),
         ("cuna",         lambda: _detect_wedge(highs, lows, closes),                      0.79, 0.93),
         ("triangulo",    lambda: _detect_triangles(highs, lows, closes),                  0.78, 0.92),
-        ("canal",        lambda: _detect_channel(highs, lows, closes),                    0.77, 0.77),
-        ("rectangulo",   lambda: _detect_rectangle(highs, lows, closes, volumes),         0.76, 0.76),
+        ("canal",        lambda: _detect_channel(highs, lows, closes),                    0.77, 0.91),
+        ("rectangulo",   lambda: _detect_rectangle(highs, lows, closes, volumes),         0.76, 0.88),
         ("tres_valles",  lambda: _detect_three_rising(highs, lows, closes),               0.55, 0.55),
         ("directriz",    lambda: _detect_pattern(trendlines, levels, closes, current_price), 0.45, 0.45),
         ("megafono",     lambda: _detect_broadening(highs, lows, closes),                 0.35, 0.35),
