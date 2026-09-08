@@ -739,32 +739,43 @@ async def lifespan(app: FastAPI):
     # sin ella no hay grafico de evolucion ni volatilidad, y las dos cosas necesitan
     # que alguien empiece a escribir.
     #
-    # Se guarda TRAS EL CIERRE de Nueva York (22:00 UTC) porque una foto de media
-    # sesion mide el humor de la mañana, no el dia. Y se reescribe si ya habia una:
-    # la de las 22:00 vale mas que la de las 14:00.
+    # ESCRIBE AL ARRANCAR Y CADA MEDIA HORA, SOBRESCRIBIENDO EL DIA
+    #
+    # Antes solo guardaba a partir de las 22:00 UTC, y eso tenia un problema practico
+    # que pesa mas que su ventaja: el primer dia no habia NADA que ver hasta la noche,
+    # y si el servicio dormia a esa hora —Render apaga los servicios inactivos— el dia
+    # se perdia entero.
+    #
+    # Escribiendo siempre y sobrescribiendo por `dia`, la ULTIMA foto del dia es la que
+    # queda, asi que el valor guardado sigue siendo el mas cercano al cierre que se ha
+    # podido tomar. Se pierde la garantia de que sea EXACTAMENTE el cierre; se gana que
+    # haya dato todos los dias. Con una serie diaria, tener el punto importa mas que
+    # tenerlo a la hora exacta.
+    #
+    # SOLO DIAS DE MERCADO, y no es una manía: la volatilidad se anualiza con raiz de
+    # 252 —dias de bolsa—. Guardar sabados y domingos meteria en la serie retornos cero
+    # que no son calma del mercado sino ausencia de mercado, y el resultado saldria
+    # sistematicamente por debajo de la volatilidad real.
     #
     # No cuesta cuota: los precios salen de `last_price`, que el worker de senales ya
     # escribe en la base de datos cada 60 s.
     async def _foto_diaria_cartera():
-        await asyncio.sleep(300)          # deja respirar el arranque
+        await asyncio.sleep(90)           # deja que el worker escriba precios primero
         while True:
             try:
                 ahora = datetime.now(timezone.utc)
-                if ahora.weekday() < 5 and ahora.hour >= 22:
-                    hoy = ahora.date().isoformat()
-                    ya = await db.cartera_historico.find_one({"dia": hoy}, {"_id": 0, "dia": 1})
-                    if not ya:
-                        snap = await _guardar_snapshot_cartera()
-                        if snap:
-                            logger.info("Foto de cartera %s: %.2f EUR en %d posiciones",
-                                        snap["dia"], snap["valor_eur"], snap["posiciones"])
-                # Purga: dos años bastan para cualquier gráfico de la pantalla.
-                if ahora.hour == 22:
+                if ahora.weekday() < 5:
+                    snap = await _guardar_snapshot_cartera()
+                    if snap:
+                        logger.info("Foto de cartera %s: %.2f EUR en %d posiciones",
+                                    snap["dia"], snap["valor_eur"], snap["posiciones"])
+                # Purga una vez al dia. Dos años bastan para cualquier grafico.
+                if ahora.hour == 3:
                     corte = (ahora.date() - timedelta(days=cartera_historico.DIAS_MAXIMOS)).isoformat()
                     await db.cartera_historico.delete_many({"dia": {"$lt": corte}})
             except Exception as e:
                 logger.warning("Bucle de la foto diaria: %s", str(e)[:150])
-            await asyncio.sleep(1800)     # media hora: la ventana de las 22h no se escapa
+            await asyncio.sleep(1800)
 
     asyncio.create_task(_foto_diaria_cartera())
 

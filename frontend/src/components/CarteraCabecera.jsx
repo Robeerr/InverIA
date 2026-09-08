@@ -101,11 +101,12 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
   const [abierta, setAbierta] = React.useState(false);
   const [guardando, setGuardando] = React.useState(false);
 
-  /* Guardar la foto a mano. El bucle del servidor la escribe tras el cierre de Nueva
-     York (22:00 UTC), asi que el primer dia habria que esperar a la noche para ver un
-     solo punto. Esto NO es una via paralela: llama al MISMO endpoint que el bucle y
-     escribe el mismo registro del mismo dia, asi que pulsarlo dos veces no duplica
-     nada — sobrescribe. */
+  /* Guardar la foto a mano. El servidor ya la escribe solo al arrancar y cada media
+     hora, asi que esto es para cuando NO quieres esperar: acabas de comprar y quieres
+     que el punto de hoy recoja ya la posicion nueva.
+
+     No es una via paralela: llama al MISMO endpoint que el bucle y escribe el mismo
+     registro del mismo dia, asi que sobrescribe en vez de duplicar. */
   async function guardarFoto() {
     if (guardando) return;
     setGuardando(true);
@@ -242,8 +243,9 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
           ) : (
             <div className="mt-3">
               <p className="text-etiqueta text-tinta-3 leading-relaxed">
-                La evolución empieza a dibujarse hoy: se guarda una foto por día tras el
-                cierre. {serieHist.length === 1 ? "Ya hay 1 día." : "Todavía no hay ninguna."}
+                {serieHist.length === 1
+                  ? "Ya hay una foto guardada. El gráfico aparece con la segunda: con un solo punto no hay nada que unir."
+                  : "La evolución empieza hoy. El servidor guarda una foto por día de mercado; aún no hay ninguna."}
               </p>
               <button onClick={guardarFoto} disabled={guardando}
                       className="mt-2 px-2.5 py-1 border border-linea-fuerte text-etiqueta hover:border-marca hover:text-marca transition-colors disabled:opacity-50">
