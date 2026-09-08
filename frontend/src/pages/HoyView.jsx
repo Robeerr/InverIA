@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import PageShell from "@/components/base/PageShell";
@@ -7,7 +8,7 @@ import TarjetaAtencion from "@/components/base/TarjetaAtencion";
 import Boton from "@/components/base/Boton";
 import { Cargando, Error as ErrorEstado } from "@/components/base/Estado";
 import { fmtHace } from "@/lib/format";
-import { saludoDeLaHora, desgloseDe, titularDe } from "@/lib/portada";
+import { saludoDeLaHora, nombreDe, desgloseDe, titularDe } from "@/lib/portada";
 import { MarketFuturesBar, FearGreedBar, SectorHeatmap } from "@/components/ContextoMercado";
 import BandaRegimen from "@/components/hoy/BandaRegimen";
 import PanelCartera from "@/components/hoy/PanelCartera";
@@ -32,6 +33,13 @@ import PanelCerebro from "@/components/hoy/PanelCerebro";
 
 const CLAVE_ULTIMA_VISITA = "inveria-ultima-visita-hoy";
 
+/** «Martes, 8 de septiembre». Sitúa la pantalla en el día sin que haya que mirar el
+ *  reloj del sistema, que es justo lo que se hace al abrir un panel por la mañana. */
+function fechaLarga(d = new Date()) {
+  const t = d.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 function leerUltimaVisita() {
   try {
     return localStorage.getItem(CLAVE_ULTIMA_VISITA) || undefined;
@@ -42,6 +50,10 @@ function leerUltimaVisita() {
 
 export default function HoyView() {
   const desde = useMemo(() => leerUltimaVisita(), []);
+  // `nombreDe` devuelve null para los identificadores genéricos («admin», «user»…),
+  // y entonces se saluda sin nombre. Equivocarse saludando es peor que no saludar.
+  const { user } = useAuth();
+  const nombreUsuario = nombreDe(user);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["hoy", desde],
@@ -89,32 +101,40 @@ export default function HoyView() {
 
   return (
     <PageShell>
-      {/* ── 0 · CABECERA ────────────────────────────────────────────────────
-          Cintillo, saludo y las dos acciones. El saludo no informa de nada —para eso
-          está el desglose de más abajo— pero sitúa: dice de quién es esta pantalla y
-          en qué momento del día se abre. */}
-      {/* Cabecera editorial, no una barra de título. Va a sangre sobre el lienzo con
-          un filete champán encima: es lo primero que existe en la pantalla, y el
-          saludo en la serif de display a tamaño grande fija el tono de toda la web. */}
+      {/* ── 0 · CABECERA. El régimen sube AQUÍ, a la derecha del saludo, en vez de ocupar
+          una banda propia debajo: es la condición bajo la que se leen las decisiones
+          que vienen después, no una decisión más. Su lectura completa —SPY, medias,
+          distancia— sigue estando entera en el panel de abajo. */}
       <header className="iv-veredicto mb-8 flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
         <div className="min-w-0">
-          <p className="flex items-center gap-2.5 mb-1">
+          <p className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="iv-etiqueta tracking-[0.16em] text-tinta-3">Panel de control</span>
-            {!isLoading && !error && (
-              <span className="iv-etiqueta tracking-[0.12em] text-sube border border-sube/40 rounded-iv-sm px-1.5 py-px">
-                live
-              </span>
+            <span className="iv-etiqueta text-linea-fuerte">·</span>
+            <span className="iv-etiqueta text-tinta-3">{fechaLarga()}</span>
+            {data?.generado_en && (
+              <>
+                <span className="iv-etiqueta text-linea-fuerte">·</span>
+                <span className="iv-etiqueta text-tinta-3">Calculado {fmtHace(data.generado_en)}</span>
+              </>
             )}
           </p>
-          <h1 className="iv-verbo text-tinta">{saludoDeLaHora()}</h1>
+          <h1 className="iv-verbo text-tinta">
+            {saludoDeLaHora()}{nombreUsuario ? `, ${nombreUsuario}` : ""}
+          </h1>
           <p className="text-cuerpo text-tinta-2 mt-3 max-w-[58ch]">
-            El contexto que necesitas para decidir mejor hoy.
+            No necesitas mirar todo. Solo saber qué importa ahora.
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {data?.generado_en && (
-            <span className="text-etiqueta text-tinta-3 hidden sm:inline mr-1">
-              Calculado {fmtHace(data.generado_en)}
+
+        <div className="flex items-center gap-3 shrink-0 flex-wrap">
+          {!isLoading && !error && mercado?.label && mercado.light !== "desconocido" && (
+            <span className="flex items-center gap-2 border border-linea px-2.5 py-1.5">
+              <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${
+                {verde: "bg-sube", amarillo: "bg-aviso", rojo: "bg-baja"}[mercado.light] || "bg-linea-marcada"}`} />
+              <span className="min-w-0">
+                <span className="iv-etiqueta block text-[9px] text-tinta-3">Régimen de mercado</span>
+                <span className="text-apoyo text-tinta">{mercado.label}</span>
+              </span>
             </span>
           )}
           <Boton variante="fantasma" tamano="sm" onClick={() => refetch()} ocupado={isFetching}>

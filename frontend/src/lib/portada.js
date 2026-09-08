@@ -17,8 +17,36 @@ const NOMBRES = {
 };
 const CANTIDAD = ["Ninguna", "Una", "Dos", "Tres", "Cuatro", "Cinco"];
 
-/** El saludo va sin nombre a propósito: el frontend no conoce al usuario, y «admin»
- *  no es el nombre de nadie. */
+/** Nombres de acceso que NO son el nombre de nadie.
+ *
+ *  Este era el motivo por el que el saludo iba sin nombre: el frontend solo conoce el
+ *  usuario con el que entras, y «admin» saludado como si fuera una persona queda peor
+ *  que no saludar a nadie. Pero eso vale para los identificadores genéricos, no para
+ *  todos: si el usuario se llama «javier», llamarle por su nombre es correcto.
+ *
+ *  Así que en vez de renunciar al nombre siempre, se descartan los que se sabe que no
+ *  lo son. Ante la duda —un identificador raro, un correo, algo con dígitos— tampoco
+ *  se usa: equivocarse saludando es peor que no saludar. */
+const NO_SON_NOMBRES = new Set([
+  "admin", "administrador", "root", "user", "usuario", "test", "demo", "invitado", "guest",
+]);
+
+/** El nombre de pila presentable de un usuario, o null si no se puede saber.
+ *
+ *  Se queda con la primera palabra —«javier.moreno» es Javier— y la capitaliza. Un
+ *  correo, algo con cifras o un genérico devuelven null, y quien llame saluda sin
+ *  nombre. */
+function nombreDe(usuario) {
+  if (typeof usuario !== "string") return null;
+  const limpio = usuario.trim();
+  if (!limpio || limpio.includes("@")) return null;
+  const primera = limpio.split(/[.\-_\s]+/)[0];
+  if (!primera || primera.length < 2 || primera.length > 20) return null;
+  if (/\d/.test(primera)) return null;
+  if (NO_SON_NOMBRES.has(primera.toLowerCase())) return null;
+  return primera.charAt(0).toUpperCase() + primera.slice(1).toLowerCase();
+}
+
 function saludoDeLaHora(d = new Date()) {
   const h = d.getHours();
   if (h < 6) return "Buenas noches";
@@ -66,4 +94,4 @@ function titularDe(tarjetas) {
   };
 }
 
-export { saludoDeLaHora, desgloseDe, titularDe, NOMBRE_TIPO };
+export { saludoDeLaHora, nombreDe, desgloseDe, titularDe, NOMBRE_TIPO };

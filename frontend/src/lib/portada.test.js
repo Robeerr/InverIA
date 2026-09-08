@@ -1,4 +1,4 @@
-import { saludoDeLaHora, desgloseDe } from "./portada";
+import { saludoDeLaHora, nombreDe, desgloseDe } from "./portada";
 
 /* La portada pasó de abrir con un titular que INFORMABA —«Dos acciones han llegado a tu
  * nivel»— a abrir con un saludo, que no informa de nada. Ese dato no se puede perder por
@@ -37,5 +37,36 @@ describe("el desglose de lo que hay hoy", () => {
   test("sin conteo devuelve una lista vacía, no revienta", () => {
     expect(desgloseDe(undefined)).toEqual([]);
     expect(desgloseDe({})).toEqual([]);
+  });
+});
+
+describe("el nombre del saludo", () => {
+  // El saludo iba SIN nombre porque el frontend solo conoce el usuario con el que
+  // entras, y «admin» saludado como una persona queda peor que no saludar. Eso vale
+  // para los identificadores genéricos, no para todos.
+
+  test("un nombre normal se usa y se capitaliza", () => {
+    expect(nombreDe("javier")).toBe("Javier");
+    expect(nombreDe("ROBER")).toBe("Rober");
+  });
+
+  test("se queda con el nombre de pila", () => {
+    expect(nombreDe("javier.moreno")).toBe("Javier");
+    expect(nombreDe("rober_garcia")).toBe("Rober");
+  });
+
+  test("los identificadores genéricos NO son nombres", () => {
+    for (const g of ["admin", "root", "user", "usuario", "demo", "test", "Admin"]) {
+      expect(nombreDe(g)).toBeNull();
+    }
+  });
+
+  test("ante la duda, no se saluda por el nombre", () => {
+    // Equivocarse saludando es peor que no saludar: un correo, algo con cifras o una
+    // cadena rarísima no son nombres de pila por mucho que lo parezcan.
+    for (const raro of ["dev.rober07@gmail.com", "u123", "x", null, undefined, 42,
+                        "", "   ", "unacadenaabsurdamentelargaquenoesunnombre"]) {
+      expect(nombreDe(raro)).toBeNull();
+    }
   });
 });

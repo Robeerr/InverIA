@@ -49,22 +49,30 @@ export default function BandaRegimen({ mercado }) {
 
   return (
     <section
-      className="iv-panel px-4 py-3 flex flex-col lg:flex-row lg:items-center gap-x-6 gap-y-3"
+      className="iv-panel p-5 flex flex-col lg:flex-row lg:items-start gap-x-8 gap-y-4"
       aria-label="Régimen de mercado"
     >
-      {/* Semáforo + prosa */}
-      <div className="flex items-start gap-3 min-w-0 lg:flex-1">
-        <span className={cn("inline-block w-2.5 h-2.5 rounded-full shrink-0 mt-1", COLOR[m.light] || "bg-linea-marcada")}
-              aria-hidden="true" />
-        <div className="min-w-0">
-          <p className="text-cuerpo text-tinta font-semibold leading-snug text-pretty">{m.label}</p>
-          {m.advice && <p className="text-apoyo text-tinta-3 mt-0.5 leading-relaxed">{m.advice}</p>}
-        </div>
+      {/* La LECTURA, en prosa y a tamaño de titular. El régimen no es un dato más de
+          la fila: es la condición bajo la que se leen todos los demás. Por eso la
+          etiqueta va en la serif de display y no en la sans de interfaz — y el consejo
+          debajo, que es lo que de verdad se puede accionar. */}
+      <div className="min-w-0 lg:flex-1">
+        <p className="iv-etiqueta mb-2">Lectura principal</p>
+        <p className="font-heading text-tinta leading-[1.15] text-pretty"
+           style={{ fontSize: "clamp(20px, 2.2vw, 27px)" }}>
+          <span className={cn("inline-block w-2 h-2 rounded-full mr-2.5 align-middle",
+                              COLOR[m.light] || "bg-linea-marcada")} aria-hidden="true" />
+          {m.label}
+        </p>
+        {m.advice && (
+          <p className="text-cuerpo text-tinta-2 mt-2.5 leading-relaxed max-w-[62ch]">{m.advice}</p>
+        )}
       </div>
 
-      {/* Lectura de SPY */}
-      <div className="grid grid-cols-3 sm:grid-cols-5 gap-x-5 gap-y-2 shrink-0
-                      lg:border-l lg:border-linea lg:pl-6">
+      {/* La lectura de SPY. Las cinco cifras que sostienen la frase de al lado: sin
+          ellas el veredicto es una opinión, y con ellas se puede comprobar. */}
+      <div className="grid grid-cols-3 sm:grid-cols-5 gap-x-6 gap-y-3 shrink-0
+                      lg:border-l lg:border-linea lg:pl-8">
         <Stat etiqueta="SPY" valor={m.spy_price != null ? `$${fmtPrice(m.spy_price)}` : "—"} />
         <Stat etiqueta="vs SMA200" valor={m.dist_sma200_pct != null ? fmtPct(m.dist_sma200_pct) : "—"}
               tono="auto" num={m.dist_sma200_pct} />
