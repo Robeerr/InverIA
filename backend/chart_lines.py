@@ -1689,10 +1689,24 @@ def _detect_triangles(highs, lows, closes, volumes=None, k: int = 3):
                       "objetivo = ruptura +/- H0."),
     }[tipo]
 
+    # ── Confianza ───────────────────────────────────────────────────────────────
+    # Este detector ya PUBLICA sus métricas en `meta`: ajuste de las dos rectas,
+    # número de toques, si el volumen decrece y si la ruptura está confirmada. La nota
+    # no añade ningún cálculo, solo resume lo que ya se enseñaba y nadie comparaba.
+    _cf = 0.68
+    # Ajuste de las directrices (mínimo exigido 0.85).
+    _cf += 0.10 * max(0.0, (min(r2_sup, r2_inf) - 0.85) / 0.15)
+    # Toques: tres por recta es el mínimo. Cinco o más es un triángulo muy visitado,
+    # y un nivel que el precio respeta cinco veces vale más que uno que respeta tres.
+    _cf += 0.08 * min(1.0, (min(len(sup_t), len(inf_t)) - 3) / 2.0)
+    _cf += 0.05 if brk is not None else 0.0        # ruptura ya confirmada
+    _cf += 0.03 if vol_decreasing else 0.0         # volumen secándose dentro
+
     return {
         "tipo": "triangulo_" + tipo,
         "nombre": nombres[tipo],
         "sentido": sentido,
+        "confianza": round(min(_cf, 0.92), 3),
         "descripcion": desc,
         "puntos": puntos,
         "meta": {
@@ -1890,8 +1904,22 @@ def _detect_wedge(highs, lows, closes, volumes=None):
         ],
     }
 
+    # ── Confianza ───────────────────────────────────────────────────────────────
+    # El detector ya exige R² >= 0.90 en las dos directrices; lo que faltaba era
+    # distinguir la que ajusta con 0.90 justo de la que ajusta con 0.99. Y la
+    # contracción: una cuña que estrecha un 60% es un patrón, una que estrecha un 15%
+    # es casi un canal aceptado por poco.
+    _cf = 0.70
+    # Ajuste de las dos rectas. 0.90 es el mínimo; 1.0 es la recta perfecta.
+    _cf += 0.12 * max(0.0, (min(r2_h, r2_l) - 0.90) / 0.10)
+    # Contracción de la amplitud: cuánto se ha estrechado de la base al final.
+    _cf += 0.08 * min(1.0, max(0.0, (1.0 - w_fin / w_ini) / 0.50)) if w_ini else 0.0
+    # Volumen decreciente ya es requisito cuando hay datos; que los haya suma.
+    _cf += 0.03 if volumes is not None else 0.0
+
     return {
         "tipo": tipo, "nombre": nombre, "sentido": sentido,
+        "confianza": round(min(_cf, 0.93), 3),
         "descripcion": descripcion,
         "objetivo": objetivo,
         "apex_index": int(round(t_apex)),
@@ -2080,6 +2108,13 @@ def _scan_double(highs, lows, closes, n, variante,
                 "pa": pa, "pb": pb, "pc": pc, "base": base, "neck": neck,
                 "depth": depth, "trend_prev": trend_prev,
                 "confirmado": confirmado, "penetracion_fuerte": penetracion_fuerte,
+                # Igualdad de los dos extremos: 0 = gemelos exactos. Ya se compara
+                # contra EQ_MAX para aceptar el patron, pero el VALOR se tiraba, asi
+                # que un doble suelo de 1,9% de diferencia -aceptado por los pelos-
+                # valia tanto como uno de 0,1%. Es la magnitud que mas distingue un
+                # doble bueno de uno regular.
+                "igualdad": abs(pa - pc) / min(pa, pc),
+                "eq_max": EQ_MAX, "trend_min": TREND_MIN,
             }
             clave = (i_c, 1 if confirmado else 0)
             if mejor is None or clave > mejor["_clave"]:
@@ -2130,6 +2165,25 @@ def _build_double(highs, lows, closes, n, es_suelo, m):
     ]
 
     estado = "confirmado" if m["confirmado"] else "potencial (sin romper el cuello)"
+
+    # ── Confianza ───────────────────────────────────────────────────────────────
+    # Este detector va PRIMERO en la competición, así que su nota es la que más manda:
+    # con el prior fijo de 0.90, un doble aceptado por los pelos le ganaba a todo lo
+    # demás. Aquí un doble mediocre baja de 0.90 y deja pasar a quien encaje mejor.
+    #
+    # `confirmado` no puntúa: es requisito para llegar hasta aquí, así que vale 1 en
+    # todos los candidatos y no distingue a ninguno.
+    _cf = 0.72
+    # Igualdad de los gemelos. Es LO que define el patrón: dos extremos al mismo
+    # precio. 0 = idénticos; EQ_MAX (2%) = el límite de lo admisible.
+    _cf += 0.10 * (1.0 - min(1.0, m["igualdad"] / m["eq_max"]))
+    # Tendencia previa: un doble suelo sin caída delante no revierte nada. El mínimo
+    # es 10%; a partir del doble de eso ya no suma más.
+    _cf += 0.06 * min(1.0, m["trend_prev"] / (2 * m["trend_min"]))
+    # Ruptura franca del cuello (>=5%), no un roce: es el filtro anti-fakeout.
+    _cf += 0.06 if m["penetracion_fuerte"] else 0.0
+    _cf = round(min(_cf, 0.94), 3)
+
     if es_suelo:
         desc = ("Doble suelo (W): dos mínimos ~iguales tras una caída previa del "
                 f"{m['trend_prev']*100:.0f}%, separados por un rebote intermedio del "
@@ -2137,6 +2191,7 @@ def _build_double(highs, lows, closes, n, es_suelo, m):
                 f"Gatillo: cierre por encima del cuello (penetración >=5%). Objetivo {objetivo} "
                 f"(conservador {objetivo_cons}); invalida si cierra bajo {r(base)}.")
         return {"tipo": "doble_suelo", "nombre": "Doble suelo", "sentido": "alcista",
+                "confianza": _cf,
                 "descripcion": desc, "confirmado": m["confirmado"],
                 "penetracion_fuerte": m["penetracion_fuerte"],
                 "puntos": puntos, "lineas": lineas}
@@ -2146,6 +2201,7 @@ def _build_double(highs, lows, closes, n, es_suelo, m):
             f"Gatillo: cierre por debajo del cuello (penetración >=5%). Objetivo {objetivo} "
             f"(conservador {objetivo_cons}); invalida si cierra sobre {r(base)}.")
     return {"tipo": "doble_techo", "nombre": "Doble techo", "sentido": "bajista",
+            "confianza": _cf,
             "descripcion": desc, "confirmado": m["confirmado"],
             "penetracion_fuerte": m["penetracion_fuerte"],
             "puntos": puntos, "lineas": lineas}
@@ -3161,7 +3217,7 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
 
     _CANDIDATOS = [
         # (nombre,          detector,                                                    prior, techo)
-        ("doble",        lambda: _detect_double(highs, lows, closes),                     0.90, 0.90),
+        ("doble",        lambda: _detect_double(highs, lows, closes),                     0.90, 0.94),
         ("triple",       lambda: _detect_triple_top_bottom(highs, lows, closes),          0.89, 0.89),
         ("isla",         lambda: _detect_island(highs, lows, closes, _atr14v),            0.88, 0.88),
         ("pipe",         lambda: _detect_pipe(highs, lows, closes),                       0.87, 0.87),
@@ -3172,8 +3228,8 @@ def detect_lines(candles: List[Dict], current_price: float = None) -> Dict:
         ("hch",          lambda: _detect_head_shoulders(highs, lows, closes, price_range),0.82, 0.96),
         ("diamante",     lambda: _detect_diamond(highs, lows, closes),                    0.81, 0.81),
         ("redondeado",   lambda: _detect_rounding(highs, lows, closes),                   0.80, 0.80),
-        ("cuna",         lambda: _detect_wedge(highs, lows, closes),                      0.79, 0.79),
-        ("triangulo",    lambda: _detect_triangles(highs, lows, closes),                  0.78, 0.78),
+        ("cuna",         lambda: _detect_wedge(highs, lows, closes),                      0.79, 0.93),
+        ("triangulo",    lambda: _detect_triangles(highs, lows, closes),                  0.78, 0.92),
         ("canal",        lambda: _detect_channel(highs, lows, closes),                    0.77, 0.77),
         ("rectangulo",   lambda: _detect_rectangle(highs, lows, closes, volumes),         0.76, 0.76),
         ("tres_valles",  lambda: _detect_three_rising(highs, lows, closes),               0.55, 0.55),
