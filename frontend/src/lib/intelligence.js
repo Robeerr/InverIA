@@ -302,3 +302,43 @@ export function agruparCoincidentes(marcas, tolerancia = 7) {
     return { x: items[0].x, y: items[0].y, items, n: items.length };
   });
 }
+
+
+/**
+ * El título sin repetir el valor, que ya va en su columna.
+ *
+ * El backend escribe «4 · Operación de un directivo — NVDA» porque ahí el título tiene
+ * que sostenerse solo. En una lista con el símbolo en la primera columna, ese sufijo
+ * repite lo que ya se lee al lado y roba el ancho que necesita el resto.
+ */
+export function tituloCorto(evento) {
+  const t = evento?.titulo || "";
+  const sym = evento?.symbol;
+  return sym && t.endsWith(` — ${sym}`) ? t.slice(0, -(sym.length + 3)) : t;
+}
+
+/**
+ * Cuánto se enseña de golpe. El resto sigue estando, a un clic.
+ *
+ * Una lista de cincuenta filas no se lee: se recorre buscando algo, y el scroll entierra
+ * lo de abajo tanto como si no estuviera. Pero recortar sin decir cuánto queda sería
+ * ocultar, así que el botón lleva el número.
+ *
+ * LO QUE INTERRUMPE SE VE SIEMPRE
+ *
+ * Aunque no quepa en el tope. Es la misma regla que en el plegado: algo que el backend
+ * consideró digno de sacarte de lo que haces no puede quedar escondido bajo un «ver más»,
+ * y con veinte eventos importantes el tope no puede ser el que decida cuáles miras.
+ */
+export function recortar(filas, tope = 12) {
+  const lista = filas || [];
+  if (lista.length <= tope) return { visibles: lista, ocultas: 0 };
+  const urge = (f) => nivelDe(f.tipo === "grupo" ? { nivel_alerta: f.nivel } : f.evento).interrumpe;
+  const importantes = lista.filter(urge);
+  const resto = lista.filter((f) => !urge(f));
+  // El orden original se conserva: `ordenados` ya puso lo grave delante, así que
+  // reconstruir por posición evita que el recorte reordene la lista.
+  const dejar = new Set([...importantes, ...resto.slice(0, Math.max(0, tope - importantes.length))]);
+  const visibles = lista.filter((f) => dejar.has(f));
+  return { visibles, ocultas: lista.length - visibles.length };
+}

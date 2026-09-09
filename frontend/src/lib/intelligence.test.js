@@ -10,7 +10,7 @@
  */
 import {
   ESTADOS, escuchando, estadoDe, resumen, nivelDe, ordenados, porValor, tieneAnalisis,
-  anguloPorHora, plegarRepetidos, NIVELES, agruparCoincidentes,
+  anguloPorHora, plegarRepetidos, NIVELES, agruparCoincidentes, recortar, tituloCorto,
 } from "./intelligence";
 
 const online = { fuente: "sec", estado: "ONLINE" };
@@ -305,5 +305,72 @@ describe("marcas del radar que coinciden", () => {
   test("sin marcas no se inventa ningún grupo", () => {
     expect(agruparCoincidentes([])).toEqual([]);
     expect(agruparCoincidentes(null)).toEqual([]);
+  });
+});
+
+
+describe("recortar la lista sin esconder nada", () => {
+  const fila = (id, nivel = "WATCH") => ({
+    tipo: "evento", id, evento: { id, nivel_alerta: nivel, symbol: "X" },
+  });
+
+  test("por debajo del tope no se recorta", () => {
+    const filas = [...Array(5)].map((_, i) => fila(`a${i}`));
+    expect(recortar(filas, 12)).toEqual({ visibles: filas, ocultas: 0 });
+  });
+
+  test("por encima se recorta y se DICE cuántas quedan", () => {
+    // Recortar sin decir cuánto queda sería ocultar.
+    const r = recortar([...Array(40)].map((_, i) => fila(`a${i}`)), 12);
+    expect(r.visibles).toHaveLength(12);
+    expect(r.ocultas).toBe(28);
+  });
+
+  test("lo que INTERRUMPE se ve SIEMPRE, aunque no quepa", () => {
+    // Con veinte eventos importantes, el tope no puede decidir cuáles miras.
+    const filas = [...Array(30)].map((_, i) => fila(`a${i}`));
+    filas.push(fila("urgente", "CRITICAL"));
+    const r = recortar(filas, 5);
+    expect(r.visibles.map((f) => f.id)).toContain("urgente");
+  });
+
+  test("con más importantes que el tope, salen todos", () => {
+    const filas = [...Array(20)].map((_, i) => fila(`i${i}`, "IMPORTANT"));
+    const r = recortar(filas, 5);
+    expect(r.visibles).toHaveLength(20) && expect(r.ocultas).toBe(0);
+  });
+
+  test("el recorte NO reordena lo que deja", () => {
+    // `ordenados` ya puso lo grave delante; reordenar aquí rompería esa lectura.
+    const filas = [fila("a"), fila("b"), fila("urgente", "IMPORTANT"), fila("c")];
+    expect(recortar(filas, 3).visibles.map((f) => f.id)).toEqual(["a", "b", "urgente"]);
+  });
+
+  test("un GRUPO también puede ser urgente y verse siempre", () => {
+    const grupo = { tipo: "grupo", id: "g", nivel: "IMPORTANT", items: [] };
+    const filas = [...[...Array(30)].map((_, i) => fila(`a${i}`)), grupo];
+    expect(recortar(filas, 4).visibles.map((f) => f.id)).toContain("g");
+  });
+
+  test("sin filas no revienta", () => {
+    expect(recortar([], 12)).toEqual({ visibles: [], ocultas: 0 });
+    expect(recortar(null, 12)).toEqual({ visibles: [], ocultas: 0 });
+  });
+});
+
+describe("el título no repite el símbolo", () => {
+  test("se quita el sufijo que duplica la columna de al lado", () => {
+    expect(tituloCorto({ symbol: "NVDA", titulo: "4 · Operación de un directivo — NVDA" }))
+      .toBe("4 · Operación de un directivo");
+  });
+
+  test("si el título no acaba en el símbolo, no se toca", () => {
+    const t = "NVDA 2027Q1 · Resultados el 2026-10-28";
+    expect(tituloCorto({ symbol: "NVDA", titulo: t })).toBe(t);
+  });
+
+  test("aguanta un evento sin título o sin símbolo", () => {
+    expect(tituloCorto({})).toBe("");
+    expect(tituloCorto({ titulo: "algo" })).toBe("algo");
   });
 });

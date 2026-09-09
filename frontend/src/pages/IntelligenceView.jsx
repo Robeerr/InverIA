@@ -7,8 +7,8 @@ import IntelligenceDrawer from "../components/intelligence/IntelligenceDrawer";
 import PruebaDeVida from "../components/intelligence/PruebaDeVida";
 import SondeoSec from "../components/intelligence/SondeoSec";
 import DiagnosticoTickers from "../components/intelligence/DiagnosticoTickers";
-import { resumen as resumenDe, ordenados, plegarRepetidos, nivelDe, MOTIVOS, ETAPAS }
-  from "../lib/intelligence";
+import { resumen as resumenDe, ordenados, plegarRepetidos, recortar, tituloCorto,
+         nivelDe, MOTIVOS, ETAPAS } from "../lib/intelligence";
 import { fmtHace } from "../lib/format";
 
 /**
@@ -35,35 +35,41 @@ import { fmtHace } from "../lib/format";
  * comentario del código: una limitación que el usuario no ve es una limitación que se le
  * acaba olvidando al sistema.
  */
-/** Una fila de evento. La misma pinta dentro y fuera de un grupo. */
+/**
+ * Una fila de evento, en UNA línea.
+ *
+ * Antes ocupaba tres —símbolo, título y procedencia— y con cuarenta eventos eso son mil
+ * quinientos píxeles de scroll para leer una columna de texto casi idéntico. En una línea
+ * la lista se abarca de un vistazo, que es lo que se hace con ella: buscar si hay algo
+ * tuyo, no leerla entera.
+ *
+ * El símbolo va en su columna, así que el título se queda sin el «— NVDA» del final: ahí
+ * repetía lo que ya se lee al lado.
+ */
 function Fila({ evento, onElegir, dentroDeGrupo = false }) {
   const n = nivelDe(evento);
   const d = evento.detalle || {};
   return (
     <button onClick={() => onElegir(evento)}
-            className={`w-full text-left py-3 group ${dentroDeGrupo ? "pl-4" : ""}`}
+            className={`w-full text-left py-2 flex items-baseline gap-3 group
+                        ${dentroDeGrupo ? "pl-4" : ""}`}
             data-testid={`intelligence-evento-${evento.id}`}>
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="iv-cifra text-sm font-semibold text-tinta">
-          {evento.symbol || "—"}
-        </span>
-        {!dentroDeGrupo && (
-          <span className={`iv-etiqueta shrink-0 ${n.clase}`}>{n.etiqueta}</span>
-        )}
-      </div>
-      <p className="mt-1 text-sm text-tinta-2 group-hover:text-tinta leading-snug">
-        {evento.titulo}
-      </p>
-      <p className="mt-1 text-xs text-tinta-3">
-        {evento.fuente} · {fmtHace(evento.recibido_en)}
-        {/* Dentro de un grupo los títulos son idénticos, así que lo que distingue una
-            fila de otra es su número de registro. Sin él serían catorce líneas iguales,
-            que es justo el problema que el plegado viene a resolver. */}
-        {dentroDeGrupo && d.accession && (
-          <> · <span className="iv-cifra">n.º {d.accession.slice(-6)}</span></>
-        )}
-        {dentroDeGrupo && d.fecha_registro && <> · {d.fecha_registro}</>}
-      </p>
+      <span className="iv-cifra text-sm font-semibold text-tinta w-16 shrink-0 truncate">
+        {evento.symbol || "—"}
+      </span>
+      <span className="flex-1 min-w-0 text-sm text-tinta-2 group-hover:text-tinta truncate">
+        {tituloCorto(evento)}
+      </span>
+      {/* La procedencia se esconde en pantalla estrecha: es contexto, no lo que se
+          busca. El nivel y el símbolo no se esconden nunca. */}
+      <span className="hidden md:inline text-xs text-tinta-3 shrink-0 whitespace-nowrap">
+        {dentroDeGrupo && d.accession
+          ? <span className="iv-cifra">n.º {d.accession.slice(-6)}</span>
+          : fmtHace(evento.recibido_en)}
+      </span>
+      {!dentroDeGrupo && (
+        <span className={`iv-etiqueta shrink-0 ${n.clase}`}>{n.etiqueta}</span>
+      )}
     </button>
   );
 }
@@ -81,19 +87,19 @@ function Grupo({ fila, onElegir }) {
   return (
     <li data-testid={`intelligence-grupo-${fila.id}`}>
       <button onClick={() => setAbierto((v) => !v)}
-              className="w-full text-left py-3 group"
+              className="w-full text-left py-2 flex items-baseline gap-3 group"
               aria-expanded={abierto}>
-        <div className="flex items-baseline justify-between gap-3">
-          <span className="iv-cifra text-sm font-semibold text-tinta">{fila.symbol}</span>
-          <span className={`iv-etiqueta shrink-0 ${n.clase}`}>{n.etiqueta}</span>
-        </div>
-        <p className="mt-1 text-sm text-tinta-2 group-hover:text-tinta leading-snug">
+        <span className="iv-cifra text-sm font-semibold text-tinta w-16 shrink-0 truncate">
+          {fila.symbol}
+        </span>
+        <span className="flex-1 min-w-0 text-sm text-tinta-2 group-hover:text-tinta truncate">
           {fila.titulo}
           <span className="text-tinta-3"> · {abierto ? "ocultar" : "ver una a una"}</span>
-        </p>
-        <p className="mt-1 text-xs text-tinta-3">
-          {fila.fuente} · {fmtHace(fila.items[0].recibido_en)}
-        </p>
+        </span>
+        <span className="hidden md:inline text-xs text-tinta-3 shrink-0 whitespace-nowrap">
+          {fmtHace(fila.items[0].recibido_en)}
+        </span>
+        <span className={`iv-etiqueta shrink-0 ${n.clase}`}>{n.etiqueta}</span>
       </button>
       {abierto && (
         <ul className="border-l border-linea ml-1 divide-y divide-linea">
@@ -145,6 +151,9 @@ export default function IntelligenceView() {
   // El radar sigue recibiendo los eventos UNO A UNO: plegar es cosa de la lista, y una
   // marca por registro es lo que hace que el radar represente lo que de verdad entró.
   const filas = plegarRepetidos(eventos);
+  const [verTodo, setVerTodo] = useState(false);
+  const { visibles, ocultas } = recortar(filas);
+  const aPintar = verTodo ? filas : visibles;
 
   return (
     <div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6">
@@ -201,7 +210,7 @@ export default function IntelligenceView() {
           )}
 
           <ul className="divide-y divide-linea">
-            {filas.map((fila) => (
+            {aPintar.map((fila) => (
               fila.tipo === "grupo"
                 ? <Grupo key={fila.id} fila={fila} onElegir={setElegido} />
                 : <li key={fila.id}>
@@ -209,6 +218,14 @@ export default function IntelligenceView() {
                   </li>
             ))}
           </ul>
+
+          {ocultas > 0 && !verTodo && (
+            <button onClick={() => setVerTodo(true)}
+                    className="mt-3 text-xs text-marca hover:underline"
+                    data-testid="intelligence-ver-todo">
+              Ver {ocultas} {ocultas === 1 ? "fila más" : "filas más"}
+            </button>
+          )}
 
           {/* El diagnóstico. Es lo que impide confundir un filtro roto con un mercado
               tranquilo, y por eso está aquí y no escondido. */}
