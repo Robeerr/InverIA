@@ -39,6 +39,7 @@ import logging
 from datetime import datetime, timezone
 
 import intel_earnings as earnings
+import intel_eventos as ev
 import intel_pipeline as pl
 import intel_sec as sec
 
@@ -372,6 +373,80 @@ def _acumulado(salud: dict) -> dict:
     }
 
 
+async def repuntuar_pendientes(db, limite: int = 2000) -> dict:
+    """Repasa los eventos que llevan una nota de una fórmula anterior.
+
+    POR QUÉ HACE FALTA
+
+    Cambiar los pesos no reescribe lo ya guardado. Sin este repaso, la lista mezclaría
+    notas calculadas con dos reglas distintas —un 95 de la v1 junto a un 80 de la v2— y
+    nadie podría saberlo mirándolas. Es el mismo problema que tuvieron los contadores, y
+    se resuelve igual: marcando la versión y arreglando lo que no coincide.
+
+    ES IDEMPOTENTE Y SE CURA SOLO
+
+    Cada evento lleva su `relevancia_v`. Se repasan solo los que no están en la actual, y
+    al repasarlos quedan marcados. Ejecutarlo dos veces no hace nada la segunda; si el
+    proceso muere a mitad, la siguiente vuelta termina lo que faltaba.
+
+    QUÉ NO TOCA
+
+    Los descartados. `descartado` es terminal a propósito —es la puerta que impide que
+    algo ya rechazado vuelva a entrar por otro camino— y además su motivo no depende de la
+    nota: quien no está en tu universo sigue sin estarlo con cualquier fórmula.
+    """
+    universo, cartera, watchlist = await _universo(db)
+    try:
+        pendientes = await db[COL_EVENTOS].find(
+            {"etapa": {"$in": [ev.FILTRADO, ev.SIGNIFICATIVO, ev.ALERTADO]},
+             "relevancia_v": {"$ne": pl.RELEVANCIA_V}},
+            {"_id": 0}).to_list(limite)
+    except Exception as e:
+        logger.warning("intel: no se pudo leer lo pendiente de repuntuar: %s", str(e)[:120])
+        return {"revisados": 0, "cambiados": 0}
+
+    revisados = cambiados = 0
+    for viejo in pendientes:
+        revisados += 1
+        nuevo = pl.puntuar(viejo, cartera=cartera, watchlist=watchlist)
+        # `puntuar` puede subir de `filtrado` a `significativo`, pero nunca baja: las
+        # transiciones son una lista blanca y no hay marcha atrás. Si con la fórmula nueva
+        # el evento ya no llega al umbral, se le devuelve a `filtrado` AQUÍ, dejándolo
+        # anotado como recalibración.
+        #
+        # Es la única marcha atrás del sistema y por eso está escrita a mano, en una
+        # función que se llama una vez por cambio de fórmula, y no dentro del pipeline:
+        # un retroceso que ocurriera en el camino normal sí sería el fallo que las
+        # transiciones existen para impedir.
+        if (nuevo["relevancia"] < pl.UMBRAL_SIGNIFICATIVO
+                and nuevo.get("etapa") == ev.SIGNIFICATIVO):
+            nuevo["etapa"] = ev.FILTRADO
+            nuevo["historial"] = list(nuevo.get("historial") or []) + [
+                {"etapa": ev.FILTRADO, "cuando": _ahora(), "motivo": "recalibrado"}]
+        if (nuevo.get("relevancia") != viejo.get("relevancia")
+                or nuevo.get("etapa") != viejo.get("etapa")):
+            cambiados += 1
+        # Se escribe igualmente aunque la nota no cambie: hay que sellar la versión, o
+        # este evento se releería en cada arranque para siempre.
+        try:
+            await db[COL_EVENTOS].update_one(
+                {"id": nuevo["id"]},
+                {"$set": {"relevancia": nuevo["relevancia"],
+                          "relevancia_v": pl.RELEVANCIA_V,
+                          "nivel_alerta": nuevo["nivel_alerta"],
+                          "afecta_cartera": nuevo["afecta_cartera"],
+                          "afecta_watchlist": nuevo["afecta_watchlist"],
+                          "afecta_tesis": nuevo["afecta_tesis"],
+                          "etapa": nuevo["etapa"],
+                          "historial": nuevo.get("historial") or []}})
+        except Exception as e:
+            logger.warning("intel: no se pudo repuntuar %s: %s", nuevo.get("id"), str(e)[:120])
+    if revisados:
+        logger.info("intel: %d eventos repuntuados a la fórmula v%d (%d cambiaron de nota)",
+                    revisados, pl.RELEVANCIA_V, cambiados)
+    return {"revisados": revisados, "cambiados": cambiados}
+
+
 async def worker_loop(db, mod=None, intervalo: int = None, retraso_inicial: int = 120):
     """El bucle de UNA fuente. Mismo contrato que `news_ingest.news_worker_loop`.
 
@@ -388,6 +463,13 @@ async def worker_loop(db, mod=None, intervalo: int = None, retraso_inicial: int 
     mod = mod or sec
     intervalo = intervalo or mod.INTERVALO
     await dormir(retraso_inicial)
+    # El repaso de fórmula lo lanza UNA sola fuente, la primera. Si lo hicieran todas,
+    # dos workers se pisarían escribiendo los mismos documentos en el mismo instante.
+    if mod is FUENTES[0]:
+        try:
+            await repuntuar_pendientes(db)
+        except Exception:
+            logger.exception("intel: el repaso de relevancia falló")
     while True:
         espera = intervalo
         try:

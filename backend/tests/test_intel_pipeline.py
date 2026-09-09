@@ -260,3 +260,124 @@ def test_una_entrada_corrupta_no_tumba_el_lote():
     r = pl.procesar([None, "texto suelto", {}, _crudo(symbol="NVDA")],
                     universo={"NVDA"}, cartera={"NVDA"})
     assert len(r["significativos"]) == 1
+
+
+# ── La relevancia mide DOS ejes, no uno ──────────────────────────────────────
+# La v1 medía solo cuánto te toca, y la escala se quedó con dos valores: todo lo de una
+# acción tuya salía CRÍTICO y todo lo de una seguida salía ATENCIÓN. Un Form 4 de 200
+# acciones pesaba igual que un 8-K de fusión.
+
+def _puntuado(suceso=None, tier=1, tenencia="cartera"):
+    e = ev.crear(fuente="x", externo_id="a", titulo="t", symbol="NVDA", tier=tier,
+                 tipo=ev.CORPORATIVO, crudo={"suceso": suceso} if suceso else {})
+    e = ev.avanzar(ev.avanzar(ev.avanzar(e, ev.NORMALIZADO), ev.DEDUPLICADO), ev.FILTRADO)
+    # El worker mete los símbolos de la Cartera TAMBIÉN en la watchlist, así que el caso
+    # real de una acción en cartera es estar en los dos conjuntos.
+    kw = {"cartera": {"cartera": {"NVDA"}, "watchlist": {"NVDA"}},
+          "watchlist": {"watchlist": {"NVDA"}},
+          "ajena": {}}[tenencia]
+    return pl.puntuar(e, **kw)
+
+
+def test_cartera_y_watchlist_NO_se_suman():
+    """Tener la acción ya implica seguirla. Sumar las dos daba 70 de salida a cualquier
+    cosa que rozara tu cartera, y ahí se perdía toda la escala."""
+    assert _puntuado(tenencia="cartera")["relevancia"] == \
+        pl.PESO_CARTERA + pl.PESO_TIER[1] + pl.PESO_SUCESO_DESCONOCIDO
+    # Y sigue pesando más que solo seguirla: la diferencia se conserva.
+    assert _puntuado(tenencia="cartera")["relevancia"] > _puntuado(tenencia="watchlist")["relevancia"]
+
+
+def test_la_CLASE_DE_SUCESO_cambia_la_nota():
+    """Lo que faltaba: un eje para «qué clase de cosa es esto». Sin él, un trámite y un
+    hecho relevante entran igual."""
+    assert _puntuado("8-K")["relevancia"] > _puntuado("4")["relevancia"]
+    assert _puntuado("publicado")["relevancia"] > _puntuado("programado")["relevancia"]
+
+
+def test_el_suceso_lo_dice_LA_FUENTE_y_no_lo_adivinamos():
+    """`crudo["suceso"]` lo escribe cada connector con su propio vocabulario. El pipeline
+    no sabe qué es la SEC ni qué formularios existen."""
+    assert pl.suceso_de({"crudo": {"suceso": "8-K"}}) == "8-K"
+    assert pl.suceso_de({"crudo": {}}) is None
+    assert pl.suceso_de(None) is None
+
+
+def test_un_suceso_desconocido_ni_se_premia_ni_se_castiga():
+    """Una fuente nueva no puede entrar desactivada ni desbocada mientras no se le
+    asigne un peso."""
+    intermedio = pl.PESO_SUCESO_DESCONOCIDO
+    assert min(pl.PESO_SUCESO.values()) <= intermedio <= max(pl.PESO_SUCESO.values())
+    assert pl.peso_del_suceso({"crudo": {"suceso": "algo_que_no_conocemos"}}) == intermedio
+    assert pl.peso_del_suceso({"crudo": {}}) == intermedio
+
+
+def test_un_TRAMITE_de_tu_cartera_no_te_interrumpe():
+    """La mayoría de los Form 4 son consolidaciones automáticas de acciones. Sin leer el
+    documento no se puede saber si este lo es, así que entra en la lista pero no llama a
+    la puerta. Cuando haya fase de investigación, cambiará."""
+    r = _puntuado("4", tier=1, tenencia="cartera")
+    assert r["etapa"] == ev.SIGNIFICATIVO           # sale en la lista
+    assert r["nivel_alerta"] not in ev.INTERRUMPEN  # pero no interrumpe
+
+
+def test_un_HECHO_RELEVANTE_de_tu_cartera_SI_te_interrumpe():
+    """Un 8-K la empresa está obligada a publicarlo: por definición es material."""
+    assert _puntuado("8-K", tier=1, tenencia="cartera")["nivel_alerta"] in ev.INTERRUMPEN
+
+
+def test_lo_de_una_accion_que_solo_SIGUES_nunca_interrumpe():
+    """No hay dinero dentro. Merece estar en la lista, no sacarte de lo que estés
+    haciendo."""
+    for suceso in list(pl.PESO_SUCESO) + [None]:
+        for tier in (1, 2):
+            r = _puntuado(suceso, tier=tier, tenencia="watchlist")
+            assert r["nivel_alerta"] not in ev.INTERRUMPEN, (suceso, tier)
+
+
+def test_LA_MATRIZ_ENTERA_esta_fijada():
+    """La tabla acordada, caso por caso. Es el test que se rompe si alguien mueve un peso
+    sin darse cuenta de a quién deja de avisar."""
+    esperado = {
+        ("cartera", 1, "8-K"): (80, ev.IMPORTANT),
+        ("cartera", 1, "4"): (60, ev.WATCH),
+        ("cartera", 2, "publicado"): (75, ev.IMPORTANT),
+        ("cartera", 2, "cambio_fecha"): (70, ev.IMPORTANT),
+        ("cartera", 2, "programado"): (60, ev.WATCH),
+        ("watchlist", 1, "8-K"): (60, ev.WATCH),
+        ("watchlist", 1, "4"): (40, ev.WATCH),
+        ("watchlist", 2, "publicado"): (55, ev.WATCH),
+        ("watchlist", 2, "cambio_fecha"): (50, ev.WATCH),
+        ("watchlist", 2, "programado"): (40, ev.WATCH),
+    }
+    for (tenencia, tier, suceso), (nota, nivel) in esperado.items():
+        r = _puntuado(suceso, tier=tier, tenencia=tenencia)
+        assert (r["relevancia"], r["nivel_alerta"]) == (nota, nivel), \
+            f"{tenencia}/{tier}/{suceso} da {r['relevancia']} {r['nivel_alerta']}"
+
+
+def test_NADA_llega_a_critico_todavia():
+    """Decisión explícita. Para saber si un 8-K es una fusión o el nombramiento de un
+    directivo hay que LEERLO, y eso es la fase de investigación. Repartir CRÍTICO por
+    categoría sería volver al problema que esta recalibración arregla."""
+    for tenencia in ("cartera", "watchlist"):
+        for tier in (1, 2, 3, 4):
+            for suceso in list(pl.PESO_SUCESO) + [None]:
+                r = _puntuado(suceso, tier=tier, tenencia=tenencia)
+                assert r["nivel_alerta"] != ev.CRITICAL, (tenencia, tier, suceso)
+
+
+def test_la_nota_lleva_la_VERSION_de_la_formula():
+    """Dos notas calculadas con reglas distintas no se pueden comparar, y nadie podría
+    saberlo mirándolas. El sello es lo que permite repasarlas después."""
+    assert _puntuado("8-K")["relevancia_v"] == pl.RELEVANCIA_V
+
+
+def test_el_peso_de_TESIS_existe_pero_hoy_no_llega_a_nada():
+    """`tesis` no lo pasa el worker y no hay ninguna colección de tesis por símbolo. Se
+    conserva para la fase siguiente, pero no se puede contar con él para ningún umbral —
+    y este test lo deja dicho en vez de que alguien lo asuma."""
+    import inspect
+    import intel_worker
+    llamada = inspect.getsource(intel_worker.ciclo)
+    assert "tesis=" not in llamada, "si ya se pasa tesis, actualiza este test y la fórmula"

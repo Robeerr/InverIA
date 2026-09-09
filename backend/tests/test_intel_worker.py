@@ -32,6 +32,7 @@ import pytest
 
 import intel_earnings as earnings
 import intel_eventos as ev
+import intel_pipeline as pl
 import intel_sec as sec
 import intel_worker as w
 
@@ -86,7 +87,24 @@ class _Col:
 
 
 def _casa(doc, filtro):
-    return all(doc.get(k) == v for k, v in (filtro or {}).items())
+    """Igualdad, más los dos operadores que el worker usa: `$in` y `$ne`.
+
+    Se implementan porque si no el falso MIENTE: una consulta con `$in` no casaría con
+    nada y el test pasaría por no encontrar documentos, no por que el código acierte. Es
+    justo el fallo que un doble de pruebas tiene que evitar, y este ya lo cometió una vez.
+    """
+    for k, v in (filtro or {}).items():
+        actual = doc.get(k)
+        if isinstance(v, dict):
+            if "$in" in v and actual not in v["$in"]:
+                return False
+            if "$ne" in v and actual == v["$ne"]:
+                return False
+            if not ({"$in", "$ne"} >= set(v)):
+                raise NotImplementedError(f"el Mongo falso no entiende {set(v)}")
+        elif actual != v:
+            return False
+    return True
 
 
 class _DB:
@@ -790,3 +808,123 @@ def test_comprobar_ahora_informa_DE_CADA_fuente(configurada, con_finnhub, monkey
     r = asyncio.run(w.comprobar_ahora(_DB(cartera=[("NVDA", 12)])))
     assert [f["fuente"] for f in r["fuentes"]] == ["sec", "earnings"]
     assert all("cadena" in f and "acumulado" in f for f in r["fuentes"])
+
+
+# ── El repaso tras cambiar la fórmula ────────────────────────────────────────
+# Cambiar los pesos no reescribe lo ya guardado. Sin repaso, la lista mezclaría notas de
+# dos fórmulas —un 95 de la v1 junto a un 80 de la v2— y nadie podría saberlo mirándolas.
+
+def _guardado(db, **campos):
+    doc = {"id": "sec:x", "fuente": "sec", "symbol": "NVDA", "tier": 1,
+           "titulo": "8-K", "etapa": ev.SIGNIFICATIVO, "relevancia": 95,
+           "relevancia_v": 1, "nivel_alerta": ev.CRITICAL, "historial": [],
+           "afecta_cartera": True, "afecta_watchlist": True, "afecta_tesis": False,
+           "crudo": {"suceso": "8-K"}}
+    doc.update(campos)
+    db[w.COL_EVENTOS].docs.append(doc)
+    return doc
+
+
+def test_el_repaso_recalcula_las_notas_VIEJAS():
+    db = _DB(cartera=[("NVDA", 12)])
+    _guardado(db)
+    r = asyncio.run(w.repuntuar_pendientes(db))
+    assert r == {"revisados": 1, "cambiados": 1}
+    d = db[w.COL_EVENTOS].docs[0]
+    assert d["relevancia"] == 80 and d["nivel_alerta"] == ev.IMPORTANT
+    assert d["relevancia_v"] == pl.RELEVANCIA_V
+
+
+def test_el_repaso_es_IDEMPOTENTE():
+    """Cada evento lleva su versión, así que la segunda vuelta no encuentra nada. Si no,
+    reescribiría la colección entera en cada arranque para siempre."""
+    db = _DB(cartera=[("NVDA", 12)])
+    _guardado(db)
+    asyncio.run(w.repuntuar_pendientes(db))
+    assert asyncio.run(w.repuntuar_pendientes(db))["revisados"] == 0
+
+
+def test_el_repaso_se_CURA_SOLO_si_el_proceso_muere_a_mitad():
+    """Lo que quede sin sellar se repasa en la vuelta siguiente. No hace falta recordar
+    por dónde iba: el propio documento lo dice."""
+    db = _DB(cartera=[("NVDA", 12)])
+    _guardado(db, id="sec:a")
+    _guardado(db, id="sec:b")
+    db[w.COL_EVENTOS].docs[1]["relevancia_v"] = pl.RELEVANCIA_V   # como si ya se hubiera hecho
+    assert asyncio.run(w.repuntuar_pendientes(db))["revisados"] == 1
+
+
+def test_el_repaso_NO_TOCA_los_descartados():
+    """`descartado` es terminal: es la puerta que impide que algo ya rechazado vuelva a
+    entrar. Y su motivo no depende de la nota — quien no está en tu universo sigue sin
+    estarlo con cualquier fórmula."""
+    db = _DB(cartera=[("NVDA", 12)])
+    _guardado(db, etapa=ev.DESCARTADO, motivo_descarte="fuera_de_universo", relevancia=95)
+    assert asyncio.run(w.repuntuar_pendientes(db))["revisados"] == 0
+    assert db[w.COL_EVENTOS].docs[0]["relevancia"] == 95
+
+
+def test_lo_que_ya_no_llega_al_umbral_VUELVE_a_filtrado_y_queda_anotado():
+    """La única marcha atrás del sistema, y por eso está escrita a mano y fuera del
+    pipeline: un retroceso en el camino normal sí sería el fallo que las transiciones
+    existen para impedir. Queda en el historial como recalibración."""
+    db = _DB()      # ni en cartera ni en watchlist: la nota se desploma
+    _guardado(db, tier=4, crudo={"suceso": "4"})
+    asyncio.run(w.repuntuar_pendientes(db))
+    d = db[w.COL_EVENTOS].docs[0]
+    assert d["relevancia"] < pl.UMBRAL_SIGNIFICATIVO
+    assert d["etapa"] == ev.FILTRADO
+    assert d["historial"][-1]["motivo"] == "recalibrado"
+
+
+def test_lo_que_estaba_en_filtrado_puede_SUBIR_a_significativo():
+    db = _DB(cartera=[("NVDA", 12)])
+    _guardado(db, etapa=ev.FILTRADO, relevancia=10, nivel_alerta=ev.INFO)
+    asyncio.run(w.repuntuar_pendientes(db))
+    assert db[w.COL_EVENTOS].docs[0]["etapa"] == ev.SIGNIFICATIVO
+
+
+def test_un_evento_ya_ALERTADO_no_retrocede_por_el_repaso():
+    """Ya te avisó. Devolverlo a la lista de pendientes reescribiría la historia."""
+    db = _DB(cartera=[("NVDA", 12)])
+    _guardado(db, etapa=ev.ALERTADO)
+    asyncio.run(w.repuntuar_pendientes(db))
+    assert db[w.COL_EVENTOS].docs[0]["etapa"] == ev.ALERTADO
+
+
+def test_el_repaso_lo_lanza_UNA_SOLA_fuente(configurada, con_finnhub, monkeypatch):
+    """Si lo hicieran las dos, dos workers se pisarían escribiendo los mismos documentos
+    en el mismo instante."""
+    llamadas = []
+
+    async def espia(db, limite=2000):
+        llamadas.append(True)
+        return {"revisados": 0, "cambiados": 0}
+    monkeypatch.setattr(w, "repuntuar_pendientes", espia)
+    monkeypatch.setattr(w, "dormir", _no_dormir)
+
+    async def para(_db, _mod):
+        raise _Parar()
+    monkeypatch.setattr(w, "ciclo", para)
+    for mod in w.FUENTES:
+        with pytest.raises(_Parar):
+            asyncio.run(w.worker_loop(_DB(), mod, retraso_inicial=0))
+    assert len(llamadas) == 1
+
+
+def test_si_el_repaso_falla_el_worker_ARRANCA_igual(configurada, monkeypatch):
+    """Un repaso es mantenimiento. Que impidiera vigilar sería cambiar un número feo por
+    dejar de mirar el mercado."""
+    async def revienta(*_a, **_k):
+        raise RuntimeError("Mongo no responde")
+    monkeypatch.setattr(w, "repuntuar_pendientes", revienta)
+    monkeypatch.setattr(w, "dormir", _no_dormir)
+    vueltas = []
+
+    async def ciclo(_db, _mod):
+        vueltas.append(True)
+        raise _Parar()
+    monkeypatch.setattr(w, "ciclo", ciclo)
+    with pytest.raises(_Parar):
+        asyncio.run(w.worker_loop(_DB(), w.FUENTES[0], retraso_inicial=0))
+    assert vueltas == [True]

@@ -29,17 +29,59 @@ import intel_eventos as ev
 
 # ── Pesos de la relevancia. DECISIONES, con su motivo al lado. ───────────────
 #
-# Tener la acción EN CARTERA pesa más que tenerla en watchlist porque hay dinero
-# dentro: el mismo hecho cambia lo que puedes perder, no solo lo que te interesa.
+# LA NOTA MIDE DOS EJES, NO UNO
+#
+# La primera versión medía solo CUÁNTO TE TOCA, y el resultado fue que la escala se
+# quedó con dos valores: todo lo de una acción tuya salía CRÍTICO y todo lo de una
+# acción seguida salía ATENCIÓN. Un Form 4 de 200 acciones por consolidación automática
+# pesaba lo mismo que un 8-K de fusión, porque nada distinguía QUÉ CLASE DE COSA es el
+# evento.
+#
+# Ahora se suman tres cosas: cuánto te toca, qué clase de suceso es, y cuánto se puede
+# uno fiar de quien lo cuenta.
+
+# 1 · CUÁNTO TE TOCA. Excluyentes: tener la acción YA implica seguirla, así que sumar
+# los dos daba 70 de salida a cualquier cosa que rozara tu cartera.
 PESO_CARTERA = 45
 PESO_WATCHLIST = 25
-PESO_TESIS = 20
+# Sin uso HOY: el worker no pasa `tesis` y no existe ninguna colección de tesis por
+# símbolo — `tesis.py` la redacta al vuelo desde un dashboard, no la almacena. Se
+# mantiene el parámetro porque la fase de investigación lo usará, pero no se puede
+# contar con él para llegar a ningún umbral.
+PESO_TESIS = 15
 
-# El TIER de la fuente. Un filing de la SEC es un hecho registrado; un tuit es que
-# alguien ha dicho algo. Los dos pueden descubrir una señal, pero no valen igual como
-# evidencia, y esta diferencia es la que impide que un rumor entre como si fuera un
-# hecho.
-PESO_TIER = {1: 25, 2: 15, 3: 8, 4: 0}
+# 2 · QUÉ CLASE DE SUCESO ES. No es una métrica inventada: es la clasificación que la
+# propia fuente ya da. La SEC dice si un registro es un 8-K o un Form 4; Finnhub dice si
+# de unos resultados hay cifras o solo una fecha.
+#
+#   8-K       la empresa está OBLIGADA a contarlo: por definición es material
+#   Form 4    operación de un directivo. La mayoría son consolidaciones automáticas, y
+#             sin leer el documento no se puede saber si esta lo es. Vale 0: entra en la
+#             lista, pero no interrumpe. Cuando haya fase de investigación, cambiará.
+#   publicado ya hay cifras: el hecho, no la previsión
+#   cambio    la fecha se ha movido. Adelantar suele acompañar buenas noticias y
+#             retrasar es una señal de alarma clásica
+#   programado hay fecha, dentro de semanas. Es un aviso, no una novedad
+PESO_SUCESO = {
+    "8-K": 20,
+    "4": 0,
+    "publicado": 20,
+    "cambio_fecha": 15,
+    "programado": 5,
+}
+# Un suceso que no sabemos clasificar. Ni se premia ni se castiga: se le da el valor
+# intermedio, para que una fuente nueva no entre desactivada ni desbocada.
+PESO_SUCESO_DESCONOCIDO = 10
+
+# 3 · CUÁNTO SE PUEDE UNO FIAR. El tier mide FIABILIDAD y nada más. Bajó de 25/15/8 a
+# 15/10/5 cuando el peso del suceso pasó a llevar la importancia: si no, tier y suceso
+# medirían lo mismo dos veces y la nota se saldría por arriba.
+PESO_TIER = {1: 15, 2: 10, 3: 5, 4: 0}
+
+# Versión de la fórmula. Se estampa en cada evento puntuado para poder repasar los que
+# quedaron con una nota de otra versión — dos notas calculadas con reglas distintas en la
+# misma lista no se pueden comparar, y nadie podría saberlo mirándolas.
+RELEVANCIA_V = 2
 
 # Suelo para que un evento pase de `filtrado` a `significativo`. Por debajo se guarda
 # y se puede consultar, pero no aparece solo.
@@ -142,6 +184,27 @@ def filtrar(eventos: list, universo=None) -> tuple:
     return pasan, descartados
 
 
+def suceso_de(evento: dict) -> Optional[str]:
+    """Qué clase de suceso es, según lo dijo la fuente. Nunca según lo que creamos.
+
+    Vive en `crudo["suceso"]` y lo escribe cada connector con su propio vocabulario ya
+    normalizado: `8-K` y `4` para la SEC, `programado`/`cambio_fecha`/`publicado` para
+    los resultados. Que lo ponga el connector y no el pipeline es lo que evita que este
+    módulo tenga que saber qué es la SEC.
+    """
+    if not isinstance(evento, dict):
+        return None
+    return ((evento.get("crudo") or {}).get("suceso")) or None
+
+
+def peso_del_suceso(evento: dict) -> int:
+    """Los puntos que aporta la clase de suceso. Un desconocido no se premia ni castiga."""
+    suceso = suceso_de(evento)
+    if suceso is None:
+        return PESO_SUCESO_DESCONOCIDO
+    return PESO_SUCESO.get(suceso, PESO_SUCESO_DESCONOCIDO)
+
+
 def puntuar(evento: dict, cartera=None, watchlist=None, tesis=None) -> dict:
     """Pone nota de relevancia y decide si el evento es significativo.
 
@@ -159,15 +222,17 @@ def puntuar(evento: dict, cartera=None, watchlist=None, tesis=None) -> dict:
     en_watchlist = sym in {str(s).upper() for s in (watchlist or ()) if s}
     en_tesis = sym in {str(s).upper() for s in (tesis or ()) if s}
 
-    nota = 0
-    nota += PESO_CARTERA if en_cartera else 0
-    nota += PESO_WATCHLIST if en_watchlist else 0
+    # Cartera y watchlist son EXCLUYENTES: tener la acción ya implica seguirla, y
+    # sumarlas daba 70 de salida a cualquier cosa que rozara tu cartera.
+    nota = PESO_CARTERA if en_cartera else (PESO_WATCHLIST if en_watchlist else 0)
     nota += PESO_TESIS if en_tesis else 0
     nota += PESO_TIER.get(int(evento.get("tier") or 4), 0)
+    nota += peso_del_suceso(evento)
     nota = max(0, min(100, nota))
 
     salida = dict(evento)
     salida["relevancia"] = nota
+    salida["relevancia_v"] = RELEVANCIA_V
     salida["nivel_alerta"] = ev.nivel_de(nota)
     salida["afecta_cartera"] = en_cartera
     salida["afecta_watchlist"] = en_watchlist

@@ -200,7 +200,11 @@ def parsear_feed(xml: str, por_cik: dict) -> list:
             titulo=f"{forma} · {etiqueta}" + (f" — {nombre}" if nombre else ""),
             url=enlace, symbol=symbol, tipo=tipo, tier=TIER,
             publicado_en=actualizado or None,
-            crudo={"formulario": forma, "cik": m_cik.group(1), "titulo_sec": titulo},
+            # `suceso` es lo que el puntuador lee para saber QUÉ CLASE de cosa es. Lo
+            # pone el connector, con el vocabulario de su propia fuente: así el pipeline
+            # no necesita saber qué es la SEC ni qué formularios existen.
+            crudo={"suceso": forma, "formulario": forma,
+                   "cik": m_cik.group(1), "titulo_sec": titulo},
         )
         if e:
             eventos.append(e)
