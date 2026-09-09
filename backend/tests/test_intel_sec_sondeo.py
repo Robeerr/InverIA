@@ -212,7 +212,7 @@ def test_se_cuentan_los_casos_de_varias_clases():
     assert a["ciks_distintos"] == 4
     assert a["tickers_distintos"] == 6
     assert a["ciks_con_varios_tickers"] == 2
-    assert a["tickers_perdidos_en_total"] == 2
+    assert a["tickers_que_perdia_el_mapa_viejo"] == 2
 
 
 def test_la_lista_de_casos_dice_QUIEN_GANA_hoy():
@@ -223,57 +223,69 @@ def test_la_lista_de_casos_dice_QUIEN_GANA_hoy():
     assert caso["tickers"] == ["GOOGL", "GOOG"] and caso["gana_hoy"] == "GOOG"
 
 
-def test_la_ficha_explica_el_recorrido_ENTERO_de_un_ticker():
-    """Existe en la fuente, tiene CIK, ese CIK tiene dos tickers, el mapa guarda el otro,
-    y por eso no se alcanza. Los cinco datos hacen falta para entender el fallo; con
-    menos, hay que creerse la conclusión."""
+def test_la_ficha_distingue_EL_MAPA_DE_AHORA_del_de_antes():
+    """Es la razón de ser de la ficha desde que se migró. El mapa vigente no pierde nada;
+    seguir evaluando contra el colapsado haría que el panel dijera que unos registros «se
+    están descartando ahora mismo» cuando de hecho están entrando."""
     a = sondeo.analizar_tabla(FILAS, consultar=("GOOGL",))
     f = a["consultas"][0]
     assert f["existe_en_la_fuente"] is True
     assert f["cik"] == 1652044
     assert f["tickers_de_ese_cik"] == ["GOOGL", "GOOG"]
-    assert f["el_mapa_actual_guarda_para_ese_cik"] == "GOOG"
-    assert f["alcanzable_con_el_mapa_de_hoy"] is False
-    assert f["se_pierde"] is True
+    assert f["alcanzable_ahora"] is True          # con el mapa vigente
+    assert f["el_mapa_viejo_guardaba"] == "GOOG"  # lo que pasaba antes
+    assert f["se_perdia_antes"] is True
 
 
 def test_un_ticker_SIN_problema_se_ve_distinto():
     a = sondeo.analizar_tabla(FILAS, consultar=("ORCL",))
     f = a["consultas"][0]
-    assert f["existe_en_la_fuente"] and f["alcanzable_con_el_mapa_de_hoy"]
-    assert f["se_pierde"] is False
+    assert f["alcanzable_ahora"] is True and f["se_perdia_antes"] is False
 
 
-def test_un_ticker_que_NO_ESTA_en_la_sec_no_es_lo_mismo_que_uno_perdido():
-    """Uno se arregla con el mapa y el otro no se arregla con nada. Mezclarlos haría
-    pensar que el mapa nuevo va a cubrir valores que no registran en EDGAR."""
-    a = sondeo.analizar_tabla(FILAS, consultar=("IBE",))    # Iberdrola, no cotiza en EEUU
+def test_un_ticker_que_NO_ESTA_en_la_sec_no_es_lo_mismo_que_uno_recuperado():
+    """Uno lo arregló la migración y el otro no lo arregla nada. Mezclarlos haría pensar
+    que el mapa nuevo cubre valores que no registran en EDGAR."""
+    a = sondeo.analizar_tabla(FILAS, consultar=("IBE",))
     f = a["consultas"][0]
-    assert f["existe_en_la_fuente"] is False and f["se_pierde"] is False
+    assert f["existe_en_la_fuente"] is False
+    assert f["alcanzable_ahora"] is False and f["se_perdia_antes"] is False
 
 
-def test_el_universo_se_reparte_en_TRES_estados_excluyentes():
+def test_el_universo_se_reparte_en_DOS_estados_con_el_mapa_vigente():
+    """Dos, no tres: o está en la SEC y se resuelve, o no está. «Perdido por el mapa»
+    dejó de ser un estado posible."""
     a = sondeo.analizar_tabla(FILAS, universo=["AAPL", "GOOGL", "IBE", "ORCL"])
     u = a["universo"]
-    assert u["se_pierden_por_el_mapa"] == ["GOOGL"]
+    assert sorted(u["resueltos"]) == ["AAPL", "GOOGL", "ORCL"]
     assert u["sin_cik_en_la_sec"] == ["IBE"]
-    assert sorted(u["correctos"]) == ["AAPL", "ORCL"]
-    assert u["revisados"] == 4
+    assert u["los_recuperaba_la_migracion"] == ["GOOGL"]
+    assert len(u["resueltos"]) + len(u["sin_cik_en_la_sec"]) == u["revisados"]
 
 
-def test_el_veredicto_es_B_si_se_pierde_algo_TUYO():
-    """Vigilar por CIK arrancaría dejando fuera un valor de tu cartera sin decirlo. Es el
-    fallo silencioso que hay que impedir antes de migrar."""
+def test_el_veredicto_ya_NO_puede_ser_B_por_el_mapa():
+    """Antes de migrar salía B por GOOGL. Seguir dándolo informaría de un problema
+    resuelto como si siguiera vivo — y la producción demuestra que no: sus eventos
+    están entrando."""
     a = sondeo.analizar_tabla(FILAS, universo=["AAPL", "GOOGL"])
-    assert sondeo.veredicto_tabla(a)["veredicto"] == "B"
+    v = sondeo.veredicto_tabla(a)
+    assert v["veredicto"] == "A"
+    assert "GOOGL" in v["detalle"] and "ahora se resuelven" in v["detalle"]
 
 
-def test_el_veredicto_es_A_si_lo_unico_que_falta_NO_esta_en_la_sec():
+def test_lo_que_no_esta_en_la_sec_no_bloquea_el_veredicto():
     """Un valor europeo que no registra en EDGAR no lo arregla ningún mapa. No puede
-    bloquear la migración indefinidamente."""
+    dejar el diagnóstico en rojo para siempre."""
     a = sondeo.analizar_tabla(FILAS, universo=["AAPL", "IBE"])
     v = sondeo.veredicto_tabla(a)
     assert v["veredicto"] == "A" and "no registran en EDGAR" in v["detalle"]
+
+
+def test_se_conserva_CUANTO_perdia_el_mapa_viejo():
+    """La medida de lo que se arregló: 2.394 tickers en el fichero real. Borrarla dejaría
+    el cambio sin ninguna cifra que lo justifique."""
+    a = sondeo.analizar_tabla(FILAS)
+    assert a["tickers_que_perdia_el_mapa_viejo"] == 2      # GOOGL y BRK-A en este fixture
 
 
 def test_el_connector_YA_NO_colapsa_el_mapa():

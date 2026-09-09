@@ -305,6 +305,14 @@ def analizar_tabla(filas: list, universo=(), consultar=()) -> dict:
     invertido_hoy = {t: c for c, t in actual.items()}
 
     def ficha(ticker: str) -> dict:
+        """El recorrido de un ticker por los DOS mapas: el de ahora y el de antes.
+
+        La distinción es la razón de ser de esta función desde que se migró. El mapa
+        vigente es `{TICKER: cik}` y no pierde nada; el colapsado ya no existe en el
+        connector. Seguir evaluando contra el viejo haría que este panel dijera que unos
+        registros «se están descartando ahora mismo» cuando de hecho están entrando — que
+        es exactamente la clase de mentira que este panel existe para no contar.
+        """
         ticker = (ticker or "").upper().strip()
         cik = propuesto.get(ticker)
         return {
@@ -312,11 +320,12 @@ def analizar_tabla(filas: list, universo=(), consultar=()) -> dict:
             "existe_en_la_fuente": cik is not None,
             "cik": cik,
             "tickers_de_ese_cik": por_cik_todos.get(cik, []) if cik else [],
-            "el_mapa_actual_guarda_para_ese_cik": actual.get(cik) if cik else None,
-            # «Hoy» es antes de la migración: con el mapa uno-a-muchos ya no se pierde
-            # ninguno. Se mantiene para poder seguir demostrando cuál era el fallo.
-            "alcanzable_con_el_mapa_de_hoy": ticker in invertido_hoy,
-            "se_pierde": cik is not None and ticker not in invertido_hoy,
+            # AHORA: el mapa vigente resuelve todo lo que exista en la fuente.
+            "alcanzable_ahora": cik is not None,
+            # ANTES: lo que hacía el mapa colapsado. Es historia, y se conserva porque es
+            # la evidencia de qué se arregló.
+            "el_mapa_viejo_guardaba": actual.get(cik) if cik else None,
+            "se_perdia_antes": cik is not None and ticker not in invertido_hoy,
         }
 
     universo = sorted({(s or "").upper().strip() for s in universo if s})
@@ -326,42 +335,51 @@ def analizar_tabla(filas: list, universo=(), consultar=()) -> dict:
         "ciks_distintos": len(por_cik_todos),
         "tickers_distintos": len(propuesto),
         "ciks_con_varios_tickers": len(multiples),
-        "tickers_perdidos_en_total": len(propuesto) - len(invertido_hoy),
+        # Lo que perdía el mapa colapsado. Se conserva como medida de lo que se arregló:
+        # 2.394 tickers, el 23 % del mercado.
+        "tickers_que_perdia_el_mapa_viejo": len(propuesto) - len(invertido_hoy),
         "casos_multiples": [{"cik": c, "tickers": t, "gana_hoy": actual.get(c)}
                             for c, t in sorted(multiples.items())],
         "consultas": [ficha(t) for t in consultar],
         "universo": {
             "revisados": len(universo),
-            # Los tres estados posibles, separados porque piden acciones distintas:
-            # uno se arregla con el mapa, otro no se puede arreglar.
-            "se_pierden_por_el_mapa": [f["ticker"] for f in fichas_universo if f["se_pierde"]],
+            # DOS estados con el mapa vigente, no tres: o el valor está en la SEC y se
+            # resuelve, o no está. «Perdido por el mapa» dejó de ser posible.
+            "resueltos": [f["ticker"] for f in fichas_universo if f["alcanzable_ahora"]],
             "sin_cik_en_la_sec": [f["ticker"] for f in fichas_universo
                                   if not f["existe_en_la_fuente"]],
-            "correctos": [f["ticker"] for f in fichas_universo
-                          if f["alcanzable_con_el_mapa_de_hoy"]],
+            # Los que el mapa viejo tiraba. Cero acción pendiente: es la prueba de que la
+            # migración sirvió para algo concreto y medible.
+            "los_recuperaba_la_migracion": [f["ticker"] for f in fichas_universo
+                                            if f["se_perdia_antes"]],
             "detalle_afectados": [f for f in fichas_universo
-                                  if f["se_pierde"] or not f["existe_en_la_fuente"]],
+                                  if f["se_perdia_antes"] or not f["existe_en_la_fuente"]],
         },
     }
 
 
 def veredicto_tabla(analisis: dict) -> dict:
-    """A) listo para migrar, o B) hay que corregir el mapa antes."""
+    """A) el mapa resuelve todo lo resoluble, o B) queda algo por corregir.
+
+    Se juzga contra el mapa VIGENTE. Antes de la migración este veredicto salía B porque
+    el mapa colapsado perdía cinco valores; ahora esos cinco entran, y decir lo contrario
+    sería informar de un problema resuelto como si siguiera vivo.
+    """
     u = analisis["universo"]
-    if u["se_pierden_por_el_mapa"]:
-        return {"veredicto": "B",
-                "titulo": "Hay que corregir el mapa antes de migrar",
-                "detalle": (f"{len(u['se_pierden_por_el_mapa'])} valores tuyos existen en "
-                            "la SEC pero el mapa actual no los alcanza. Vigilar por CIK "
-                            "arrancaría dejándolos fuera sin decirlo.")}
+    rescatados = u.get("los_recuperaba_la_migracion") or []
+    nota = (f" El mapa anterior perdía {len(rescatados)} ({', '.join(rescatados)}); "
+            "ahora se resuelven.") if rescatados else ""
+    if len(u["resueltos"]) + len(u["sin_cik_en_la_sec"]) != u["revisados"]:
+        return {"veredicto": "B", "titulo": "Hay valores sin clasificar",
+                "detalle": "Algún valor no cae en ninguno de los dos estados." + nota}
     if u["sin_cik_en_la_sec"]:
         return {"veredicto": "A",
                 "titulo": "El mapa alcanza todo lo alcanzable",
-                "detalle": (f"Ningún valor se pierde por el mapa. {len(u['sin_cik_en_la_sec'])} "
-                            "no están en la SEC —no registran en EDGAR— y eso no lo "
-                            "arregla ningún mapa.")}
-    return {"veredicto": "A", "titulo": "Mapa correcto y listo para migrar",
-            "detalle": "Todos tus valores se resuelven a un CIK."}
+                "detalle": (f"{len(u['resueltos'])} valores se resuelven a un CIK. "
+                            f"{len(u['sin_cik_en_la_sec'])} no están en la SEC —no "
+                            "registran en EDGAR— y eso no lo arregla ningún mapa." + nota)}
+    return {"veredicto": "A", "titulo": "Mapa correcto: todos tus valores se resuelven",
+            "detalle": f"Los {u['revisados']} apuntan a un CIK." + nota}
 
 
 async def diagnosticar_tickers(universo=(), consultar=("GOOGL", "GOOG", "ORCL")) -> dict:

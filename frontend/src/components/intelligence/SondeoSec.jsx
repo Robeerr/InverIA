@@ -29,7 +29,8 @@ const VEREDICTOS = {
   APOYA: ["text-sube", "La caché condicional funciona: la vigilancia por CIK es viable."],
   PARCIAL: ["text-aviso", "Funciona solo en parte, y eso no basta."],
   NO_APOYA: ["text-baja", "No hay caché condicional que aprovechar."],
-  SIN_DATOS: ["text-tinta-3", "No se ha podido medir."],
+  SIN_DATOS: ["text-tinta-3",
+              "Sin cabeceras de caché: es el resultado esperado, no un fallo."],
 };
 
 export default function SondeoSec() {
@@ -56,10 +57,12 @@ export default function SondeoSec() {
     <div className="mt-8" data-testid="sondeo-sec">
       <div className="iv-seccion"><span className="iv-etiqueta">Sondeo de EDGAR</span></div>
       <p className="text-xs text-tinta-3 max-w-[70ch] leading-relaxed">
-        Seis peticiones a tres empresas de tu cartera para medir si la SEC responde{" "}
-        <span className="iv-cifra">304</span> a una petición condicional. De eso depende
-        que vigilar por CIK cueste 3 MB al día o 2,9 GB. No escribe nada ni cambia la
-        vigilancia actual.
+        Seis peticiones a tres empresas de tu cartera. Midió si la SEC responde{" "}
+        <span className="iv-cifra">304</span> a una petición condicional:{" "}
+        <b className="text-tinta-2">no lo hace</b>, y por eso la vigilancia por CIK no
+        implementa caché condicional. Lo que sí midió —22 kB comprimidos por empresa— es
+        lo que la hizo viable. Se conserva para poder repetir la medición si algún día
+        cambia. No escribe nada.
       </p>
 
       <button onClick={sondear} disabled={cargando}

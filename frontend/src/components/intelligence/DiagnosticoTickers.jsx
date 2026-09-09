@@ -16,14 +16,16 @@ import { api } from "../../lib/api";
  * y si el tuyo es el otro, el pipeline lo descarta como «no es un valor tuyo». Un registro
  * de una empresa de tu cartera, tirado en silencio.
  *
- * TRES ESTADOS QUE NO SE PUEDEN PINTAR IGUAL
+ * YA ESTÁ ARREGLADO, Y ESTE PANEL TIENE QUE DECIRLO
  *
- *   correcto            · se resuelve bien
- *   se pierde por el mapa · existe en la SEC y no lo alcanzamos → se arregla
- *   sin CIK en la SEC   · no registra en EDGAR → no lo arregla ningún mapa
+ * El mapa vigente es `{TICKER: cik}` y no pierde nada. Este panel se escribió cuando el
+ * mapa sí perdía, y evaluaba contra él: si se hubiera dejado así, seguiría diciendo que
+ * los registros de GOOGL «se están descartando ahora mismo» mientras entran por decenas.
  *
- * El segundo bloquea la migración; el tercero no puede bloquearla nunca, porque no tiene
- * arreglo posible. Mezclarlos haría esperar por algo que no va a llegar.
+ * Ahora informa de DOS cosas separadas:
+ *
+ *   AHORA  · se resuelve, o no está en la SEC. No hay tercer estado.
+ *   ANTES  · qué perdía el mapa colapsado — la medida de lo que arregló la migración.
  */
 export default function DiagnosticoTickers() {
   const [r, setR] = useState(null);
@@ -76,39 +78,32 @@ export default function DiagnosticoTickers() {
             {[["Filas", r.total_filas], ["CIK distintos", r.ciks_distintos],
               ["Tickers", r.tickers_distintos],
               ["CIK con varias clases", r.ciks_con_varios_tickers],
-              ["Tickers perdidos", r.tickers_perdidos_en_total]].map(([t, v], i) => (
-              <div key={t} className={i >= 3 ? "border-l border-alerta pl-3" : ""}>
+              ["Perdía el mapa viejo", r.tickers_que_perdia_el_mapa_viejo]].map(([t, v], i) => (
+              <div key={t} className={i === 4 ? "border-l border-linea-fuerte pl-3" : ""}>
                 <p className="iv-cifra text-xl text-tinta">{v}</p>
                 <p className="iv-etiqueta">{t}</p>
               </div>
             ))}
           </div>
 
-          {/* Tu universo, en los tres estados. Es lo que decide si se puede migrar. */}
+          {/* Tu universo, con el mapa VIGENTE. Dos estados, no tres. */}
           {u && (
             <div className="mt-6">
-              <p className="iv-etiqueta mb-2">Tus {u.revisados} valores</p>
+              <p className="iv-etiqueta mb-2">Tus {u.revisados} valores, ahora</p>
               <ul className="text-sm space-y-1">
                 <li className="flex justify-between gap-3">
-                  <span className="text-sube">Se resuelven bien</span>
-                  <span className="iv-cifra text-tinta-2">{u.correctos.length}</span>
-                </li>
-                <li className="flex justify-between gap-3">
-                  <span className="text-alerta">Se pierden por el mapa</span>
-                  <span className="iv-cifra text-tinta-2">
-                    {u.se_pierden_por_el_mapa.length}
-                  </span>
+                  <span className="text-sube">Se resuelven a un CIK</span>
+                  <span className="iv-cifra text-tinta-2">{u.resueltos.length}</span>
                 </li>
                 <li className="flex justify-between gap-3">
                   <span className="text-tinta-3">Sin CIK en la SEC</span>
                   <span className="iv-cifra text-tinta-2">{u.sin_cik_en_la_sec.length}</span>
                 </li>
               </ul>
-              {u.se_pierden_por_el_mapa.length > 0 && (
-                <p className="mt-2 text-xs text-alerta max-w-[70ch] leading-relaxed">
-                  {u.se_pierden_por_el_mapa.join(", ")} — existen en la SEC pero el mapa no
-                  los alcanza. Sus registros se están descartando ahora mismo como «no es
-                  un valor tuyo».
+              {u.los_recuperaba_la_migracion?.length > 0 && (
+                <p className="mt-2 text-xs text-sube max-w-[70ch] leading-relaxed">
+                  {u.los_recuperaba_la_migracion.join(", ")} — los perdía el mapa anterior
+                  y ahora entran. Es lo que arregló la migración, medido.
                 </p>
               )}
               {u.sin_cik_en_la_sec.length > 0 && (
@@ -128,7 +123,7 @@ export default function DiagnosticoTickers() {
                 <thead className="text-tinta-3">
                   <tr className="text-left">
                     {["Ticker", "¿En la SEC?", "CIK", "Tickers de ese CIK",
-                      "El mapa guarda", "¿Se alcanza?"].map((h) => (
+                      "El mapa viejo guardaba", "¿Se alcanza ahora?"].map((h) => (
                       <th key={h} className="font-normal pb-2 pr-4">{h}</th>
                     ))}
                   </tr>
@@ -140,9 +135,9 @@ export default function DiagnosticoTickers() {
                       <td className="py-2 pr-4">{f.existe_en_la_fuente ? "sí" : "no"}</td>
                       <td className="py-2 pr-4">{f.cik ?? "—"}</td>
                       <td className="py-2 pr-4">{f.tickers_de_ese_cik.join(", ") || "—"}</td>
-                      <td className="py-2 pr-4">{f.el_mapa_actual_guarda_para_ese_cik ?? "—"}</td>
-                      <td className={`py-2 pr-4 ${f.se_pierde ? "text-alerta" : "text-tinta-2"}`}>
-                        {f.alcanzable_con_el_mapa_de_hoy ? "sí" : "NO"}
+                      <td className="py-2 pr-4">{f.el_mapa_viejo_guardaba ?? "—"}</td>
+                      <td className={`py-2 pr-4 ${f.alcanzable_ahora ? "text-sube" : "text-tinta-3"}`}>
+                        {f.alcanzable_ahora ? "sí" : "no está en la SEC"}
                       </td>
                     </tr>
                   ))}
@@ -156,7 +151,8 @@ export default function DiagnosticoTickers() {
           {casos.length > 0 && (
             <div className="mt-6">
               <p className="iv-etiqueta mb-2">
-                CIK con varias clases de acción ({casos.length})
+                CIK con varias clases de acción ({casos.length}) · lo que guardaba el
+                mapa viejo
               </p>
               <ul className="text-xs iv-cifra text-tinta-2 space-y-0.5 max-h-72 overflow-y-auto">
                 {visibles.map((c) => (
