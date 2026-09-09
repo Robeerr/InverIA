@@ -139,9 +139,10 @@ export default function SondeoSec() {
 
           {r.sin_cik_en_cartera?.length > 0 && (
             <p className="mt-4 text-xs text-aviso max-w-[70ch] leading-relaxed">
-              Sin CIK conocido en la SEC: {r.sin_cik_en_cartera.join(", ")}. La vigilancia
-              por CIK no los cubriría — suelen ser valores no estadounidenses, que no
-              registran en EDGAR.
+              El mapa actual no resuelve a CIK: {r.sin_cik_en_cartera.join(", ")}. OJO:
+              esto NO significa que no estén en la SEC. La auditoría de la tabla, más
+              abajo, distingue las dos cosas — y en la medición real resultó que sí
+              estaban, y que los perdía nuestro propio mapa.
             </p>
           )}
         </div>
