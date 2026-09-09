@@ -225,3 +225,158 @@ async def sondear(ciks: list, en_cartera: int = 0, en_watchlist: int = 0) -> dic
         **veredicto(resultados),
         "proyeccion": proyeccion(resultados, en_cartera, en_watchlist),
     }
+
+
+# ── Diagnóstico de la tabla de tickers ───────────────────────────────────────
+#
+# POR QUÉ HACE FALTA PEDIR EL FICHERO OTRA VEZ
+#
+# El connector cachea el mapa YA COLAPSADO (`{cik: ticker}`), y ese mapa es justo donde
+# se pierde la información que hay que investigar: si dos tickers comparten CIK, uno
+# desaparece antes de llegar a la caché. Sin las filas crudas no se puede contar cuántos
+# casos hay ni cuáles.
+#
+# Es una petición, no seis, y el resultado se resume y SE TIRA: guardar diez mil filas en
+# memoria para un diagnóstico puntual sería pagar RAM permanente por una consulta.
+
+URL_TICKERS = "https://www.sec.gov/files/company_tickers.json"
+
+
+def _filas(datos) -> list:
+    """Las filas del fichero, en el mismo orden en que las lee el connector.
+
+    El orden importa: es el que decide qué ticker gana cuando dos comparten CIK, y este
+    diagnóstico tiene que reproducir lo que pasa de verdad, no lo que debería pasar.
+    """
+    crudas = datos.values() if isinstance(datos, dict) else (datos or [])
+    filas = []
+    for f in crudas:
+        try:
+            filas.append((int(f["cik_str"]), str(f["ticker"]).upper().strip()))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return filas
+
+
+def mapa_actual(filas: list) -> dict:
+    """Reconstruye EXACTAMENTE el mapa que construye hoy `intel_sec._tickers_por_cik`.
+
+    Se replica el bucle en vez de importarlo para poder alimentarlo con las filas ya
+    descargadas, pero la regla es la misma: un ticker por CIK, y el último pisa al
+    anterior. Si algún día cambia el connector, el test que compara los dos avisará.
+    """
+    por_cik = {}
+    for cik, ticker in filas:
+        por_cik[cik] = ticker
+    return por_cik
+
+
+def mapa_propuesto(filas: list) -> dict:
+    """`{TICKER: cik}` — uno a muchos, que es como es la realidad.
+
+    Varios tickers pueden apuntar al mismo CIK (GOOGL y GOOG son la misma empresa) y
+    ninguno pisa al otro. Es la dirección que de verdad hace falta: partimos de TUS
+    símbolos y queremos saber a qué CIK preguntar.
+    """
+    por_ticker = {}
+    for cik, ticker in filas:
+        if ticker:
+            por_ticker[ticker] = cik
+    return por_ticker
+
+
+def analizar_tabla(filas: list, universo=(), consultar=()) -> dict:
+    """Todo el diagnóstico, sin red. PURA: recibe las filas y devuelve los hallazgos."""
+    actual = mapa_actual(filas)
+    propuesto = mapa_propuesto(filas)
+
+    # Los tickers de cada CIK, en orden de aparición.
+    por_cik_todos = {}
+    for cik, ticker in filas:
+        por_cik_todos.setdefault(cik, [])
+        if ticker not in por_cik_todos[cik]:
+            por_cik_todos[cik].append(ticker)
+    multiples = {c: t for c, t in por_cik_todos.items() if len(t) > 1}
+
+    # El mapa que se usa HOY para ir de ticker a CIK: invertir el colapsado. Aquí es
+    # donde se pierden los tickers que no ganaron.
+    invertido_hoy = {t: c for c, t in actual.items()}
+
+    def ficha(ticker: str) -> dict:
+        ticker = (ticker or "").upper().strip()
+        cik = propuesto.get(ticker)
+        return {
+            "ticker": ticker,
+            "existe_en_la_fuente": cik is not None,
+            "cik": cik,
+            "tickers_de_ese_cik": por_cik_todos.get(cik, []) if cik else [],
+            "el_mapa_actual_guarda_para_ese_cik": actual.get(cik) if cik else None,
+            "alcanzable_con_el_mapa_de_hoy": ticker in invertido_hoy,
+            "se_pierde": cik is not None and ticker not in invertido_hoy,
+        }
+
+    universo = sorted({(s or "").upper().strip() for s in universo if s})
+    fichas_universo = [ficha(s) for s in universo]
+    return {
+        "total_filas": len(filas),
+        "ciks_distintos": len(por_cik_todos),
+        "tickers_distintos": len(propuesto),
+        "ciks_con_varios_tickers": len(multiples),
+        "tickers_perdidos_en_total": len(propuesto) - len(invertido_hoy),
+        "casos_multiples": [{"cik": c, "tickers": t, "gana_hoy": actual.get(c)}
+                            for c, t in sorted(multiples.items())],
+        "consultas": [ficha(t) for t in consultar],
+        "universo": {
+            "revisados": len(universo),
+            # Los tres estados posibles, separados porque piden acciones distintas:
+            # uno se arregla con el mapa, otro no se puede arreglar.
+            "se_pierden_por_el_mapa": [f["ticker"] for f in fichas_universo if f["se_pierde"]],
+            "sin_cik_en_la_sec": [f["ticker"] for f in fichas_universo
+                                  if not f["existe_en_la_fuente"]],
+            "correctos": [f["ticker"] for f in fichas_universo
+                          if f["alcanzable_con_el_mapa_de_hoy"]],
+            "detalle_afectados": [f for f in fichas_universo
+                                  if f["se_pierde"] or not f["existe_en_la_fuente"]],
+        },
+    }
+
+
+def veredicto_tabla(analisis: dict) -> dict:
+    """A) listo para migrar, o B) hay que corregir el mapa antes."""
+    u = analisis["universo"]
+    if u["se_pierden_por_el_mapa"]:
+        return {"veredicto": "B",
+                "titulo": "Hay que corregir el mapa antes de migrar",
+                "detalle": (f"{len(u['se_pierden_por_el_mapa'])} valores tuyos existen en "
+                            "la SEC pero el mapa actual no los alcanza. Vigilar por CIK "
+                            "arrancaría dejándolos fuera sin decirlo.")}
+    if u["sin_cik_en_la_sec"]:
+        return {"veredicto": "A",
+                "titulo": "El mapa alcanza todo lo alcanzable",
+                "detalle": (f"Ningún valor se pierde por el mapa. {len(u['sin_cik_en_la_sec'])} "
+                            "no están en la SEC —no registran en EDGAR— y eso no lo "
+                            "arregla ningún mapa.")}
+    return {"veredicto": "A", "titulo": "Mapa correcto y listo para migrar",
+            "detalle": "Todos tus valores se resuelven a un CIK."}
+
+
+async def diagnosticar_tickers(universo=(), consultar=("GOOGL", "GOOG", "ORCL")) -> dict:
+    """Descarga el fichero de tickers UNA vez, lo analiza y tira las filas.
+
+    No escribe nada, no toca el connector y no cachea las diez mil filas: lo que sale de
+    aquí son recuentos y unas pocas fichas.
+    """
+    if not sec.configurado():
+        raise RuntimeError("SEC_USER_AGENT no configurado")
+    import httpx
+    t0 = time.perf_counter()
+    async with httpx.AsyncClient(timeout=TIMEOUT, headers=sec._cabeceras()) as c:
+        r = await c.get(URL_TICKERS)
+        r.raise_for_status()
+        bytes_ = getattr(r, "num_bytes_downloaded", None)
+        datos = r.json()
+    ms = round((time.perf_counter() - t0) * 1000)
+    analisis = analizar_tabla(_filas(datos), universo=universo, consultar=consultar)
+    del datos
+    return {"url": URL_TICKERS, "peticiones_hechas": 1, "ms": ms,
+            "bytes_transferidos": bytes_, **analisis, **veredicto_tabla(analisis)}

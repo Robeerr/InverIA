@@ -78,6 +78,9 @@ export const api = {
     // lectura: no escribe nada ni altera la vigilancia que está corriendo.
     sondeoSec: () =>
       client.post(`/intelligence/sec/sondeo`, {}, { timeout: 90000 }).then((r) => r.data),
+    // Diagnóstico de la tabla ticker↔CIK. Una petición a la SEC, cero escrituras.
+    tickersSec: () =>
+      client.get(`/intelligence/sec/tickers`, { timeout: 60000 }).then((r) => r.data),
   },
   indicators: (symbol) => client.get(`/indicators/${symbol}`).then((r) => r.data),
   news: (symbol) => client.get(`/news/${symbol}`).then((r) => r.data),

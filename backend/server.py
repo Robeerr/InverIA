@@ -4600,6 +4600,30 @@ async def intelligence_sondeo_sec(_user: str = Depends(auth.get_current_user)):
     return r
 
 
+@api_router.get("/intelligence/sec/tickers")
+async def intelligence_diagnostico_tickers(_user: str = Depends(auth.get_current_user)):
+    """Diagnóstico de la tabla ticker↔CIK. Una petición, cero escrituras.
+
+    POR QUÉ SE VUELVE A PEDIR EL FICHERO
+
+    El connector cachea el mapa YA COLAPSADO (`{cik: ticker}`), y ese mapa es justo donde
+    se pierde lo que hay que investigar: cuando dos tickers comparten CIK, uno desaparece
+    antes de llegar a la caché. Sin las filas crudas no se puede contar cuántos casos hay
+    ni cuáles son.
+
+    Las filas se resumen y SE TIRAN: guardar diez mil en memoria para un diagnóstico
+    puntual sería pagar RAM permanente por una consulta.
+    """
+    import intel_sec_sondeo as sondeo
+    universo, _, _ = await intel_worker._universo(db)
+    try:
+        return await sondeo.diagnosticar_tickers(universo)
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"No se pudo leer la tabla de tickers: {str(e)[:200]}")
+
+
 @api_router.post("/intelligence/comprobar")
 async def intelligence_comprobar(_user: str = Depends(auth.get_current_user)):
     """Fuerza una vuelta AHORA y devuelve por dónde ha ido cada evento.
