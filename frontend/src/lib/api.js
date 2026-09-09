@@ -63,6 +63,14 @@ export const api = {
     armar: (symbol) => client.post(`/vigilancia-veto`, { symbol }).then((r) => r.data),
     retirar: (symbol) => client.delete(`/vigilancia-veto/${symbol}`).then((r) => r.data),
   },
+  // Inteligencia. Las tres son de LECTURA: la pantalla no dispara ciclos ni pide a
+  // ninguna fuente que salga a buscar nada. Lo que enseña es lo que el worker ya escribió.
+  intelligence: {
+    estado: () => client.get(`/intelligence/estado`).then((r) => r.data),
+    eventos: (params = {}) =>
+      client.get(`/intelligence/eventos`, { params }).then((r) => r.data),
+    diagnostico: () => client.get(`/intelligence/diagnostico`).then((r) => r.data),
+  },
   indicators: (symbol) => client.get(`/indicators/${symbol}`).then((r) => r.data),
   news: (symbol) => client.get(`/news/${symbol}`).then((r) => r.data),
   analyze: (symbol, model) =>

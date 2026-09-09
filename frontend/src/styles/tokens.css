@@ -292,3 +292,27 @@
     font-family: 'IBM Plex Mono', ui-monospace, monospace;
     font-variant-numeric: tabular-nums;
 }
+
+/* ── Latido del radar ───────────────────────────────────────────────────────
+   Marca las fuentes que están escuchando AHORA. Es la única animación continua
+   de la aplicación, y por eso lleva dos frenos:
+
+     · solo la llevan las fuentes en ONLINE (lo decide el componente, no el CSS);
+     · desaparece por completo con `prefers-reduced-motion`.
+
+   Lo segundo no es cortesía: el movimiento continuo marea a parte de la gente, y
+   un anillo latiendo sin parar en el centro de la pantalla es justo el caso. Sin
+   animación el radar sigue diciendo lo mismo — el color del punto ya lleva el
+   estado — así que no se pierde información, solo el énfasis. */
+@keyframes iv-latido {
+    0%   { r: 4.5; opacity: 0.85; }
+    70%  { r: 13;  opacity: 0; }
+    100% { r: 13;  opacity: 0; }
+}
+.iv-radar-latido {
+    animation: iv-latido 2.6s ease-out infinite;
+    transform-box: fill-box;
+}
+@media (prefers-reduced-motion: reduce) {
+    .iv-radar-latido { animation: none; opacity: 0.35; }
+}

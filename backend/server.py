@@ -55,6 +55,10 @@ import veto_compra
 import vigilancia_veto
 import patrones_registro
 import cartera_historico
+# Intelligence: los dos módulos puros. El connector y el worker se importan dentro del
+# `lifespan` y de sus endpoints, para que un fallo suyo no impida arrancar el servidor.
+import intel_eventos
+import intel_pipeline
 import auth
 
 ROOT_DIR = Path(__file__).parent
@@ -355,6 +359,14 @@ async def lifespan(app: FastAPI):
     # memoria en cada cambio de ticker (/fuentes está en ese camino).
     await db.newsletter_summaries.create_index([("received_at", -1)])
     await db.analyst_ideas.create_index([("symbol", 1), ("detected_at", -1)])
+    # Intelligence. El índice único sobre `id` es LA garantía de idempotencia: aunque dos
+    # ciclos se solapen tras un reinicio, el mismo filing no puede existir dos veces.
+    await db.intel_eventos.create_index("id", unique=True)
+    # El radar pide los últimos de cada fuente y la pantalla filtra por etapa: sin estos
+    # dos, cada carga recorrería la colección entera y ordenaría en memoria.
+    await db.intel_eventos.create_index([("fuente", 1), ("recibido_en", -1)])
+    await db.intel_eventos.create_index([("etapa", 1), ("recibido_en", -1)])
+    await db.intel_salud.create_index("fuente", unique=True)
 
     # Wire the persistent snapshot cache and hydrate in-memory caches from the last
     # saved scan so the first request returns data instantly (no "warming" screen).
@@ -388,6 +400,15 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(news_ingest.news_worker_loop(db))
     except Exception as e:
         logger.warning(f"News ingest start failed: {e}")
+
+    # InverIA Intelligence: vigilancia continua de fuentes. Hoy solo SEC/EDGAR, y solo si
+    # SEC_USER_AGENT está configurada — sin ella el worker arranca, se anota
+    # NO_CONFIGURADA y no hace NI UNA petición. Ver la cabecera de intel_sec.py.
+    try:
+        import intel_worker
+        asyncio.create_task(intel_worker.worker_loop(db))
+    except Exception as e:
+        logger.warning(f"Intelligence start failed: {e}")
 
     # Aviso de seguridad no-bloqueante: si faltan secretos en producción, se usan
     # defaults públicos del repo (cualquiera podría forjar un token). No rompe el arranque.
@@ -4395,6 +4416,116 @@ async def retirar_vigilancia_veto(symbol: str, _user: str = Depends(auth.get_cur
     if res.deleted_count == 0:
         raise HTTPException(404, "No estabas vigilando esa acción")
     return {"deleted": symbol.upper().strip()}
+
+
+# ---------- InverIA Intelligence ----------
+# Tres endpoints, y ninguno calcula nada: leen lo que el worker escribió. La regla que los
+# gobierna es que el radar solo pueda pintar eventos REALES — si no ha entrado nada, la
+# respuesta viene vacía y la pantalla lo dice, en vez de rellenarse con ejemplos.
+#
+# Qué NO hay todavía, y se dice aquí para que no se confunda con un olvido: no hay resumen
+# por IA, ni agrupación, ni contraste de afirmaciones. `resumen` viaja siempre a None.
+
+#: Cuántos eventos sirve la lista como máximo. Lo que no cabe se pide con `desde`.
+TECHO_EVENTOS = 200
+
+
+@api_router.get("/intelligence/estado")
+async def intelligence_estado(_user: str = Depends(auth.get_current_user)):
+    """Qué fuentes hay, cómo están y cuándo hablaron por última vez. Es lo que dibuja el
+    radar: un anillo por fuente, encendido o apagado según la verdad y no según el diseño.
+
+    Las fuentes que aún no existen (X, YouTube) NO se inventan aquí: solo aparece lo que
+    está implementado. Pintar anillos de fuentes inexistentes sería exactamente la
+    animación que no queremos.
+    """
+    import intel_sec
+
+    salud = {d["fuente"]: d for d in
+             await db.intel_salud.find({}, {"_id": 0}).to_list(50)}
+    fuentes = []
+    for mod in (intel_sec,):
+        s = salud.get(mod.FUENTE, {})
+        # El estado se recalcula al leerlo en vez de servir el guardado: la variable de
+        # entorno puede haberse configurado después del último ciclo, y en ese caso decir
+        # NO_CONFIGURADA sería mentir durante cinco minutos.
+        fuentes.append({
+            "fuente": mod.FUENTE, "nombre": mod.NOMBRE, "tier": mod.TIER,
+            "estado": (mod.estado_salud(s.get("error"), s.get("fallos") or 0)
+                       if mod.configurado() else mod.NO_CONFIGURADA),
+            "intervalo_s": mod.INTERVALO,
+            "ultimo_ciclo": s.get("ultimo_ciclo"),
+            "actualizado_en": s.get("actualizado_en"),
+            "espera_s": s.get("espera_s") or 0,
+        })
+
+    ahora = datetime.now(timezone.utc).isoformat()
+    return {
+        "fuentes": fuentes,
+        "eventos": {
+            "total": await db.intel_eventos.count_documents({}),
+            "significativos": await db.intel_eventos.count_documents(
+                {"etapa": {"$in": [intel_eventos.SIGNIFICATIVO, intel_eventos.ALERTADO]}}),
+        },
+        # Para que la pantalla pueda decir «vigilando N valores» sin adivinarlo.
+        "universo": len(await _simbolos_que_te_importan()),
+        "ahora": ahora,
+    }
+
+
+@api_router.get("/intelligence/eventos")
+async def intelligence_eventos(etapa: str = None, symbol: str = None,
+                               limite: int = 50,
+                               _user: str = Depends(auth.get_current_user)):
+    """Los eventos, del más reciente al más antiguo.
+
+    Por defecto solo los que llegaron a significativo: es lo que la pantalla enseña. Los
+    descartados se piden a propósito con `etapa=descartado`, porque su sitio es el
+    diagnóstico —auditar el filtro— y no la lista de lo que te importa.
+    """
+    filtro = {}
+    if etapa:
+        if etapa not in intel_eventos.ETAPAS:
+            raise HTTPException(400, f"Etapa desconocida: {etapa}")
+        filtro["etapa"] = etapa
+    else:
+        filtro["etapa"] = {"$in": [intel_eventos.SIGNIFICATIVO, intel_eventos.ALERTADO]}
+    if symbol:
+        filtro["symbol"] = symbol.upper().strip()
+
+    docs = await db.intel_eventos.find(filtro, {"_id": 0}).sort(
+        "recibido_en", -1).to_list(max(1, min(limite, TECHO_EVENTOS)))
+    # `para_api` quita el crudo (puede ser un filing entero) y el historial. Los dos siguen
+    # en Mongo: lo que se ahorra es ancho de banda, no trazabilidad.
+    return {"eventos": [intel_eventos.para_api(d) for d in docs]}
+
+
+@api_router.get("/intelligence/diagnostico")
+async def intelligence_diagnostico(_user: str = Depends(auth.get_current_user)):
+    """Por dónde se ha ido lo que no llegó. Es la pantalla que impide autoengañarse.
+
+    Sin este recuento, un filtro demasiado agresivo se ve EXACTAMENTE igual que un mercado
+    tranquilo: en los dos casos el radar está en silencio. Aquí se ve la diferencia.
+    """
+    por_etapa = {}
+    for etapa in intel_eventos.ETAPAS:
+        n = await db.intel_eventos.count_documents({"etapa": etapa})
+        if n:
+            por_etapa[etapa] = n
+    por_motivo = {}
+    for d in await db.intel_eventos.find(
+            {"etapa": intel_eventos.DESCARTADO},
+            {"_id": 0, "motivo_descarte": 1}).to_list(5000):
+        m = d.get("motivo_descarte") or "sin_motivo"
+        por_motivo[m] = por_motivo.get(m, 0) + 1
+    return {
+        "por_etapa": por_etapa,
+        "descartes_por_motivo": por_motivo,
+        # Las etapas declaradas y todavía no alcanzables. Se dicen en voz alta para que el
+        # hueco sea visible en la propia API, y no una sorpresa dentro de tres meses.
+        "sin_implementar": [intel_eventos.INVESTIGADO, intel_eventos.AGRUPADO],
+        "umbral_significativo": intel_pipeline.UMBRAL_SIGNIFICATIVO,
+    }
 
 
 # ---------- Correlación de la cartera (#22) ----------

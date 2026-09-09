@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
 import {
   House, Lightning, MagnifyingGlass, Bell, Coins, CalendarBlank,
-  ChartLineUp, Brain, Stethoscope, TelegramLogo, Palette, X,
+  ChartLineUp, Brain, Broadcast, Stethoscope, TelegramLogo, Palette, X,
 } from "@phosphor-icons/react";
 
 /**
@@ -52,6 +52,7 @@ const GRUPOS = [
     items: [
       { to: "/track-record", label: "Track record", icon: ChartLineUp, testId: "nav-track-record" },
       { to: "/cerebro", label: "Cerebro", icon: Brain, testId: "nav-brain" },
+      { to: "/intelligence", label: "Inteligencia", icon: Broadcast, testId: "nav-intelligence" },
     ],
   },
 ];
