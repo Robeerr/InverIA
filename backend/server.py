@@ -55,10 +55,11 @@ import veto_compra
 import vigilancia_veto
 import patrones_registro
 import cartera_historico
-# Intelligence: los dos módulos puros. El connector y el worker se importan dentro del
-# `lifespan` y de sus endpoints, para que un fallo suyo no impida arrancar el servidor.
+# Intelligence. `intel_sec` se importa solo dentro de sus endpoints: es el único que sale
+# a la red, y así un problema suyo no puede impedir que arranque el servidor.
 import intel_eventos
 import intel_pipeline
+import intel_worker
 import auth
 
 ROOT_DIR = Path(__file__).parent
@@ -405,7 +406,6 @@ async def lifespan(app: FastAPI):
     # SEC_USER_AGENT está configurada — sin ella el worker arranca, se anota
     # NO_CONFIGURADA y no hace NI UNA petición. Ver la cabecera de intel_sec.py.
     try:
-        import intel_worker
         asyncio.create_task(intel_worker.worker_loop(db))
     except Exception as e:
         logger.warning(f"Intelligence start failed: {e}")
@@ -4525,7 +4525,31 @@ async def intelligence_diagnostico(_user: str = Depends(auth.get_current_user)):
         # hueco sea visible en la propia API, y no una sorpresa dentro de tres meses.
         "sin_implementar": [intel_eventos.INVESTIGADO, intel_eventos.AGRUPADO],
         "umbral_significativo": intel_pipeline.UMBRAL_SIGNIFICATIVO,
+        # Los contadores del periodo de prueba: cuántos se han leído, filtrado, descartado
+        # y GUARDADO desde que la vigilancia arrancó. El último cierra la cadena — que el
+        # ciclo diga «procesados 40» es compatible con una base de datos vacía.
+        "acumulado": intel_worker._acumulado(
+            await db.intel_salud.find_one({"fuente": "sec"}, {"_id": 0})),
     }
+
+
+@api_router.post("/intelligence/comprobar")
+async def intelligence_comprobar(_user: str = Depends(auth.get_current_user)):
+    """Fuerza una vuelta AHORA y devuelve por dónde ha ido cada evento.
+
+    Es la prueba de vida de la cadena SEC → evento → Mongo. Existe porque «espera cinco
+    minutos y mira» no es una verificación: si al volver no hay nada, no distingues entre
+    una fuente caída, un filtro demasiado agresivo y un mercado tranquilo.
+
+    Ejecuta el MISMO ciclo que el bucle de fondo, no una versión de prueba: verificar un
+    código que en producción no corre es la forma clásica de tener el semáforo en verde
+    sobre un sistema roto.
+
+    El coste es una petición por formulario. La SEC admite 10 por segundo y aquí se hacen
+    dos, así que pulsarlo unas cuantas veces seguidas no es un problema de cuota — pero
+    tampoco sirve de nada, porque el feed no cambia en el mismo minuto.
+    """
+    return await intel_worker.comprobar_ahora(db)
 
 
 # ---------- Correlación de la cartera (#22) ----------

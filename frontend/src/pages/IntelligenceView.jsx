@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import InvestmentRadar from "../components/intelligence/InvestmentRadar";
 import RadarFuente from "../components/intelligence/RadarFuente";
 import IntelligenceDrawer from "../components/intelligence/IntelligenceDrawer";
+import PruebaDeVida from "../components/intelligence/PruebaDeVida";
 import { resumen as resumenDe, ordenados, nivelDe, MOTIVOS, ETAPAS } from "../lib/intelligence";
 import { fmtHace } from "../lib/format";
 
@@ -180,6 +181,41 @@ export default function IntelligenceView() {
                   </ul>
                 </div>
               </div>
+
+              {/* El periodo de prueba: los cuatro números desde que la vigilancia arrancó.
+                  El de guardados es el que cierra la cadena — «procesados 400» convive
+                  perfectamente con una base de datos vacía. */}
+              {diagnostico.acumulado?.ciclos > 0 && (
+                <div className="mt-6">
+                  <p className="iv-etiqueta mb-2">Desde que vigila</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {[["Recibidos", diagnostico.acumulado.recibidos],
+                      // «Pasan el filtro» se calcula, no se cuenta aparte: son los nuevos
+                      // menos los descartados. Etiquetarlo con los significativos sería
+                      // más bajo y se leería como si el filtro tirara más de lo que tira.
+                      ["Pasan el filtro",
+                       Math.max(0, diagnostico.acumulado.nuevos - diagnostico.acumulado.descartados)],
+                      ["Descartados", diagnostico.acumulado.descartados],
+                      ["Guardados", diagnostico.acumulado.guardados]].map(([t, n], i) => (
+                      <div key={t} className={i === 3 ? "border-l border-marca pl-3" : ""}>
+                        <p className="iv-cifra text-xl text-tinta">{n}</p>
+                        <p className="iv-etiqueta">{t}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs text-tinta-3">
+                    {diagnostico.acumulado.ciclos} vueltas
+                    {diagnostico.acumulado.fallos > 0
+                      ? `, ${diagnostico.acumulado.fallos} fallidas`
+                      : " sin ningún fallo"}.{" "}
+                    De los que pasan el filtro, {diagnostico.acumulado.significativos} han
+                    llegado a significativo. «Guardados» incluye los descartados: el
+                    descarte también es historia, y es lo que permite auditar el filtro.
+                  </p>
+                </div>
+              )}
+
+              <PruebaDeVida alTerminar={cargar} />
 
               {/* Lo que falta, dicho en la pantalla. Una etapa declarada y no implementada
                   que solo se cuenta en el código acaba pareciendo que funciona. */}

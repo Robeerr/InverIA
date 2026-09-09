@@ -70,6 +70,10 @@ export const api = {
     eventos: (params = {}) =>
       client.get(`/intelligence/eventos`, { params }).then((r) => r.data),
     diagnostico: () => client.get(`/intelligence/diagnostico`).then((r) => r.data),
+    // La única que ESCRIBE: fuerza una vuelta ahora y devuelve por dónde ha ido cada
+    // evento. Tarda lo que tarde la SEC en contestar, de ahí el timeout largo.
+    comprobar: () =>
+      client.post(`/intelligence/comprobar`, {}, { timeout: 60000 }).then((r) => r.data),
   },
   indicators: (symbol) => client.get(`/indicators/${symbol}`).then((r) => r.data),
   news: (symbol) => client.get(`/news/${symbol}`).then((r) => r.data),

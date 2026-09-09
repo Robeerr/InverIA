@@ -56,6 +56,9 @@ class _Col:
     def find(self, filtro=None, proyeccion=None):
         return _Cursor([d for d in self.docs if _casa(d, filtro)])
 
+    async def count_documents(self, filtro=None):
+        return len([d for d in self.docs if _casa(d, filtro)])
+
     async def find_one(self, filtro=None, proyeccion=None):
         for d in self.docs:
             if _casa(d, filtro):
@@ -64,15 +67,21 @@ class _Col:
 
     async def update_one(self, filtro, update, upsert=False):
         self.escrituras += 1
-        for d in self.docs:
-            if _casa(d, filtro):
-                d.update(update.get("$set") or {})
+        doc = next((d for d in self.docs if _casa(d, filtro)), None)
+        if doc is None:
+            if not upsert:
                 return
-        if upsert:
-            nuevo = dict(filtro)
-            nuevo.update(update.get("$setOnInsert") or {})
-            nuevo.update(update.get("$set") or {})
-            self.docs.append(nuevo)
+            doc = dict(filtro)
+            doc.update(update.get("$setOnInsert") or {})
+            self.docs.append(doc)
+        doc.update(update.get("$set") or {})
+        # `$inc` con notación de punto, que es como se acumulan los motivos de descarte.
+        for campo, n in (update.get("$inc") or {}).items():
+            destino, clave = doc, campo
+            if "." in campo:
+                raiz, clave = campo.split(".", 1)
+                destino = doc.setdefault(raiz, {})
+            destino[clave] = (destino.get(clave) or 0) + n
 
 
 def _casa(doc, filtro):
@@ -425,3 +434,128 @@ def test_un_evento_sin_id_no_se_escribe(configurada, monkeypatch):
     db = _DB()
     asyncio.run(w._guardar(db, [None, {}, {"id": ""}, "texto suelto"]))
     assert db[w.COL_EVENTOS].docs == []
+
+
+# ── Los contadores del periodo de prueba ─────────────────────────────────────
+# La pregunta que tienen que contestar es «¿esto funciona?», y para eso hacen falta los
+# cuatro números en la misma frase: leídos, nuevos, descartados y GUARDADOS. Con solo los
+# tres primeros, «procesados 40» convive perfectamente con una base de datos vacía.
+
+def test_el_ultimo_ciclo_dice_cuantos_se_GUARDARON(configurada, monkeypatch):
+    _con_feed(monkeypatch, _feed("NVDA", "TSLA"))
+    db = _DB(cartera=[("NVDA", 12)])
+    _ciclo(db)
+    c = db[w.COL_SALUD].docs[0]["ultimo_ciclo"]
+    assert c["recibidos"] == 2 and c["nuevos"] == 2
+    assert c["descartados"] == 1 and c["significativos"] == 1
+    # Los dos descartados y significativos se guardan igual: el descarte también es
+    # historia. Lo que cuenta `guardados` es lo que de verdad se escribió.
+    assert c["guardados"] == 2
+
+
+def test_los_contadores_se_ACUMULAN_entre_ciclos(configurada, monkeypatch):
+    """El acumulado es lo que sostiene un periodo de prueba. Si se reescribiera en cada
+    vuelta, mirar la pantalla el martes no diría nada de lo que pasó el lunes."""
+    db = _DB(cartera=[("NVDA", 12)])
+    for i in range(3):
+        _con_feed(monkeypatch, _feed(f"NVDA{i}" if i else "NVDA"))
+        _ciclo(db)
+    a = w._acumulado(db[w.COL_SALUD].docs[0])
+    assert a["ciclos"] == 3 and a["recibidos"] == 3 and a["nuevos"] == 3
+
+
+def test_el_acumulado_SOBREVIVE_a_un_reinicio(configurada, monkeypatch):
+    """Vive en Mongo, no en memoria: un despliegue a media tarde no puede borrar la
+    evidencia de que el sistema llevaba días funcionando."""
+    _con_feed(monkeypatch, _feed("NVDA"))
+    db = _DB(cartera=[("NVDA", 12)])
+    _ciclo(db)
+    antes = w._acumulado(db[w.COL_SALUD].docs[0])["recibidos"]
+    _con_feed(monkeypatch, _feed("AMD"))       # otro proceso, misma base de datos
+    _ciclo(db)
+    assert w._acumulado(db[w.COL_SALUD].docs[0])["recibidos"] == antes + 1
+
+
+def test_los_motivos_de_descarte_tambien_se_acumulan(configurada, monkeypatch):
+    """Sin esto, un filtro que se está comiendo todo se ve igual que un mercado tranquilo
+    en cuanto pasa un ciclo vacío por encima."""
+    db = _DB(watchlist=["NVDA"])
+    for i in range(2):
+        _con_feed(monkeypatch, _feed(f"TSLA{i}"))
+        _ciclo(db)
+    assert w._acumulado(db[w.COL_SALUD].docs[0])["por_motivo"]["fuera_de_universo"] == 2
+
+
+def test_cuando_empezo_a_vigilar_NO_se_pisa(configurada, monkeypatch):
+    """`vigilando_desde` va en `$setOnInsert`. Si se reescribiera, el periodo de prueba
+    diría siempre «desde hace cinco minutos»."""
+    _con_feed(monkeypatch, _feed("NVDA"))
+    db = _DB(cartera=[("NVDA", 12)])
+    _ciclo(db)
+    desde = db[w.COL_SALUD].docs[0]["vigilando_desde"]
+    _ciclo(db)
+    assert db[w.COL_SALUD].docs[0]["vigilando_desde"] == desde
+
+
+def test_los_fallos_tambien_cuentan_como_ciclo(configurada, monkeypatch):
+    """Un ciclo que falla ES un ciclo. Contar solo los buenos daría una tasa de éxito
+    del 100 % sobre un connector que no ha conseguido conectarse nunca."""
+    _con_feed(monkeypatch, [], falla="timeout")
+    db = _DB()
+    _ciclo(db)
+    a = w._acumulado(db[w.COL_SALUD].docs[0])
+    assert a["ciclos"] == 1 and a["fallos"] == 1
+
+
+# ── La comprobación a demanda ────────────────────────────────────────────────
+
+def test_comprobar_ahora_devuelve_la_cadena_ENTERA(configurada, monkeypatch):
+    """Los cinco pasos en orden. Es lo que permite distinguir una fuente caída de un
+    filtro agresivo de un mercado tranquilo, que a ojos de un radar vacío son idénticos."""
+    _con_feed(monkeypatch, _feed("NVDA", "TSLA"))
+    db = _DB(cartera=[("NVDA", 12)])
+    r = asyncio.run(w.comprobar_ahora(db))
+    c = r["cadena"]
+    assert c["leidos_de_la_fuente"] == 2
+    assert c["nuevos_tras_deduplicar"] == 2
+    assert c["descartados_al_filtrar"] == 1
+    assert c["significativos"] == 1
+    assert c["guardados_en_mongo"] == 2
+
+
+def test_comprobar_ahora_LEE_DE_VUELTA_lo_que_hay_en_mongo(configurada, monkeypatch):
+    """Que el ciclo diga que guardó dos cosas y que la colección tenga dos cosas son dos
+    afirmaciones distintas. Solo la segunda cierra la cadena."""
+    _con_feed(monkeypatch, _feed("NVDA", "TSLA"))
+    db = _DB(cartera=[("NVDA", 12)])
+    r = asyncio.run(w.comprobar_ahora(db))
+    assert r["en_mongo"] == len(db[w.COL_EVENTOS].docs) == 2
+
+
+def test_comprobar_ahora_usa_EL_MISMO_ciclo_que_el_bucle(configurada, monkeypatch):
+    """Si tuviera su propia versión «de prueba», estaría verificando un código que en
+    producción no se ejecuta: el semáforo en verde sobre un sistema roto."""
+    llamadas = []
+
+    async def espia(db):
+        llamadas.append(db)
+        return {"estado": sec.ONLINE, "recibidos": 0, "nuevos": 0, "descartados": 0,
+                "significativos": [], "escritos": 0, "por_motivo": {}}
+    monkeypatch.setattr(w, "ciclo_sec", espia)
+    asyncio.run(w.comprobar_ahora(_DB()))
+    assert len(llamadas) == 1
+
+
+def test_comprobar_ahora_sin_configurar_dice_la_verdad(configurada, monkeypatch):
+    """Sin identificación no se toca la red, tampoco cuando la comprobación la pides tú.
+    Y lo dice: NO_CONFIGURADA, no un error genérico."""
+    monkeypatch.delenv("SEC_USER_AGENT", raising=False)
+    r = asyncio.run(w.comprobar_ahora(_DB(watchlist=["NVDA"])))
+    assert r["estado"] == sec.NO_CONFIGURADA and r["en_mongo"] == 0
+
+
+def test_comprobar_ahora_con_la_fuente_caida_NO_dice_que_todo_va_bien(configurada, monkeypatch):
+    _con_feed(monkeypatch, [], falla="SEC respondió 403")
+    r = asyncio.run(w.comprobar_ahora(_DB(cartera=[("NVDA", 12)])))
+    assert r["estado"] == "error" and "403" in r["error"]
+    assert r["cadena"]["leidos_de_la_fuente"] == 0

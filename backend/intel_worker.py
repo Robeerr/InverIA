@@ -134,14 +134,21 @@ async def _guardar(db, eventos: list) -> int:
     return escritos
 
 
-async def _anotar_salud(db, fuente: str, **campos) -> None:
+async def _anotar_salud(db, fuente: str, sumar: dict = None, **campos) -> None:
     """La salud vive en Mongo y no en memoria: un reinicio no puede borrar que la
-    fuente lleva media hora fallando."""
+    fuente lleva media hora fallando.
+
+    `sumar` son los contadores ACUMULADOS, que se incrementan con `$inc` en vez de
+    reescribirse. La diferencia importa: el último ciclo dice cómo fue una vuelta, y el
+    acumulado dice cómo va el periodo de prueba. Con solo lo primero, un despliegue a
+    media tarde borraría toda la evidencia de que el sistema llevaba días funcionando.
+    """
     try:
-        await db[COL_SALUD].update_one(
-            {"fuente": fuente},
-            {"$set": {"fuente": fuente, "actualizado_en": _ahora(), **campos}},
-            upsert=True)
+        cambios = {"$set": {"fuente": fuente, "actualizado_en": _ahora(), **campos},
+                   "$setOnInsert": {"vigilando_desde": _ahora()}}
+        if sumar:
+            cambios["$inc"] = sumar
+        await db[COL_SALUD].update_one({"fuente": fuente}, cambios, upsert=True)
     except Exception as e:
         logger.warning("intel: no se pudo anotar la salud: %s", str(e)[:120])
 
@@ -176,6 +183,7 @@ async def ciclo_sec(db) -> dict:
         fallos += 1
         msg = str(e)[:200]
         await _anotar_salud(db, sec.FUENTE,
+                            sumar={"acum_ciclos": 1, "acum_fallos": 1},
                             estado=sec.estado_salud(msg, fallos),
                             error=msg, fallos=fallos,
                             espera_s=sec.espera_tras_fallo(fallos))
@@ -188,16 +196,81 @@ async def ciclo_sec(db) -> dict:
                     cartera=cartera, watchlist=watchlist)
     escritos = await _guardar(db, r["guardar"])
 
-    await _anotar_salud(db, sec.FUENTE, estado=sec.ONLINE, error=None, fallos=0,
-                        espera_s=0, ultimo_ciclo={
-                            "recibidos": r["recibidos"], "nuevos": r["nuevos"],
-                            "significativos": len(r["significativos"]),
-                            "descartados": r["descartados"],
-                            "por_motivo": r["por_motivo"]})
+    # Los cuatro números que responden «¿esto está funcionando?»: cuántos se leyeron,
+    # cuántos eran nuevos, cuántos se descartaron y cuántos se guardaron de verdad. El
+    # último es el que cierra la cadena: sin él, «se procesaron 40» podría convivir con
+    # una base de datos vacía y nadie lo notaría.
+    ciclo = {"recibidos": r["recibidos"], "nuevos": r["nuevos"],
+             "significativos": len(r["significativos"]),
+             "descartados": r["descartados"], "guardados": escritos,
+             "por_motivo": r["por_motivo"], "cuando": _ahora()}
+    acumulado = {"acum_ciclos": 1, "acum_recibidos": r["recibidos"],
+                 "acum_nuevos": r["nuevos"], "acum_guardados": escritos,
+                 "acum_descartados": r["descartados"],
+                 "acum_significativos": len(r["significativos"])}
+    for motivo, n in (r["por_motivo"] or {}).items():
+        acumulado[f"acum_motivos.{motivo}"] = n
+    await _anotar_salud(db, sec.FUENTE, sumar=acumulado,
+                        estado=sec.ONLINE, error=None, fallos=0,
+                        espera_s=0, ultimo_ciclo=ciclo)
     if r["nuevos"]:
         logger.info("intel/sec: %d recibidos → %d nuevos → %d significativos",
                     r["recibidos"], r["nuevos"], len(r["significativos"]))
     return {"estado": sec.ONLINE, "escritos": escritos, **r}
+
+
+async def comprobar_ahora(db) -> dict:
+    """Una vuelta forzada, con el desglose entero. Es la prueba de vida de la cadena.
+
+    POR QUÉ EXISTE, HABIENDO YA UN BUCLE
+
+    Porque «espera cinco minutos y mira si algo ha cambiado» no es una verificación: si al
+    volver no hay nada, no sabes si la fuente falló, si el filtro se lo comió o si
+    simplemente no había novedades. Esto ejecuta el ciclo AHORA y devuelve por dónde ha ido
+    cada evento, que es lo único que distingue esas tres cosas.
+
+    NO ES UN ATAJO NI UNA VÍA PARALELA
+
+    Llama exactamente al mismo `ciclo_sec` que el bucle. Si hiciera su propia versión
+    «de prueba», estaría verificando un código que en producción no se ejecuta — que es la
+    forma clásica de tener una comprobación en verde sobre un sistema roto.
+    """
+    r = await ciclo_sec(db)
+    salud = await _salud(db, sec.FUENTE)
+    return {
+        "estado": r.get("estado"),
+        "error": r.get("error"),
+        # La cadena entera, paso a paso, en el orden en que ocurre.
+        "cadena": {
+            "leidos_de_la_fuente": r.get("recibidos", 0),
+            "nuevos_tras_deduplicar": r.get("nuevos", 0),
+            "descartados_al_filtrar": r.get("descartados", 0),
+            "significativos": len(r.get("significativos") or []),
+            "guardados_en_mongo": r.get("escritos", 0),
+        },
+        "por_motivo": r.get("por_motivo") or {},
+        # Lo que hay en la base de datos DESPUÉS, leído de vuelta. Que el ciclo diga que
+        # guardó tres cosas y que la colección tenga tres cosas son dos afirmaciones
+        # distintas, y solo la segunda cierra la cadena.
+        "en_mongo": await db[COL_EVENTOS].count_documents({"fuente": sec.FUENTE}),
+        "acumulado": _acumulado(salud),
+    }
+
+
+def _acumulado(salud: dict) -> dict:
+    """Los contadores del periodo de prueba, con nombres legibles."""
+    salud = salud or {}
+    return {
+        "desde": salud.get("vigilando_desde"),
+        "ciclos": salud.get("acum_ciclos") or 0,
+        "fallos": salud.get("acum_fallos") or 0,
+        "recibidos": salud.get("acum_recibidos") or 0,
+        "nuevos": salud.get("acum_nuevos") or 0,
+        "descartados": salud.get("acum_descartados") or 0,
+        "significativos": salud.get("acum_significativos") or 0,
+        "guardados": salud.get("acum_guardados") or 0,
+        "por_motivo": salud.get("acum_motivos") or {},
+    }
 
 
 async def worker_loop(db, intervalo: int = None, retraso_inicial: int = 120):
