@@ -259,11 +259,13 @@ def _filas(datos) -> list:
 
 
 def mapa_actual(filas: list) -> dict:
-    """Reconstruye EXACTAMENTE el mapa que construye hoy `intel_sec._tickers_por_cik`.
+    """El mapa COLAPSADO que construía el connector antes de la migración: un ticker por
+    CIK, y el último pisa al anterior.
 
-    Se replica el bucle en vez de importarlo para poder alimentarlo con las filas ya
-    descargadas, pero la regla es la misma: un ticker por CIK, y el último pisa al
-    anterior. Si algún día cambia el connector, el test que compara los dos avisará.
+    Se conserva aunque el connector ya no lo use, porque es lo que hace legible el
+    diagnóstico: la columna «el mapa guarda» explica por qué ORCL se perdía contra
+    ORCL-PD. Sin ella el informe diría que hay clases múltiples, pero no que eso rompía
+    nada.
     """
     por_cik = {}
     for cik, ticker in filas:
@@ -311,6 +313,8 @@ def analizar_tabla(filas: list, universo=(), consultar=()) -> dict:
             "cik": cik,
             "tickers_de_ese_cik": por_cik_todos.get(cik, []) if cik else [],
             "el_mapa_actual_guarda_para_ese_cik": actual.get(cik) if cik else None,
+            # «Hoy» es antes de la migración: con el mapa uno-a-muchos ya no se pierde
+            # ninguno. Se mantiene para poder seguir demostrando cuál era el fallo.
             "alcanzable_con_el_mapa_de_hoy": ticker in invertido_hoy,
             "se_pierde": cik is not None and ticker not in invertido_hoy,
         }

@@ -368,6 +368,9 @@ async def lifespan(app: FastAPI):
     await db.intel_eventos.create_index([("fuente", 1), ("recibido_en", -1)])
     await db.intel_eventos.create_index([("etapa", 1), ("recibido_en", -1)])
     await db.intel_salud.create_index("fuente", unique=True)
+    # Un cursor por empresa: hasta dónde llegamos con su historial de registros. Único
+    # porque dos cursores del mismo CIK harían que uno de los dos se ignorara en silencio.
+    await db.intel_cursores.create_index("cik", unique=True)
 
     # Wire the persistent snapshot cache and hydrate in-memory caches from the last
     # saved scan so the first request returns data instantly (no "warming" screen).
@@ -4458,6 +4461,11 @@ async def intelligence_estado(_user: str = Depends(auth.get_current_user)):
                        if mod.configurado() else mod.NO_CONFIGURADA),
             "intervalo_s": mod.INTERVALO,
             "ultimo_ciclo": s.get("ultimo_ciclo"),
+            # Cuántas empresas se vigilan de verdad y cuántas quedan fuera. Con
+            # vigilancia directa, la cobertura deja de ser estadística y se puede DECIR:
+            # sin este dato, «no ha entrado nada» seguiría sin distinguir un mercado
+            # tranquilo de media cartera sin consultar.
+            "cobertura": s.get("cobertura"),
             "actualizado_en": s.get("actualizado_en"),
             "espera_s": s.get("espera_s") or 0,
         })
@@ -4577,10 +4585,9 @@ async def intelligence_sondeo_sec(_user: str = Depends(auth.get_current_user)):
 
     # La tabla de la SEC va de CIK a ticker; aquí hace falta al revés.
     try:
-        por_cik = await intel_sec._tickers_por_cik()
+        por_ticker = (await intel_sec.tabla_tickers())["por_ticker"]
     except Exception as e:
         raise HTTPException(502, f"No se pudo leer la tabla de tickers de la SEC: {e}")
-    por_ticker = {t: c for c, t in por_cik.items()}
 
     elegidos, sin_cik = [], []
     for sym in sorted(cartera):

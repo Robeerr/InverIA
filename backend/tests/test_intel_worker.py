@@ -127,7 +127,7 @@ FEED_NVDA = [{"formulario": "8-K", "cik": "1045810"}]
 
 
 def _feed(*symbols):
-    """Eventos crudos como los devolvería `intel_sec.parsear_feed`."""
+    """Eventos crudos como los devolvería `intel_sec.parsear_submissions`."""
     return [ev.crear(fuente="sec", externo_id=f"8-K:{s}-0001",
                      titulo=f"8-K · Hecho relevante — {s}", symbol=s,
                      tipo=ev.CORPORATIVO, tier=1) for s in symbols]
@@ -928,3 +928,219 @@ def test_si_el_repaso_falla_el_worker_ARRANCA_igual(configurada, monkeypatch):
     with pytest.raises(_Parar):
         asyncio.run(w.worker_loop(_DB(), w.FUENTES[0], retraso_inicial=0))
     assert vueltas == [True]
+
+
+# ── Vigilancia por CIK: cursores, rotación y fallos ──────────────────────────
+
+def _tabla(*pares):
+    return sec.construir_tabla([{"cik_str": c, "ticker": t} for t, c in pares])
+
+
+def test_los_cursores_se_INYECTAN_desde_mongo(configurada, monkeypatch):
+    """El connector es puro respecto a la base de datos: no la consulta, la recibe. La
+    misma frontera que con la tabla de tickers y las fechas de resultados."""
+    visto = {}
+
+    async def recolectar(contexto=None):
+        visto.update(contexto or {})
+        return []
+    monkeypatch.setattr(sec, "recolectar", recolectar)
+    monkeypatch.setattr(w, "dormir", _no_dormir)
+    db = _DB(cartera=[("NVDA", 12)])
+    db[w.COL_CURSORES].docs.append({"cik": 1045810, "ultimo_accession": "000104581026000042"})
+    _ciclo(db, sec)
+    assert visto["cursores"]["1045810"]["ultimo_accession"] == "000104581026000042"
+    assert visto["cartera"] == {"NVDA"} and "salida" in visto
+
+
+def test_los_cursores_se_GUARDAN_tras_escribir_los_eventos(configurada, monkeypatch):
+    """En ese orden. Si se guardaran antes y la escritura fallara, la vuelta siguiente
+    daría esos registros por vistos y se perderían para siempre."""
+    async def recolectar(contexto=None):
+        contexto["salida"]["cursores"] = {
+            "1045810": {"cik": 1045810, "ultimo_accession": "000104581026000042"}}
+        return _feed("NVDA")
+    monkeypatch.setattr(sec, "recolectar", recolectar)
+    monkeypatch.setattr(w, "dormir", _no_dormir)
+    db = _DB(cartera=[("NVDA", 12)])
+    _ciclo(db, sec)
+    assert db[w.COL_CURSORES].docs[0]["ultimo_accession"] == "000104581026000042"
+    assert len(db[w.COL_EVENTOS].docs) == 1
+
+
+def test_tras_un_429_se_guardan_los_cursores_de_lo_YA_consultado(configurada, monkeypatch):
+    """El ciclo se corta, pero las empresas que sí contestaron no hay que releerlas."""
+    async def recolectar(contexto=None):
+        contexto["salida"]["cursores"] = {"1": {"cik": 1, "ultimo_accession": "aaa"}}
+        raise sec.LimiteSec("SEC respondió 429")
+    monkeypatch.setattr(sec, "recolectar", recolectar)
+    monkeypatch.setattr(w, "dormir", _no_dormir)
+    db = _DB(cartera=[("NVDA", 12)])
+    r = _ciclo(db, sec)
+    assert r["estado"] == "error" and "429" in r["error"]
+    assert db[w.COL_CURSORES].docs[0]["ultimo_accession"] == "aaa"
+
+
+def test_un_403_degrada_la_fuente_sin_cascada(configurada, monkeypatch):
+    """Se anota una vez, se espera, y no se reintenta contra una puerta cerrada."""
+    async def recolectar(contexto=None):
+        raise sec.LimiteSec("SEC respondió 403")
+    monkeypatch.setattr(sec, "recolectar", recolectar)
+    monkeypatch.setattr(w, "dormir", _no_dormir)
+    db = _DB(cartera=[("NVDA", 12)])
+    _ciclo(db, sec)
+    salud = db[w.COL_SALUD].docs[0]
+    assert salud["estado"] == sec.ERROR and salud["espera_s"] > 0
+    assert db[w.COL_EVENTOS].docs == []          # y NO se fabrica ningún evento
+
+
+def test_un_timeout_no_se_confunde_con_un_limite(configurada, monkeypatch):
+    _con_feed(monkeypatch, [], falla="timeout leyendo submissions", mod=sec)
+    db = _DB(cartera=[("NVDA", 12)])
+    _ciclo(db, sec)
+    assert db[w.COL_SALUD].docs[0]["estado"] == sec.DEGRADADA
+
+
+def test_el_fallo_de_UN_CIK_no_impide_guardar_el_resto(configurada, monkeypatch):
+    """La vuelta sigue: el resto de tus empresas no tiene la culpa. Y el fallo se
+    informa, para que no desaparezca en silencio."""
+    async def recolectar(contexto=None):
+        contexto["salida"]["fallos"] = [{"cik": 99, "symbol": "AMD", "error": "timeout"}]
+        contexto["salida"]["consultados"] = 2
+        return _feed("NVDA")
+    monkeypatch.setattr(sec, "recolectar", recolectar)
+    monkeypatch.setattr(w, "dormir", _no_dormir)
+    db = _DB(cartera=[("NVDA", 12)])
+    r = _ciclo(db, sec)
+    assert r["estado"] == sec.ONLINE and len(db[w.COL_EVENTOS].docs) == 1
+    assert r["fallos_por_objetivo"][0]["symbol"] == "AMD"
+
+
+def test_la_VUELTA_persiste_para_que_rote_de_verdad(configurada, monkeypatch):
+    """Si se reiniciara a cero en cada arranque, el turno 0 del seguimiento se miraría
+    siempre y los demás nunca."""
+    vueltas = []
+
+    async def recolectar(contexto=None):
+        vueltas.append(contexto["vuelta"])
+        return []
+    monkeypatch.setattr(sec, "recolectar", recolectar)
+    monkeypatch.setattr(w, "dormir", _no_dormir)
+    db = _DB(cartera=[("NVDA", 12)])
+    for _ in range(3):
+        _ciclo(db, sec)
+    assert vueltas == [0, 1, 2]
+
+
+def test_la_vuelta_SOBREVIVE_a_un_reinicio(configurada, monkeypatch):
+    """Vive en Mongo, no en memoria: un despliegue no puede volver a empezar la rotación."""
+    async def recolectar(contexto=None):
+        return []
+    monkeypatch.setattr(sec, "recolectar", recolectar)
+    monkeypatch.setattr(w, "dormir", _no_dormir)
+    db = _DB(cartera=[("NVDA", 12)])
+    _ciclo(db, sec)
+    assert db[w.COL_SALUD].docs[0]["vuelta"] == 1     # otro proceso, misma base de datos
+
+
+def test_earnings_NO_recibe_cursores_ni_vuelta(configurada, con_finnhub, monkeypatch):
+    """Son cosa de SEC. Metérselos a todas las fuentes ensuciaría el contrato genérico."""
+    visto = {}
+
+    async def recolectar(contexto=None):
+        visto.update(contexto or {})
+        return []
+    monkeypatch.setattr(earnings, "recolectar", recolectar)
+    monkeypatch.setattr(w, "dormir", _no_dormir)
+    _ciclo(_DB(cartera=[("NVDA", 12)]), earnings)
+    assert "cursores" not in visto and "vuelta" not in visto
+    assert "fechas_conocidas" in visto
+
+
+# ── Migración de identificadores ─────────────────────────────────────────────
+
+def _evento_sec(db, id_, externo, **extra):
+    doc = {"id": id_, "fuente": "sec", "externo_id": externo, "symbol": "NVDA",
+           "etapa": ev.SIGNIFICATIVO, "relevancia": 80, "relevancia_v": 2,
+           "nivel_alerta": ev.IMPORTANT, "historial": [], "crudo": {"suceso": "8-K"},
+           "afecta_cartera": True, "afecta_watchlist": True, "afecta_tesis": False}
+    doc.update(extra)
+    db[w.COL_EVENTOS].docs.append(doc)
+    return doc
+
+
+def test_los_ids_YA_canonicos_solo_se_sellan(configurada):
+    """El feed Atom daba la forma sin guiones, así que los 44 eventos guardados ya están
+    bien. La migración no puede tocarlos: solo marca que se han revisado."""
+    db = _DB()
+    _evento_sec(db, "sec:8-K:000104581026000042", "8-K:000104581026000042")
+    r = asyncio.run(w.migrar_ids_sec(db))
+    assert r == {"revisados": 1, "renombrados": 0, "conflictos": 0}
+    d = db[w.COL_EVENTOS].docs[0]
+    assert d["id"] == "sec:8-K:000104581026000042" and d["sec_id_v"] == w.SEC_ID_V
+
+
+def test_un_id_CON_GUIONES_se_canoniza():
+    db = _DB()
+    _evento_sec(db, "sec:8-K:0001045810-26-000042", "8-K:0001045810-26-000042")
+    r = asyncio.run(w.migrar_ids_sec(db))
+    assert r["renombrados"] == 1
+    d = db[w.COL_EVENTOS].docs[0]
+    assert d["id"] == "sec:8-K:000104581026000042"
+    assert d["externo_id"] == "8-K:000104581026000042"
+
+
+def test_la_migracion_es_IDEMPOTENTE():
+    db = _DB()
+    _evento_sec(db, "sec:8-K:000104581026000042", "8-K:000104581026000042")
+    asyncio.run(w.migrar_ids_sec(db))
+    assert asyncio.run(w.migrar_ids_sec(db))["revisados"] == 0
+
+
+def test_la_migracion_NO_PIERDE_ni_duplica_eventos():
+    db = _DB()
+    for i in range(5):
+        _evento_sec(db, f"sec:8-K:00010458102600004{i}", f"8-K:00010458102600004{i}")
+    antes = {d["id"] for d in db[w.COL_EVENTOS].docs}
+    asyncio.run(w.migrar_ids_sec(db))
+    assert len(db[w.COL_EVENTOS].docs) == 5
+    assert {d["id"] for d in db[w.COL_EVENTOS].docs} == antes
+
+
+def test_si_el_id_canonico_YA_EXISTE_no_se_fusiona_nada():
+    """Dos documentos del mismo registro es raro, pero fusionarlos automáticamente es más
+    peligroso que dejar uno de más y verlo en el diagnóstico."""
+    db = _DB()
+    _evento_sec(db, "sec:8-K:000104581026000042", "8-K:000104581026000042",
+                sec_id_v=w.SEC_ID_V)
+    _evento_sec(db, "sec:8-K:0001045810-26-000042", "8-K:0001045810-26-000042")
+    r = asyncio.run(w.migrar_ids_sec(db))
+    assert r["conflictos"] == 1 and r["renombrados"] == 0
+    assert len(db[w.COL_EVENTOS].docs) == 2       # ninguno se borra
+
+
+def test_la_migracion_NO_toca_los_eventos_de_earnings():
+    db = _DB()
+    db[w.COL_EVENTOS].docs.append({"id": "earnings:NVDA:2026Q3:2026-10-28",
+                                   "fuente": "earnings", "externo_id": "NVDA:2026Q3"})
+    assert asyncio.run(w.migrar_ids_sec(db))["revisados"] == 0
+    assert db[w.COL_EVENTOS].docs[0]["id"] == "earnings:NVDA:2026Q3:2026-10-28"
+
+
+def test_la_migracion_se_lanza_al_arrancar_y_UNA_sola_vez(configurada, con_finnhub, monkeypatch):
+    llamadas = []
+
+    async def espia(db, limite=5000):
+        llamadas.append(True)
+        return {"revisados": 0, "renombrados": 0, "conflictos": 0}
+    monkeypatch.setattr(w, "migrar_ids_sec", espia)
+    monkeypatch.setattr(w, "repuntuar_pendientes", espia)
+    monkeypatch.setattr(w, "dormir", _no_dormir)
+
+    async def para(_db, _mod):
+        raise _Parar()
+    monkeypatch.setattr(w, "ciclo", para)
+    for mod in w.FUENTES:
+        with pytest.raises(_Parar):
+            asyncio.run(w.worker_loop(_DB(), mod, retraso_inicial=0))
+    assert len(llamadas) == 2        # migración + repaso, y solo de la primera fuente

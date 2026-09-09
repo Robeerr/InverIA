@@ -276,15 +276,18 @@ def test_el_veredicto_es_A_si_lo_unico_que_falta_NO_esta_en_la_sec():
     assert v["veredicto"] == "A" and "no registran en EDGAR" in v["detalle"]
 
 
-def test_el_diagnostico_REPRODUCE_el_mapa_del_connector_y_no_otro():
-    """Si el connector cambiara su forma de construir el mapa, este diagnóstico estaría
-    describiendo un código que ya no existe. El test compara los dos bucles."""
+def test_el_connector_YA_NO_colapsa_el_mapa():
+    """Antes este test comprobaba que el diagnóstico reproducía el bucle del connector.
+    Tras la migración comprueba lo contrario: que el connector ya NO construye un mapa que
+    pise tickers. `mapa_actual` se queda como pieza del informe, para poder seguir
+    explicando cuál era el fallo."""
     import intel_sec
-    import inspect
-    linea = [l.strip() for l in inspect.getsource(intel_sec._tickers_por_cik).splitlines()
-             if "por_cik[" in l][0]
-    assert linea == 'por_cik[int(fila["cik_str"])] = str(fila["ticker"]).upper()', (
-        "el connector ha cambiado: revisa `mapa_actual`")
+    assert not hasattr(intel_sec, "_tickers_por_cik"), (
+        "el mapa colapsado ha vuelto al connector")
+    tabla = intel_sec.construir_tabla(
+        [{"cik_str": 1652044, "ticker": "GOOGL"}, {"cik_str": 1652044, "ticker": "GOOG"}])
+    assert tabla["por_ticker"] == {"GOOGL": 1652044, "GOOG": 1652044}
+    assert tabla["por_cik"] == {1652044: ["GOOGL", "GOOG"]}
 
 
 def test_las_filas_se_leen_en_el_ORDEN_del_fichero():

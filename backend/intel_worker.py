@@ -55,6 +55,10 @@ dormir = asyncio.sleep
 
 COL_EVENTOS = "intel_eventos"
 COL_SALUD = "intel_salud"
+#: Un documento por CIK: hasta dónde llegamos la última vez. Es lo que impide releer años
+#: de historia en cada vuelta, y lo que hace que una empresa que sale y vuelve al universo
+#: no reprocese nada.
+COL_CURSORES = "intel_cursores"
 
 # Cuántos ids recientes se recuerdan para deduplicar. El feed devuelve 40 por vuelta;
 # 500 cubre de sobra varias horas y evita releer la colección entera cada ciclo.
@@ -177,6 +181,144 @@ async def _salud(db, fuente: str) -> dict:
         return {}
 
 
+async def _cursores(db) -> dict:
+    """`{"1652044": {...}}` — hasta dónde llegamos con cada empresa.
+
+    Se leen todos y no solo los del universo actual: si una acción salió de la cartera y
+    vuelve, su cursor sigue ahí y no se reprocesa su historia. Guardar unos cientos de
+    documentos diminutos para evitar eso es un cambio barato por un problema caro.
+    """
+    try:
+        docs = await db[COL_CURSORES].find({}, {"_id": 0}).to_list(2000)
+        return {str(d["cik"]): d for d in docs if d.get("cik") is not None}
+    except Exception as e:
+        logger.warning("intel: no se pudieron leer los cursores: %s", str(e)[:120])
+        # Sin cursores se reprocesa, y el `upsert` por id determinista evita duplicados.
+        # Es el lado correcto en el que equivocarse.
+        return {}
+
+
+async def _guardar_cursores(db, cursores: dict) -> int:
+    """Un documento por CIK, reescrito. No hay histórico que conservar aquí: lo único que
+    importa es hasta dónde se llegó la última vez."""
+    guardados = 0
+    for cik, c in (cursores or {}).items():
+        try:
+            await db[COL_CURSORES].update_one(
+                {"cik": int(cik)},
+                {"$set": {**c, "cik": int(cik), "actualizado_en": _ahora()},
+                 "$setOnInsert": {"primera_vez": _ahora()}},
+                upsert=True)
+            guardados += 1
+        except Exception as e:
+            logger.warning("intel: no se pudo guardar el cursor de %s: %s", cik, str(e)[:120])
+    return guardados
+
+
+def _avance_de_vuelta(mod) -> dict:
+    """El turno de rotación avanza en la MISMA escritura que la salud.
+
+    Se hizo aparte al principio y estaba mal: en el primer ciclo el documento de salud
+    todavía no existe, así que un `$inc` suelto sin upsert no hacía nada y la rotación no
+    arrancaba nunca. Yendo en el mismo `update_one` que ya crea el documento, el problema
+    no puede volver.
+
+    Solo SEC rota: es la única fuente con carriles.
+    """
+    return {"vuelta": 1} if mod is sec else {}
+
+
+def _cobertura(salida: dict, universo) -> dict:
+    """Cuántos de tus valores se vigilan de verdad, y cuántos no.
+
+    Con el mecanismo anterior esto no se podía decir: se miraba el mercado entero y la
+    cobertura era una probabilidad. Ahora se pregunta por empresas concretas, así que la
+    cifra es exacta — y los que quedan fuera se nombran, porque un valor sin vigilar que
+    nadie menciona es indistinguible de uno vigilado del que no pasa nada.
+    """
+    salida = salida or {}
+    sin_cik = salida.get("sin_cik") or []
+    total = len(universo or ())
+    return {"valores_en_universo": total,
+            "empresas_vigiladas": salida.get("objetivos_totales", 0),
+            "consultadas_esta_vuelta": salida.get("consultados", 0),
+            "sin_cik_en_la_sec": sin_cik,
+            "cubiertos": max(0, total - len(sin_cik))}
+
+
+def _telemetria(salida: dict) -> dict:
+    """Lo que el connector dejó en el canal de vuelta, con nombres para la pantalla."""
+    salida = salida or {}
+    return {"consultados": salida.get("consultados", 0),
+            "objetivos_totales": salida.get("objetivos_totales", 0),
+            "fallos_por_objetivo": salida.get("fallos") or [],
+            "sin_cik": salida.get("sin_cik") or []}
+
+
+# ── Migración de identificadores ─────────────────────────────────────────────
+
+#: Versión del identificador de los eventos de SEC. La v1 sacaba el número de registro de
+#: la URL del feed Atom; la v2 lo canoniza a solo dígitos, que es la forma que produce
+#: también el JSON de submissions. Sin esto, el mismo documento leído por los dos
+#: mecanismos tendría dos ids y entraría dos veces.
+SEC_ID_V = 2
+
+
+async def migrar_ids_sec(db, limite: int = 5000) -> dict:
+    """Canoniza el número de registro de los eventos ya guardados. Idempotente.
+
+    NO BORRA NI DUPLICA NADA
+
+    Si el id canónico coincide con el que ya tenía —que es lo esperable, porque el feed
+    Atom daba la forma sin guiones— solo se sella la versión. Si difiere, se reescribe el
+    id, salvo que ya exista otro documento con ese id: en ese caso se deja como está y se
+    anota, porque fusionar dos documentos automáticamente es más peligroso que tener uno
+    de más y verlo en el diagnóstico.
+
+    Se cura sola: cada evento lleva su `sec_id_v`, así que un proceso que muera a mitad
+    deja el resto para la vuelta siguiente.
+    """
+    try:
+        pendientes = await db[COL_EVENTOS].find(
+            {"fuente": sec.FUENTE, "sec_id_v": {"$ne": SEC_ID_V}}, {"_id": 0}
+        ).to_list(limite)
+    except Exception as e:
+        logger.warning("intel: no se pudo leer lo pendiente de migrar: %s", str(e)[:120])
+        return {"revisados": 0, "renombrados": 0, "conflictos": 0}
+
+    revisados = renombrados = conflictos = 0
+    for doc in pendientes:
+        revisados += 1
+        externo = str(doc.get("externo_id") or "")
+        # `8-K:000104581026000042` — la forma se conserva tal cual y solo se canoniza el
+        # número, que es la parte que venía en dos formatos.
+        forma, _, acc = externo.partition(":")
+        nuevo_externo = f"{forma}:{sec.canonizar_accession(acc)}" if acc else externo
+        nuevo_id = f"{sec.FUENTE}:{nuevo_externo}"
+        cambios = {"sec_id_v": SEC_ID_V}
+        if nuevo_id != doc.get("id"):
+            try:
+                if await db[COL_EVENTOS].find_one({"id": nuevo_id}, {"_id": 0, "id": 1}):
+                    conflictos += 1
+                    logger.warning("intel: %s ya existe como %s; no se toca",
+                                   doc.get("id"), nuevo_id)
+                    cambios["id_conflicto"] = nuevo_id
+                else:
+                    cambios.update(id=nuevo_id, externo_id=nuevo_externo)
+                    renombrados += 1
+            except Exception as e:
+                logger.warning("intel: no se pudo comprobar %s: %s", nuevo_id, str(e)[:120])
+                continue
+        try:
+            await db[COL_EVENTOS].update_one({"id": doc["id"]}, {"$set": cambios})
+        except Exception as e:
+            logger.warning("intel: no se pudo migrar %s: %s", doc.get("id"), str(e)[:120])
+    if revisados:
+        logger.info("intel/sec: %d ids revisados, %d renombrados, %d conflictos",
+                    revisados, renombrados, conflictos)
+    return {"revisados": revisados, "renombrados": renombrados, "conflictos": conflictos}
+
+
 async def _reiniciar_contadores(db, fuente: str) -> None:
     """Pone los acumuladores a cero tras un cambio de significado. Solo los contadores.
 
@@ -250,9 +392,20 @@ async def ciclo(db, mod) -> dict:
     # El universo se lee ANTES de salir a la red: hay fuentes —resultados— que lo
     # necesitan para no pedir el calendario del mercado entero.
     universo, cartera, watchlist = await _universo(db)
-    contexto = {"universo": universo}
+    # `salida` es el canal de vuelta del connector: ahí deja lo que el worker tiene que
+    # persistir —cursores, recuentos, fallos— sin que este bucle sepa qué es un CIK ni un
+    # trimestre. Es lo que permite cambiar entero el mecanismo de descubrimiento de una
+    # fuente sin tocar el worker.
+    salida = {}
+    contexto = {"universo": universo, "cartera": cartera, "watchlist": watchlist,
+                "salida": salida}
     if mod is earnings:
         contexto["fechas_conocidas"] = await _fechas_conocidas(db)
+    if mod is sec:
+        contexto["cursores"] = await _cursores(db)
+        # La vuelta persiste: si se reiniciara a cero en cada arranque, el turno 0 del
+        # seguimiento se miraría siempre y los demás nunca.
+        contexto["vuelta"] = int(salud.get("vuelta") or 0)
 
     try:
         crudos = await mod.recolectar(contexto)
@@ -260,18 +413,26 @@ async def ciclo(db, mod) -> dict:
         fallos += 1
         msg = str(e)[:200]
         await _anotar_salud(db, mod.FUENTE,
-                            sumar={"acum_ciclos": 1, "acum_fallos": 1},
+                            sumar={"acum_ciclos": 1, "acum_fallos": 1,
+                                   **_avance_de_vuelta(mod)},
                             estado=mod.estado_salud(msg, fallos),
                             error=msg, fallos=fallos,
                             espera_s=mod.espera_tras_fallo(fallos))
+        # Los cursores de las empresas que SÍ contestaron antes del corte se guardan
+        # igual: no volver a leerlas es correcto, y perderlos obligaría a recorrer otra
+        # vez lo mismo en la vuelta siguiente.
+        await _guardar_cursores(db, salida.get("cursores"))
         logger.warning("intel/%s: fallo %d — %s", mod.FUENTE, fallos, msg)
         return {"fuente": mod.FUENTE, "estado": "error", "error": msg,
-                "fallos": fallos, "nuevos": 0}
+                "fallos": fallos, "nuevos": 0, **_telemetria(salida)}
 
     conocidos = await _ids_recientes(db, mod.FUENTE)
     r = pl.procesar(crudos, universo=universo, ids_conocidos=conocidos,
                     cartera=cartera, watchlist=watchlist)
     escritos = await _guardar(db, r["guardar"])
+    # Los cursores DESPUÉS de escribir los eventos. Si se guardaran antes y la escritura
+    # fallara, la vuelta siguiente daría esos registros por vistos y se perderían.
+    await _guardar_cursores(db, salida.get("cursores"))
 
     # Los cuatro números que responden «¿esto está funcionando?»: cuántos se leyeron,
     # cuántos eran nuevos, cuántos se descartaron y cuántos se guardaron de verdad. El
@@ -288,13 +449,16 @@ async def ciclo(db, mod) -> dict:
                  "acum_significativos": len(r["significativos"])}
     for motivo, n in (r["por_motivo"] or {}).items():
         acumulado[f"acum_motivos.{motivo}"] = n
+    acumulado.update(_avance_de_vuelta(mod))
     await _anotar_salud(db, mod.FUENTE, sumar=acumulado, contadores_v=CONTADORES_V,
                         estado=mod.ONLINE, error=None, fallos=0,
-                        espera_s=0, ultimo_ciclo=resumen)
+                        espera_s=0, ultimo_ciclo=resumen,
+                        cobertura=_cobertura(salida, universo))
     if r["nuevos"]:
         logger.info("intel/%s: %d recibidos → %d nuevos → %d significativos",
                     mod.FUENTE, r["recibidos"], r["nuevos"], len(r["significativos"]))
-    return {"fuente": mod.FUENTE, "estado": mod.ONLINE, "escritos": escritos, **r}
+    return {"fuente": mod.FUENTE, "estado": mod.ONLINE, "escritos": escritos,
+            **_telemetria(salida), **r}
 
 
 async def comprobar_ahora(db, fuentes=None) -> dict:
@@ -466,10 +630,13 @@ async def worker_loop(db, mod=None, intervalo: int = None, retraso_inicial: int 
     # El repaso de fórmula lo lanza UNA sola fuente, la primera. Si lo hicieran todas,
     # dos workers se pisarían escribiendo los mismos documentos en el mismo instante.
     if mod is FUENTES[0]:
-        try:
-            await repuntuar_pendientes(db)
-        except Exception:
-            logger.exception("intel: el repaso de relevancia falló")
+        for tarea, nombre in ((migrar_ids_sec, "la migración de ids"),
+                              (repuntuar_pendientes, "el repaso de relevancia")):
+            try:
+                await tarea(db)
+            except Exception:
+                # Mantenimiento: que falle no puede impedir vigilar el mercado.
+                logger.exception("intel: %s falló", nombre)
     while True:
         espera = intervalo
         try:
