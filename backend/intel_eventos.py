@@ -211,17 +211,35 @@ def interrumpe(evento: dict) -> bool:
     return evento.get("nivel_alerta") in INTERRUMPEN
 
 
-def para_api(evento: dict) -> dict:
-    """El evento tal como sale por la API: sin `crudo` ni historial completo.
+# Qué campos de `crudo` puede ver el navegador. Lista BLANCA, no negra: `crudo` guarda
+# lo que dijo la fuente tal cual, y una fuente futura puede meter ahí un documento entero
+# o un identificador que no queremos publicar. Con lista negra, cada fuente nueva sería
+# una fuga potencial que nadie recordaría revisar.
+#
+# Son todos escalares pequeños y son los que la pantalla necesita para explicar un evento
+# de resultados: cuándo era, cuándo es, y qué cifras hay.
+_DETALLE_PUBLICO = ("suceso", "trimestre", "fecha", "fecha_anterior", "adelanta",
+                    "momento", "eps_estimado", "eps_real", "diferencia_eps",
+                    "ingresos_estimados", "ingresos_reales", "formulario")
 
-    `crudo` puede ser un filing entero y no le sirve de nada al navegador. El
-    historial se resume en su último paso, que es lo que la pantalla necesita para
-    dibujar. Los dos siguen en Mongo para auditar.
+
+def para_api(evento: dict) -> dict:
+    """El evento tal como sale por la API: sin `crudo` completo ni historial.
+
+    `crudo` puede ser un filing entero y no le sirve de nada al navegador. Sale solo un
+    `detalle` con los campos de la lista blanca, que es lo que la pantalla necesita para
+    contar qué pasó —«los resultados se movieron del 28 al 4»— sin publicar el resto.
+
+    El historial se resume en su último paso. Los dos siguen enteros en Mongo: lo que se
+    ahorra es ancho de banda, no trazabilidad.
     """
     if not isinstance(evento, dict):
         return {}
     fuera = {"crudo", "historial", "_id"}
     salida = {k: v for k, v in evento.items() if k not in fuera}
+    crudo = evento.get("crudo") or {}
+    detalle = {k: crudo[k] for k in _DETALLE_PUBLICO if crudo.get(k) is not None}
+    salida["detalle"] = detalle or None
     hist = evento.get("historial") or []
     salida["ultimo_paso"] = hist[-1] if hist else None
     salida["pasos"] = len(hist)

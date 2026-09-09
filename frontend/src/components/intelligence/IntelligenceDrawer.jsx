@@ -36,6 +36,9 @@ export default function IntelligenceDrawer({ evento, onCerrar }) {
 
   if (!evento) return null;
   const n = nivelDe(evento);
+  // `detalle` es la lista blanca de `crudo` que la API deja salir: escalares pequeños, sin
+  // el documento entero de la fuente. Puede venir a null y entonces no se pinta ficha.
+  const d = evento.detalle;
 
   return (
     <aside
@@ -78,6 +81,49 @@ export default function IntelligenceDrawer({ evento, onCerrar }) {
         )}
         {tieneAnalisis(evento) && (
           <p className="mt-3 text-sm text-tinta-2 leading-relaxed">{evento.resumen}</p>
+        )}
+
+        {/* El detalle propio de unos resultados. Solo se pinta lo que la fuente trajo:
+            sin estimación no se enseña una comparación inventada. */}
+        {d?.suceso && (
+          <dl className="mt-4 text-sm space-y-1">
+            {d.fecha_anterior && (
+              <div className="flex justify-between gap-3">
+                <dt className="text-tinta-3">Fecha anterior</dt>
+                <dd className="iv-cifra text-tinta-2">{d.fecha_anterior}</dd>
+              </div>
+            )}
+            {d.fecha && (
+              <div className="flex justify-between gap-3">
+                <dt className="text-tinta-3">
+                  {d.suceso === "publicado" ? "Publicado el" : "Fecha prevista"}
+                </dt>
+                <dd className="iv-cifra text-tinta-2">{d.fecha}</dd>
+              </div>
+            )}
+            {d.eps_estimado != null && (
+              <div className="flex justify-between gap-3">
+                <dt className="text-tinta-3">BPA esperado</dt>
+                <dd className="iv-cifra text-tinta-2">{d.eps_estimado} $</dd>
+              </div>
+            )}
+            {d.eps_real != null && (
+              <div className="flex justify-between gap-3">
+                <dt className="text-tinta-3">BPA real</dt>
+                <dd className="iv-cifra text-tinta-2">{d.eps_real} $</dd>
+              </div>
+            )}
+          </dl>
+        )}
+
+        {/* La fecha del calendario es del proveedor, no un anuncio de la empresa. Decirlo
+            no es letra pequeña: es la diferencia entre un hecho y una previsión. */}
+        {d?.suceso && d.suceso !== "publicado" && (
+          <p className="mt-3 text-xs text-tinta-3 border-l border-linea-fuerte pl-3">
+            Fecha del calendario de Finnhub. Puede ser una estimación suya y no un anuncio
+            de la empresa, y por eso puede moverse — cuando se mueve, entra como un evento
+            propio.
+          </p>
         )}
 
         {evento.url && (

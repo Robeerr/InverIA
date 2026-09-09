@@ -182,39 +182,43 @@ export default function IntelligenceView() {
                 </div>
               </div>
 
-              {/* El periodo de prueba: los cuatro números desde que la vigilancia arrancó.
-                  El de guardados es el que cierra la cadena — «procesados 400» convive
-                  perfectamente con una base de datos vacía. */}
-              {diagnostico.acumulado?.ciclos > 0 && (
-                <div className="mt-6">
-                  <p className="iv-etiqueta mb-2">Desde que vigila</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                    {[["Recibidos", diagnostico.acumulado.recibidos],
-                      // Ya conocidos: se van en la deduplicación, ANTES del filtro. Van
-                      // aquí, entre los recibidos y los nuevos, porque es donde ocurren.
-                      ["Ya conocidos", diagnostico.acumulado.repetidos],
-                      ["Nuevos", diagnostico.acumulado.nuevos],
-                      ["Descartados por filtro", diagnostico.acumulado.descartados],
-                      ["Te afectan", diagnostico.acumulado.significativos],
-                      ["Guardados únicos", diagnostico.guardados_unicos]].map(([t, n], i) => (
-                      <div key={t} className={i === 5 ? "border-l border-marca pl-3" : ""}>
-                        <p className="iv-cifra text-xl text-tinta">{n}</p>
-                        <p className="iv-etiqueta">{t}</p>
-                      </div>
-                    ))}
+              {/* El periodo de prueba, UNA FILA POR FUENTE. Sumarlas escondería lo que
+                  hace falta ver: con SEC leyendo cada cinco minutos y resultados cada
+                  seis horas, el total lo dominaría la primera y una caída de la segunda
+                  pasaría desapercibida. */}
+              {Object.entries(diagnostico.acumulado_por_fuente || {})
+                .filter(([, a]) => a.ciclos > 0)
+                .map(([fuente, a]) => (
+                  <div key={fuente} className="mt-6">
+                    <p className="iv-etiqueta mb-2">{a.nombre} · desde que vigila</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                      {[["Recibidos", a.recibidos],
+                        // Ya conocidos: se van en la deduplicación, ANTES del filtro. Van
+                        // aquí, entre recibidos y nuevos, porque es donde ocurren.
+                        ["Ya conocidos", a.repetidos],
+                        ["Nuevos", a.nuevos],
+                        ["Descartados por filtro", a.descartados],
+                        ["Te afectan", a.significativos],
+                        ["Guardados únicos", a.guardados_unicos]].map(([t, n], i) => (
+                        <div key={t} className={i === 5 ? "border-l border-marca pl-3" : ""}>
+                          <p className="iv-cifra text-xl text-tinta">{n ?? 0}</p>
+                          <p className="iv-etiqueta">{t}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs text-tinta-3">
+                      {a.ciclos} vueltas
+                      {a.fallos > 0 ? `, ${a.fallos} fallidas` : " sin ningún fallo"}.
+                    </p>
                   </div>
-                  <p className="mt-2 text-xs text-tinta-3">
-                    {diagnostico.acumulado.ciclos} vueltas
-                    {diagnostico.acumulado.fallos > 0
-                      ? `, ${diagnostico.acumulado.fallos} fallidas`
-                      : " sin ningún fallo"}.{" "}
-                    «Ya conocidos» son documentos que ya teníamos: no es que se hayan
-                    tirado, es que no eran nuevos. «Guardados únicos» cuenta documentos en
-                    la base de datos e incluye los descartados — el descarte también es
-                    historia, y es lo que permite auditar el filtro después.
-                  </p>
-                </div>
-              )}
+                ))}
+
+              <p className="mt-4 text-xs text-tinta-3 max-w-[70ch] leading-relaxed">
+                «Ya conocidos» son documentos que ya teníamos: no es que se hayan tirado,
+                es que no eran nuevos. «Guardados únicos» cuenta documentos en la base de
+                datos e incluye los descartados — el descarte también es historia, y es lo
+                que permite auditar el filtro después.
+              </p>
 
               <PruebaDeVida alTerminar={cargar} />
 

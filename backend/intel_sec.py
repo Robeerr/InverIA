@@ -241,3 +241,21 @@ async def descargar(formulario: str = "8-K", limite: int = 40) -> list:
         r.raise_for_status()
         xml = r.text
     return parsear_feed(xml, await _tickers_por_cik())
+
+
+async def recolectar(contexto: dict = None) -> list:
+    """La vuelta completa de esta fuente: los dos formularios, en orden.
+
+    Existe para que el worker no tenga que saber que la SEC se pide por formulario y
+    Finnhub de una vez. Cada connector expone `recolectar(contexto)` y el worker trata a
+    todos igual — que es lo que permite añadir una fuente sin tocar el bucle.
+
+    `contexto` trae el universo y las fechas conocidas. Aquí no se usan: el cruce contra
+    tu cartera lo hace el pipeline después, y el feed de EDGAR no admite filtrar por
+    empresa sin recorrerlas una a una.
+    """
+    crudos = []
+    for formulario in FORMULARIOS:
+        crudos.extend(await descargar(formulario))
+        await asyncio.sleep(1)          # cortesía entre peticiones
+    return crudos

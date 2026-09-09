@@ -402,11 +402,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"News ingest start failed: {e}")
 
-    # InverIA Intelligence: vigilancia continua de fuentes. Hoy solo SEC/EDGAR, y solo si
-    # SEC_USER_AGENT está configurada — sin ella el worker arranca, se anota
-    # NO_CONFIGURADA y no hace NI UNA petición. Ver la cabecera de intel_sec.py.
+    # InverIA Intelligence: vigilancia continua de fuentes. Un bucle por fuente, con su
+    # ritmo y su propio backoff — con uno compartido, una fuente caída arrastraría a la
+    # sana. Cada una arranca aunque le falte su clave: se anota NO_CONFIGURADA y no hace
+    # NI UNA petición. Ver las cabeceras de intel_sec.py e intel_earnings.py.
+    #
+    # El retraso inicial se escalona para no salir las dos a la vez en el arranque.
     try:
-        asyncio.create_task(intel_worker.worker_loop(db))
+        for i, fuente in enumerate(intel_worker.FUENTES):
+            asyncio.create_task(intel_worker.worker_loop(
+                db, fuente, retraso_inicial=120 + i * 60))
     except Exception as e:
         logger.warning(f"Intelligence start failed: {e}")
 
@@ -4439,12 +4444,10 @@ async def intelligence_estado(_user: str = Depends(auth.get_current_user)):
     está implementado. Pintar anillos de fuentes inexistentes sería exactamente la
     animación que no queremos.
     """
-    import intel_sec
-
     salud = {d["fuente"]: d for d in
              await db.intel_salud.find({}, {"_id": 0}).to_list(50)}
     fuentes = []
-    for mod in (intel_sec,):
+    for mod in intel_worker.FUENTES:
         s = salud.get(mod.FUENTE, {})
         # El estado se recalcula al leerlo en vez de servir el guardado: la variable de
         # entorno puede haberse configurado después del último ciclo, y en ese caso decir
@@ -4531,8 +4534,19 @@ async def intelligence_diagnostico(_user: str = Depends(auth.get_current_user)):
         # Los contadores del periodo de prueba: cuántos se han leído, filtrado, descartado
         # y GUARDADO desde que la vigilancia arrancó. El último cierra la cadena — que el
         # ciclo diga «procesados 40» es compatible con una base de datos vacía.
-        "acumulado": intel_worker._acumulado(
-            await db.intel_salud.find_one({"fuente": "sec"}, {"_id": 0})),
+        # El acumulado va POR FUENTE. Sumarlas escondería lo que hace falta ver: con SEC
+        # leyendo cada cinco minutos y resultados cada seis horas, un total conjunto
+        # estaría dominado por la primera y una caída de la segunda no se notaría.
+        "acumulado_por_fuente": {
+            mod.FUENTE: {
+                "nombre": mod.NOMBRE,
+                **intel_worker._acumulado(
+                    await db.intel_salud.find_one({"fuente": mod.FUENTE}, {"_id": 0})),
+                "guardados_unicos": await db.intel_eventos.count_documents(
+                    {"fuente": mod.FUENTE}),
+            }
+            for mod in intel_worker.FUENTES
+        },
     }
 
 

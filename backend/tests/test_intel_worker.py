@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 import pytest
 
+import intel_earnings as earnings
 import intel_eventos as ev
 import intel_sec as sec
 import intel_worker as w
@@ -119,14 +120,14 @@ def configurada(monkeypatch):
     monkeypatch.setenv("SEC_USER_AGENT", "InverIA/1.0 x@y.z")
 
 
-def _con_feed(monkeypatch, crudos, falla=None):
-    async def descargar(formulario="8-K", limite=40):
+def _con_feed(monkeypatch, crudos, falla=None, mod=None):
+    """Sustituye la recolección de una fuente. `recolectar` es la interfaz que el worker
+    usa para TODAS, así que parchearla prueba el mismo camino que corre en producción."""
+    async def recolectar(contexto=None):
         if falla:
             raise RuntimeError(falla)
-        # El worker pide los dos formularios; el feed de prueba se sirve una sola vez
-        # para que el recuento no dependa de cuántos formularios se vigilen.
-        return crudos if formulario == "8-K" else []
-    monkeypatch.setattr(sec, "descargar", descargar)
+        return list(crudos)
+    monkeypatch.setattr(mod or sec, "recolectar", recolectar)
     monkeypatch.setattr(w, "dormir", _no_dormir)
 
 
@@ -134,20 +135,20 @@ async def _no_dormir(_s):
     return None
 
 
-def _ciclo(db):
-    return asyncio.run(w.ciclo_sec(db))
+def _ciclo(db, mod=None):
+    return asyncio.run(w.ciclo(db, mod or sec))
 
 
 # ── Sin configurar: cero peticiones, cero eventos ────────────────────────────
 
 def test_sin_SEC_USER_AGENT_no_se_hace_NI_UNA_peticion(monkeypatch):
-    """No es que la petición falle: es que no se intenta. Si `descargar` llegara a
+    """No es que la petición falle: es que no se intenta. Si `recolectar` llegara a
     llamarse, este test explota."""
     monkeypatch.delenv("SEC_USER_AGENT", raising=False)
 
     async def prohibido(*_a, **_k):
         raise AssertionError("se ha tocado la red sin identificación")
-    monkeypatch.setattr(sec, "descargar", prohibido)
+    monkeypatch.setattr(sec, "recolectar", prohibido)
 
     r = _ciclo(_DB(watchlist=["NVDA"]))
     assert r["estado"] == sec.NO_CONFIGURADA
@@ -370,12 +371,12 @@ def test_el_bucle_sobrevive_a_un_ciclo_que_explota(configurada, monkeypatch):
     despliegue, en silencio y sin que nada lo diga."""
     vueltas = {"n": 0}
 
-    async def revienta(_db):
+    async def revienta(_db, _mod):
         vueltas["n"] += 1
         if vueltas["n"] >= 3:
             raise _Parar()
         raise RuntimeError("algo rarísimo")
-    monkeypatch.setattr(w, "ciclo_sec", revienta)
+    monkeypatch.setattr(w, "ciclo", revienta)
     monkeypatch.setattr(w, "dormir", _no_dormir)
     with pytest.raises(_Parar):
         asyncio.run(w.worker_loop(_DB(), intervalo=1, retraso_inicial=0))
@@ -390,11 +391,11 @@ def test_el_bucle_espera_antes_de_la_primera_vuelta(configurada, monkeypatch):
     async def dormir(s):
         orden.append(("dormir", s))
 
-    async def ciclo(_db):
+    async def ciclo(_db, _mod):
         orden.append(("ciclo", None))
         raise _Parar()
     monkeypatch.setattr(w, "dormir", dormir)
-    monkeypatch.setattr(w, "ciclo_sec", ciclo)
+    monkeypatch.setattr(w, "ciclo", ciclo)
     with pytest.raises(_Parar):
         asyncio.run(w.worker_loop(_DB(), intervalo=300, retraso_inicial=120))
     assert orden[0] == ("dormir", 120) and orden[1][0] == "ciclo"
@@ -514,7 +515,7 @@ def test_comprobar_ahora_devuelve_la_cadena_ENTERA(configurada, monkeypatch):
     filtro agresivo de un mercado tranquilo, que a ojos de un radar vacío son idénticos."""
     _con_feed(monkeypatch, _feed("NVDA", "TSLA"))
     db = _DB(cartera=[("NVDA", 12)])
-    r = asyncio.run(w.comprobar_ahora(db))
+    r = asyncio.run(w.comprobar_ahora(db, fuentes=[sec]))["fuentes"][0]
     c = r["cadena"]
     assert c["leidos_de_la_fuente"] == 2
     assert c["ya_conocidos"] == 0
@@ -529,7 +530,7 @@ def test_comprobar_ahora_LEE_DE_VUELTA_lo_que_hay_en_mongo(configurada, monkeypa
     afirmaciones distintas. Solo la segunda cierra la cadena."""
     _con_feed(monkeypatch, _feed("NVDA", "TSLA"))
     db = _DB(cartera=[("NVDA", 12)])
-    r = asyncio.run(w.comprobar_ahora(db))
+    r = asyncio.run(w.comprobar_ahora(db, fuentes=[sec]))["fuentes"][0]
     assert r["guardados_unicos"] == len(db[w.COL_EVENTOS].docs) == 2
 
 
@@ -538,12 +539,12 @@ def test_comprobar_ahora_usa_EL_MISMO_ciclo_que_el_bucle(configurada, monkeypatc
     producción no se ejecuta: el semáforo en verde sobre un sistema roto."""
     llamadas = []
 
-    async def espia(db):
-        llamadas.append(db)
+    async def espia(db, mod):
+        llamadas.append(mod)
         return {"estado": sec.ONLINE, "recibidos": 0, "nuevos": 0, "descartados": 0,
                 "significativos": [], "escritos": 0, "por_motivo": {}}
-    monkeypatch.setattr(w, "ciclo_sec", espia)
-    asyncio.run(w.comprobar_ahora(_DB()))
+    monkeypatch.setattr(w, "ciclo", espia)
+    asyncio.run(w.comprobar_ahora(_DB(), fuentes=[sec]))
     assert len(llamadas) == 1
 
 
@@ -551,13 +552,14 @@ def test_comprobar_ahora_sin_configurar_dice_la_verdad(configurada, monkeypatch)
     """Sin identificación no se toca la red, tampoco cuando la comprobación la pides tú.
     Y lo dice: NO_CONFIGURADA, no un error genérico."""
     monkeypatch.delenv("SEC_USER_AGENT", raising=False)
-    r = asyncio.run(w.comprobar_ahora(_DB(watchlist=["NVDA"])))
+    r = asyncio.run(w.comprobar_ahora(_DB(watchlist=["NVDA"]), fuentes=[sec]))["fuentes"][0]
     assert r["estado"] == sec.NO_CONFIGURADA and r["guardados_unicos"] == 0
 
 
 def test_comprobar_ahora_con_la_fuente_caida_NO_dice_que_todo_va_bien(configurada, monkeypatch):
     _con_feed(monkeypatch, [], falla="SEC respondió 403")
-    r = asyncio.run(w.comprobar_ahora(_DB(cartera=[("NVDA", 12)])))
+    r = asyncio.run(w.comprobar_ahora(_DB(cartera=[("NVDA", 12)]),
+                                      fuentes=[sec]))["fuentes"][0]
     assert r["estado"] == "error" and "403" in r["error"]
     assert r["cadena"]["leidos_de_la_fuente"] == 0
 
@@ -597,7 +599,7 @@ def test_guardados_UNICOS_no_son_escrituras(configurada, monkeypatch):
     db = _DB(cartera=[("NVDA", 12)])
     for _ in range(3):
         _ciclo(db)
-    r = asyncio.run(w.comprobar_ahora(db))
+    r = asyncio.run(w.comprobar_ahora(db, fuentes=[sec]))["fuentes"][0]
     assert r["guardados_unicos"] == 1
     assert w._acumulado(db[w.COL_SALUD].docs[0])["escrituras"] == 1
 
@@ -639,3 +641,152 @@ def test_el_reinicio_ocurre_UNA_sola_vez(configurada, monkeypatch):
     for _ in range(3):
         _ciclo(db)
     assert w._acumulado(db[w.COL_SALUD].docs[0])["ciclos"] == 3
+
+
+# ── Dos fuentes, no una ──────────────────────────────────────────────────────
+
+@pytest.fixture
+def con_finnhub(monkeypatch):
+    monkeypatch.setenv("FINNHUB_API_KEY", "x")
+
+
+def _resultados(*filas):
+    """Eventos crudos como los devolvería `intel_earnings.construir`."""
+    return earnings.construir(list(filas))
+
+
+def _fila(symbol="NVDA", date="2026-10-28", quarter=3, year=2026,
+          eps_estimate=1.10, eps_actual=None):
+    return {"symbol": symbol, "date": date, "quarter": quarter, "year": year,
+            "eps_estimate": eps_estimate, "eps_actual": eps_actual, "hour": "amc"}
+
+
+def test_las_dos_fuentes_pasan_por_EL_MISMO_ciclo(configurada, con_finnhub, monkeypatch):
+    """El bucle no sabe de qué fuente se trata: le pide `recolectar` y trata a todas
+    igual. Es lo que hace que añadir una tercera no toque el worker."""
+    _con_feed(monkeypatch, _feed("NVDA"), mod=sec)
+    _con_feed(monkeypatch, _resultados(_fila()), mod=earnings)
+    db = _DB(cartera=[("NVDA", 12)])
+    for mod in (sec, earnings):
+        assert _ciclo(db, mod)["estado"] == mod.ONLINE
+    fuentes = {d["fuente"] for d in db[w.COL_EVENTOS].docs}
+    assert fuentes == {"sec", "earnings"}
+
+
+def test_cada_fuente_lleva_SUS_PROPIOS_contadores(configurada, con_finnhub, monkeypatch):
+    """Sumarlas escondería lo que hace falta ver: con SEC leyendo cada cinco minutos y
+    resultados cada seis horas, un total conjunto lo dominaría la primera y una caída de
+    la segunda pasaría desapercibida."""
+    _con_feed(monkeypatch, _feed("NVDA", "AMD"), mod=sec)
+    _con_feed(monkeypatch, _resultados(_fila()), mod=earnings)
+    db = _DB(cartera=[("NVDA", 12)])
+    _ciclo(db, sec)
+    _ciclo(db, earnings)
+    por_fuente = {d["fuente"]: w._acumulado(d) for d in db[w.COL_SALUD].docs}
+    assert por_fuente["sec"]["recibidos"] == 2
+    assert por_fuente["earnings"]["recibidos"] == 1
+
+
+def test_una_fuente_caida_NO_arrastra_a_la_sana(configurada, con_finnhub, monkeypatch):
+    """El motivo de que haya un bucle por fuente. Con uno compartido, o se espera la hora
+    de castigo de la que falla o se machaca a la que va bien."""
+    _con_feed(monkeypatch, [], falla="Finnhub 429", mod=earnings)
+    _con_feed(monkeypatch, _feed("NVDA"), mod=sec)
+    db = _DB(cartera=[("NVDA", 12)])
+    assert _ciclo(db, earnings)["estado"] == "error"
+    assert _ciclo(db, sec)["estado"] == sec.ONLINE
+    assert len(db[w.COL_EVENTOS].docs) == 1
+
+
+def test_sin_clave_de_finnhub_resultados_queda_apagada_y_sec_sigue(configurada, monkeypatch):
+    monkeypatch.delenv("FINNHUB_API_KEY", raising=False)
+    _con_feed(monkeypatch, _feed("NVDA"), mod=sec)
+    db = _DB(cartera=[("NVDA", 12)])
+    assert _ciclo(db, earnings)["estado"] == earnings.NO_CONFIGURADA
+    assert _ciclo(db, sec)["estado"] == sec.ONLINE
+
+
+# ── El cambio de fecha, de punta a punta ─────────────────────────────────────
+
+def test_las_fechas_conocidas_salen_de_MONGO(con_finnhub, monkeypatch):
+    """El connector es puro y no consulta nada: la fecha anterior se la inyecta el
+    worker, igual que a SEC le inyecta la tabla de tickers."""
+    _con_feed(monkeypatch, _resultados(_fila()), mod=earnings)
+    db = _DB(cartera=[("NVDA", 12)])
+    _ciclo(db, earnings)
+    assert asyncio.run(w._fechas_conocidas(db)) == {"NVDA:2026Q3": "2026-10-28"}
+
+
+def test_un_CAMBIO_DE_FECHA_entra_como_evento_nuevo(con_finnhub, monkeypatch):
+    """La cadena entera: se guarda la fecha, cambia, y el worker la reconoce como
+    movimiento en vez de tratarla como un anuncio repetido."""
+    _con_feed(monkeypatch, _resultados(_fila(date="2026-10-28")), mod=earnings)
+    db = _DB(cartera=[("NVDA", 12)])
+    _ciclo(db, earnings)
+
+    # La empresa mueve la fecha. El worker relee las fechas conocidas y se lo pasa al
+    # connector, que ahora sí puede decir «antes era el 28».
+    async def recolectar(contexto=None):
+        return earnings.construir([_fila(date="2026-11-04")],
+                                  (contexto or {}).get("fechas_conocidas"))
+    monkeypatch.setattr(earnings, "recolectar", recolectar)
+    r = _ciclo(db, earnings)
+
+    assert r["nuevos"] == 1 and r["repetidos"] == 0
+    movido = [d for d in db[w.COL_EVENTOS].docs
+              if (d.get("crudo") or {}).get("suceso") == earnings.CAMBIO_FECHA]
+    assert len(movido) == 1
+    assert movido[0]["crudo"]["fecha_anterior"] == "2026-10-28"
+    # Y el anuncio original SIGUE ahí: son dos momentos distintos, no una corrección.
+    assert len(db[w.COL_EVENTOS].docs) == 2
+
+
+def test_el_mismo_calendario_dos_veces_NO_inventa_un_cambio(con_finnhub, monkeypatch):
+    """El riesgo evidente de esta fuente: leer el calendario cada seis horas y creerse
+    que la fecha se mueve en cada vuelta."""
+    async def recolectar(contexto=None):
+        return earnings.construir([_fila()], (contexto or {}).get("fechas_conocidas"))
+    monkeypatch.setattr(earnings, "recolectar", recolectar)
+    monkeypatch.setattr(w, "dormir", _no_dormir)
+    db = _DB(cartera=[("NVDA", 12)])
+    for _ in range(4):
+        _ciclo(db, earnings)
+    assert len(db[w.COL_EVENTOS].docs) == 1
+
+
+def test_la_fecha_de_PUBLICACION_no_cuenta_como_fecha_de_calendario(con_finnhub, monkeypatch):
+    """Su `fecha` es cuándo se publicó, no una fecha prevista. Si contara como tal, la
+    vuelta siguiente compararía contra ella e inventaría un cambio que nunca ocurrió.
+
+    Se parte de la fecha ya conocida para que la fila produzca SOLO el evento de
+    publicación: es el caso que aísla lo que se quiere probar."""
+    filas = earnings.construir([_fila(eps_actual=1.35)], {"NVDA:2026Q3": "2026-10-28"})
+    assert [e["crudo"]["suceso"] for e in filas] == [earnings.PUBLICADO]
+    _con_feed(monkeypatch, filas, mod=earnings)
+    db = _DB(cartera=[("NVDA", 12)])
+    _ciclo(db, earnings)
+    assert len(db[w.COL_EVENTOS].docs) == 1
+    assert asyncio.run(w._fechas_conocidas(db)) == {}
+
+
+def test_publicar_no_borra_la_fecha_de_calendario_que_ya_habia(con_finnhub, monkeypatch):
+    """El caso completo: se anuncia, se publica, y la fecha del calendario sigue siendo
+    la del anuncio. Es lo que impide que la vuelta siguiente vea un cambio fantasma."""
+    async def recolectar(contexto=None):
+        return earnings.construir([_fila(eps_actual=1.35)],
+                                  (contexto or {}).get("fechas_conocidas"))
+    monkeypatch.setattr(earnings, "recolectar", recolectar)
+    monkeypatch.setattr(w, "dormir", _no_dormir)
+    db = _DB(cartera=[("NVDA", 12)])
+    _ciclo(db, earnings)                                   # programado + publicado
+    assert asyncio.run(w._fechas_conocidas(db)) == {"NVDA:2026Q3": "2026-10-28"}
+    r = _ciclo(db, earnings)                               # otra vuelta, mismo calendario
+    assert r["nuevos"] == 0                                # ni cambio ni anuncio nuevos
+
+
+def test_comprobar_ahora_informa_DE_CADA_fuente(configurada, con_finnhub, monkeypatch):
+    _con_feed(monkeypatch, _feed("NVDA"), mod=sec)
+    _con_feed(monkeypatch, _resultados(_fila()), mod=earnings)
+    r = asyncio.run(w.comprobar_ahora(_DB(cartera=[("NVDA", 12)])))
+    assert [f["fuente"] for f in r["fuentes"]] == ["sec", "earnings"]
+    assert all("cadena" in f and "acumulado" in f for f in r["fuentes"])

@@ -196,3 +196,31 @@ def test_la_api_resume_el_historial_en_su_ultimo_paso():
     salida = ev.para_api(e)
     assert salida["ultimo_paso"]["etapa"] == ev.NORMALIZADO
     assert salida["pasos"] == 2
+
+
+def test_la_api_saca_un_DETALLE_con_lista_blanca():
+    """`crudo` no sale entero, pero la pantalla necesita poder contar qué pasó: «los
+    resultados se movieron del 28 al 4» no se puede decir sin esos dos datos.
+
+    Lista blanca y no negra: `crudo` guarda lo que dijo la fuente tal cual, y una fuente
+    futura puede meter ahí un documento entero o un identificador que no queremos
+    publicar. Con lista negra, cada fuente nueva sería una fuga que nadie recordaría
+    revisar."""
+    e = para_api_de({"suceso": "cambio_fecha", "fecha": "2026-11-04",
+                     "fecha_anterior": "2026-10-28",
+                     "texto_completo": "x" * 5000, "token_interno": "secreto"})
+    assert e["detalle"]["fecha_anterior"] == "2026-10-28"
+    assert "texto_completo" not in e["detalle"]
+    assert "token_interno" not in e["detalle"]
+    assert "crudo" not in e
+
+
+def test_sin_nada_publicable_el_detalle_es_None():
+    """None y un diccionario vacío se pintan distinto: None es «este evento no tiene
+    detalle», y {} invitaría a dibujar una ficha vacía."""
+    assert para_api_de({"texto_completo": "x"})["detalle"] is None
+    assert ev.para_api(_nuevo())["detalle"] is None
+
+
+def para_api_de(crudo):
+    return ev.para_api(_nuevo(crudo=crudo))
