@@ -517,10 +517,11 @@ def test_comprobar_ahora_devuelve_la_cadena_ENTERA(configurada, monkeypatch):
     r = asyncio.run(w.comprobar_ahora(db))
     c = r["cadena"]
     assert c["leidos_de_la_fuente"] == 2
+    assert c["ya_conocidos"] == 0
     assert c["nuevos_tras_deduplicar"] == 2
     assert c["descartados_al_filtrar"] == 1
     assert c["significativos"] == 1
-    assert c["guardados_en_mongo"] == 2
+    assert c["escritos_en_esta_vuelta"] == 2
 
 
 def test_comprobar_ahora_LEE_DE_VUELTA_lo_que_hay_en_mongo(configurada, monkeypatch):
@@ -529,7 +530,7 @@ def test_comprobar_ahora_LEE_DE_VUELTA_lo_que_hay_en_mongo(configurada, monkeypa
     _con_feed(monkeypatch, _feed("NVDA", "TSLA"))
     db = _DB(cartera=[("NVDA", 12)])
     r = asyncio.run(w.comprobar_ahora(db))
-    assert r["en_mongo"] == len(db[w.COL_EVENTOS].docs) == 2
+    assert r["guardados_unicos"] == len(db[w.COL_EVENTOS].docs) == 2
 
 
 def test_comprobar_ahora_usa_EL_MISMO_ciclo_que_el_bucle(configurada, monkeypatch):
@@ -551,7 +552,7 @@ def test_comprobar_ahora_sin_configurar_dice_la_verdad(configurada, monkeypatch)
     Y lo dice: NO_CONFIGURADA, no un error genérico."""
     monkeypatch.delenv("SEC_USER_AGENT", raising=False)
     r = asyncio.run(w.comprobar_ahora(_DB(watchlist=["NVDA"])))
-    assert r["estado"] == sec.NO_CONFIGURADA and r["en_mongo"] == 0
+    assert r["estado"] == sec.NO_CONFIGURADA and r["guardados_unicos"] == 0
 
 
 def test_comprobar_ahora_con_la_fuente_caida_NO_dice_que_todo_va_bien(configurada, monkeypatch):
@@ -559,3 +560,82 @@ def test_comprobar_ahora_con_la_fuente_caida_NO_dice_que_todo_va_bien(configurad
     r = asyncio.run(w.comprobar_ahora(_DB(cartera=[("NVDA", 12)])))
     assert r["estado"] == "error" and "403" in r["error"]
     assert r["cadena"]["leidos_de_la_fuente"] == 0
+
+
+# ── «Ya conocido» no es «descartado», tampoco en los acumulados ──────────────
+
+def test_la_segunda_vuelta_cuenta_YA_CONOCIDOS_y_no_descartes(configurada, monkeypatch):
+    """El caso real de producción: el feed devuelve lo mismo cada cinco minutos. Si eso
+    contara como descarte, la tasa de descarte subiría sin parar y parecería que el filtro
+    se ha vuelto loco, cuando lo que pasa es que la deduplicación va bien."""
+    _con_feed(monkeypatch, _feed("NVDA"))
+    db = _DB(cartera=[("NVDA", 12)])
+    _ciclo(db)
+    r = _ciclo(db)                                   # el mismo feed, otra vez
+    assert r["repetidos"] == 1 and r["descartados"] == 0
+    c = db[w.COL_SALUD].docs[0]["ultimo_ciclo"]
+    assert c["repetidos"] == 1 and c["descartados"] == 0
+
+
+def test_los_ya_conocidos_se_acumulan_APARTE(configurada, monkeypatch):
+    _con_feed(monkeypatch, _feed("NVDA", "TSLA"))
+    db = _DB(cartera=[("NVDA", 12)])
+    for _ in range(3):
+        _ciclo(db)
+    a = w._acumulado(db[w.COL_SALUD].docs[0])
+    assert a["recibidos"] == 6          # 2 por vuelta, tres vueltas
+    assert a["repetidos"] == 4          # las dos vueltas siguientes, dos cada una
+    assert a["nuevos"] == 2
+    assert a["descartados"] == 1        # TSLA, una sola vez: la primera
+
+
+def test_guardados_UNICOS_no_son_escrituras(configurada, monkeypatch):
+    """Tres vueltas sobre el mismo feed escriben una vez y reescriben cero, porque los
+    repetidos ni siquiera vuelven a `guardar`. Los únicos se cuentan en la colección,
+    que es la cifra que no se puede inflar reprocesando."""
+    _con_feed(monkeypatch, _feed("NVDA"))
+    db = _DB(cartera=[("NVDA", 12)])
+    for _ in range(3):
+        _ciclo(db)
+    r = asyncio.run(w.comprobar_ahora(db))
+    assert r["guardados_unicos"] == 1
+    assert w._acumulado(db[w.COL_SALUD].docs[0])["escrituras"] == 1
+
+
+# ── El cambio de significado de los contadores ───────────────────────────────
+
+def test_los_contadores_VIEJOS_se_reinician_una_vez(configurada, monkeypatch):
+    """La v1 sumaba los repetidos dentro de `descartados`. Arrastrar esos números sobre la
+    v2 daría una cifra mezclada que no mide ninguna de las dos cosas — y nadie podría
+    saberlo mirándola, que es lo peor que le puede pasar a un diagnóstico."""
+    _con_feed(monkeypatch, _feed("NVDA"))
+    db = _DB(cartera=[("NVDA", 12)])
+    db[w.COL_SALUD].docs.append({"fuente": sec.FUENTE, "contadores_v": 1,
+                                 "acum_recibidos": 129, "acum_descartados": 129,
+                                 "acum_ciclos": 3, "vigilando_desde": "2026-09-01T00:00:00Z"})
+    _ciclo(db)
+    a = w._acumulado(db[w.COL_SALUD].docs[0])
+    assert a["ciclos"] == 1 and a["recibidos"] == 1     # cuenta solo desde el reinicio
+    assert a["desde"] != "2026-09-01T00:00:00Z"
+
+
+def test_el_reinicio_NO_borra_ningun_evento(configurada, monkeypatch):
+    """Los documentos guardados siguen siendo válidos: lo que caducó es una estadística,
+    no la evidencia. El radar tiene que seguir enseñando lo mismo."""
+    _con_feed(monkeypatch, _feed("NVDA"))
+    db = _DB(cartera=[("NVDA", 12)])
+    _ciclo(db)
+    db[w.COL_SALUD].docs[0]["contadores_v"] = 1        # como si viniera de la versión vieja
+    _ciclo(db)
+    assert len(db[w.COL_EVENTOS].docs) == 1
+
+
+def test_el_reinicio_ocurre_UNA_sola_vez(configurada, monkeypatch):
+    """Si se repitiera en cada vuelta, el acumulado diría siempre «una vuelta» y el
+    periodo de prueba no acumularía nunca."""
+    _con_feed(monkeypatch, _feed("NVDA", "TSLA"))
+    db = _DB(cartera=[("NVDA", 12)])
+    db[w.COL_SALUD].docs.append({"fuente": sec.FUENTE, "contadores_v": 1, "acum_ciclos": 9})
+    for _ in range(3):
+        _ciclo(db)
+    assert w._acumulado(db[w.COL_SALUD].docs[0])["ciclos"] == 3

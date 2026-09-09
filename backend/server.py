@@ -4521,6 +4521,9 @@ async def intelligence_diagnostico(_user: str = Depends(auth.get_current_user)):
     return {
         "por_etapa": por_etapa,
         "descartes_por_motivo": por_motivo,
+        # Los guardados ÚNICOS: documentos que existen, no operaciones de escritura. Es la
+        # única cifra de las dos que no puede inflarse reprocesando el mismo feed.
+        "guardados_unicos": await db.intel_eventos.count_documents({}),
         # Las etapas declaradas y todavía no alcanzables. Se dicen en voz alta para que el
         # hueco sea visible en la propia API, y no una sorpresa dentro de tres meses.
         "sin_implementar": [intel_eventos.INVESTIGADO, intel_eventos.AGRUPADO],

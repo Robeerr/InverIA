@@ -135,11 +135,15 @@ export const ETAPAS = {
   descartado: "Descartado",
 };
 
+// Los motivos por los que el FILTRO tira un evento. «Ya conocido» no está aquí y no es
+// un olvido: un documento que ya teníamos no lo descarta el filtro, lo resuelve la
+// deduplicación un paso antes. Se conserva la traducción de `duplicado` porque puede
+// quedar en datos antiguos, pero el pipeline ya no lo emite como motivo.
 export const MOTIVOS = {
   sin_symbol: "Sin valor identificable",
   fuera_de_universo: "No es un valor tuyo",
-  duplicado: "Ya lo teníamos",
   sin_relevancia: "No te afecta lo suficiente",
+  duplicado: "Ya lo teníamos (dato antiguo)",
   sin_motivo: "Sin motivo anotado",
 };
 

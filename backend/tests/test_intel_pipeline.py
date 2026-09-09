@@ -171,7 +171,52 @@ def test_procesar_cuenta_los_descartes_POR_MOTIVO():
               _crudo(symbol="NVDA", externo_id="c")]
     r = pl.procesar(crudos, universo={"NVDA"}, ids_conocidos={"sec:c"}, cartera={"NVDA"})
     assert r["por_motivo"][pl.FUERA_DE_UNIVERSO] == 2
-    assert r["por_motivo"][pl.DUPLICADO] == 1
+
+
+# ── Ya conocido NO es descartado ─────────────────────────────────────────────
+# La distinción no es cosmética. El feed de la SEC devuelve los mismos 40 registros cada
+# cinco minutos, así que en régimen normal casi todo lo que se lee ya lo teníamos. Contarlo
+# como descarte daría una tasa de descarte del 90 % —un filtro aparentemente fuera de
+# control— justo cuando lo que demuestra es que la deduplicación funciona.
+
+def test_un_repetido_NO_cuenta_como_descartado():
+    crudos = [_crudo(symbol="NVDA", externo_id="a")]
+    r = pl.procesar(crudos, universo={"NVDA"}, ids_conocidos={"sec:a"}, cartera={"NVDA"})
+    assert r["repetidos"] == 1
+    assert r["descartados"] == 0        # el filtro no ha tumbado nada
+
+
+def test_ya_conocido_NO_aparece_entre_los_motivos_del_filtro():
+    """`por_motivo` responde «por qué tiró el filtro». Un repetido no llegó al filtro."""
+    r = pl.procesar([_crudo(symbol="NVDA")], universo={"NVDA"},
+                    ids_conocidos={"sec:a1"}, cartera={"NVDA"})
+    assert pl.DUPLICADO not in r["por_motivo"]
+    assert pl.DUPLICADO not in pl.MOTIVOS
+
+
+def test_los_numeros_CUADRAN_entre_si():
+    """recibidos = repetidos + nuevos, y nuevos = descartados + los que pasan. Sin esta
+    aritmética los seis números de la pantalla no se pueden leer como una cadena."""
+    crudos = [_crudo(symbol="NVDA", externo_id="a"),    # nuevo y significativo
+              _crudo(symbol="TSLA", externo_id="b"),    # nuevo, lo tumba el filtro
+              _crudo(symbol="NVDA", externo_id="ya")]   # ya conocido
+    r = pl.procesar(crudos, universo={"NVDA"}, ids_conocidos={"sec:ya"}, cartera={"NVDA"})
+    assert r["recibidos"] == 3
+    assert r["repetidos"] == 1
+    assert r["nuevos"] == 2
+    assert r["descartados"] == 1
+    assert r["recibidos"] == r["repetidos"] + r["nuevos"]
+    # Los que pasan el filtro son los que se guardan menos los descartados.
+    pasan = len(r["guardar"]) - r["descartados"]
+    assert r["nuevos"] == r["descartados"] + pasan
+
+
+def test_lo_ya_conocido_NO_se_reescribe(  ):
+    """La consecuencia práctica de no ser un descarte: tampoco se guarda otra vez. Un
+    evento que ya llegó a significativo no puede retroceder porque el feed lo repita."""
+    r = pl.procesar([_crudo(symbol="NVDA", externo_id="a")], universo={"NVDA"},
+                    ids_conocidos={"sec:a"}, cartera={"NVDA"})
+    assert r["guardar"] == []
 
 
 def test_los_descartados_TAMBIEN_se_guardan():

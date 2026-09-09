@@ -50,9 +50,21 @@ UMBRAL_SIGNIFICATIVO = 40
 # está tirando cosas buenas.
 SIN_SYMBOL = "sin_symbol"
 FUERA_DE_UNIVERSO = "fuera_de_universo"
-DUPLICADO = "duplicado"
 SIN_RELEVANCIA = "sin_relevancia"
-MOTIVOS = (SIN_SYMBOL, FUERA_DE_UNIVERSO, DUPLICADO, SIN_RELEVANCIA)
+MOTIVOS = (SIN_SYMBOL, FUERA_DE_UNIVERSO, SIN_RELEVANCIA)
+
+# «Ya conocido» NO es un motivo de descarte, y por eso vive fuera de MOTIVOS.
+#
+# Un documento que ya tenemos no es un evento irrelevante: simplemente no es nuevo. La
+# distinción no es cosmética — mezclarlos hace que el diagnóstico empeore justo cuando el
+# sistema va bien. Con el feed de la SEC, que devuelve los mismos 40 registros cada cinco
+# minutos, casi todo lo que se lee ya lo teníamos: contarlo como descarte daría una tasa
+# de descarte del 90 % y parecería un filtro fuera de control, cuando lo que demuestra es
+# que la deduplicación funciona.
+#
+# La constante se conserva porque el propio pipeline no cambia: `deduplicar` sigue
+# separando repetidos igual que antes. Lo que cambia es dónde se CUENTAN.
+DUPLICADO = "duplicado"
 
 
 def normalizar(evento: dict) -> dict:
@@ -183,8 +195,8 @@ def procesar(crudos: list, universo=None, ids_conocidos=None,
     pasan, descartados = filtrar(nuevos, universo)
     puntuados = [puntuar(e, cartera, watchlist, tesis) for e in pasan]
 
+    # Solo motivos del FILTRO. Los repetidos se cuentan aparte, en `repetidos`.
     por_motivo = {m: 0 for m in MOTIVOS}
-    por_motivo[DUPLICADO] = len(repetidos)
     for d in descartados:
         motivo = d.get("motivo_descarte")
         if motivo in por_motivo:
@@ -196,8 +208,12 @@ def procesar(crudos: list, universo=None, ids_conocidos=None,
         # historia, y es lo que permite auditar el filtro más adelante.
         "guardar": puntuados + descartados,
         "significativos": significativos,
+        # Los cuatro números que cuentan la vuelta, y cada uno significa UNA cosa:
+        #   recibidos = repetidos + nuevos
+        #   nuevos    = descartados + los que pasan
         "recibidos": len(normalizados),
+        "repetidos": len(repetidos),          # ya los teníamos: no son nuevos, no se tiran
         "nuevos": len(nuevos),
-        "descartados": len(descartados) + len(repetidos),
+        "descartados": len(descartados),      # SOLO los que tumbó el filtro
         "por_motivo": por_motivo,
     }

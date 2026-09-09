@@ -188,16 +188,16 @@ export default function IntelligenceView() {
               {diagnostico.acumulado?.ciclos > 0 && (
                 <div className="mt-6">
                   <p className="iv-etiqueta mb-2">Desde que vigila</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                     {[["Recibidos", diagnostico.acumulado.recibidos],
-                      // «Pasan el filtro» se calcula, no se cuenta aparte: son los nuevos
-                      // menos los descartados. Etiquetarlo con los significativos sería
-                      // más bajo y se leería como si el filtro tirara más de lo que tira.
-                      ["Pasan el filtro",
-                       Math.max(0, diagnostico.acumulado.nuevos - diagnostico.acumulado.descartados)],
-                      ["Descartados", diagnostico.acumulado.descartados],
-                      ["Guardados", diagnostico.acumulado.guardados]].map(([t, n], i) => (
-                      <div key={t} className={i === 3 ? "border-l border-marca pl-3" : ""}>
+                      // Ya conocidos: se van en la deduplicación, ANTES del filtro. Van
+                      // aquí, entre los recibidos y los nuevos, porque es donde ocurren.
+                      ["Ya conocidos", diagnostico.acumulado.repetidos],
+                      ["Nuevos", diagnostico.acumulado.nuevos],
+                      ["Descartados por filtro", diagnostico.acumulado.descartados],
+                      ["Te afectan", diagnostico.acumulado.significativos],
+                      ["Guardados únicos", diagnostico.guardados_unicos]].map(([t, n], i) => (
+                      <div key={t} className={i === 5 ? "border-l border-marca pl-3" : ""}>
                         <p className="iv-cifra text-xl text-tinta">{n}</p>
                         <p className="iv-etiqueta">{t}</p>
                       </div>
@@ -208,9 +208,10 @@ export default function IntelligenceView() {
                     {diagnostico.acumulado.fallos > 0
                       ? `, ${diagnostico.acumulado.fallos} fallidas`
                       : " sin ningún fallo"}.{" "}
-                    De los que pasan el filtro, {diagnostico.acumulado.significativos} han
-                    llegado a significativo. «Guardados» incluye los descartados: el
-                    descarte también es historia, y es lo que permite auditar el filtro.
+                    «Ya conocidos» son documentos que ya teníamos: no es que se hayan
+                    tirado, es que no eran nuevos. «Guardados únicos» cuenta documentos en
+                    la base de datos e incluye los descartados — el descarte también es
+                    historia, y es lo que permite auditar el filtro después.
                   </p>
                 </div>
               )}

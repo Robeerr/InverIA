@@ -54,6 +54,17 @@ COL_SALUD = "intel_salud"
 # 500 cubre de sobra varias horas y evita releer la colección entera cada ciclo.
 IDS_RECORDADOS = 500
 
+# Versión de los contadores acumulados. Se sube cuando cambia lo que SIGNIFICA un contador.
+#
+# La v1 sumaba los repetidos dentro de `descartados`. Al separarlos, los números guardados
+# antes del cambio y los de después miden cosas distintas, y sumarlos daría una cifra que
+# no es ninguna de las dos. Cuando la versión guardada no coincide, los acumuladores se
+# ponen a cero UNA vez y se anota desde cuándo cuentan.
+#
+# Se prefiere perder el histórico a servir un número mezclado: un contador que nadie sabe
+# interpretar es peor que un contador que empieza de nuevo y se entiende.
+CONTADORES_V = 2
+
 
 def _ahora() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -160,6 +171,26 @@ async def _salud(db, fuente: str) -> dict:
         return {}
 
 
+async def _reiniciar_contadores(db, fuente: str) -> None:
+    """Pone los acumuladores a cero tras un cambio de significado. Solo los contadores.
+
+    NO se toca ningún evento: los documentos guardados siguen siendo válidos y el radar
+    sigue enseñando lo mismo. Lo único que se descarta es una estadística que ya no se
+    puede interpretar.
+    """
+    ceros = {c: 0 for c in ("acum_ciclos", "acum_fallos", "acum_recibidos",
+                            "acum_repetidos", "acum_nuevos", "acum_descartados",
+                            "acum_significativos", "acum_guardados")}
+    try:
+        await db[COL_SALUD].update_one(
+            {"fuente": fuente},
+            {"$set": {**ceros, "acum_motivos": {}, "contadores_v": CONTADORES_V,
+                      "vigilando_desde": _ahora()}})
+        logger.info("intel/%s: contadores reiniciados (v%d)", fuente, CONTADORES_V)
+    except Exception as e:
+        logger.warning("intel: no se pudieron reiniciar los contadores: %s", str(e)[:120])
+
+
 async def ciclo_sec(db) -> dict:
     """Una vuelta de SEC. Devuelve lo que ha pasado, para el log y el diagnóstico."""
     if not sec.configurado():
@@ -171,6 +202,9 @@ async def ciclo_sec(db) -> dict:
 
     salud = await _salud(db, sec.FUENTE)
     fallos = int(salud.get("fallos") or 0)
+    if salud and int(salud.get("contadores_v") or 1) != CONTADORES_V:
+        await _reiniciar_contadores(db, sec.FUENTE)
+        salud = await _salud(db, sec.FUENTE)
 
     crudos = []
     try:
@@ -200,17 +234,18 @@ async def ciclo_sec(db) -> dict:
     # cuántos eran nuevos, cuántos se descartaron y cuántos se guardaron de verdad. El
     # último es el que cierra la cadena: sin él, «se procesaron 40» podría convivir con
     # una base de datos vacía y nadie lo notaría.
-    ciclo = {"recibidos": r["recibidos"], "nuevos": r["nuevos"],
-             "significativos": len(r["significativos"]),
-             "descartados": r["descartados"], "guardados": escritos,
+    ciclo = {"recibidos": r["recibidos"], "repetidos": r["repetidos"],
+             "nuevos": r["nuevos"], "descartados": r["descartados"],
+             "significativos": len(r["significativos"]), "guardados": escritos,
              "por_motivo": r["por_motivo"], "cuando": _ahora()}
     acumulado = {"acum_ciclos": 1, "acum_recibidos": r["recibidos"],
+                 "acum_repetidos": r["repetidos"],
                  "acum_nuevos": r["nuevos"], "acum_guardados": escritos,
                  "acum_descartados": r["descartados"],
                  "acum_significativos": len(r["significativos"])}
     for motivo, n in (r["por_motivo"] or {}).items():
         acumulado[f"acum_motivos.{motivo}"] = n
-    await _anotar_salud(db, sec.FUENTE, sumar=acumulado,
+    await _anotar_salud(db, sec.FUENTE, sumar=acumulado, contadores_v=CONTADORES_V,
                         estado=sec.ONLINE, error=None, fallos=0,
                         espera_s=0, ultimo_ciclo=ciclo)
     if r["nuevos"]:
@@ -243,32 +278,43 @@ async def comprobar_ahora(db) -> dict:
         # La cadena entera, paso a paso, en el orden en que ocurre.
         "cadena": {
             "leidos_de_la_fuente": r.get("recibidos", 0),
+            # «Ya conocido» no es un descarte: es la deduplicación haciendo su trabajo.
+            # Con un feed que devuelve los mismos 40 registros cada cinco minutos, este
+            # número ALTO es señal de que va bien, no de que algo se esté tirando.
+            "ya_conocidos": r.get("repetidos", 0),
             "nuevos_tras_deduplicar": r.get("nuevos", 0),
             "descartados_al_filtrar": r.get("descartados", 0),
             "significativos": len(r.get("significativos") or []),
-            "guardados_en_mongo": r.get("escritos", 0),
+            "escritos_en_esta_vuelta": r.get("escritos", 0),
         },
         "por_motivo": r.get("por_motivo") or {},
         # Lo que hay en la base de datos DESPUÉS, leído de vuelta. Que el ciclo diga que
         # guardó tres cosas y que la colección tenga tres cosas son dos afirmaciones
         # distintas, y solo la segunda cierra la cadena.
-        "en_mongo": await db[COL_EVENTOS].count_documents({"fuente": sec.FUENTE}),
+        "guardados_unicos": await db[COL_EVENTOS].count_documents({"fuente": sec.FUENTE}),
         "acumulado": _acumulado(salud),
     }
 
 
 def _acumulado(salud: dict) -> dict:
-    """Los contadores del periodo de prueba, con nombres legibles."""
+    """Los contadores del periodo de prueba, con nombres legibles.
+
+    `escrituras` y no «guardados»: cuenta operaciones de escritura, y una vuelta que
+    reprocesa algo ya escrito vuelve a contar. Los guardados ÚNICOS se cuentan aparte
+    contando documentos en la colección, que es la única cifra que no puede inflarse.
+    """
     salud = salud or {}
     return {
         "desde": salud.get("vigilando_desde"),
         "ciclos": salud.get("acum_ciclos") or 0,
         "fallos": salud.get("acum_fallos") or 0,
         "recibidos": salud.get("acum_recibidos") or 0,
+        # Ya conocidos: leídos otra vez del feed y reconocidos. NO son descartes.
+        "repetidos": salud.get("acum_repetidos") or 0,
         "nuevos": salud.get("acum_nuevos") or 0,
         "descartados": salud.get("acum_descartados") or 0,
         "significativos": salud.get("acum_significativos") or 0,
-        "guardados": salud.get("acum_guardados") or 0,
+        "escrituras": salud.get("acum_guardados") or 0,
         "por_motivo": salud.get("acum_motivos") or {},
     }
 

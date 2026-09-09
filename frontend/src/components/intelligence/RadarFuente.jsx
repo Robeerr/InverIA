@@ -48,15 +48,21 @@ export default function RadarFuente({ fuente }) {
       </div>
 
       {/* El recuento de la última vuelta. Es lo que distingue «no ha pasado nada» de «mi
-          filtro se lo ha comido todo»: sin estos números las dos cosas son un silencio. */}
+          filtro se lo ha comido todo»: sin estos números las dos cosas son un silencio.
+
+          «Ya conocidos» va separado de «descartados» porque son cosas distintas: lo
+          primero lo resuelve la deduplicación y lo segundo lo tira el filtro. En régimen
+          normal casi todo lo que llega ya lo teníamos, y mezclarlos haría que el filtro
+          pareciera desbocado justo cuando todo va bien. */}
       {ciclo && (
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs iv-cifra text-tinta-2">
           <span>{ciclo.recibidos ?? 0} leídos</span>
+          <span className="text-tinta-3">{ciclo.repetidos ?? 0} ya conocidos</span>
           <span>{ciclo.nuevos ?? 0} nuevos</span>
+          <span className="text-tinta-3">{ciclo.descartados ?? 0} descartados</span>
           <span className={ciclo.significativos ? "text-marca" : ""}>
             {ciclo.significativos ?? 0} te afectan
           </span>
-          <span className="text-tinta-3">{ciclo.descartados ?? 0} descartados</span>
         </div>
       )}
 

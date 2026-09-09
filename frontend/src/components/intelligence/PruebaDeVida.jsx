@@ -16,14 +16,22 @@ import { fmtDateTime } from "../../lib/format";
  *   · el filtro se lo ha comido todo,
  *   · no había novedades.
  *
- * Las tres se ven exactamente igual. Esto ejecuta una vuelta AHORA y enseña los cinco
+ * Las tres se ven exactamente igual. Esto ejecuta una vuelta AHORA y enseña los seis
  * pasos con sus números, que es lo único que las distingue.
+ *
+ * «YA CONOCIDO» NO ES «DESCARTADO»
+ *
+ * Van en casillas separadas a propósito. Un documento que ya teníamos no es un evento
+ * irrelevante: simplemente no es nuevo. Y como el feed de la SEC devuelve los mismos
+ * registros cada pocos minutos, en régimen normal casi todo lo que se lee ya lo teníamos
+ * — sumarlo a los descartes daría una tasa de descarte altísima y parecería un filtro
+ * fuera de control, justo cuando lo que demuestra es que la deduplicación funciona.
  *
  * EL ÚLTIMO NÚMERO ES EL QUE CIERRA LA CADENA
  *
- * «Guardados» no lo dice el ciclo: se lee de vuelta de la base de datos. Que el proceso
- * afirme haber escrito tres eventos y que la colección tenga tres eventos son dos
- * afirmaciones distintas, y solo la segunda demuestra que la cadena llega al final.
+ * «Guardados únicos» no lo dice el ciclo: se cuenta en la colección. Que el proceso afirme
+ * haber escrito tres eventos y que la colección tenga tres documentos son dos afirmaciones
+ * distintas, y solo la segunda demuestra que la cadena llega al final.
  */
 export default function PruebaDeVida({ alTerminar }) {
   const [r, setR] = useState(null);
@@ -45,12 +53,16 @@ export default function PruebaDeVida({ alTerminar }) {
   };
 
   const c = r?.cadena;
+  // Los seis pasos, en el orden en que ocurren. «Ya conocidos» va inmediatamente después
+  // de los recibidos porque es ahí donde se van: la deduplicación es lo PRIMERO que pasa,
+  // antes que el filtro. Ponerlo junto a los descartados sugeriría que los tira el filtro.
   const pasos = c ? [
-    ["Leídos de la SEC", c.leidos_de_la_fuente],
+    ["Recibidos", c.leidos_de_la_fuente],
+    ["Ya conocidos", c.ya_conocidos],
     ["Nuevos", c.nuevos_tras_deduplicar],
-    ["Descartados", c.descartados_al_filtrar],
+    ["Descartados por filtro", c.descartados_al_filtrar],
     ["Te afectan", c.significativos],
-    ["Guardados", c.guardados_en_mongo],
+    ["Guardados únicos", r?.guardados_unicos],
   ] : [];
 
   return (
@@ -80,9 +92,8 @@ export default function PruebaDeVida({ alTerminar }) {
             </p>
           )}
 
-          {/* Los cinco pasos, en el orden en que ocurren. Leerlos de izquierda a derecha
-              es leer la cadena entera. */}
-          <div className="mt-3 grid grid-cols-2 sm:grid-cols-5 gap-3">
+          {/* Leerlos de izquierda a derecha es leer la cadena entera. */}
+          <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {pasos.map(([etiqueta, n], i) => (
               <div key={etiqueta}
                    className={i === pasos.length - 1 ? "border-l border-marca pl-3" : ""}>
@@ -92,10 +103,12 @@ export default function PruebaDeVida({ alTerminar }) {
             ))}
           </div>
 
-          <p className="mt-3 text-xs text-tinta-3">
-            En la base de datos hay <b className="iv-cifra text-tinta-2">{r.en_mongo}</b>{" "}
-            eventos de esta fuente. Es una lectura de vuelta de Mongo, no lo que el ciclo
-            dice haber escrito.
+          <p className="mt-3 text-xs text-tinta-3 max-w-[70ch] leading-relaxed">
+            <b className="text-tinta-2">Ya conocidos</b> no son descartes: son documentos
+            que ya teníamos. El feed devuelve los mismos registros cada pocos minutos, así
+            que este número alto significa que la deduplicación funciona.{" "}
+            <b className="text-tinta-2">Guardados únicos</b> son documentos que existen en
+            la base de datos, contados en la colección — no operaciones de escritura.
           </p>
 
           {Object.keys(r.por_motivo || {}).length > 0 && (
@@ -114,8 +127,9 @@ export default function PruebaDeVida({ alTerminar }) {
               <span className="iv-cifra text-tinta-2">{r.acumulado.ciclos}</span> vueltas
               {r.acumulado.fallos > 0 && <> (<span className="iv-cifra text-baja">{r.acumulado.fallos}</span> fallidas)</>},{" "}
               <span className="iv-cifra text-tinta-2">{r.acumulado.recibidos}</span> leídos,{" "}
-              <span className="iv-cifra text-tinta-2">{r.acumulado.descartados}</span> descartados,{" "}
-              <span className="iv-cifra text-tinta-2">{r.acumulado.guardados}</span> guardados.
+              <span className="iv-cifra text-tinta-2">{r.acumulado.repetidos}</span> ya conocidos,{" "}
+              <span className="iv-cifra text-tinta-2">{r.acumulado.descartados}</span> descartados
+              por el filtro.
             </p>
           )}
         </div>
