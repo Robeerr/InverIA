@@ -224,3 +224,15 @@ def test_sin_nada_publicable_el_detalle_es_None():
 
 def para_api_de(crudo):
     return ev.para_api(_nuevo(crudo=crudo))
+
+
+def test_el_detalle_deja_DISTINGUIR_dos_registros_del_mismo_dia():
+    """Una empresa puede presentar catorce Form 4 el mismo día —un directivo cada uno— y
+    todos tienen el mismo título. Sin el número de registro y la fecha, la pantalla enseña
+    catorce filas idénticas sin forma de saber que son documentos distintos."""
+    e = ev.para_api(_nuevo(crudo={"suceso": "4", "accession": "000104581026000042",
+                                  "fecha_registro": "2026-09-08", "cik": "1045810"}))
+    assert e["detalle"]["accession"] == "000104581026000042"
+    assert e["detalle"]["fecha_registro"] == "2026-09-08"
+    # El CIK sigue sin salir: no es lista negra, es blanca.
+    assert "cik" not in e["detalle"]

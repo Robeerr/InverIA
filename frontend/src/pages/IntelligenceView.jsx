@@ -7,7 +7,8 @@ import IntelligenceDrawer from "../components/intelligence/IntelligenceDrawer";
 import PruebaDeVida from "../components/intelligence/PruebaDeVida";
 import SondeoSec from "../components/intelligence/SondeoSec";
 import DiagnosticoTickers from "../components/intelligence/DiagnosticoTickers";
-import { resumen as resumenDe, ordenados, nivelDe, MOTIVOS, ETAPAS } from "../lib/intelligence";
+import { resumen as resumenDe, ordenados, plegarRepetidos, nivelDe, MOTIVOS, ETAPAS }
+  from "../lib/intelligence";
 import { fmtHace } from "../lib/format";
 
 /**
@@ -34,6 +35,80 @@ import { fmtHace } from "../lib/format";
  * comentario del código: una limitación que el usuario no ve es una limitación que se le
  * acaba olvidando al sistema.
  */
+/** Una fila de evento. La misma pinta dentro y fuera de un grupo. */
+function Fila({ evento, onElegir, dentroDeGrupo = false }) {
+  const n = nivelDe(evento);
+  const d = evento.detalle || {};
+  return (
+    <button onClick={() => onElegir(evento)}
+            className={`w-full text-left py-3 group ${dentroDeGrupo ? "pl-4" : ""}`}
+            data-testid={`intelligence-evento-${evento.id}`}>
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="iv-cifra text-sm font-semibold text-tinta">
+          {evento.symbol || "—"}
+        </span>
+        {!dentroDeGrupo && (
+          <span className={`iv-etiqueta shrink-0 ${n.clase}`}>{n.etiqueta}</span>
+        )}
+      </div>
+      <p className="mt-1 text-sm text-tinta-2 group-hover:text-tinta leading-snug">
+        {evento.titulo}
+      </p>
+      <p className="mt-1 text-xs text-tinta-3">
+        {evento.fuente} · {fmtHace(evento.recibido_en)}
+        {/* Dentro de un grupo los títulos son idénticos, así que lo que distingue una
+            fila de otra es su número de registro. Sin él serían catorce líneas iguales,
+            que es justo el problema que el plegado viene a resolver. */}
+        {dentroDeGrupo && d.accession && (
+          <> · <span className="iv-cifra">n.º {d.accession.slice(-6)}</span></>
+        )}
+        {dentroDeGrupo && d.fecha_registro && <> · {d.fecha_registro}</>}
+      </p>
+    </button>
+  );
+}
+
+
+/**
+ * Varias filas que dicen lo mismo, plegadas en una.
+ *
+ * Se despliega y están TODAS, cada una con su número de registro y su enlace al
+ * documento. Plegar es una decisión de lectura, no un filtro: no desaparece nada.
+ */
+function Grupo({ fila, onElegir }) {
+  const [abierto, setAbierto] = React.useState(false);
+  const n = nivelDe({ nivel_alerta: fila.nivel });
+  return (
+    <li data-testid={`intelligence-grupo-${fila.id}`}>
+      <button onClick={() => setAbierto((v) => !v)}
+              className="w-full text-left py-3 group"
+              aria-expanded={abierto}>
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="iv-cifra text-sm font-semibold text-tinta">{fila.symbol}</span>
+          <span className={`iv-etiqueta shrink-0 ${n.clase}`}>{n.etiqueta}</span>
+        </div>
+        <p className="mt-1 text-sm text-tinta-2 group-hover:text-tinta leading-snug">
+          {fila.titulo}
+          <span className="text-tinta-3"> · {abierto ? "ocultar" : "ver una a una"}</span>
+        </p>
+        <p className="mt-1 text-xs text-tinta-3">
+          {fila.fuente} · {fmtHace(fila.items[0].recibido_en)}
+        </p>
+      </button>
+      {abierto && (
+        <ul className="border-l border-linea ml-1 divide-y divide-linea">
+          {fila.items.map((e) => (
+            <li key={e.id}>
+              <Fila evento={e} onElegir={onElegir} dentroDeGrupo />
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+
 export default function IntelligenceView() {
   const [estado, setEstado] = useState(null);
   const [eventos, setEventos] = useState([]);
@@ -67,6 +142,9 @@ export default function IntelligenceView() {
 
   const r = resumenDe(estado);
   const lista = ordenados(eventos);
+  // El radar sigue recibiendo los eventos UNO A UNO: plegar es cosa de la lista, y una
+  // marca por registro es lo que hace que el radar represente lo que de verdad entró.
+  const filas = plegarRepetidos(eventos);
 
   return (
     <div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6">
@@ -123,29 +201,13 @@ export default function IntelligenceView() {
           )}
 
           <ul className="divide-y divide-linea">
-            {lista.map((ev) => {
-              const n = nivelDe(ev);
-              return (
-                <li key={ev.id}>
-                  <button onClick={() => setElegido(ev)}
-                          className="w-full text-left py-3 group"
-                          data-testid={`intelligence-evento-${ev.id}`}>
-                    <div className="flex items-baseline justify-between gap-3">
-                      <span className="iv-cifra text-sm font-semibold text-tinta">
-                        {ev.symbol || "—"}
-                      </span>
-                      <span className={`iv-etiqueta shrink-0 ${n.clase}`}>{n.etiqueta}</span>
-                    </div>
-                    <p className="mt-1 text-sm text-tinta-2 group-hover:text-tinta leading-snug">
-                      {ev.titulo}
-                    </p>
-                    <p className="mt-1 text-xs text-tinta-3">
-                      {ev.fuente} · {fmtHace(ev.recibido_en)}
-                    </p>
-                  </button>
-                </li>
-              );
-            })}
+            {filas.map((fila) => (
+              fila.tipo === "grupo"
+                ? <Grupo key={fila.id} fila={fila} onElegir={setElegido} />
+                : <li key={fila.id}>
+                    <Fila evento={fila.evento} onElegir={setElegido} />
+                  </li>
+            ))}
           </ul>
 
           {/* El diagnóstico. Es lo que impide confundir un filtro roto con un mercado

@@ -10,7 +10,7 @@
  */
 import {
   ESTADOS, escuchando, estadoDe, resumen, nivelDe, ordenados, porValor, tieneAnalisis,
-  anguloPorHora,
+  anguloPorHora, plegarRepetidos, NIVELES,
 } from "./intelligence";
 
 const online = { fuente: "sec", estado: "ONLINE" };
@@ -168,5 +168,100 @@ describe("dónde va cada marca en la esfera", () => {
   test("un evento con fecha futura se trata como ahora, no se sale de la esfera", () => {
     // Pasa de verdad: los relojes de las fuentes y el nuestro no están sincronizados.
     expect(anguloPorHora("2026-09-09T13:00:00Z", AHORA)).toBe(0);
+  });
+});
+
+
+describe("plegar lo repetido", () => {
+  const f4 = (id, symbol = "MSFT", extra = {}) => ({
+    id, symbol, fuente: "sec", nivel_alerta: "WATCH", recibido_en: "2026-09-09T10:00:00Z",
+    detalle: { suceso: "4", fecha_registro: "2026-09-08", accession: id }, ...extra,
+  });
+
+  test("catorce Form 4 del mismo dia son UNA fila", () => {
+    // El caso real: cuando una empresa consolida acciones, media directiva registra el
+    // mismo día. Catorce líneas con el mismo título no informan de nada.
+    const filas = plegarRepetidos(Array.from({ length: 14 }, (_, i) => f4(`a${i}`)));
+    expect(filas).toHaveLength(1);
+    expect(filas[0].tipo).toBe("grupo");
+    expect(filas[0].n).toBe(14);
+    expect(filas[0].titulo).toBe("14 operaciones de directivos");
+  });
+
+  test("NO se pierde ninguno: están todos dentro, con su enlace", () => {
+    // Plegar no es descartar. Si un evento desapareciera aquí, la pantalla estaría
+    // ocultando un registro real y no habría forma de notarlo.
+    const originales = Array.from({ length: 14 }, (_, i) => f4(`a${i}`));
+    const dentro = plegarRepetidos(originales).flatMap((x) => x.items || [x.evento]);
+    expect(dentro.map((e) => e.id).sort()).toEqual(originales.map((e) => e.id).sort());
+  });
+
+  test("lo que INTERRUMPE nunca se pliega", () => {
+    // La regla que impide que plegar se convierta en ocultar: algo que el backend
+    // consideró digno de sacarte de lo que haces no puede acabar dentro de un montón.
+    const filas = plegarRepetidos([
+      f4("a", "MSFT"), f4("b", "MSFT"),
+      f4("importante", "MSFT", { nivel_alerta: "IMPORTANT" }),
+    ]);
+    const sueltos = filas.filter((x) => x.tipo === "evento");
+    expect(sueltos).toHaveLength(1);
+    expect(sueltos[0].evento.id).toBe("importante");
+  });
+
+  test("valores distintos no se mezclan", () => {
+    const filas = plegarRepetidos([f4("a", "MSFT"), f4("b", "MSFT"),
+                                   f4("c", "NFLX"), f4("d", "NFLX")]);
+    expect(filas.map((x) => x.symbol)).toEqual(["MSFT", "NFLX"]);
+  });
+
+  test("sucesos distintos no se mezclan", () => {
+    // Un 8-K y un Form 4 de la misma empresa el mismo día no cuentan lo mismo.
+    const ocho = { ...f4("x"), detalle: { suceso: "8-K", fecha_registro: "2026-09-08" } };
+    const filas = plegarRepetidos([f4("a"), f4("b"), ocho, { ...ocho, id: "y" }]);
+    expect(filas).toHaveLength(2);
+    expect(filas.map((x) => x.titulo)).toContain("2 hechos relevantes");
+  });
+
+  test("DIAS distintos no se mezclan", () => {
+    const ayer = { ...f4("v"), detalle: { suceso: "4", fecha_registro: "2026-09-07" } };
+    expect(plegarRepetidos([f4("a"), f4("b"), ayer, { ...ayer, id: "w" }])).toHaveLength(2);
+  });
+
+  test("uno solo NO se pliega", () => {
+    // Un «grupo» de uno obligaría a desplegar para leer una línea.
+    const filas = plegarRepetidos([f4("a"), f4("otro", "NFLX")]);
+    expect(filas.every((x) => x.tipo === "evento")).toBe(true);
+  });
+
+  test("el grupo hereda la gravedad de su miembro más grave", () => {
+    const filas = plegarRepetidos([f4("a"), f4("b", "MSFT", { nivel_alerta: "INFO" })]);
+    expect(filas[0].nivel).toBe("WATCH");
+  });
+
+  test("el orden de lectura se conserva: lo más grave arriba", () => {
+    const filas = plegarRepetidos([
+      f4("info", "AMD", { nivel_alerta: "INFO" }), f4("info2", "AMD", { nivel_alerta: "INFO" }),
+      f4("grave", "MSFT", { nivel_alerta: "IMPORTANT" }),
+      f4("a"), f4("b"),
+    ]);
+    expect(filas[0].tipo).toBe("evento");        // el IMPORTANT, suelto y primero
+    expect(filas[0].evento.id).toBe("grave");
+  });
+
+  test("sin eventos no se inventa ninguna fila", () => {
+    expect(plegarRepetidos([])).toEqual([]);
+    expect(plegarRepetidos(null)).toEqual([]);
+  });
+
+  test("un suceso desconocido se pliega con un titulo neutro", () => {
+    const raro = { ...f4("a"), detalle: { suceso: "vete_a_saber", fecha_registro: "2026-09-08" } };
+    const filas = plegarRepetidos([raro, { ...raro, id: "b" }]);
+    expect(filas[0].titulo).toBe("2 eventos");
+  });
+
+  test("los niveles declaran si INTERRUMPEN, igual que el backend", () => {
+    const interrumpen = Object.entries(NIVELES)
+      .filter(([, v]) => v.interrumpe).map(([k]) => k);
+    expect(interrumpen.sort()).toEqual(["CRITICAL", "IMPORTANT"]);
   });
 });

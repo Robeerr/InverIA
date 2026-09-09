@@ -83,15 +83,19 @@ export function resumen(estado) {
 
 // Los niveles del backend, de menos a más. El nivel decide el color; el orden decide
 // quién va arriba en la lista.
+// `interrumpe` es el mismo umbral que el backend (INTERRUMPEN = IMPORTANT, CRITICAL) y va
+// declarado en vez de deducirse del peso: si mañana cambia, se cambia aquí y no en cada
+// sitio que compare números.
 export const NIVELES = {
-  INFO: { etiqueta: "Contexto", clase: "text-tinta-3", peso: 0 },
-  WATCH: { etiqueta: "Atención", clase: "text-info", peso: 1 },
-  IMPORTANT: { etiqueta: "Importante", clase: "text-aviso", peso: 2 },
-  CRITICAL: { etiqueta: "Crítico", clase: "text-alerta", peso: 3 },
+  INFO: { etiqueta: "Contexto", clase: "text-tinta-3", peso: 0, interrumpe: false },
+  WATCH: { etiqueta: "Atención", clase: "text-info", peso: 1, interrumpe: false },
+  IMPORTANT: { etiqueta: "Importante", clase: "text-aviso", peso: 2, interrumpe: true },
+  CRITICAL: { etiqueta: "Crítico", clase: "text-alerta", peso: 3, interrumpe: true },
 };
 
 export const nivelDe = (evento) =>
-  NIVELES[evento?.nivel_alerta] || { etiqueta: "Sin evaluar", clase: "text-tinta-3", peso: -1 };
+  NIVELES[evento?.nivel_alerta] ||
+  { etiqueta: "Sin evaluar", clase: "text-tinta-3", peso: -1, interrumpe: false };
 
 /** Los eventos ordenados como se leen: lo más grave primero y, a igual gravedad, lo más nuevo. */
 export function ordenados(eventos) {
@@ -165,4 +169,91 @@ export function anguloPorHora(iso, ahora = Date.now()) {
   const horas = (ahora - t) / 3600000;
   if (horas < 0) return 0;                       // relojes desalineados: se trata como ahora
   return Math.min(horas / VENTANA_RADAR_H, 1) * 360;
+}
+
+
+/**
+ * Plegar lo repetido: catorce Form 4 de MSFT son una fila, no catorce.
+ *
+ * EL PROBLEMA, MEDIDO EN PRODUCCIÓN
+ *
+ * Cuando una empresa consolida acciones, media directiva registra un Form 4 el mismo día.
+ * En una vuelta real entraron 14 de MSFT y 10 de NFLX, todos con el mismo título —
+ * `4 · Operación de un directivo — MSFT`— porque el nombre del directivo está dentro del
+ * documento y no lo descargamos. Catorce líneas idénticas no informan de nada.
+ *
+ * NO son duplicados: son registros distintos, con su propio número y su enlace. La
+ * deduplicación funciona. Lo que fallaba era la lectura.
+ *
+ * ESTO NO ES LA ETAPA `agrupado` DEL PIPELINE
+ *
+ * Y la distinción importa, porque esa etapa sigue declarada como no implementada. Son
+ * cosas distintas:
+ *
+ *   `agrupado`  · el backend decide que varios eventos cuentan LA MISMA historia y los
+ *                 funde en uno. Cambia lo que se guarda y lo que se puntúa. No existe.
+ *   plegar      · la pantalla junta filas que dicen lo mismo para poder leerlas. No
+ *                 cambia ningún evento, ninguna nota y ninguna etapa; se despliega y
+ *                 están todos, con su enlace.
+ *
+ * LO QUE INTERRUMPE NUNCA SE PLIEGA
+ *
+ * Un evento que el backend consideró digno de sacarte de lo que estás haciendo no puede
+ * acabar escondido dentro de un montón. Es la regla que impide que plegar se convierta en
+ * ocultar.
+ */
+const PLURAL = {
+  "4": ["operación de un directivo", "operaciones de directivos"],
+  "8-K": ["hecho relevante", "hechos relevantes"],
+  programado: ["resultados programados", "resultados programados"],
+  cambio_fecha: ["cambio de fecha", "cambios de fecha"],
+  publicado: ["resultados publicados", "resultados publicados"],
+};
+
+export const tituloDeGrupo = (suceso, n) => {
+  const par = PLURAL[suceso];
+  if (!par) return `${n} eventos`;
+  return `${n} ${n === 1 ? par[0] : par[1]}`;
+};
+
+/** Qué filas cuentan como «lo mismo»: mismo valor, mismo suceso y mismo día. */
+export const claveDePliegue = (e) =>
+  [e?.symbol || "—", e?.fuente || "", e?.detalle?.suceso || "",
+   (e?.detalle?.fecha_registro || e?.recibido_en || "").slice(0, 10)].join("|");
+
+export function plegarRepetidos(eventos, minimo = 2) {
+  const lista = ordenados(eventos);
+  const orden = [];
+  const porClave = new Map();
+
+  for (const e of lista) {
+    // Lo que interrumpe va suelto, en su sitio y con su gravedad a la vista.
+    if (nivelDe(e).interrumpe) {
+      orden.push({ suelto: e });
+      continue;
+    }
+    const k = claveDePliegue(e);
+    if (!porClave.has(k)) {
+      porClave.set(k, []);
+      orden.push({ clave: k });
+    }
+    porClave.get(k).push(e);
+  }
+
+  return orden.map((x) => {
+    if (x.suelto) return { tipo: "evento", id: x.suelto.id, evento: x.suelto };
+    const items = porClave.get(x.clave);
+    // Un «grupo» de uno es un evento: pintarlo plegado obligaría a desplegar para leer
+    // una sola línea.
+    if (items.length < minimo) {
+      return { tipo: "evento", id: items[0].id, evento: items[0] };
+    }
+    return {
+      tipo: "grupo", id: x.clave, items, n: items.length,
+      symbol: items[0].symbol, fuente: items[0].fuente,
+      // `ordenados` ya dejó el más grave delante, así que el grupo hereda su nivel.
+      nivel: items[0].nivel_alerta,
+      titulo: tituloDeGrupo(items[0]?.detalle?.suceso, items.length),
+    };
+  });
 }

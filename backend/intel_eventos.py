@@ -220,7 +220,11 @@ def interrumpe(evento: dict) -> bool:
 # de resultados: cuándo era, cuándo es, y qué cifras hay.
 _DETALLE_PUBLICO = ("suceso", "trimestre", "fecha", "fecha_anterior", "adelanta",
                     "momento", "eps_estimado", "eps_real", "diferencia_eps",
-                    "ingresos_estimados", "ingresos_reales", "formulario")
+                    "ingresos_estimados", "ingresos_reales", "formulario",
+                    # Lo que distingue un registro de otro cuando una empresa presenta
+                    # catorce Form 4 el mismo día: sin esto, catorce filas idénticas en
+                    # pantalla y ninguna forma de saber que son documentos distintos.
+                    "accession", "fecha_registro")
 
 
 def para_api(evento: dict) -> dict:
