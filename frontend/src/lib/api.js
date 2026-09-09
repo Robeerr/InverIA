@@ -74,6 +74,10 @@ export const api = {
     // evento. Tarda lo que tarde la SEC en contestar, de ahí el timeout largo.
     comprobar: () =>
       client.post(`/intelligence/comprobar`, {}, { timeout: 60000 }).then((r) => r.data),
+    // Mide EDGAR antes de cambiar el mecanismo de descubrimiento. Seis peticiones de
+    // lectura: no escribe nada ni altera la vigilancia que está corriendo.
+    sondeoSec: () =>
+      client.post(`/intelligence/sec/sondeo`, {}, { timeout: 90000 }).then((r) => r.data),
   },
   indicators: (symbol) => client.get(`/indicators/${symbol}`).then((r) => r.data),
   news: (symbol) => client.get(`/news/${symbol}`).then((r) => r.data),

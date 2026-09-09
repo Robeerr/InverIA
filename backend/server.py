@@ -4550,6 +4550,56 @@ async def intelligence_diagnostico(_user: str = Depends(auth.get_current_user)):
     }
 
 
+@api_router.post("/intelligence/sec/sondeo")
+async def intelligence_sondeo_sec(_user: str = Depends(auth.get_current_user)):
+    """Mide EDGAR antes de cambiar nada. Seis peticiones y ni una escritura.
+
+    LA PREGUNTA QUE CONTESTA
+
+    Vigilar por CIK implica pedir el historial de cada empresa en cada vuelta. Si esas
+    peticiones devuelven el JSON entero, son ~2,9 GB al día; si devuelven 304, son 3 MB.
+    Toda la arquitectura de la vigilancia por CIK depende de cuál de las dos es cierta, y
+    eso no se estima: se mide.
+
+    NO TOCA NADA
+
+    No escribe en la base de datos, no modifica el connector y no cambia el
+    comportamiento de la vigilancia actual. Lee la Cartera para elegir tres símbolos
+    reales y reutiliza la identificación y la tabla de tickers del connector — medir con
+    otras cabeceras sería medir algo distinto de lo que se va a construir.
+    """
+    import intel_sec
+    import intel_sec_sondeo as sondeo
+
+    _, cartera, watchlist = await intel_worker._universo(db)
+    if not cartera:
+        raise HTTPException(409, "No hay ninguna acción con posición abierta que sondear")
+
+    # La tabla de la SEC va de CIK a ticker; aquí hace falta al revés.
+    try:
+        por_cik = await intel_sec._tickers_por_cik()
+    except Exception as e:
+        raise HTTPException(502, f"No se pudo leer la tabla de tickers de la SEC: {e}")
+    por_ticker = {t: c for c, t in por_cik.items()}
+
+    elegidos, sin_cik = [], []
+    for sym in sorted(cartera):
+        cik = por_ticker.get(sym)
+        if cik is None:
+            sin_cik.append(sym)
+        elif len(elegidos) < sondeo.CUANTOS:
+            elegidos.append((cik, sym))
+    if not elegidos:
+        raise HTTPException(409, "Ninguna acción de tu cartera tiene CIK conocido en la SEC")
+
+    r = await sondeo.sondear(elegidos, en_cartera=len(cartera),
+                             en_watchlist=len(watchlist - cartera))
+    # Los que se quedaron sin CIK se dicen: si media cartera no lo tiene, la vigilancia
+    # por CIK cubriría menos de lo que promete, y eso hay que saberlo ANTES de construirla.
+    r["sin_cik_en_cartera"] = sin_cik
+    return r
+
+
 @api_router.post("/intelligence/comprobar")
 async def intelligence_comprobar(_user: str = Depends(auth.get_current_user)):
     """Fuerza una vuelta AHORA y devuelve por dónde ha ido cada evento.

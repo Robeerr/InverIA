@@ -5,6 +5,7 @@ import InvestmentRadar from "../components/intelligence/InvestmentRadar";
 import RadarFuente from "../components/intelligence/RadarFuente";
 import IntelligenceDrawer from "../components/intelligence/IntelligenceDrawer";
 import PruebaDeVida from "../components/intelligence/PruebaDeVida";
+import SondeoSec from "../components/intelligence/SondeoSec";
 import { resumen as resumenDe, ordenados, nivelDe, MOTIVOS, ETAPAS } from "../lib/intelligence";
 import { fmtHace } from "../lib/format";
 
@@ -221,6 +222,8 @@ export default function IntelligenceView() {
               </p>
 
               <PruebaDeVida alTerminar={cargar} />
+
+              <SondeoSec />
 
               {/* Lo que falta, dicho en la pantalla. Una etapa declarada y no implementada
                   que solo se cuenta en el código acaba pareciendo que funciona. */}
