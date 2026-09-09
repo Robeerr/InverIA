@@ -1144,3 +1144,50 @@ def test_la_migracion_se_lanza_al_arrancar_y_UNA_sola_vez(configurada, con_finnh
         with pytest.raises(_Parar):
             asyncio.run(w.worker_loop(_DB(), mod, retraso_inicial=0))
     assert len(llamadas) == 2        # migración + repaso, y solo de la primera fuente
+
+
+# ── La versión de los contadores va por fuente ───────────────────────────────
+
+def test_los_contadores_de_SEC_caducan_por_el_cambio_de_mecanismo(configurada, monkeypatch):
+    """Hasta la migración, «recibidos» eran documentos del mercado entero y «descartados»
+    los que no eran tuyos. Con vigilancia por CIK solo se pide lo tuyo. Sumar las dos
+    etapas daría un número que no mide ninguna de las dos."""
+    _con_feed(monkeypatch, _feed("NVDA"))
+    db = _DB(cartera=[("NVDA", 12)])
+    db[w.COL_SALUD].docs.append({"fuente": sec.FUENTE, "contadores_v": 2,
+                                 "acum_recibidos": 2508, "acum_descartados": 119,
+                                 "acum_ciclos": 61})
+    _ciclo(db, sec)
+    a = w._acumulado(db[w.COL_SALUD].docs[0])
+    assert a["ciclos"] == 1 and a["recibidos"] == 1 and a["descartados"] == 0
+
+
+def test_los_de_EARNINGS_no_se_tocan(con_finnhub, monkeypatch):
+    """Su mecanismo no ha cambiado. Subir una versión global borraría el histórico de una
+    fuente que no tiene ningún problema."""
+    async def recolectar(contexto=None):
+        return []
+    monkeypatch.setattr(earnings, "recolectar", recolectar)
+    monkeypatch.setattr(w, "dormir", _no_dormir)
+    db = _DB(cartera=[("NVDA", 12)])
+    db[w.COL_SALUD].docs.append({"fuente": earnings.FUENTE, "contadores_v": 2,
+                                 "acum_ciclos": 5, "acum_recibidos": 4})
+    _ciclo(db, earnings)
+    a = w._acumulado(db[w.COL_SALUD].docs[0])
+    assert a["ciclos"] == 6 and a["recibidos"] == 4      # sigue acumulando
+
+
+def test_cada_fuente_tiene_SU_version():
+    assert w.version_contadores("sec") == 3
+    assert w.version_contadores("earnings") == w.CONTADORES_V
+    # Una fuente nueva empieza en la versión por defecto, no en la de SEC.
+    assert w.version_contadores("lo_que_venga") == w.CONTADORES_V
+
+
+def test_el_reinicio_de_SEC_ocurre_una_sola_vez(configurada, monkeypatch):
+    _con_feed(monkeypatch, _feed("NVDA"))
+    db = _DB(cartera=[("NVDA", 12)])
+    db[w.COL_SALUD].docs.append({"fuente": sec.FUENTE, "contadores_v": 2, "acum_ciclos": 61})
+    for _ in range(3):
+        _ciclo(db, sec)
+    assert w._acumulado(db[w.COL_SALUD].docs[0])["ciclos"] == 3

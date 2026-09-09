@@ -10,7 +10,7 @@
  */
 import {
   ESTADOS, escuchando, estadoDe, resumen, nivelDe, ordenados, porValor, tieneAnalisis,
-  anguloPorHora, plegarRepetidos, NIVELES,
+  anguloPorHora, plegarRepetidos, NIVELES, agruparCoincidentes,
 } from "./intelligence";
 
 const online = { fuente: "sec", estado: "ONLINE" };
@@ -263,5 +263,47 @@ describe("plegar lo repetido", () => {
     const interrumpen = Object.entries(NIVELES)
       .filter(([, v]) => v.interrumpe).map(([k]) => k);
     expect(interrumpen.sort()).toEqual(["CRITICAL", "IMPORTANT"]);
+  });
+});
+
+
+describe("marcas del radar que coinciden", () => {
+  const m = (id, x, y, symbol = "MSFT") => ({ x, y, ev: { id, symbol, nivel_alerta: "WATCH" } });
+
+  test("42 marcas en el mismo punto son UNA con su recuento", () => {
+    // El caso real: 42 registros en el mismo minuto y el mismo tier. En pantalla se veían
+    // cuatro marcas de cuarenta y dos — el radar decía que había cuatro cosas.
+    const g = agruparCoincidentes(Array.from({ length: 42 }, (_, i) => m(`a${i}`, 160, 120)));
+    expect(g).toHaveLength(1);
+    expect(g[0].n).toBe(42);
+  });
+
+  test("marcas que el ojo SÍ distingue se pintan aparte", () => {
+    expect(agruparCoincidentes([m("a", 100, 100), m("b", 160, 200)])).toHaveLength(2);
+  });
+
+  test("no se pierde ninguna marca", () => {
+    const marcas = [m("a", 100, 100), m("b", 100, 100), m("c", 200, 200)];
+    const dentro = agruparCoincidentes(marcas).flatMap((g) => g.items);
+    expect(dentro).toHaveLength(3);
+  });
+
+  test("el grupo se queda donde estaba la marca MÁS GRAVE, no en un centroide", () => {
+    // Un centroide desplazaría el conjunto a un punto donde no ocurrió nada, y las dos
+    // coordenadas significan algo: el radio es el tier y el ángulo es la hora.
+    const g = agruparCoincidentes([m("grave", 100, 100), m("otro", 103, 104)]);
+    expect([g[0].x, g[0].y]).toEqual([100, 100]);
+  });
+
+  test("las coordenadas NO se tocan para separar marcas", () => {
+    // Mover una marca un grado la mueve seis minutos en el tiempo. Se agrupa justamente
+    // para no tener que inventar posiciones.
+    const original = [m("a", 77, 133)];
+    expect(agruparCoincidentes(original)[0]).toMatchObject({ x: 77, y: 133, n: 1 });
+  });
+
+  test("sin marcas no se inventa ningún grupo", () => {
+    expect(agruparCoincidentes([])).toEqual([]);
+    expect(agruparCoincidentes(null)).toEqual([]);
   });
 });

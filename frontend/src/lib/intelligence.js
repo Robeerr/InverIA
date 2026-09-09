@@ -257,3 +257,48 @@ export function plegarRepetidos(eventos, minimo = 2) {
     };
   });
 }
+
+
+/**
+ * Marcas del radar que caen en el mismo sitio.
+ *
+ * EL PROBLEMA, VISTO EN PRODUCCIÓN
+ *
+ * El radar coloca cada evento por su tier (radio) y su hora (ángulo). En una vuelta real
+ * entraron 42 registros en el mismo minuto y casi todos Tier 1: mismas coordenadas, y en
+ * pantalla se veían cuatro marcas de cuarenta y dos.
+ *
+ * No era un fallo de dibujo: era el radar diciendo «hay cuatro cosas» cuando había
+ * cuarenta y dos. Exactamente el tipo de mentira silenciosa que este radar existe para
+ * no contar.
+ *
+ * POR QUÉ SE AGRUPA EN VEZ DE SEPARARLAS
+ *
+ * Separarlas obligaría a moverlas, y las dos coordenadas SIGNIFICAN algo: el radio es el
+ * tier y el ángulo es la hora. Empujar una marca un grado la mueve seis minutos en el
+ * tiempo — un dato falso para arreglar un problema de dibujo.
+ *
+ * Así que se agrupan y se dice cuántas hay. Una marca que lleva un «14» al lado es más
+ * verdad que catorce marcas que se ven como una.
+ */
+export function agruparCoincidentes(marcas, tolerancia = 7) {
+  const celdas = new Map();
+  const orden = [];
+  for (const m of marcas || []) {
+    // La rejilla es del tamaño de lo que el ojo no distingue. Dos marcas más separadas
+    // que eso se pintan aparte, porque ahí sí se ven las dos.
+    const celda = `${Math.round(m.x / tolerancia)}|${Math.round(m.y / tolerancia)}`;
+    if (!celdas.has(celda)) {
+      celdas.set(celda, []);
+      orden.push(celda);
+    }
+    celdas.get(celda).push(m);
+  }
+  return orden.map((celda) => {
+    const items = celdas.get(celda);
+    // La posición es la de la PRIMERA, no un centroide: las marcas vienen ordenadas por
+    // gravedad, así que el grupo se queda donde estaba la más grave. Un centroide
+    // desplazaría el conjunto a un punto donde no ocurrió nada.
+    return { x: items[0].x, y: items[0].y, items, n: items.length };
+  });
+}

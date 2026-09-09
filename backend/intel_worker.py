@@ -64,16 +64,28 @@ COL_CURSORES = "intel_cursores"
 # 500 cubre de sobra varias horas y evita releer la colección entera cada ciclo.
 IDS_RECORDADOS = 500
 
-# Versión de los contadores acumulados. Se sube cuando cambia lo que SIGNIFICA un contador.
-#
-# La v1 sumaba los repetidos dentro de `descartados`. Al separarlos, los números guardados
-# antes del cambio y los de después miden cosas distintas, y sumarlos daría una cifra que
-# no es ninguna de las dos. Cuando la versión guardada no coincide, los acumuladores se
-# ponen a cero UNA vez y se anota desde cuándo cuentan.
+# Versión de los contadores acumulados. Se sube cuando los números de antes y los de
+# después dejan de ser comparables, por el motivo que sea. Al no coincidir, los
+# acumuladores de ESA fuente se ponen a cero una vez y se anota desde cuándo cuentan.
 #
 # Se prefiere perder el histórico a servir un número mezclado: un contador que nadie sabe
 # interpretar es peor que un contador que empieza de nuevo y se entiende.
+#
+# Va POR FUENTE porque las razones para caducar no son globales. Subir la versión de todas
+# cada vez que una cambia borraría el histórico de fuentes que no tienen ningún problema —
+# que es exactamente lo que pasaría con Earnings si esto fuera un solo número.
 CONTADORES_V = 2
+
+#: v3 de SEC: cambió el MECANISMO, no el significado. Hasta la migración se leía el feed
+#: del mercado entero, así que «2.508 recibidos» eran documentos de cualquier empresa y
+#: «119 descartados» los que no eran tuyos. Con vigilancia por CIK solo se pide lo tuyo:
+#: recibidos pasa a ser «registros de tus empresas» y descartados no puede volver a subir.
+#: Sumar las dos etapas daría un número que no mide ninguna de las dos.
+CONTADORES_V_POR_FUENTE = {"sec": 3}
+
+
+def version_contadores(fuente: str) -> int:
+    return CONTADORES_V_POR_FUENTE.get(fuente, CONTADORES_V)
 
 
 def _ahora() -> str:
@@ -332,9 +344,10 @@ async def _reiniciar_contadores(db, fuente: str) -> None:
     try:
         await db[COL_SALUD].update_one(
             {"fuente": fuente},
-            {"$set": {**ceros, "acum_motivos": {}, "contadores_v": CONTADORES_V,
-                      "vigilando_desde": _ahora()}})
-        logger.info("intel/%s: contadores reiniciados (v%d)", fuente, CONTADORES_V)
+            {"$set": {**ceros, "acum_motivos": {}, "vigilando_desde": _ahora(),
+                      "contadores_v": version_contadores(fuente)}})
+        logger.info("intel/%s: contadores reiniciados (v%d)",
+                    fuente, version_contadores(fuente))
     except Exception as e:
         logger.warning("intel: no se pudieron reiniciar los contadores: %s", str(e)[:120])
 
@@ -385,7 +398,7 @@ async def ciclo(db, mod) -> dict:
 
     salud = await _salud(db, mod.FUENTE)
     fallos = int(salud.get("fallos") or 0)
-    if salud and int(salud.get("contadores_v") or 1) != CONTADORES_V:
+    if salud and int(salud.get("contadores_v") or 1) != version_contadores(mod.FUENTE):
         await _reiniciar_contadores(db, mod.FUENTE)
         salud = await _salud(db, mod.FUENTE)
 
@@ -450,7 +463,8 @@ async def ciclo(db, mod) -> dict:
     for motivo, n in (r["por_motivo"] or {}).items():
         acumulado[f"acum_motivos.{motivo}"] = n
     acumulado.update(_avance_de_vuelta(mod))
-    await _anotar_salud(db, mod.FUENTE, sumar=acumulado, contadores_v=CONTADORES_V,
+    await _anotar_salud(db, mod.FUENTE, sumar=acumulado,
+                        contadores_v=version_contadores(mod.FUENTE),
                         estado=mod.ONLINE, error=None, fallos=0,
                         espera_s=0, ultimo_ciclo=resumen,
                         cobertura=_cobertura(salida, universo))

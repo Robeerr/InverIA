@@ -1,7 +1,7 @@
 import React from "react";
 import useRadarAnimacion from "../../hooks/useRadarAnimacion";
-import { escuchando, estadoDe, nivelDe, anguloPorHora, VENTANA_RADAR_H }
-  from "../../lib/intelligence";
+import { escuchando, estadoDe, nivelDe, anguloPorHora, agruparCoincidentes,
+         VENTANA_RADAR_H } from "../../lib/intelligence";
 
 /**
  * El radar. Cada cosa que se dibuja significa algo, y nada se dibuja por dibujar.
@@ -15,6 +15,10 @@ import { escuchando, estadoDe, nivelDe, anguloPorHora, VENTANA_RADAR_H }
  *   · Cada EVENTO es una marca, colocada en su anillo por fiabilidad y en su ángulo por
  *     hora: arriba es ahora y se va hacia atrás en el sentido del reloj, como una esfera.
  *     Así la distancia entre dos marcas es tiempo real, no reparto estético.
+ *   · Cuando varias caen en el mismo sitio se agrupan y se dice CUÁNTAS. En producción
+ *     entraron 42 registros en el mismo minuto y el mismo tier, y se veían cuatro marcas.
+ *     Separarlas habría exigido moverlas, y mover una marca un grado la mueve seis
+ *     minutos en el tiempo: un dato falso para arreglar un problema de dibujo.
  *   · El BARRIDO gira únicamente si hay una fuente escuchando.
  *
  * LO QUE ESTE COMPONENTE NO HACE, A PROPÓSITO
@@ -91,25 +95,37 @@ export default function InvestmentRadar({ estado, eventos, onElegir, seleccionad
           </g>
         )}
 
-        {/* Los eventos. El tamaño lo da la gravedad, no el azar. */}
-        {marcas.map(({ ev, x, y }) => {
+        {/* Los eventos. El tamaño lo da la gravedad, no el azar; y si varias marcas
+            coinciden, el número dice cuántas hay ahí. */}
+        {agruparCoincidentes(marcas).map((g) => {
+          const ev = g.items[0].ev;
           const n = nivelDe(ev);
-          const elegido = seleccionado?.id === ev.id;
+          const elegido = g.items.some((m) => seleccionado?.id === m.ev.id);
           return (
             <g key={ev.id} className={n.clase}>
               {elegido && (
-                <circle cx={x} cy={y} r={9} fill="none" stroke="currentColor"
+                <circle cx={g.x} cy={g.y} r={9} fill="none" stroke="currentColor"
                         strokeWidth={1} opacity={0.7} />
               )}
               <circle
-                cx={x} cy={y} r={Math.max(2.5, 2.5 + n.peso)}
+                cx={g.x} cy={g.y} r={Math.max(2.5, 2.5 + n.peso)}
                 fill="currentColor"
                 className="cursor-pointer"
                 data-testid={`radar-evento-${ev.id}`}
                 onClick={() => onElegir && onElegir(ev)}
               >
-                <title>{`${ev.symbol || "—"} · ${ev.titulo || ""}`}</title>
+                <title>
+                  {g.n > 1
+                    ? `${g.n} eventos aquí · ${ev.symbol || "—"} y otros`
+                    : `${ev.symbol || "—"} · ${ev.titulo || ""}`}
+                </title>
               </circle>
+              {/* El recuento solo cuando hay más de uno: un «1» junto a cada marca sería
+                  ruido en el 90 % de los casos. */}
+              {g.n > 1 && (
+                <text x={g.x + 7} y={g.y + 3} className="iv-cifra" fontSize="9"
+                      fill="currentColor" opacity={0.85}>{g.n}</text>
+              )}
             </g>
           );
         })}
@@ -147,6 +163,7 @@ export default function InvestmentRadar({ estado, eventos, onElegir, seleccionad
         <span>Centro · tu cartera</span>
         <span>Anillos · fiabilidad de la fuente</span>
         <span>Giro · últimas {VENTANA_RADAR_H} h</span>
+        <span>Número · cuántos eventos coinciden ahí</span>
       </div>
     </div>
   );
