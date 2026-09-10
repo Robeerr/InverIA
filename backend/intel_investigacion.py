@@ -46,6 +46,7 @@ prompt y la validación sin gastar un céntimo ni una llamada.
 """
 import os
 import re
+import time
 from typing import Optional
 
 import intel_eventos as ev
@@ -207,7 +208,7 @@ def estado_de_investigacion(evento: dict) -> str:
         return DESCARTADO_POR_FILTRO
     if evento.get("etapa") == ev.INVESTIGADO:
         investigacion = evento.get("investigacion") or {}
-        return SIN_INFORMACION if investigacion.get("sin_informacion") else CON_INFORMACION
+        return CON_INFORMACION if investigacion.get("hay_informacion") else SIN_INFORMACION
     return PENDIENTE if merece_investigacion(evento) else NO_INVESTIGABLE
 
 
@@ -240,6 +241,92 @@ def texto_del_documento(html: str, maximo: int = None) -> str:
     return texto[:maximo]
 
 
+# ── Descarga del documento primario ──────────────────────────────────────────
+
+TIMEOUT_DESCARGA = int(os.environ.get("INTEL_INVESTIGACION_TIMEOUT", 20))
+
+#: Cuánto se descarga como mucho. Un 8-K son unos pocos kB; el tope frena el caso raro
+#: del anexo enorme, que costaría memoria para acabar recortado a `MAX_CARACTERES`.
+MAX_BYTES = int(os.environ.get("INTEL_INVESTIGACION_MAX_BYTES", 2_000_000))
+
+
+async def descargar_documento(url: str) -> dict:
+    """Baja el documento y devuelve TODO lo que hace falta para auditarlo.
+
+    QUÉ SE DEVUELVE Y POR QUÉ
+
+    No solo el texto: también el código HTTP, los bytes recibidos y el error literal si
+    lo hubo. Sin eso, un evento que se queda sin investigar es indistinguible de uno que
+    la SEC no sirvió — y son problemas distintos, uno se reintenta y el otro se mira.
+
+    NO LANZA. Devuelve `ok: False` con el motivo, porque quien llama tiene que poder
+    seguir con los demás eventos: que un documento no baje no puede tumbar la vuelta.
+    """
+    import intel_sec as sec
+    if not (url or "").strip():
+        return {"ok": False, "error": "el evento no tiene URL", "http": None,
+                "bytes": 0, "ms": 0}
+    if not sec.configurado():
+        # Misma regla que el connector: la SEC exige identificarse, y bajar un documento
+        # sin `User-Agent` sería saltarse su política por la puerta de atrás.
+        return {"ok": False, "error": "SEC_USER_AGENT no configurado", "http": None,
+                "bytes": 0, "ms": 0}
+    import httpx
+    t0 = time.perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT_DESCARGA,
+                                     headers=sec._cabeceras()) as c:
+            r = await c.get(url)
+            ms = round((time.perf_counter() - t0) * 1000)
+            contenido = r.content or b""
+            if r.status_code != 200:
+                return {"ok": False, "http": r.status_code, "bytes": len(contenido),
+                        "ms": ms, "error": f"la SEC respondió {r.status_code}"}
+            return {"ok": True, "http": 200, "bytes": len(contenido), "ms": ms,
+                    "error": None,
+                    "html": contenido[:MAX_BYTES].decode("utf-8", errors="replace")}
+    except Exception as e:
+        return {"ok": False, "http": None, "bytes": 0,
+                "ms": round((time.perf_counter() - t0) * 1000),
+                "error": f"{type(e).__name__}: {str(e)[:200]}"}
+
+
+def parece_el_filing(texto: str, evento: dict) -> dict:
+    """¿Lo descargado es de verdad el documento de ESTE evento?
+
+    POR QUÉ NO BASTA CON QUE LA URL RESPONDA 200
+
+    EDGAR sirve muchas cosas desde rutas parecidas: un índice, una portada, una página
+    de error con código 200. Si se le manda al modelo un índice en vez del 8-K, contestará
+    algo —los modelos casi siempre contestan algo— y ese algo parecerá una lectura del
+    documento sin serlo. Es el fallo más difícil de detectar de toda la fase, porque no
+    produce ningún error.
+
+    Así que se buscan señales que DEBEN estar: el tipo de formulario y el número de
+    registro. No es una prueba criptográfica, es un cotejo — y se devuelven las señales
+    encontradas para poder mirarlas, en vez de un sí o un no que haya que creerse.
+    """
+    texto = texto or ""
+    crudo = (evento or {}).get("crudo") or {}
+    plano = re.sub(r"[^A-Za-z0-9]", "", texto).upper()
+    forma = str(crudo.get("formulario") or crudo.get("suceso") or "").upper()
+    accession = str(crudo.get("accession") or "")
+    señales = {
+        "menciona_el_formulario": bool(forma) and re.sub(r"[^A-Z0-9]", "", forma) in plano,
+        "menciona_el_numero_de_registro": bool(accession) and accession in plano,
+        "menciona_el_cik": bool(crudo.get("cik")) and str(crudo["cik"]).lstrip("0") in plano,
+        "caracteres": len(texto),
+    }
+    # Con una sola señal basta: el número de registro no siempre aparece en el cuerpo del
+    # documento, y el formulario a veces se escribe de formas raras. Exigir las tres
+    # descartaría filings buenos, que es peor que colar uno dudoso — el resultado va
+    # marcado y con su enlace.
+    señales["ok"] = bool(señales["menciona_el_formulario"]
+                         or señales["menciona_el_numero_de_registro"]
+                         or señales["menciona_el_cik"])
+    return señales
+
+
 # ── La petición ──────────────────────────────────────────────────────────────
 
 SISTEMA = """Eres un analista que lee documentos registrados ante la SEC y explica qué \
@@ -248,26 +335,30 @@ dicen. Escribes en español, para un inversor particular que ya tiene o sigue es
 TU ÚNICA FUENTE ES EL DOCUMENTO QUE TE PASAN.
 
 No uses lo que recuerdes de la empresa. No completes con contexto de mercado. No estimes \
-el impacto en el precio ni recomiendes comprar ni vender: eso no está en el documento y \
-no es lo que se te pregunta.
+el impacto en el precio, no recomiendes comprar ni vender y no des un veredicto \
+operativo: nada de eso está en el documento y no es lo que se te pregunta.
 
 SI EL DOCUMENTO NO PERMITE CONCLUIR NADA, DILO.
 
 Muchos registros son trámites sin contenido: una nota de que se publicará un resultado, \
-un cambio administrativo, un anexo. En ese caso pon `sin_informacion` a true y deja el \
-resto vacío. Es la respuesta correcta y la esperada la mayoría de las veces. Un resumen \
-inventado para no dejarlo vacío es el peor resultado posible.
+un cambio administrativo, un anexo, un índice. En ese caso pon `hay_informacion` a false \
+y deja el resto vacío. Es la respuesta correcta y la esperada la mayoría de las veces. \
+Un resumen inventado para no dejarlo vacío es el peor resultado posible.
 
 Devuelve SOLO un objeto JSON con esta forma exacta:
 
 {
-  "sin_informacion": true|false,
-  "resumen": "Dos o tres frases con lo que dice el documento. Vacío si sin_informacion.",
-  "que_cambia": "Qué cambiaría para quien tiene la acción, SI lo que dice es cierto. \
-Vacío si el documento no permite decirlo.",
+  "hay_informacion": true|false,
+  "resumen": "Dos o tres frases con lo que dice el documento. Vacío si no hay información.",
   "hechos": ["cada cifra o hecho concreto que aparezca EN EL DOCUMENTO, textual"],
+  "implicaciones": ["qué cambiaría para quien tiene la acción SI lo que dice es cierto"],
+  "incertidumbres": ["qué NO dice el documento y haría falta saber"],
+  "fuente": "el tipo de documento y su fecha, tal como aparecen en el texto",
   "confianza": 0-100
 }
+
+`incertidumbres` no es opcional cuando hay información: un documento que parece no dejar \
+ninguna duda casi siempre es que no la has buscado.
 
 `confianza` es cuánto de claro está el documento, no cuánto te convence lo que dice."""
 
@@ -295,48 +386,62 @@ def construir_peticion(evento: dict, documento: str) -> dict:
 SIN_RESPUESTA, CONTRADICTORIA, VACIA = "sin_respuesta", "contradictoria", "vacia"
 
 MAX_RESUMEN = 600
-MAX_HECHOS = 8
+MAX_LISTA = 8
+MAX_ITEM = 300
+
+
+def _lista(valor) -> list:
+    return [str(x).strip()[:MAX_ITEM] for x in (valor or [])
+            if str(x or "").strip()][:MAX_LISTA]
 
 
 def validar(bruto) -> dict:
-    """Comprueba la respuesta del modelo. Devuelve `{ok, motivo, investigacion}`.
+    """Comprueba que la respuesta cumple el contrato. `{ok, motivo, investigacion}`.
+
+    SI NO CUMPLE, LA INVESTIGACIÓN NO ES VÁLIDA
+
+    Y no válida significa que el evento NO pasa a `investigado`: se queda pendiente y se
+    puede reintentar. Marcarlo investigado con una respuesta rota sería peor que no haber
+    llamado, porque además de no saber nada creeríamos que ya lo miramos.
 
     LO QUE SE PUEDE COMPROBAR Y LO QUE NO
 
     No se puede verificar mecánicamente que el modelo no se haya inventado un dato: eso
-    exigiría entender el documento, que es justo lo que le hemos encargado a él. Lo que sí
-    se puede es rechazar lo INCOHERENTE, y no dejar pasar nada que se contradiga.
-
-    La contradicción que importa: decir que no hay información y a la vez dar un resumen.
-    Es el patrón típico de un modelo que rellena por no dejar el hueco vacío, y aceptarla
-    convertiría la regla de «poder decir que no sé» en decorativa.
+    exigiría entender el documento, que es lo que le hemos encargado a él. Lo que sí se
+    puede es rechazar lo INCOHERENTE — decir que no hay información y a la vez dar un
+    resumen es el patrón típico de un modelo que rellena por no dejar el hueco vacío, y
+    aceptarlo convertiría la regla de «poder decir que no sé» en decorativa.
     """
     if not isinstance(bruto, dict):
         return {"ok": False, "motivo": SIN_RESPUESTA, "investigacion": None}
+    if "hay_informacion" not in bruto:
+        # El campo que decide todo lo demás. Sin él no hay contrato que cumplir.
+        return {"ok": False, "motivo": SIN_RESPUESTA, "investigacion": None}
 
-    sin_info = bool(bruto.get("sin_informacion"))
+    hay = bool(bruto.get("hay_informacion"))
     resumen = str(bruto.get("resumen") or "").strip()
-    que_cambia = str(bruto.get("que_cambia") or "").strip()
+    hechos = _lista(bruto.get("hechos"))
+    implicaciones = _lista(bruto.get("implicaciones"))
+    incertidumbres = _lista(bruto.get("incertidumbres"))
 
-    if sin_info and (resumen or que_cambia):
+    if not hay and (resumen or hechos or implicaciones):
         return {"ok": False, "motivo": CONTRADICTORIA, "investigacion": None}
-    if not sin_info and not resumen:
-        # Ni información ni la declaración de que no la hay. No es una respuesta.
+    if hay and not resumen:
+        # Dice que hay información y no la da. No es una respuesta.
         return {"ok": False, "motivo": VACIA, "investigacion": None}
 
-    hechos = [str(h).strip()[:200] for h in (bruto.get("hechos") or [])
-              if str(h or "").strip()][:MAX_HECHOS]
     try:
         confianza = max(0, min(100, int(float(bruto.get("confianza")))))
     except (TypeError, ValueError):
-        # Sin confianza declarada no se inventa una alta: se asume la mínima, porque la
-        # duda tiene que costar algo.
+        # Sin confianza declarada no se inventa una alta: la duda tiene que costar algo.
         confianza = 0
     return {"ok": True, "motivo": None, "investigacion": {
-        "sin_informacion": sin_info,
+        "hay_informacion": hay,
         "resumen": resumen[:MAX_RESUMEN] or None,
-        "que_cambia": que_cambia[:MAX_RESUMEN] or None,
         "hechos": hechos,
+        "implicaciones": implicaciones,
+        "incertidumbres": incertidumbres,
+        "fuente": str(bruto.get("fuente") or "").strip()[:MAX_ITEM] or None,
         "confianza": confianza,
         "modelo": MODELO,
     }}
@@ -347,25 +452,99 @@ def aplicar(evento: dict, investigacion: dict, cuando: str = None) -> dict:
 
     UN DOCUMENTO SIN CONTENIDO NO PRODUCE RESUMEN, PERO SÍ ES UNA INVESTIGACIÓN
 
-    Si el modelo dijo `sin_informacion`, `resumen` se queda a None y la pantalla sigue
-    enseñando el titular con su «esto no lo ha interpretado nadie». Pero la etapa SÍ
+    Si el modelo dijo que no hay información, `resumen` se queda a None y la pantalla
+    sigue enseñando el titular con su «esto no lo ha interpretado nadie». Pero la etapa SÍ
     avanza: la IA leyó el documento y produjo un resultado válido, que es exactamente lo
     que significa `investigado`. Que el resultado sea «no dice nada» no lo hace menos
     resultado — y dejarlo en `significativo` haría que se volviera a pagar por él en cada
     vuelta.
-
-    Es la regla número uno de este módulo, y es la única forma de que un resumen, cuando
-    exista, signifique algo.
     """
     if not isinstance(evento, dict) or not isinstance(investigacion, dict):
         return evento
     nuevo = dict(evento)
     nuevo["investigado_en"] = cuando or ev._ahora()
     nuevo["investigacion"] = investigacion
-    if not investigacion.get("sin_informacion"):
+    if investigacion.get("hay_informacion"):
         nuevo["resumen"] = investigacion.get("resumen")
     # La lista blanca decide: si el evento no estaba en `significativo`, no se mueve.
     return ev.avanzar(nuevo, ev.INVESTIGADO, cuando=cuando)
+
+
+# ── La investigación completa: UNA sola función ──────────────────────────────
+
+async def investigar(evento: dict) -> dict:
+    """Documento → texto → modelo → resultado validado. Con toda la auditoría.
+
+    ES LA MISMA FUNCIÓN PARA EL BOTÓN Y PARA EL WORKER
+
+    Dos caminos distintos —uno «manual» y otro «automático»— se separarían con el tiempo,
+    y entonces validar el manual dejaría de decir nada sobre el automático. Aquí solo hay
+    uno; lo que cambia es quién lo llama y con qué eventos.
+
+    NO ESCRIBE NADA Y NO LANZA
+
+    Devuelve qué pasó y qué habría que guardar. Persistir es cosa de quien tiene la base
+    de datos. Y un fallo —de la SEC o del modelo— vuelve como `ok: False`, porque el
+    evento NO puede quedar marcado como investigado si no se ha investigado.
+
+    `llamada_al_modelo` dice si se llegó a gastar una llamada. Es lo que decide si el
+    contador diario sube: un documento que no baja no consume cuota.
+    """
+    auditoria = {
+        "symbol": (evento or {}).get("symbol"),
+        "accession": ((evento or {}).get("crudo") or {}).get("accession"),
+        "formulario": ((evento or {}).get("crudo") or {}).get("formulario"),
+        "url": (evento or {}).get("url"),
+        "http": None, "bytes_descargados": 0, "ms_descarga": 0,
+        "caracteres_extraidos": 0, "caracteres_enviados": 0,
+        "verificacion": None, "ms_modelo": 0, "error": None,
+    }
+    descarga = await descargar_documento((evento or {}).get("url"))
+    auditoria.update(http=descarga.get("http"), bytes_descargados=descarga.get("bytes", 0),
+                     ms_descarga=descarga.get("ms", 0))
+    if not descarga.get("ok"):
+        auditoria["error"] = descarga.get("error")
+        return {"ok": False, "fase": "descarga", "llamada_al_modelo": False,
+                "auditoria": auditoria, "investigacion": None}
+
+    # Sin recortar todavía: primero se mide CUÁNTO texto tenía el documento, y luego se
+    # manda solo lo que cabe. Recortar antes de contar haría que la auditoría dijera
+    # siempre 12.000 caracteres y no se pudiera ver si un filing venía corto o vacío.
+    texto = texto_del_documento(descarga.get("html"), maximo=MAX_BYTES)
+    auditoria["caracteres_extraidos"] = len(texto)
+    auditoria["verificacion"] = parece_el_filing(texto, evento)
+    if not texto.strip():
+        auditoria["error"] = "el documento no tenía texto extraíble"
+        return {"ok": False, "fase": "extraccion", "llamada_al_modelo": False,
+                "auditoria": auditoria, "investigacion": None}
+
+    enviado = texto[:MAX_CARACTERES]
+    auditoria["caracteres_enviados"] = len(enviado)
+    peticion = construir_peticion(evento, enviado)
+
+    import ai_analysis
+    t0 = time.perf_counter()
+    try:
+        bruto = await ai_analysis._run_model(
+            peticion["modelo"], peticion["sistema"], peticion["usuario"], max_tokens=1200)
+    except Exception as e:
+        auditoria["ms_modelo"] = round((time.perf_counter() - t0) * 1000)
+        auditoria["error"] = f"{type(e).__name__}: {str(e)[:200]}"
+        # La llamada no llegó a completarse, así que no cuenta contra el presupuesto: un
+        # 429 o un corte de red no consumen tokens.
+        return {"ok": False, "fase": "modelo", "llamada_al_modelo": False,
+                "auditoria": auditoria, "investigacion": None}
+    auditoria["ms_modelo"] = round((time.perf_counter() - t0) * 1000)
+
+    r = validar(bruto)
+    if not r["ok"]:
+        auditoria["error"] = f"la respuesta no cumple el contrato: {r['motivo']}"
+        # Sí cuenta: el modelo respondió, y eso ya se pagó. Que la respuesta no valga no
+        # devuelve la cuota.
+        return {"ok": False, "fase": "validacion", "llamada_al_modelo": True,
+                "auditoria": auditoria, "investigacion": None, "respuesta_bruta": bruto}
+    return {"ok": True, "fase": "completa", "llamada_al_modelo": True,
+            "auditoria": auditoria, "investigacion": r["investigacion"]}
 
 
 # ── El panorama: qué se investigaría, sin investigar nada ────────────────────

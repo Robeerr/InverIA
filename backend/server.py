@@ -58,6 +58,7 @@ import cartera_historico
 # Intelligence. `intel_sec` se importa solo dentro de sus endpoints: es el único que sale
 # a la red, y así un problema suyo no puede impedir que arranque el servidor.
 import intel_eventos
+import intel_investigacion
 import intel_pipeline
 import intel_worker
 import auth
@@ -371,6 +372,9 @@ async def lifespan(app: FastAPI):
     # Un cursor por empresa: hasta dónde llegamos con su historial de registros. Único
     # porque dos cursores del mismo CIK harían que uno de los dos se ignorara en silencio.
     await db.intel_cursores.create_index("cik", unique=True)
+    # El presupuesto diario de IA: un documento por día y concepto. Único porque dos
+    # documentos del mismo día harían que uno de los dos no frenara nada.
+    await db.intel_uso_ia.create_index([("dia", 1), ("concepto", 1)], unique=True)
 
     # Wire the persistent snapshot cache and hydrate in-memory caches from the last
     # saved scan so the first request returns data instantly (no "warming" screen).
@@ -4621,15 +4625,15 @@ async def intelligence_plan_investigacion(_user: str = Depends(auth.get_current_
     no es un presupuesto — así que primero se enseña, con los datos REALES de producción,
     cuántos eventos entrarían, cuáles y en qué orden.
 
-    EL CONTADOR DIARIO TODAVÍA NO EXISTE
+    EL PRESUPUESTO ES EL DE VERDAD
 
-    Así que se calcula con `gastadas_hoy = 0`. Eso es lo correcto hoy —no se ha
-    investigado nada nunca— pero se dice en la respuesta para que el número no se lea
-    como algo que ya está funcionando.
+    `gastadas_hoy` sale del contador persistente, así que si hoy ya se han investigado
+    tres eventos a mano, el plan lo refleja. Un plan calculado sobre un presupuesto
+    inventado diría que caben veinte cuando quedan diecisiete.
     """
-    import intel_investigacion as inv
     eventos = await db.intel_eventos.find({}, {"_id": 0}).to_list(5000)
-    p = inv.panorama(eventos, gastadas_hoy=0)
+    gastadas = await intel_worker.uso_ia_de_hoy(db)
+    p = intel_investigacion.panorama(eventos, gastadas_hoy=gastadas)
     return {
         **{k: v for k, v in p.items() if k not in ("elegidos", "pendientes")},
         # Los eventos, en el ORDEN de prioridad exacto con el que se investigarían. Sin
@@ -4637,9 +4641,41 @@ async def intelligence_plan_investigacion(_user: str = Depends(auth.get_current_
         "elegidos": [intel_eventos.para_api(e) for e in p["elegidos"]],
         "pendientes": [intel_eventos.para_api(e) for e in p["pendientes"][:50]],
         "pendientes_mostrados": min(50, len(p["pendientes"])),
-        "contador_diario_implementado": False,
-        "ejecuta_investigaciones": False,
+        # El worker automático sigue SIN investigar: solo lo hace el botón manual. Va en
+        # la respuesta y no solo en un comentario, porque quien lea el JSON tiene que
+        # poder saber si esto corre solo.
+        "ejecuta_automaticamente": False,
     }
+
+
+class InvestigarPeticion(BaseModel):
+    #: Los eventos a investigar. Obligatorio a propósito: la ejecución manual es para
+    #: mirar tres cosas concretas, no para lanzar una barrida.
+    ids: List[str]
+
+
+@api_router.post("/intelligence/investigar")
+async def intelligence_investigar(peticion: InvestigarPeticion,
+                                  _user: str = Depends(auth.get_current_user)):
+    """Investiga a mano los eventos que se le pasen. GASTA cuota de IA.
+
+    ES LA MISMA FUNCIÓN QUE USARÁ EL WORKER
+
+    `intel_worker.investigar_eventos` es el único camino. Un «modo manual» aparte se
+    separaría del automático con el tiempo, y entonces validar este dejaría de decir nada
+    sobre aquel.
+
+    LO QUE SE DEVUELVE ES PARA AUDITAR
+
+    Por cada evento: qué documento se pidió, qué respondió la SEC, cuántos bytes vinieron,
+    cuánto texto se extrajo, si ese texto se parece al filing que decía ser, cuánto tardó
+    el modelo y qué contestó. Sin eso, una lectura del modelo hay que creérsela.
+    """
+    if not peticion.ids:
+        raise HTTPException(400, "Hay que decir qué eventos investigar")
+    if len(peticion.ids) > intel_investigacion.TOPE_DIARIO:
+        raise HTTPException(400, f"Como mucho {intel_investigacion.TOPE_DIARIO} de una vez")
+    return await intel_worker.investigar_eventos(db, ids=peticion.ids)
 
 
 @api_router.get("/intelligence/sec/tickers")

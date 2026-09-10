@@ -1191,3 +1191,193 @@ def test_el_reinicio_de_SEC_ocurre_una_sola_vez(configurada, monkeypatch):
     for _ in range(3):
         _ciclo(db, sec)
     assert w._acumulado(db[w.COL_SALUD].docs[0])["ciclos"] == 3
+
+
+# ── El presupuesto diario de IA y la investigación manual ────────────────────
+# Un contador que no sobrevive a un reinicio no frena nada: Render reinicia el servicio
+# varias veces al día y cada arranque devolvería el presupuesto entero.
+
+import intel_investigacion as inv
+
+
+def _significativo(db, id_="sec:8-K:1", nivel=ev.IMPORTANT, url="https://sec.gov/x.htm",
+                   relevancia=80, **extra):
+    doc = {"id": id_, "fuente": "sec", "symbol": "NVDA", "tier": 1,
+           "titulo": "8-K · Hecho relevante — NVDA", "url": url,
+           "etapa": ev.SIGNIFICATIVO, "nivel_alerta": nivel, "relevancia": relevancia,
+           "resumen": None, "historial": [{"etapa": ev.SIGNIFICATIVO}],
+           "afecta_cartera": True, "recibido_en": "2026-09-10T10:00:00Z",
+           "crudo": {"suceso": "8-K", "formulario": "8-K", "accession": "123"}}
+    doc.update(extra)
+    db[w.COL_EVENTOS].docs.append(doc)
+    return doc
+
+
+def _investigacion(monkeypatch, ok=True, llamada=True, fase="completa"):
+    """Sustituye la investigación entera: aquí se prueba el worker, no la red."""
+    hechas = []
+
+    async def falsa(evento):
+        hechas.append(evento["id"])
+        return {"ok": ok, "fase": fase, "llamada_al_modelo": llamada,
+                "auditoria": {"http": 200 if ok else 503},
+                "investigacion": ({"hay_informacion": True, "resumen": "Dice X.",
+                                   "hechos": [], "implicaciones": [],
+                                   "incertidumbres": [], "confianza": 80} if ok else None)}
+    monkeypatch.setattr(inv, "investigar", falsa)
+    return hechas
+
+
+def test_el_contador_diario_SOBREVIVE_a_un_reinicio():
+    """Vive en Mongo. Si viviera en memoria, cada arranque de Render devolvería el
+    presupuesto entero y el tope no frenaría nada."""
+    db = _DB()
+    assert asyncio.run(w.uso_ia_de_hoy(db)) == 0
+    asyncio.run(w._anotar_uso_ia(db))
+    asyncio.run(w._anotar_uso_ia(db))
+    assert asyncio.run(w.uso_ia_de_hoy(db)) == 2      # otro proceso, misma base de datos
+
+
+def test_el_contador_es_POR_DIA():
+    db = _DB()
+    asyncio.run(w._anotar_uso_ia(db))
+    db[w.COL_USO_IA].docs[0]["dia"] = "2020-01-01"    # como si fuera de otro día
+    assert asyncio.run(w.uso_ia_de_hoy(db)) == 0
+
+
+def test_si_el_contador_NO_SE_PUEDE_LEER_se_asume_gastado():
+    """Equivocarse hacia no gastar es recuperable; hacia gastar, no."""
+    db = _DB()
+    db[w.COL_USO_IA].find_one = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("caído"))
+    assert asyncio.run(w.uso_ia_de_hoy(db)) == inv.TOPE_DIARIO
+
+
+def test_el_contador_sube_SOLO_si_el_modelo_respondio(monkeypatch):
+    """Un documento que no baja o un 429 no consumen cuota."""
+    db = _DB()
+    _significativo(db)
+    _investigacion(monkeypatch, ok=False, llamada=False, fase="descarga")
+    r = asyncio.run(w.investigar_eventos(db, ids=["sec:8-K:1"]))
+    assert r["llamadas_al_modelo"] == 0
+    assert asyncio.run(w.uso_ia_de_hoy(db)) == 0
+
+
+def test_una_respuesta_rota_SI_gasta_presupuesto(monkeypatch):
+    """El modelo respondió y eso ya se pagó. Que no valga no devuelve la cuota."""
+    db = _DB()
+    _significativo(db)
+    _investigacion(monkeypatch, ok=False, llamada=True, fase="validacion")
+    r = asyncio.run(w.investigar_eventos(db, ids=["sec:8-K:1"]))
+    assert r["llamadas_al_modelo"] == 1
+    assert asyncio.run(w.uso_ia_de_hoy(db)) == 1
+
+
+def test_el_TOPE_diario_frena_de_verdad(monkeypatch):
+    db = _DB()
+    for i in range(5):
+        _significativo(db, id_=f"sec:8-K:{i}")
+    hechas = _investigacion(monkeypatch)
+    for _ in range(20):                                # se agota el presupuesto
+        asyncio.run(w._anotar_uso_ia(db))
+    r = asyncio.run(w.investigar_eventos(db, ids=[f"sec:8-K:{i}" for i in range(5)]))
+    assert r["investigados"] == 0 and hechas == []
+    assert r["pendientes_tras_esta_vuelta"] == 5
+
+
+def test_una_investigacion_BUENA_se_persiste(monkeypatch):
+    db = _DB()
+    _significativo(db)
+    _investigacion(monkeypatch, ok=True)
+    r = asyncio.run(w.investigar_eventos(db, ids=["sec:8-K:1"]))
+    assert r["investigados"] == 1
+    guardado = db[w.COL_EVENTOS].docs[0]
+    assert guardado["etapa"] == ev.INVESTIGADO
+    assert guardado["resumen"] == "Dice X." and guardado["investigado_en"]
+    assert guardado["investigacion"]["confianza"] == 80
+
+
+def test_un_FALLO_no_convierte_el_evento_en_investigado(monkeypatch):
+    """Ni un fallo de la SEC ni uno del modelo. Marcarlo sería peor que no haber llamado:
+    además de no saber nada, creeríamos que ya lo miramos."""
+    db = _DB()
+    _significativo(db)
+    _investigacion(monkeypatch, ok=False, fase="modelo")
+    asyncio.run(w.investigar_eventos(db, ids=["sec:8-K:1"]))
+    guardado = db[w.COL_EVENTOS].docs[0]
+    assert guardado["etapa"] == ev.SIGNIFICATIVO and guardado["resumen"] is None
+    assert inv.estado_de_investigacion(guardado) == inv.PENDIENTE
+
+
+def test_PULSAR_DOS_VECES_no_gasta_dos_veces(monkeypatch):
+    """La idempotencia que se pidió por escrito. La puerta se comprueba sobre el
+    documento recién leído de Mongo, así que la segunda vez ya está en `investigado`."""
+    db = _DB()
+    _significativo(db)
+    hechas = _investigacion(monkeypatch, ok=True)
+    primera = asyncio.run(w.investigar_eventos(db, ids=["sec:8-K:1"]))
+    segunda = asyncio.run(w.investigar_eventos(db, ids=["sec:8-K:1"]))
+    assert primera["investigados"] == 1 and segunda["investigados"] == 0
+    assert len(hechas) == 1                            # una sola llamada
+    assert asyncio.run(w.uso_ia_de_hoy(db)) == 1
+
+
+def test_un_evento_que_NO_pasa_la_puerta_no_se_investiga_aunque_se_pida(monkeypatch):
+    """El botón no es una vía de escape: pedir un Form 4 por id no lo convierte en
+    investigable."""
+    db = _DB()
+    _significativo(db, nivel=ev.WATCH)
+    hechas = _investigacion(monkeypatch)
+    r = asyncio.run(w.investigar_eventos(db, ids=["sec:8-K:1"]))
+    assert r["investigados"] == 0 and hechas == []
+    assert r["no_elegidos"][inv.NO_INTERRUMPE] == 1
+
+
+def test_se_respeta_la_PRIORIDAD_al_repartir(monkeypatch):
+    db = _DB()
+    _significativo(db, id_="bajo", relevancia=70)
+    _significativo(db, id_="alto", nivel=ev.CRITICAL, relevancia=95)
+    hechas = _investigacion(monkeypatch)
+    asyncio.run(w.investigar_eventos(db, ids=["bajo", "alto"], tope=1))
+    assert hechas == ["alto"]
+
+
+def test_el_resultado_trae_la_AUDITORIA_de_cada_evento(monkeypatch):
+    """Sin ella, una lectura del modelo hay que creérsela."""
+    db = _DB()
+    _significativo(db)
+    _investigacion(monkeypatch, ok=True)
+    r = asyncio.run(w.investigar_eventos(db, ids=["sec:8-K:1"]))
+    caso = r["resultados"][0]
+    assert caso["symbol"] == "NVDA" and caso["ok"] is True
+    assert caso["auditoria"]["http"] == 200
+    assert caso["estado_resultante"] == inv.CON_INFORMACION
+
+
+def test_guardar_la_investigacion_NO_pisa_lo_que_escriba_el_otro_worker(monkeypatch):
+    """Hay dos procesos tocando la misma colección. Un `$set` del documento entero
+    borraría lo que el de vigilancia haya escrito entre medias."""
+    import ast
+    import inspect
+    fuente = inspect.getsource(w._guardar_investigacion)
+    campos = ast.parse(fuente.strip())
+    escritos = [n.value for n in ast.walk(campos)
+                if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+    assert "etapa" in escritos and "investigacion" in escritos
+    assert "symbol" not in escritos and "relevancia" not in escritos
+
+
+def test_la_investigacion_NO_esta_enganchada_al_bucle_automatico():
+    """Todavía no. Se pidió ejecutarla a mano sobre tres eventos y revisar el resultado
+    antes de automatizarla.
+
+    Este test es la garantía de que no se cuela sin querer: si algún día se conecta, que
+    sea borrando esta comprobación a propósito y no por un import que se arrastró.
+    """
+    import ast
+    import inspect
+    for funcion in (w.ciclo, w.worker_loop):
+        fuente = inspect.getsource(funcion)
+        arbol = ast.parse(fuente.strip())
+        llamadas = {ast.unparse(n.func) for n in ast.walk(arbol) if isinstance(n, ast.Call)}
+        assert not any("investigar" in c for c in llamadas), (
+            f"{funcion.__name__} ya investiga: {llamadas}")

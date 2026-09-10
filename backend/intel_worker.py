@@ -40,6 +40,7 @@ from datetime import datetime, timezone
 
 import intel_earnings as earnings
 import intel_eventos as ev
+import intel_investigacion as inv
 import intel_pipeline as pl
 import intel_sec as sec
 
@@ -59,6 +60,10 @@ COL_SALUD = "intel_salud"
 #: de historia en cada vuelta, y lo que hace que una empresa que sale y vuelve al universo
 #: no reprocese nada.
 COL_CURSORES = "intel_cursores"
+#: Cuántas llamadas al modelo se han hecho HOY. Un documento por día, con `$inc`. Vive en
+#: Mongo y no en memoria porque un reinicio de Render no puede devolverle a nadie el
+#: presupuesto que ya se gastó.
+COL_USO_IA = "intel_uso_ia"
 
 # Cuántos ids recientes se recuerdan para deduplicar. El feed devuelve 40 por vuelta;
 # 500 cubre de sobra varias horas y evita releer la colección entera cada ciclo.
@@ -265,6 +270,137 @@ def _telemetria(salida: dict) -> dict:
             "objetivos_totales": salida.get("objetivos_totales", 0),
             "fallos_por_objetivo": salida.get("fallos") or [],
             "sin_cik": salida.get("sin_cik") or []}
+
+
+# ── El presupuesto diario de IA ──────────────────────────────────────────────
+
+def _dia_de_hoy() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+async def uso_ia_de_hoy(db, concepto: str = "investigacion") -> int:
+    """Cuántas llamadas al modelo se han hecho hoy. 0 si el día es nuevo.
+
+    El día se corta en UTC y no en hora local: una zona horaria movible haría que el
+    presupuesto se reiniciara dos veces al año o ninguna, según el sentido del cambio.
+    """
+    try:
+        doc = await db[COL_USO_IA].find_one({"dia": _dia_de_hoy(), "concepto": concepto},
+                                            {"_id": 0, "llamadas": 1})
+        return int((doc or {}).get("llamadas") or 0)
+    except Exception as e:
+        logger.warning("intel: no se pudo leer el uso de IA: %s", str(e)[:120])
+        # Ante la duda, se asume gastado el presupuesto entero: equivocarse hacia NO
+        # gastar es recuperable; hacia gastar, no.
+        return inv.TOPE_DIARIO
+
+
+async def _anotar_uso_ia(db, concepto: str = "investigacion", cuantas: int = 1) -> None:
+    """Sube el contador. Se llama SOLO cuando el modelo ha respondido de verdad.
+
+    Un documento que no baja o un 429 no consumen cuota, así que no cuentan. Una respuesta
+    que llega y no cumple el contrato SÍ cuenta: que no valga no devuelve lo pagado.
+    """
+    try:
+        await db[COL_USO_IA].update_one(
+            {"dia": _dia_de_hoy(), "concepto": concepto},
+            {"$inc": {"llamadas": cuantas},
+             "$set": {"actualizado_en": _ahora()},
+             "$setOnInsert": {"dia": _dia_de_hoy(), "concepto": concepto}},
+            upsert=True)
+    except Exception as e:
+        # Si el contador no sube, el presupuesto deja de frenar. Es lo bastante grave
+        # como para que se vea en el log aunque no rompa la investigación en curso.
+        logger.error("intel: NO se pudo anotar el uso de IA: %s", str(e)[:120])
+
+
+# ── Investigar: la misma función para el botón y para el worker ──────────────
+
+async def investigar_eventos(db, ids: list = None, tope: int = None) -> dict:
+    """Investiga eventos pendientes. `ids` los elige a mano; sin `ids`, los elige el
+    presupuesto priorizado.
+
+    UN SOLO CAMINO
+
+    El botón «Investigar ahora» y el worker automático llaman AQUÍ. Dos caminos distintos
+    se separarían con el tiempo, y entonces validar el manual dejaría de decir nada sobre
+    el automático.
+
+    IDEMPOTENCIA
+
+    La puerta se comprueba sobre el documento RECIÉN LEÍDO de Mongo, no sobre el que
+    trajera quien llama. Pulsar el botón dos veces, o un worker que se reinicie a mitad,
+    encuentra el evento ya en `investigado` y no gasta nada.
+
+    UN FALLO NO MARCA NADA COMO INVESTIGADO
+
+    Si la SEC no sirve el documento o el modelo no responde, el evento se queda en
+    `significativo` y se reintenta después. Marcarlo investigado sería peor que no haber
+    llamado: además de no saber nada, creeríamos que ya lo miramos.
+    """
+    filtro = {"etapa": ev.SIGNIFICATIVO}
+    if ids:
+        filtro["id"] = {"$in": list(ids)}
+    try:
+        candidatos = await db[COL_EVENTOS].find(filtro, {"_id": 0}).to_list(500)
+    except Exception as e:
+        logger.warning("intel: no se pudieron leer los candidatos: %s", str(e)[:120])
+        return {"investigados": 0, "resultados": [], "error": str(e)[:200]}
+
+    gastadas = await uso_ia_de_hoy(db)
+    reparto = inv.a_investigar(candidatos, gastadas_hoy=gastadas, tope=tope)
+
+    resultados, guardados, llamadas = [], 0, 0
+    for evento in reparto["elegidos"]:
+        r = await inv.investigar(evento)
+        if r.get("llamada_al_modelo"):
+            # Se anota ANTES de guardar el evento: si el proceso muere entre las dos
+            # cosas, es preferible haber contado una llamada de más que perder la cuenta
+            # de una que sí se pagó.
+            await _anotar_uso_ia(db)
+            llamadas += 1
+        if r["ok"]:
+            actualizado = inv.aplicar(evento, r["investigacion"])
+            if await _guardar_investigacion(db, actualizado):
+                guardados += 1
+        resultados.append({
+            "id": evento.get("id"), "symbol": evento.get("symbol"),
+            "titulo": evento.get("titulo"), "ok": r["ok"], "fase": r["fase"],
+            "auditoria": r["auditoria"], "investigacion": r.get("investigacion"),
+            "estado_resultante": inv.estado_de_investigacion(
+                inv.aplicar(evento, r["investigacion"]) if r["ok"] else evento),
+        })
+    return {
+        "investigados": guardados,
+        "llamadas_al_modelo": llamadas,
+        "resultados": resultados,
+        "no_elegidos": reparto["motivos"],
+        "pendientes_tras_esta_vuelta": len(reparto["pendientes"]),
+        "presupuesto": {"tope_diario": tope or inv.TOPE_DIARIO,
+                        "gastadas_antes": gastadas,
+                        "gastadas_despues": gastadas + llamadas},
+    }
+
+
+async def _guardar_investigacion(db, evento: dict) -> bool:
+    """Escribe la lectura y la etapa nueva. Solo esos campos.
+
+    Un `$set` del documento entero pisaría lo que el worker de vigilancia haya escrito
+    entre medias — y hay dos procesos tocando la misma colección.
+    """
+    try:
+        await db[COL_EVENTOS].update_one(
+            {"id": evento["id"]},
+            {"$set": {"etapa": evento["etapa"],
+                      "resumen": evento.get("resumen"),
+                      "investigacion": evento.get("investigacion"),
+                      "investigado_en": evento.get("investigado_en"),
+                      "historial": evento.get("historial") or []}})
+        return True
+    except Exception as e:
+        logger.warning("intel: no se pudo guardar la investigación de %s: %s",
+                       evento.get("id"), str(e)[:120])
+        return False
 
 
 # ── Migración de identificadores ─────────────────────────────────────────────

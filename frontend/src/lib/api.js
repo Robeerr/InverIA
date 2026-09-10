@@ -85,6 +85,11 @@ export const api = {
     // documentos, no llama a ningún modelo y no cambia la etapa de nada.
     planInvestigacion: () =>
       client.get(`/intelligence/investigacion`).then((r) => r.data),
+    // La ÚNICA que gasta cuota de IA. Descarga el documento de la SEC, llama al modelo y
+    // guarda la lectura. Tarda: son varias peticiones encadenadas por evento.
+    investigar: (ids) =>
+      client.post(`/intelligence/investigar`, { ids }, { timeout: 180000 })
+        .then((r) => r.data),
   },
   indicators: (symbol) => client.get(`/indicators/${symbol}`).then((r) => r.data),
   news: (symbol) => client.get(`/news/${symbol}`).then((r) => r.data),

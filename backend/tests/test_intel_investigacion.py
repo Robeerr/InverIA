@@ -185,7 +185,7 @@ def test_un_pendiente_se_recoge_en_la_VUELTA_SIGUIENTE():
 def test_lo_ya_investigado_NO_vuelve_a_entrar_al_presupuesto():
     """Idempotencia: la vuelta siguiente no puede volver a pagar por lo mismo."""
     e = _evento()
-    investigado = inv.aplicar(e, {"resumen": "Algo concreto.", "sin_informacion": False})
+    investigado = inv.aplicar(e, {"hay_informacion": True, "resumen": "Algo concreto."})
     r = inv.a_investigar([investigado], tope=20)
     assert r["elegidos"] == [] and r["motivos"][inv.ETAPA] == 1
 
@@ -205,8 +205,8 @@ def test_los_CINCO_ESTADOS_son_distinguibles():
     descartado = _evento(etapa=ev.DESCARTADO)
     pendiente = _evento()
     no_investigable = _evento(url="")
-    sin_info = inv.aplicar(_evento(), {"sin_informacion": True, "resumen": None})
-    con_info = inv.aplicar(_evento(), {"sin_informacion": False, "resumen": "Dice X."})
+    sin_info = inv.aplicar(_evento(), {"hay_informacion": False, "resumen": None})
+    con_info = inv.aplicar(_evento(), {"hay_informacion": True, "resumen": "Dice X."})
 
     assert inv.estado_de_investigacion(descartado) == inv.DESCARTADO_POR_FILTRO
     assert inv.estado_de_investigacion(pendiente) == inv.PENDIENTE
@@ -252,7 +252,7 @@ def test_el_prompt_PROHIBE_recomendar_y_prohibe_rellenar():
     assert "recomiendes comprar ni vender" in s.lower()
     assert "no estimes el impacto en el precio" in s.lower()
     assert "TU ÚNICA FUENTE ES EL DOCUMENTO" in s
-    assert "sin_informacion" in s
+    assert "hay_informacion" in s
 
 
 def test_la_peticion_lleva_el_valor_y_el_tipo_de_registro():
@@ -281,7 +281,7 @@ def test_se_usa_el_enrutado_que_YA_prueba_la_key_gratis_primero():
 def test_SIN_INFORMACION_deja_el_evento_sin_resumen():
     """La regla número uno. Muchos registros son trámites; rellenar el hueco haría que un
     resumen dejara de significar nada."""
-    r = inv.validar({"sin_informacion": True, "resumen": "", "confianza": 90})
+    r = inv.validar({"hay_informacion": False, "resumen": "", "confianza": 90})
     assert r["ok"] is True
     e = inv.aplicar(_evento(), r["investigacion"])
     assert e["resumen"] is None
@@ -291,22 +291,24 @@ def test_SIN_INFORMACION_deja_el_evento_sin_resumen():
 def test_decir_que_no_hay_informacion_Y_dar_resumen_se_RECHAZA():
     """El patrón típico de un modelo que rellena por no dejar el hueco vacío. Aceptarlo
     convertiría la regla de «poder decir que no sé» en decorativa."""
-    r = inv.validar({"sin_informacion": True, "resumen": "La empresa ha anunciado algo."})
+    r = inv.validar({"hay_informacion": False, "resumen": "La empresa ha anunciado algo."})
     assert r["ok"] is False and r["motivo"] == inv.CONTRADICTORIA
 
 
 def test_una_respuesta_sin_nada_se_RECHAZA():
     """Ni información ni la declaración de que no la hay. No es una respuesta."""
-    assert inv.validar({"sin_informacion": False, "resumen": "  "})["motivo"] == inv.VACIA
+    assert inv.validar({"hay_informacion": True, "resumen": "  "})["motivo"] == inv.VACIA
     assert inv.validar(None)["motivo"] == inv.SIN_RESPUESTA
     assert inv.validar("texto suelto")["motivo"] == inv.SIN_RESPUESTA
 
 
 def test_una_respuesta_buena_se_guarda_entera():
-    r = inv.validar({"sin_informacion": False,
+    r = inv.validar({"hay_informacion": True,
                      "resumen": "Acuerdo definitivo de compra de X por 2.000 M$.",
-                     "que_cambia": "Añade deuda y un negocio nuevo.",
+                     "implicaciones": ["Añade deuda y un negocio nuevo."],
+                     "incertidumbres": ["No dice cómo se financia."],
                      "hechos": ["2.000 M$", "cierre previsto en Q1"],
+                     "fuente": "Form 8-K de 8 de septiembre de 2026",
                      "confianza": 85})
     assert r["ok"] is True
     i = r["investigacion"]
@@ -317,17 +319,18 @@ def test_una_respuesta_buena_se_guarda_entera():
 
 def test_SIN_CONFIANZA_declarada_se_asume_la_minima():
     """No se inventa una alta: la duda tiene que costar algo."""
-    r = inv.validar({"resumen": "Algo pasó.", "confianza": "no sé"})
+    r = inv.validar({"hay_informacion": True, "resumen": "Algo pasó.", "confianza": "no sé"})
     assert r["investigacion"]["confianza"] == 0
 
 
 def test_la_confianza_se_queda_entre_0_y_100():
     for entrada, esperado in ((150, 100), (-5, 0), (70.4, 70)):
-        assert inv.validar({"resumen": "x", "confianza": entrada})["investigacion"]["confianza"] == esperado
+        r = inv.validar({"hay_informacion": True, "resumen": "x", "confianza": entrada})
+        assert r["investigacion"]["confianza"] == esperado
 
 
 def test_un_resumen_kilometrico_se_recorta():
-    r = inv.validar({"resumen": "x" * 5000})
+    r = inv.validar({"hay_informacion": True, "resumen": "x" * 5000})
     assert len(r["investigacion"]["resumen"]) == inv.MAX_RESUMEN
 
 
@@ -337,7 +340,7 @@ def test_aplicar_NO_muta_el_original():
     """Igual que `ev.avanzar`: quien llama tiene el documento de Mongo y decide él si
     escribe. Mutarlo lo dejaría adelantado ante cualquier fallo de escritura."""
     e = _evento()
-    inv.aplicar(e, {"resumen": "algo", "sin_informacion": False})
+    inv.aplicar(e, {"hay_informacion": True, "resumen": "algo"})
     assert e["resumen"] is None
 
 
@@ -346,7 +349,7 @@ def test_la_investigacion_NO_toca_la_RELEVANCIA():
     decidió el scoring. Si la lectura pudiera subir la nota, la IA estaría opinando sobre
     tu exposición a partir de un texto que no sabe cuánto tienes."""
     despues = inv.aplicar(_evento(relevancia=80),
-                          {"resumen": "algo", "sin_informacion": False})
+                          {"hay_informacion": True, "resumen": "algo"})
     assert despues["relevancia"] == 80
 
 
@@ -355,10 +358,10 @@ def test_la_etapa_avanza_por_la_LISTA_BLANCA_y_no_a_mano():
     transiciones declaradas. Así la investigación no puede abrir un camino nuevo por su
     cuenta."""
     e = _evento()
-    assert inv.aplicar(e, {"resumen": "x", "sin_informacion": False})["etapa"] == ev.INVESTIGADO
+    assert inv.aplicar(e, {"hay_informacion": True, "resumen": "x"})["etapa"] == ev.INVESTIGADO
     # Desde una etapa que no lo permite, no se mueve.
     descartado = _evento(etapa=ev.DESCARTADO)
-    assert inv.aplicar(descartado, {"resumen": "x"})["etapa"] == ev.DESCARTADO
+    assert inv.aplicar(descartado, {"hay_informacion": True, "resumen": "x"})["etapa"] == ev.DESCARTADO
 
 
 def test_SIGNIFICATIVO_a_INVESTIGADO_es_el_flujo_completo():
@@ -369,7 +372,7 @@ def test_SIGNIFICATIVO_a_INVESTIGADO_es_el_flujo_completo():
     assert e["etapa"] == ev.SIGNIFICATIVO
     assert inv.estado_de_investigacion(e) == inv.PENDIENTE
 
-    leido = inv.aplicar(e, {"sin_informacion": False, "resumen": "Compra de X por 2.000 M$."})
+    leido = inv.aplicar(e, {"hay_informacion": True, "resumen": "Compra de X por 2.000 M$."})
     assert leido["etapa"] == ev.INVESTIGADO
     assert inv.estado_de_investigacion(leido) == inv.CON_INFORMACION
     assert leido["historial"][-1]["etapa"] == ev.INVESTIGADO   # queda en el historial
@@ -379,7 +382,7 @@ def test_SIN_INFORMACION_tambien_avanza_a_investigado():
     """Que el resultado sea «no dice nada» no lo hace menos resultado: la IA leyó el
     documento. Dejarlo en `significativo` haría que se volviera a pagar por él en cada
     vuelta."""
-    leido = inv.aplicar(_evento(), {"sin_informacion": True, "resumen": None})
+    leido = inv.aplicar(_evento(), {"hay_informacion": False, "resumen": None})
     assert leido["etapa"] == ev.INVESTIGADO and leido["resumen"] is None
     assert inv.estado_de_investigacion(leido) == inv.SIN_INFORMACION
 
@@ -387,7 +390,7 @@ def test_SIN_INFORMACION_tambien_avanza_a_investigado():
 def test_la_salida_NO_recomienda_operar():
     """El prompt pide «qué dice» y «qué cambiaría», no «compra». Son dos saltos —entender
     e invertir— y solo el primero se puede comprobar contra el documento."""
-    campos = inv.validar({"resumen": "x", "que_cambia": "y"})["investigacion"]
+    campos = inv.validar({"hay_informacion": True, "resumen": "x"})["investigacion"]
     for prohibido in ("recomendacion", "accion", "veredicto", "comprar", "vender"):
         assert prohibido not in campos
 
@@ -403,8 +406,8 @@ def _mundo():
         + [_evento(nivel=ev.IMPORTANT, url="") for _ in range(2)]  # sin documento
         + [_evento(nivel=ev.CRITICAL, relevancia=95) for _ in range(3)]
         + [_evento(nivel=ev.IMPORTANT, relevancia=80) for _ in range(4)]
-        + [inv.aplicar(_evento(), {"sin_informacion": True, "resumen": None})]
-        + [inv.aplicar(_evento(), {"sin_informacion": False, "resumen": "Dice X."})]
+        + [inv.aplicar(_evento(), {"hay_informacion": False, "resumen": None})]
+        + [inv.aplicar(_evento(), {"hay_informacion": True, "resumen": "Dice X."})]
     )
 
 
@@ -524,9 +527,237 @@ def test_el_endpoint_NO_llama_a_ningun_modelo_ni_descarga_nada():
         assert prohibido not in cuerpo, f"el panorama ejecuta: {prohibido}"
 
 
-def test_el_endpoint_DECLARA_que_no_ejecuta_nada():
+def test_el_endpoint_DECLARA_que_no_corre_solo():
     """Va en la respuesta, no solo en un comentario: quien lea el JSON tiene que poder
-    saber que esto es una previsión y no algo que ya está corriendo."""
+    saber si esto se ejecuta por su cuenta."""
+    assert "'ejecuta_automaticamente': False" in _cuerpo_del_endpoint()
+
+
+def test_el_plan_usa_el_contador_DE_VERDAD():
+    """Un plan calculado sobre un presupuesto inventado diría que caben veinte cuando
+    quedan diecisiete."""
     cuerpo = _cuerpo_del_endpoint()
-    assert "'ejecuta_investigaciones': False" in cuerpo
-    assert "'contador_diario_implementado': False" in cuerpo
+    assert "uso_ia_de_hoy" in cuerpo and "gastadas_hoy=0" not in cuerpo
+
+
+# ── 9 · La descarga del documento ────────────────────────────────────────────
+
+class _Respuesta:
+    def __init__(self, status=200, contenido=b"<p>hola</p>"):
+        self.status_code, self.content = status, contenido
+
+
+class _Cliente:
+    """Un `httpx.AsyncClient` de mentira. Devuelve lo que se le diga y anota qué se pidió."""
+
+    def __init__(self, respuesta=None, revienta=None):
+        self.respuesta, self.revienta, self.pedidas = respuesta, revienta, []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return False
+
+    async def get(self, url, **_):
+        self.pedidas.append(url)
+        if self.revienta:
+            raise self.revienta
+        return self.respuesta or _Respuesta()
+
+
+def _con_cliente(monkeypatch, cliente, con_user_agent=True):
+    import httpx
+    if con_user_agent:
+        monkeypatch.setenv("SEC_USER_AGENT", "InverIA/1.0 x@y.z")
+    else:
+        monkeypatch.delenv("SEC_USER_AGENT", raising=False)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **_: cliente)
+    return cliente
+
+
+def test_la_descarga_devuelve_lo_que_hace_falta_para_AUDITARLA(monkeypatch):
+    """No solo el texto: el código HTTP, los bytes y el error literal. Sin eso, un evento
+    sin investigar es indistinguible de uno que la SEC no sirvió."""
+    import asyncio
+    _con_cliente(monkeypatch, _Cliente(_Respuesta(200, b"<p>Item 8.01</p>")))
+    r = asyncio.run(inv.descargar_documento("https://www.sec.gov/Archives/x.htm"))
+    assert r["ok"] is True and r["http"] == 200 and r["bytes"] == 16
+    assert "Item 8.01" in r["html"] and r["error"] is None
+
+
+def test_un_404_de_la_sec_NO_lanza_y_dice_que_paso(monkeypatch):
+    """Que un documento no baje no puede tumbar la vuelta: quien llama sigue con los
+    demás eventos."""
+    import asyncio
+    _con_cliente(monkeypatch, _Cliente(_Respuesta(404, b"")))
+    r = asyncio.run(inv.descargar_documento("https://www.sec.gov/x"))
+    assert r["ok"] is False and r["http"] == 404 and "404" in r["error"]
+
+
+def test_un_corte_de_red_se_devuelve_como_error_y_no_como_excepcion(monkeypatch):
+    import asyncio
+    _con_cliente(monkeypatch, _Cliente(revienta=TimeoutError("se acabó el tiempo")))
+    r = asyncio.run(inv.descargar_documento("https://www.sec.gov/x"))
+    assert r["ok"] is False and "TimeoutError" in r["error"]
+
+
+def test_sin_SEC_USER_AGENT_no_se_descarga_NADA(monkeypatch):
+    """Misma regla que el connector: la SEC exige identificarse, y bajar un documento sin
+    `User-Agent` sería saltarse su política por la puerta de atrás."""
+    import asyncio
+    cliente = _con_cliente(monkeypatch, _Cliente(), con_user_agent=False)
+    r = asyncio.run(inv.descargar_documento("https://www.sec.gov/x"))
+    assert r["ok"] is False and "SEC_USER_AGENT" in r["error"]
+    assert cliente.pedidas == []           # ni se intentó
+
+
+def test_sin_url_no_se_descarga(monkeypatch):
+    import asyncio
+    assert asyncio.run(inv.descargar_documento(""))["ok"] is False
+
+
+# ── 10 · ¿Lo descargado es de verdad ESTE filing? ────────────────────────────
+
+def test_se_COTEJA_que_el_documento_sea_el_del_evento():
+    """EDGAR sirve índices y portadas desde rutas parecidas, y con código 200. Si se le
+    manda un índice al modelo, contestará algo que parecerá una lectura del 8-K sin
+    serlo — el fallo más difícil de detectar de toda la fase, porque no da error."""
+    e = _evento()
+    e["crudo"].update(accession="000104581026000042", cik="1045810")
+    v = inv.parece_el_filing("FORM 8-K ... Item 8.01 ... 0001045810-26-000042", e)
+    assert v["ok"] is True
+    assert v["menciona_el_formulario"] and v["menciona_el_numero_de_registro"]
+
+
+def test_una_pagina_que_no_tiene_NADA_del_filing_se_marca():
+    e = _evento()
+    e["crudo"].update(accession="000104581026000042", cik="1045810")
+    v = inv.parece_el_filing("Página no encontrada. Vuelva al inicio.", e)
+    assert v["ok"] is False
+
+
+def test_basta_UNA_señal_y_se_dice_cual():
+    """El número de registro no siempre está en el cuerpo y el formulario se escribe de
+    formas raras. Exigir las tres descartaría filings buenos, que es peor que colar uno
+    dudoso — el resultado va marcado y con su enlace."""
+    e = _evento()
+    e["crudo"].update(accession="999", cik="1045810")
+    v = inv.parece_el_filing("Este documento es un 8-K sobre algo.", e)
+    assert v["ok"] is True and v["menciona_el_formulario"] is True
+    assert v["menciona_el_numero_de_registro"] is False
+
+
+def test_la_verificacion_dice_CUANTOS_CARACTERES_hay():
+    """Un filing de 40 caracteres es sospechoso aunque mencione el formulario."""
+    assert inv.parece_el_filing("8-K", _evento())["caracteres"] == 3
+
+
+# ── 11 · La investigación completa, sin tocar la red de verdad ───────────────
+
+def _sin_modelo(monkeypatch, respuesta=None, revienta=None):
+    import ai_analysis
+    llamadas = []
+
+    async def falso(modelo, sistema, usuario, max_tokens=None):
+        llamadas.append({"modelo": modelo, "sistema": sistema, "usuario": usuario})
+        if revienta:
+            raise revienta
+        return respuesta
+    monkeypatch.setattr(ai_analysis, "_run_model", falso)
+    return llamadas
+
+
+BUENA = {"hay_informacion": True, "resumen": "Acuerdo de compra de X por 2.000 M$.",
+         "hechos": ["2.000 M$"], "implicaciones": ["Añade deuda."],
+         "incertidumbres": ["No dice cómo se financia."],
+         "fuente": "Form 8-K de 8 de septiembre", "confianza": 80}
+
+
+def test_la_investigacion_COMPLETA_devuelve_lectura_y_auditoria(monkeypatch):
+    import asyncio
+    _con_cliente(monkeypatch, _Cliente(_Respuesta(200, b"<p>FORM 8-K Item 8.01 compra</p>")))
+    llamadas = _sin_modelo(monkeypatch, BUENA)
+    r = asyncio.run(inv.investigar(_evento()))
+    assert r["ok"] is True and r["fase"] == "completa" and r["llamada_al_modelo"] is True
+    a = r["auditoria"]
+    assert a["http"] == 200 and a["bytes_descargados"] > 0
+    assert a["caracteres_extraidos"] > 0 and a["caracteres_enviados"] > 0
+    assert a["verificacion"]["ok"] is True and a["ms_modelo"] >= 0
+    assert r["investigacion"]["resumen"].startswith("Acuerdo")
+    # Y el documento llegó al modelo de verdad.
+    assert "Item 8.01" in llamadas[0]["usuario"]
+
+
+def test_si_la_SEC_falla_NO_se_llama_al_modelo(monkeypatch):
+    """Un documento que no baja no consume cuota. Y sin documento, preguntarle al modelo
+    sería preguntarle si le suena la empresa."""
+    import asyncio
+    _con_cliente(monkeypatch, _Cliente(_Respuesta(503, b"")))
+    llamadas = _sin_modelo(monkeypatch, BUENA)
+    r = asyncio.run(inv.investigar(_evento()))
+    assert r["ok"] is False and r["fase"] == "descarga"
+    assert r["llamada_al_modelo"] is False and llamadas == []
+
+
+def test_un_documento_SIN_TEXTO_no_llega_al_modelo(monkeypatch):
+    import asyncio
+    _con_cliente(monkeypatch, _Cliente(_Respuesta(200, b"<script>x=1</script>")))
+    llamadas = _sin_modelo(monkeypatch, BUENA)
+    r = asyncio.run(inv.investigar(_evento()))
+    assert r["ok"] is False and r["fase"] == "extraccion" and llamadas == []
+
+
+def test_si_el_MODELO_falla_la_llamada_NO_cuenta(monkeypatch):
+    """Un 429 o un corte no consumen tokens. Contarlos gastaría presupuesto que nadie
+    ha usado."""
+    import asyncio
+    _con_cliente(monkeypatch, _Cliente(_Respuesta(200, b"<p>FORM 8-K algo</p>")))
+    _sin_modelo(monkeypatch, revienta=RuntimeError("429 quota"))
+    r = asyncio.run(inv.investigar(_evento()))
+    assert r["ok"] is False and r["fase"] == "modelo"
+    assert r["llamada_al_modelo"] is False and "429" in r["auditoria"]["error"]
+
+
+def test_una_respuesta_ROTA_si_cuenta_como_llamada(monkeypatch):
+    """El modelo respondió y eso ya se pagó. Que la respuesta no valga no devuelve la
+    cuota — y el evento NO se marca investigado."""
+    import asyncio
+    _con_cliente(monkeypatch, _Cliente(_Respuesta(200, b"<p>FORM 8-K algo</p>")))
+    _sin_modelo(monkeypatch, {"hay_informacion": False, "resumen": "me lo invento"})
+    r = asyncio.run(inv.investigar(_evento()))
+    assert r["ok"] is False and r["fase"] == "validacion"
+    assert r["llamada_al_modelo"] is True and r["investigacion"] is None
+    assert r["respuesta_bruta"]["resumen"] == "me lo invento"
+
+
+def test_el_texto_se_recorta_ANTES_de_enviarlo_pero_se_mide_entero(monkeypatch):
+    """Recortar antes de contar haría que la auditoría dijera siempre el máximo y no se
+    pudiera ver si un filing venía corto."""
+    import asyncio
+    largo = ("<p>FORM 8-K " + "x" * 60000 + "</p>").encode()
+    _con_cliente(monkeypatch, _Cliente(_Respuesta(200, largo)))
+    llamadas = _sin_modelo(monkeypatch, BUENA)
+    a = asyncio.run(inv.investigar(_evento()))["auditoria"]
+    assert a["caracteres_extraidos"] > inv.MAX_CARACTERES
+    assert a["caracteres_enviados"] == inv.MAX_CARACTERES
+    assert len(llamadas[0]["usuario"]) < a["caracteres_extraidos"]
+
+
+def test_se_usa_EXCLUSIVAMENTE_run_model(monkeypatch):
+    """Sin cliente propio de Gemini, sin SDK nuevo, sin proveedor nuevo. El día que
+    alguien meta uno, este test lo dice."""
+    import ast
+    ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "..", "intel_investigacion.py")
+    src = open(ruta, encoding="utf-8").read()
+    assert "_run_model" in src
+    for prohibido in ("genai", "google.generativeai", "openai", "anthropic",
+                      "groq", "GEMINI_API_KEY"):
+        assert prohibido not in src, f"cliente o dependencia nueva: {prohibido}"
+    # Y los únicos módulos que se importan son los que ya estaban.
+    arbol = ast.parse(src)
+    externos = {n.names[0].name.split(".")[0] for n in ast.walk(arbol)
+                if isinstance(n, ast.Import)}
+    assert externos <= {"os", "re", "time", "httpx", "ai_analysis", "intel_eventos",
+                        "intel_sec"}, externos
