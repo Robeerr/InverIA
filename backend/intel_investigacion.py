@@ -80,7 +80,10 @@ def motivo_para_no_investigar(evento: dict) -> Optional[str]:
     """
     if not isinstance(evento, dict):
         return ETAPA
-    if evento.get("etapa") not in (ev.SIGNIFICATIVO, ev.ALERTADO):
+    # SOLO desde significativo. `investigado` ya pasó por aquí, y `alertado` también:
+    # los dos entran por `YA_INVESTIGADO` más abajo si hiciera falta, pero la etapa por
+    # sí sola ya los excluye — y eso hace la puerta idempotente por construcción.
+    if evento.get("etapa") != ev.SIGNIFICATIVO:
         return ETAPA
     # Ya tiene lectura. Volver a pagar por lo mismo es la forma más tonta de gastar.
     if (evento.get("resumen") or "").strip() or evento.get("investigado_en"):
@@ -101,30 +104,111 @@ def merece_investigacion(evento: dict) -> bool:
     return motivo_para_no_investigar(evento) is None
 
 
-def a_investigar(eventos: list, gastadas_hoy: int = 0,
-                 tope: int = None) -> tuple:
-    """Cuáles se investigan en esta vuelta, y por qué se queda fuera el resto.
+#: Orden de los niveles. Se declara aquí y no se deduce de `ev.NIVELES` porque el orden
+#: de prioridad es una DECISIÓN, y dejarla implícita en el orden de una tupla la haría
+#: cambiar sin querer el día que alguien añada un nivel en medio.
+_PESO_NIVEL = {ev.CRITICAL: 3, ev.IMPORTANT: 2, ev.WATCH: 1, ev.INFO: 0}
 
-    El tope se aplica DESPUÉS de la puerta y por orden de relevancia: si un día entran
-    treinta eventos importantes, se investigan los veinte que más te tocan y se dice que
-    quedan diez sin investigar. Cortar por orden de llegada dejaría fuera al más grave
-    por haber llegado el último.
+
+def prioridad(evento: dict) -> tuple:
+    """La clave de orden del presupuesto. Menor es antes.
+
+    LOS CUATRO CRITERIOS, EN ORDEN Y CON SU MOTIVO
+
+      1. NIVEL. Un crítico antes que un importante, siempre. Es lo que el sistema ya
+         decidió sobre cuánto urge, y el presupuesto no puede contradecirlo.
+      2. RELEVANCIA. A igual nivel, lo que más te toca.
+      3. CARTERA antes que seguimiento. A igual nota, donde hay dinero dentro: perderse
+         algo de una posición abierta cuesta más que perdérselo de una que solo miras.
+      4. LO MÁS RECIENTE. El desempate final. Un documento de hace diez minutos puede
+         cambiar una decisión de hoy; uno de hace tres días ya la ha cambiado o no.
+
+    Se devuelve una tupla en vez de un número: un número obligaría a inventar pesos y a
+    que dos criterios pudieran compensarse entre sí, y no deben — ningún grado de
+    relevancia convierte un WATCH en más urgente que un CRITICAL.
+    """
+    evento = evento or {}
+    return (
+        -_PESO_NIVEL.get(evento.get("nivel_alerta"), -1),
+        -(evento.get("relevancia") or 0),
+        0 if evento.get("afecta_cartera") else 1,
+        # Descendente por fecha: se invierte comparando al revés en el `sorted`, así que
+        # aquí se guarda la cadena y se marca el sentido con el signo del resto.
+        _al_reves(str(evento.get("recibido_en") or "")),
+    )
+
+
+class _al_reves(str):
+    """Una cadena que ordena al revés. Para que «más reciente primero» quepa en la misma
+    tupla que los demás criterios sin partir el `sorted` en dos pasadas."""
+
+    def __lt__(self, otra):
+        return str.__gt__(self, otra)
+
+    def __gt__(self, otra):
+        return str.__lt__(self, otra)
+
+
+def a_investigar(eventos: list, gastadas_hoy: int = 0, tope: int = None) -> dict:
+    """Reparte el presupuesto del día. Devuelve elegidos, PENDIENTES y motivos.
+
+    LOS QUE NO CABEN NO SE PIERDEN NI SE DESCARTAN
+
+    Salen en `pendientes` y se quedan en `significativo`, que es literalmente lo que son:
+    eventos que merecen investigarse y todavía no se han investigado. La vuelta siguiente
+    —o el día siguiente— los vuelve a coger, y como la puerta comprueba `investigado_en`,
+    no se investigan dos veces.
+
+    Marcarlos descartados habría sido el fallo grave: `descartado` es terminal, así que un
+    evento importante que no cupo en el presupuesto de un martes no se miraría jamás.
     """
     tope = TOPE_DIARIO if tope is None else tope
     quedan = max(0, tope - max(0, gastadas_hoy))
-    elegibles, descartados = [], {}
+    elegibles, motivos = [], {}
     for e in eventos or []:
         motivo = motivo_para_no_investigar(e)
         if motivo:
-            descartados[motivo] = descartados.get(motivo, 0) + 1
+            motivos[motivo] = motivos.get(motivo, 0) + 1
         else:
             elegibles.append(e)
-    elegibles.sort(key=lambda e: (-(e.get("relevancia") or 0),
-                                  str(e.get("recibido_en") or "")))
-    sin_presupuesto = max(0, len(elegibles) - quedan)
-    if sin_presupuesto:
-        descartados["sin_presupuesto"] = sin_presupuesto
-    return elegibles[:quedan], descartados
+    elegibles.sort(key=prioridad)
+    elegidos, pendientes = elegibles[:quedan], elegibles[quedan:]
+    if pendientes:
+        # Se cuenta aparte de los motivos de exclusión: no es una razón para NO
+        # investigar, es un «todavía no».
+        motivos["sin_presupuesto"] = len(pendientes)
+    return {"elegidos": elegidos, "pendientes": pendientes, "motivos": motivos,
+            "elegibles": len(elegibles), "presupuesto_restante": quedan}
+
+
+# ── Los cinco estados que hay que poder distinguir ───────────────────────────
+
+DESCARTADO_POR_FILTRO = "descartado_por_filtro"
+PENDIENTE = "pendiente_de_investigacion"
+NO_INVESTIGABLE = "no_investigable"
+SIN_INFORMACION = "investigado_sin_informacion"
+CON_INFORMACION = "investigado_con_informacion"
+
+
+def estado_de_investigacion(evento: dict) -> str:
+    """En cuál de los cinco estados está este evento.
+
+    Existen como concepto separado de la etapa porque la etapa sola no los distingue:
+    `investigado` cubre tanto «se leyó y no decía nada» como «se leyó y esto es lo que
+    dice», y esas dos cosas piden pantallas distintas. Y `significativo` cubre «pendiente»
+    y «no investigable», que piden explicaciones distintas.
+
+    Sin esta distinción, un radar en silencio no se puede leer: no se sabría si es que no
+    hay nada, si es que falta presupuesto o si es que nada de lo que entró era legible.
+    """
+    if not isinstance(evento, dict):
+        return NO_INVESTIGABLE
+    if evento.get("etapa") == ev.DESCARTADO:
+        return DESCARTADO_POR_FILTRO
+    if evento.get("etapa") == ev.INVESTIGADO:
+        investigacion = evento.get("investigacion") or {}
+        return SIN_INFORMACION if investigacion.get("sin_informacion") else CON_INFORMACION
+    return PENDIENTE if merece_investigacion(evento) else NO_INVESTIGABLE
 
 
 # ── El texto del documento ───────────────────────────────────────────────────
@@ -259,13 +343,16 @@ def validar(bruto) -> dict:
 
 
 def aplicar(evento: dict, investigacion: dict, cuando: str = None) -> dict:
-    """Deja la lectura sobre el evento. Devuelve un objeto NUEVO, como `ev.avanzar`.
+    """Deja la lectura sobre el evento y lo avanza a `investigado`. Objeto NUEVO.
 
-    UN DOCUMENTO SIN CONTENIDO NO PRODUCE RESUMEN
+    UN DOCUMENTO SIN CONTENIDO NO PRODUCE RESUMEN, PERO SÍ ES UNA INVESTIGACIÓN
 
     Si el modelo dijo `sin_informacion`, `resumen` se queda a None y la pantalla sigue
-    enseñando el titular con su «esto no lo ha interpretado nadie». Se marca que ya se
-    miró —para no volver a pagar por ello— pero no se rellena el hueco.
+    enseñando el titular con su «esto no lo ha interpretado nadie». Pero la etapa SÍ
+    avanza: la IA leyó el documento y produjo un resultado válido, que es exactamente lo
+    que significa `investigado`. Que el resultado sea «no dice nada» no lo hace menos
+    resultado — y dejarlo en `significativo` haría que se volviera a pagar por él en cada
+    vuelta.
 
     Es la regla número uno de este módulo, y es la única forma de que un resumen, cuando
     exista, signifique algo.
@@ -277,4 +364,5 @@ def aplicar(evento: dict, investigacion: dict, cuando: str = None) -> dict:
     nuevo["investigacion"] = investigacion
     if not investigacion.get("sin_informacion"):
         nuevo["resumen"] = investigacion.get("resumen")
-    return nuevo
+    # La lista blanca decide: si el evento no estaba en `significativo`, no se mueve.
+    return ev.avanzar(nuevo, ev.INVESTIGADO, cuando=cuando)

@@ -130,14 +130,42 @@ def test_el_motivo_del_descarte_queda_registrado():
 
 # ── El hueco declarado ───────────────────────────────────────────────────────
 
-def test_investigado_y_agrupado_existen_pero_NO_se_alcanzan():
-    """Son fases posteriores. Se declaran ahora para que el hueco sea visible y para
-    no tener que migrar documentos el día que se implementen. Si alguien las conecta,
+def test_INVESTIGADO_se_alcanza_SOLO_desde_significativo():
+    """La desviación deliberada del orden declarado. Investigar antes de saber si algo te
+    toca obliga a leer todo lo que pasa el filtro: 46 llamadas a un modelo en vez de 1.
+
+    Que solo se llegue desde `significativo` es lo que ata la investigación al scoring, y
+    por tanto al presupuesto."""
+    alcanzables = [d for d in ev.ETAPAS if ev.puede_avanzar(d, ev.INVESTIGADO)]
+    assert alcanzables == [ev.SIGNIFICATIVO]
+
+
+def test_significativo_e_investigado_NO_son_lo_mismo():
+    """SIGNIFICATIVO es una decisión sobre TI: el scoring dice que te toca lo bastante
+    como para gastar recursos. INVESTIGADO es un hecho sobre el DOCUMENTO: la IA ya lo
+    leyó. Fundirlos haría imposible saber si algo está pendiente o es que no había nada
+    que contar."""
+    assert ev.SIGNIFICATIVO != ev.INVESTIGADO
+    # Y no se puede volver: una vez leído, el documento está leído.
+    assert ev.puede_avanzar(ev.INVESTIGADO, ev.SIGNIFICATIVO) is False
+
+
+def test_un_evento_ya_investigado_SIGUE_interrumpiendo():
+    """Investigar no rebaja nada: un 8-K que merecía interrumpirte lo sigue mereciendo
+    después de leerlo, y con más motivo, porque ahora se sabe qué dice."""
+    e = _nuevo()
+    e["nivel_alerta"] = ev.IMPORTANT
+    for etapa in (ev.NORMALIZADO, ev.DEDUPLICADO, ev.FILTRADO, ev.SIGNIFICATIVO,
+                  ev.INVESTIGADO):
+        e = ev.avanzar(e, etapa)
+    assert e["etapa"] == ev.INVESTIGADO and ev.interrumpe(e) is True
+
+
+def test_AGRUPADO_sigue_sin_alcanzarse():
+    """Se declaró para que el hueco fuera visible y sigue vacío. Si alguien lo conecta,
     que sea a propósito y no por descuido."""
-    for etapa in (ev.INVESTIGADO, ev.AGRUPADO):
-        assert etapa in ev.ETAPAS
-        alcanzables = [d for d in ev.ETAPAS if ev.puede_avanzar(d, etapa)]
-        assert alcanzables == [], f"{etapa} ya es alcanzable desde {alcanzables}"
+    alcanzables = [d for d in ev.ETAPAS if ev.puede_avanzar(d, ev.AGRUPADO)]
+    assert alcanzables == [], f"agrupado ya es alcanzable desde {alcanzables}"
 
 
 # ── Alertas ──────────────────────────────────────────────────────────────────

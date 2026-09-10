@@ -57,14 +57,35 @@ ETAPAS = (RECIBIDO, NORMALIZADO, DEDUPLICADO, FILTRADO, INVESTIGADO,
 # `descartado` y `alertado` son finales. Que descartado sea terminal es lo que impide
 # el fallo más caro de un sistema así: que un evento ya rechazado vuelva a entrar por
 # otro camino y acabe generando la señal que su filtro había impedido.
+#
+# LA INVESTIGACIÓN VA DESPUÉS DE LA SIGNIFICANCIA, Y ES UNA DESVIACIÓN DELIBERADA
+#
+# El orden declarado en la especificación era `filtrado → investigado → significativo`:
+# investigar y luego decidir si importa. Se cambió por lo contrario, y el motivo es el
+# dinero: investigar antes de saber si algo te toca obliga a leer TODO lo que pasa el
+# filtro. Medido sobre una vuelta real, eso son 46 llamadas a un modelo en vez de 1.
+#
+# Las dos etapas siguen significando cosas DISTINTAS, que es lo que hace que la
+# desviación no sea una fusión encubierta:
+#
+#   SIGNIFICATIVO  el scoring dice que te toca lo bastante como para gastar recursos
+#                  en entenderlo. Es una decisión sobre TI y tu cartera.
+#   INVESTIGADO    la IA ya ha leído la fuente y ha producido una lectura válida. Es un
+#                  hecho sobre el DOCUMENTO, y ocurre o no ocurre.
+#
+# Un evento significativo que todavía no se ha investigado —porque el presupuesto del
+# día se agotó— se queda en `significativo`, que es exactamente lo que significa:
+# pendiente de investigación. No hay estado nuevo porque no hace falta uno.
 _TRANSICIONES = {
     RECIBIDO: (NORMALIZADO, DESCARTADO),
     NORMALIZADO: (DEDUPLICADO, DESCARTADO),
     DEDUPLICADO: (FILTRADO, DESCARTADO),
     FILTRADO: (SIGNIFICATIVO, DESCARTADO),
-    INVESTIGADO: (SIGNIFICATIVO, DESCARTADO),
+    SIGNIFICATIVO: (INVESTIGADO, ALERTADO, DESCARTADO),
+    # Investigado puede alertar directamente: ya se sabe qué dice el documento, que es
+    # lo que faltaba para que la alerta valiera algo.
+    INVESTIGADO: (ALERTADO, DESCARTADO),
     AGRUPADO: (SIGNIFICATIVO, DESCARTADO),
-    SIGNIFICATIVO: (ALERTADO, DESCARTADO),
     ALERTADO: (),
     DESCARTADO: (),
 }
@@ -200,13 +221,17 @@ def nivel_de(relevancia: Optional[float]) -> Optional[str]:
 def interrumpe(evento: dict) -> bool:
     """¿Este evento merece robar la atención del usuario?
 
-    Solo si YA está en `significativo` o `alertado` Y su nivel interrumpe. Las dos
-    condiciones: un evento con relevancia alta que el filtro descartó por otra razón
-    —un duplicado, una fuente caída— no puede colarse por la puerta de atrás.
+    Solo si YA está en `significativo`, `investigado` o `alertado` Y su nivel interrumpe.
+    Las dos condiciones: un evento con relevancia alta que el filtro descartó por otra
+    razón —un duplicado, una fuente caída— no puede colarse por la puerta de atrás.
+
+    `investigado` está en la lista porque investigar no rebaja nada: un 8-K que merecía
+    interrumpirte lo sigue mereciendo después de leerlo, y con más motivo, porque ahora
+    se sabe qué dice.
     """
     if not isinstance(evento, dict):
         return False
-    if evento.get("etapa") not in (SIGNIFICATIVO, ALERTADO):
+    if evento.get("etapa") not in (SIGNIFICATIVO, INVESTIGADO, ALERTADO):
         return False
     return evento.get("nivel_alerta") in INTERRUMPEN
 

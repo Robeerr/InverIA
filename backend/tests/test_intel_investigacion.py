@@ -25,12 +25,14 @@ import intel_investigacion as inv
 
 
 def _evento(nivel=ev.IMPORTANT, etapa=ev.SIGNIFICATIVO, url="https://sec.gov/x.htm",
-            resumen=None, relevancia=80, **extra):
+            resumen=None, relevancia=80, cartera=True, cuando="2026-09-09T10:00:00Z",
+            **extra):
     e = ev.crear(fuente="sec", externo_id="8-K:1", titulo="8-K · Hecho relevante — NVDA",
                  url=url, symbol="NVDA", tipo=ev.CORPORATIVO, tier=1,
                  crudo={"suceso": "8-K", "formulario": "8-K",
                         "fecha_registro": "2026-09-09"})
-    e.update(etapa=etapa, nivel_alerta=nivel, resumen=resumen, relevancia=relevancia)
+    e.update(etapa=etapa, nivel_alerta=nivel, resumen=resumen, relevancia=relevancia,
+             afecta_cartera=cartera, recibido_en=cuando)
     e.update(extra)
     return e
 
@@ -74,43 +76,146 @@ def test_un_evento_DESCARTADO_no_se_investiga():
 def test_el_motivo_se_DEVUELVE_para_poder_contarlo():
     """El diagnóstico tiene que poder decir «de 42 eventos, 41 no se investigaron porque
     no interrumpían». Sin eso, una puerta rota se ve igual que un día tranquilo."""
-    _, motivos = inv.a_investigar([_evento(nivel=ev.WATCH) for _ in range(41)]
-                                 + [_evento()])
-    assert motivos[inv.NO_INTERRUMPE] == 41
+    r = inv.a_investigar([_evento(nivel=ev.WATCH) for _ in range(41)] + [_evento()])
+    assert r["motivos"][inv.NO_INTERRUMPE] == 41
 
 
-# ── 2 · El tope diario ───────────────────────────────────────────────────────
+# ── 2 · El presupuesto es PRIORIZADO, no por orden de llegada ────────────────
 
 def test_hay_un_TOPE_DURO_al_dia():
     """Una estimación no es un límite. El tope existe para el día raro en que la
     estimación se equivoque, no como objetivo."""
-    elegidos, motivos = inv.a_investigar([_evento() for _ in range(50)], tope=20)
-    assert len(elegidos) == 20 and motivos["sin_presupuesto"] == 30
+    r = inv.a_investigar([_evento() for _ in range(50)], tope=20)
+    assert len(r["elegidos"]) == 20 and len(r["pendientes"]) == 30
 
 
 def test_lo_ya_gastado_HOY_cuenta():
-    elegidos, _ = inv.a_investigar([_evento() for _ in range(10)],
-                                   gastadas_hoy=18, tope=20)
-    assert len(elegidos) == 2
+    r = inv.a_investigar([_evento() for _ in range(10)], gastadas_hoy=18, tope=20)
+    assert len(r["elegidos"]) == 2 and len(r["pendientes"]) == 8
 
 
 def test_agotado_el_presupuesto_no_se_investiga_NADA():
-    elegidos, motivos = inv.a_investigar([_evento()], gastadas_hoy=20, tope=20)
-    assert elegidos == [] and motivos["sin_presupuesto"] == 1
+    r = inv.a_investigar([_evento()], gastadas_hoy=20, tope=20)
+    assert r["elegidos"] == [] and len(r["pendientes"]) == 1
 
 
-def test_el_recorte_deja_fuera_lo_MENOS_relevante():
-    """Cortar por orden de llegada dejaría fuera al más grave por haber llegado el
-    último. Se corta por lo que menos te toca."""
-    eventos = [_evento(relevancia=r) for r in (60, 95, 70, 85)]
-    elegidos, _ = inv.a_investigar(eventos, tope=2)
-    assert [e["relevancia"] for e in elegidos] == [95, 85]
+def test_CRITICAL_antes_que_IMPORTANT_antes_que_WATCH():
+    """El primer criterio, y el que no admite compensación: ningún grado de relevancia
+    convierte un WATCH en más urgente que un CRITICAL."""
+    eventos = [_evento(nivel=ev.WATCH, relevancia=99),
+               _evento(nivel=ev.IMPORTANT, relevancia=50),
+               _evento(nivel=ev.CRITICAL, relevancia=41)]
+    ordenados = sorted(eventos, key=inv.prioridad)
+    assert [e["nivel_alerta"] for e in ordenados] == [ev.CRITICAL, ev.IMPORTANT, ev.WATCH]
+
+
+def test_a_IGUAL_NIVEL_manda_el_score():
+    eventos = [_evento(relevancia=r) for r in (70, 95, 80)]
+    assert [e["relevancia"] for e in sorted(eventos, key=inv.prioridad)] == [95, 80, 70]
+
+
+def test_a_igual_score_CARTERA_antes_que_seguimiento():
+    """Perderse algo de una posición abierta cuesta más que perdérselo de una que solo
+    miras."""
+    ordenados = sorted([_evento(cartera=False), _evento(cartera=True)],
+                       key=inv.prioridad)
+    assert [e["afecta_cartera"] for e in ordenados] == [True, False]
+
+
+def test_el_ULTIMO_desempate_es_lo_mas_reciente():
+    """Un documento de hace diez minutos puede cambiar una decisión de hoy; uno de hace
+    tres días ya la ha cambiado o no."""
+    viejo = _evento(cuando="2026-09-01T10:00:00Z")
+    nuevo = _evento(cuando="2026-09-09T10:00:00Z")
+    ordenados = sorted([viejo, nuevo], key=inv.prioridad)
+    assert ordenados[0]["recibido_en"] == "2026-09-09T10:00:00Z"
+
+
+def test_LOS_CUATRO_CRITERIOS_en_orden():
+    """La cadena entera, de una vez: el nivel manda sobre el score, el score sobre la
+    cartera y la cartera sobre la fecha."""
+    esperado = [
+        ("critico", ev.CRITICAL, 41, False, "2026-09-01T00:00:00Z"),
+        ("importante_alto", ev.IMPORTANT, 90, False, "2026-09-01T00:00:00Z"),
+        ("importante_bajo_cartera", ev.IMPORTANT, 70, True, "2026-09-01T00:00:00Z"),
+        ("importante_bajo_watch", ev.IMPORTANT, 70, False, "2026-09-09T00:00:00Z"),
+        ("importante_bajo_viejo", ev.IMPORTANT, 70, False, "2026-09-01T00:00:00Z"),
+    ]
+    eventos = [_evento(nivel=n, relevancia=r, cartera=c, cuando=f, externo=nombre)
+               for nombre, n, r, c, f in esperado]
+    for e, (nombre, *_) in zip(eventos, esperado):
+        e["_nombre"] = nombre
+    revueltos = [eventos[3], eventos[0], eventos[4], eventos[2], eventos[1]]
+    assert [e["_nombre"] for e in sorted(revueltos, key=inv.prioridad)] == \
+        [nombre for nombre, *_ in esperado]
+
+
+# ── 3 · Lo que no cabe queda PENDIENTE, no descartado ────────────────────────
+
+def test_lo_que_no_cabe_queda_PENDIENTE_y_no_descartado():
+    """`descartado` es terminal: marcarlos así haría que un evento importante que no cupo
+    en el presupuesto de un martes no se mirara jamás."""
+    r = inv.a_investigar([_evento() for _ in range(30)], tope=5)
+    assert len(r["pendientes"]) == 25
+    for e in r["pendientes"]:
+        assert e["etapa"] == ev.SIGNIFICATIVO      # siguen donde estaban
+        assert inv.estado_de_investigacion(e) == inv.PENDIENTE
+
+
+def test_NINGUN_evento_se_pierde():
+    """La comprobación global: todo lo que entra sale por alguna de las tres puertas."""
+    eventos = ([_evento() for _ in range(30)]
+               + [_evento(nivel=ev.WATCH) for _ in range(10)]
+               + [_evento(url="") for _ in range(5)])
+    r = inv.a_investigar(eventos, tope=7)
+    contados = len(r["elegidos"]) + len(r["pendientes"]) + \
+        sum(n for m, n in r["motivos"].items() if m != "sin_presupuesto")
+    assert contados == len(eventos)
+
+
+def test_un_pendiente_se_recoge_en_la_VUELTA_SIGUIENTE():
+    """Es el punto de dejarlos pendientes: mañana hay presupuesto otra vez."""
+    eventos = [_evento(relevancia=r) for r in (95, 80)]
+    hoy = inv.a_investigar(eventos, tope=1)
+    assert [e["relevancia"] for e in hoy["elegidos"]] == [95]
+    manana = inv.a_investigar(hoy["pendientes"], tope=1)
+    assert [e["relevancia"] for e in manana["elegidos"]] == [80]
+
+
+def test_lo_ya_investigado_NO_vuelve_a_entrar_al_presupuesto():
+    """Idempotencia: la vuelta siguiente no puede volver a pagar por lo mismo."""
+    e = _evento()
+    investigado = inv.aplicar(e, {"resumen": "Algo concreto.", "sin_informacion": False})
+    r = inv.a_investigar([investigado], tope=20)
+    assert r["elegidos"] == [] and r["motivos"][inv.ETAPA] == 1
 
 
 def test_el_tope_por_defecto_es_pequeño():
     """~1 investigación al día es lo estimado con datos reales. Un tope de mil no sería
     un freno."""
     assert 0 < inv.TOPE_DIARIO <= 50
+
+
+# ── 3b · Los cinco estados que hay que poder distinguir ──────────────────────
+
+def test_los_CINCO_ESTADOS_son_distinguibles():
+    """La etapa sola no basta: `investigado` cubre «no decía nada» y «esto es lo que
+    dice», y `significativo` cubre «pendiente» y «no investigable». Sin separarlos, un
+    radar en silencio no se puede leer."""
+    descartado = _evento(etapa=ev.DESCARTADO)
+    pendiente = _evento()
+    no_investigable = _evento(url="")
+    sin_info = inv.aplicar(_evento(), {"sin_informacion": True, "resumen": None})
+    con_info = inv.aplicar(_evento(), {"sin_informacion": False, "resumen": "Dice X."})
+
+    assert inv.estado_de_investigacion(descartado) == inv.DESCARTADO_POR_FILTRO
+    assert inv.estado_de_investigacion(pendiente) == inv.PENDIENTE
+    assert inv.estado_de_investigacion(no_investigable) == inv.NO_INVESTIGABLE
+    assert inv.estado_de_investigacion(sin_info) == inv.SIN_INFORMACION
+    assert inv.estado_de_investigacion(con_info) == inv.CON_INFORMACION
+    # Y son cinco valores distintos, no cuatro con un alias.
+    assert len({inv.DESCARTADO_POR_FILTRO, inv.PENDIENTE, inv.NO_INVESTIGABLE,
+                inv.SIN_INFORMACION, inv.CON_INFORMACION}) == 5
 
 
 # ── 3 · El documento ─────────────────────────────────────────────────────────
@@ -236,12 +341,47 @@ def test_aplicar_NO_muta_el_original():
     assert e["resumen"] is None
 
 
-def test_la_investigacion_NO_toca_la_relevancia_ni_la_etapa():
-    """Leer un documento no cambia cuánto te toca: eso lo decide tu cartera. Y mover la
-    etapa desde aquí saltaría la lista blanca de transiciones."""
-    e = _evento(relevancia=80)
-    despues = inv.aplicar(e, {"resumen": "algo", "sin_informacion": False})
-    assert despues["relevancia"] == 80 and despues["etapa"] == e["etapa"]
+def test_la_investigacion_NO_toca_la_RELEVANCIA():
+    """Leer un documento no cambia cuánto te toca: eso lo decide tu cartera, y ya lo
+    decidió el scoring. Si la lectura pudiera subir la nota, la IA estaría opinando sobre
+    tu exposición a partir de un texto que no sabe cuánto tienes."""
+    despues = inv.aplicar(_evento(relevancia=80),
+                          {"resumen": "algo", "sin_informacion": False})
+    assert despues["relevancia"] == 80
+
+
+def test_la_etapa_avanza_por_la_LISTA_BLANCA_y_no_a_mano():
+    """`aplicar` no escribe la etapa: llama a `ev.avanzar`, que solo deja pasar las
+    transiciones declaradas. Así la investigación no puede abrir un camino nuevo por su
+    cuenta."""
+    e = _evento()
+    assert inv.aplicar(e, {"resumen": "x", "sin_informacion": False})["etapa"] == ev.INVESTIGADO
+    # Desde una etapa que no lo permite, no se mueve.
+    descartado = _evento(etapa=ev.DESCARTADO)
+    assert inv.aplicar(descartado, {"resumen": "x"})["etapa"] == ev.DESCARTADO
+
+
+def test_SIGNIFICATIVO_a_INVESTIGADO_es_el_flujo_completo():
+    """El paso que pediste separado: significativo es «merece que gaste recursos»,
+    investigado es «la IA ya leyó la fuente». Antes de investigar, el evento está
+    pendiente; después, leído."""
+    e = _evento()
+    assert e["etapa"] == ev.SIGNIFICATIVO
+    assert inv.estado_de_investigacion(e) == inv.PENDIENTE
+
+    leido = inv.aplicar(e, {"sin_informacion": False, "resumen": "Compra de X por 2.000 M$."})
+    assert leido["etapa"] == ev.INVESTIGADO
+    assert inv.estado_de_investigacion(leido) == inv.CON_INFORMACION
+    assert leido["historial"][-1]["etapa"] == ev.INVESTIGADO   # queda en el historial
+
+
+def test_SIN_INFORMACION_tambien_avanza_a_investigado():
+    """Que el resultado sea «no dice nada» no lo hace menos resultado: la IA leyó el
+    documento. Dejarlo en `significativo` haría que se volviera a pagar por él en cada
+    vuelta."""
+    leido = inv.aplicar(_evento(), {"sin_informacion": True, "resumen": None})
+    assert leido["etapa"] == ev.INVESTIGADO and leido["resumen"] is None
+    assert inv.estado_de_investigacion(leido) == inv.SIN_INFORMACION
 
 
 def test_la_salida_NO_recomienda_operar():
