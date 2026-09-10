@@ -755,12 +755,25 @@ def test_se_usa_EXCLUSIVAMENTE_run_model(monkeypatch):
     for prohibido in ("genai", "google.generativeai", "openai", "anthropic",
                       "groq", "GEMINI_API_KEY"):
         assert prohibido not in src, f"cliente o dependencia nueva: {prohibido}"
-    # Y los únicos módulos que se importan son los que ya estaban.
+    # Y los únicos módulos que se importan son los que ya estaban. `html`, `os`, `re` y
+    # `time` son biblioteca ESTÁNDAR: no son dependencias, vienen con Python. Los otros
+    # tres ya estaban en el proyecto. Cualquier otro nombre hace fallar este test, que es
+    # el punto — ya cazó `html` al añadirlo, y así se decidió a propósito en vez de que
+    # se colara.
     arbol = ast.parse(src)
     externos = {n.names[0].name.split(".")[0] for n in ast.walk(arbol)
                 if isinstance(n, ast.Import)}
-    assert externos <= {"os", "re", "time", "httpx", "ai_analysis", "intel_eventos",
-                        "intel_sec"}, externos
+    estandar = {"html", "os", "re", "time"}
+    # `httpx` no es de la estándar, pero ya estaba en el proyecto: lo usa el connector
+    # de SEC desde el principio. No es una dependencia nueva.
+    del_proyecto = {"ai_analysis", "intel_eventos", "intel_sec", "httpx"}
+    assert externos <= estandar | del_proyecto, externos
+    # Y que sigan siendo de verdad de la estándar, no un paquete con el mismo nombre.
+    import importlib.util
+    import sysconfig
+    for nombre in externos & estandar:
+        origen = importlib.util.find_spec(nombre).origin or ""
+        assert "site-packages" not in origen, f"{nombre} no es la biblioteca estándar"
 
 
 # ── 12 · Inspeccionar el documento sin pagar por leerlo ──────────────────────
@@ -851,3 +864,39 @@ def test_la_lista_de_la_pantalla_usa_VISIBLES_y_no_una_lista_a_mano():
     src = open(ruta, encoding="utf-8").read()
     assert src.count("intel_eventos.VISIBLES") >= 2
     assert "[intel_eventos.SIGNIFICATIVO, intel_eventos.ALERTADO]" not in src
+
+
+# ── 13 · Las entidades numéricas, que era lo que ensuciaba el documento ──────
+
+def test_las_entidades_NUMERICAS_se_decodifican():
+    """El fallo visto en el documento real de SEDG: la tabla de entidades estaba escrita a
+    mano con diez casos, y los filings de la SEC usan las numéricas. Al modelo le llegaba
+    un texto plagado de `&#160;` entre palabra y palabra, ocupando tokens y compitiendo
+    con el contenido por el espacio del recorte."""
+    t = inv.texto_del_documento(
+        "<p>&#160;</p><p>SolarEdge&#8217;s Investor Day&#160;</p><p>&#167;&#168;</p>")
+    assert "&#160;" not in t and "&#8217;" not in t and "&#167;" not in t
+    assert "SolarEdge’s Investor Day" in t
+
+
+def test_el_espacio_duro_tampoco_sobrevive():
+    """`&#160;` se decodifica a `\\xa0`, que el colapsado de espacios respetaría: más
+    limpio que la entidad, pero igual de inútil."""
+    t = inv.texto_del_documento("<p>una&#160;&#160;&#160;frase</p>")
+    assert "\xa0" not in t and t == "una frase"
+
+
+def test_se_decodifican_TAMBIEN_las_de_siempre():
+    t = inv.texto_del_documento("<p>A &amp; B &mdash; &quot;C&quot; &nbsp;D</p>")
+    assert t == 'A & B — "C" D'
+
+
+def test_el_ORDEN_impide_que_una_entidad_se_convierta_en_etiqueta():
+    """Primero se quitan las etiquetas y DESPUÉS se decodifica. Al revés, un `&lt;script&gt;`
+    escrito en el texto del filing se convertiría en una etiqueta de verdad."""
+    t = inv.texto_del_documento("<p>El texto dice &lt;script&gt;alert(1)&lt;/script&gt; aquí</p>")
+    assert "<script>alert(1)</script>" in t      # como TEXTO, que es lo que era
+
+
+def test_decodificar_no_rompe_un_documento_sin_entidades():
+    assert inv.texto_del_documento("<p>Item 8.01. Nada raro.</p>") == "Item 8.01. Nada raro."

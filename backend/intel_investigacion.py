@@ -44,6 +44,7 @@ Igual que `intel_pipeline`: aquí no hay red ni Mongo. Recibe un evento y un tex
 devuelve qué preguntar y cómo interpretar la respuesta. Eso permite probar la puerta, el
 prompt y la validación sin gastar un céntimo ni una llamada.
 """
+import html
 import os
 import re
 import time
@@ -215,25 +216,35 @@ def estado_de_investigacion(evento: dict) -> str:
 # ── El texto del documento ───────────────────────────────────────────────────
 
 _ETIQUETAS = re.compile(r"<(script|style)[^>]*>.*?</\1>|<[^>]+>", re.S | re.I)
-_ESPACIOS = re.compile(r"[ \t\r\f\v]+")
+#: `\xa0` es el espacio duro al que se decodifica `&#160;`. Sin meterlo aquí, el
+#: colapsado de espacios lo respeta y el documento sigue lleno de huecos sueltos entre
+#: palabras — más limpio que `&#160;`, pero igual de inútil para el modelo.
+_ESPACIOS = re.compile(r"[ \t\r\f\v\xa0\u2007\u202f]+")
 _SALTOS = re.compile(r"\n{3,}")
 
-_ENTIDADES = {"&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">",
-              "&quot;": '"', "&#39;": "'", "&rsquo;": "'", "&ldquo;": '"',
-              "&rdquo;": '"', "&mdash;": "—", "&ndash;": "–"}
 
+def texto_del_documento(bruto: str, maximo: int = None) -> str:
+    """Del HTML de la SEC al texto plano.
 
-def texto_del_documento(html: str, maximo: int = None) -> str:
-    """Del HTML de la SEC al texto plano. Sin dependencias: los filings son HTML simple.
+    LAS ENTIDADES SE DECODIFICAN TODAS, Y ESO NO ES COSMÉTICO
 
-    Se recorta por el principio y no por el final: un 8-K pone lo importante en el
-    Item 8.01 de la primera página, y los anexos van detrás. Si hay que cortar, se corta
-    lo de atrás.
+    La primera versión traía una tabla escrita a mano con diez entidades. Los filings de
+    la SEC usan las NUMÉRICAS —`&#160;`, `&#8217;`, `&#167;`— y esas no estaban, así que
+    al modelo le llegaba un texto plagado de `&#160;` entre palabra y palabra.
+
+    Se vio en el documento real de SEDG: cientos de `&#160;` ocupando tokens, ensuciando
+    las frases y compitiendo con el contenido por el espacio del recorte. `html.unescape`
+    es de la biblioteca estándar y las cubre todas, incluidas las que aún no existen en
+    ningún filing que hayamos visto.
+
+    EL ORDEN IMPORTA: primero se quitan las etiquetas y DESPUÉS se decodifica. Al revés,
+    un `&lt;script&gt;` escrito en el texto se convertiría en una etiqueta de verdad.
+
+    Se recorta por el final: un 8-K pone lo suyo delante y los anexos detrás.
     """
     maximo = MAX_CARACTERES if maximo is None else maximo
-    texto = _ETIQUETAS.sub(" ", html or "")
-    for entidad, caracter in _ENTIDADES.items():
-        texto = texto.replace(entidad, caracter)
+    texto = _ETIQUETAS.sub(" ", bruto or "")
+    texto = html.unescape(texto)
     texto = _ESPACIOS.sub(" ", texto)
     texto = _SALTOS.sub("\n\n", texto)
     texto = "\n".join(l.strip() for l in texto.splitlines())
