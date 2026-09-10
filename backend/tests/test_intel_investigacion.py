@@ -761,3 +761,84 @@ def test_se_usa_EXCLUSIVAMENTE_run_model(monkeypatch):
                 if isinstance(n, ast.Import)}
     assert externos <= {"os", "re", "time", "httpx", "ai_analysis", "intel_eventos",
                         "intel_sec"}, externos
+
+
+# ── 12 · Inspeccionar el documento sin pagar por leerlo ──────────────────────
+
+def test_inspeccionar_NO_llama_al_modelo(monkeypatch):
+    """Es el punto entero: poder mirar qué texto recibe el modelo sin volver a pagarlo."""
+    import asyncio
+    _con_cliente(monkeypatch, _Cliente(_Respuesta(200, b"<p>FORM 8-K Item 8.01</p>")))
+    llamadas = _sin_modelo(monkeypatch, BUENA)
+    r = asyncio.run(inv.inspeccionar(_evento()))
+    assert r["ok"] is True and r["llamada_al_modelo"] is False
+    assert llamadas == []
+
+
+def test_inspeccionar_devuelve_el_TEXTO_y_no_solo_el_recuento(monkeypatch):
+    """«3.989 caracteres» sin decir cuáles no permite juzgar nada. Un «no permitía
+    concluir nada» es indistinguible de haberle mandado la portada de un 8-K cuyo
+    contenido está en el anexo."""
+    import asyncio
+    _con_cliente(monkeypatch, _Cliente(
+        _Respuesta(200, b"<p>FORM 8-K. Item 8.01. Se adjunta como Anexo 99.1.</p>")))
+    r = asyncio.run(inv.inspeccionar(_evento()))
+    assert "Anexo 99.1" in r["texto"] and r["caracteres"] > 0
+    assert r["verificacion"]["ok"] is True
+
+
+def test_inspeccionar_enseña_lo_MISMO_que_se_enviaria():
+    """Si enseñara más o menos que lo enviado, la inspección describiría un documento que
+    el modelo nunca vio."""
+    import asyncio
+    import types
+    assert inv.MAX_CARACTERES > 0
+    # El corte es el mismo en las dos funciones: la constante, no un número suelto.
+    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "..", "intel_investigacion.py"), encoding="utf-8").read()
+    assert src.count("[:MAX_CARACTERES]") >= 2
+
+
+def test_inspeccionar_un_documento_CAIDO_dice_por_que(monkeypatch):
+    import asyncio
+    _con_cliente(monkeypatch, _Cliente(_Respuesta(404, b"")))
+    r = asyncio.run(inv.inspeccionar(_evento()))
+    assert r["ok"] is False and r["http"] == 404 and r["texto"] is None
+
+
+def test_la_investigacion_GUARDA_una_muestra_del_texto(monkeypatch):
+    """Se guarda con la investigación porque después ya no se puede reconstruir: el
+    evento pasa a `investigado` y no se vuelve a descargar."""
+    import asyncio
+    _con_cliente(monkeypatch, _Cliente(
+        _Respuesta(200, b"<p>FORM 8-K. Lo que de verdad dice el documento.</p>")))
+    _sin_modelo(monkeypatch, BUENA)
+    a = asyncio.run(inv.investigar(_evento()))["auditoria"]
+    assert "Lo que de verdad dice" in a["muestra_del_texto"]
+
+
+def test_la_muestra_esta_ACOTADA(monkeypatch):
+    """Es evidencia, no una copia del documento: guardar el filing entero en cada evento
+    engordaría la colección sin que nadie lo lea."""
+    import asyncio
+    _con_cliente(monkeypatch, _Cliente(
+        _Respuesta(200, ("<p>FORM 8-K " + "y" * 50000 + "</p>").encode())))
+    _sin_modelo(monkeypatch, BUENA)
+    a = asyncio.run(inv.investigar(_evento()))["auditoria"]
+    assert len(a["muestra_del_texto"]) == inv.MUESTRA_TEXTO
+
+
+def test_el_endpoint_de_inspeccion_NO_escribe_ni_llama_al_modelo():
+    """Mirar un documento no puede cambiar nada ni costar cuota."""
+    import ast
+    ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "server.py")
+    arbol = ast.parse(open(ruta, encoding="utf-8").read())
+    for nodo in ast.walk(arbol):
+        if (isinstance(nodo, (ast.AsyncFunctionDef, ast.FunctionDef))
+                and nodo.name == "intelligence_documento"):
+            cuerpo = "\n".join(ast.unparse(n) for n in nodo.body[1:])
+            for prohibido in ("update_one", "insert_one", "delete_", "_run_model",
+                              "investigar", "aplicar("):
+                assert prohibido not in cuerpo, f"la inspección hace: {prohibido}"
+            return
+    raise AssertionError("el endpoint de inspección ha desaparecido")

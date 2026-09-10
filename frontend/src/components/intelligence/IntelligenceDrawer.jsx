@@ -1,5 +1,6 @@
-import React, { useEffect, useRef } from "react";
-import { X, ArrowSquareOut } from "@phosphor-icons/react";
+import React, { useEffect, useRef, useState } from "react";
+import { X, ArrowSquareOut, FileText } from "@phosphor-icons/react";
+import { api } from "../../lib/api";
 import { nivelDe, tieneAnalisis, ETAPAS } from "../../lib/intelligence";
 import { fmtHace, fmtDateTime } from "../../lib/format";
 
@@ -21,6 +22,81 @@ import { fmtHace, fmtDateTime } from "../../lib/format";
  * es una afirmación, y este sistema se construyó justamente para no tener que fiarse de
  * afirmaciones.
  */
+/**
+ * El documento tal como lo lee la IA, sin llamar a la IA.
+ *
+ * POR QUÉ ESTÁ AQUÍ Y NO EN EL PLAN
+ *
+ * Cuando una lectura dice «no permitía concluir nada» hay dos explicaciones que se ven
+ * idénticas: el documento no decía nada, o le mandamos el documento equivocado. Muchos
+ * 8-K son una carátula que remite a un anexo 99.1 y el contenido está allí.
+ *
+ * Solo se puede distinguir leyendo lo que leyó. Y hace más falta en los eventos YA
+ * investigados —que no se pueden relanzar, porque la idempotencia lo impide— que en los
+ * pendientes, así que vive donde se mira un evento concreto.
+ */
+function Documento({ evento }) {
+  const [d, setD] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState(null);
+
+  const mirar = async () => {
+    setCargando(true);
+    setError(null);
+    try {
+      setD(await api.intelligence.documento(evento.id));
+    } catch (e) {
+      setError(e?.response?.data?.detail || e.message || "No se pudo leer");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const v = d?.verificacion;
+  return (
+    <div className="mt-6">
+      <div className="iv-seccion"><span className="iv-etiqueta">El documento</span></div>
+      <button onClick={mirar} disabled={cargando}
+              className="inline-flex items-center gap-1.5 text-sm text-tinta-2
+                         hover:text-tinta disabled:opacity-50"
+              data-testid="ver-documento">
+        <FileText size={14} />
+        {cargando ? "Descargando…" : "Ver lo que lee la IA"}
+      </button>
+      <p className="mt-1 text-xs text-tinta-3">
+        Una petición a la SEC. No llama a ningún modelo ni cambia nada.
+      </p>
+
+      {error && <p className="mt-2 text-xs text-baja" role="alert">{String(error)}</p>}
+
+      {d && (
+        <div className="mt-3">
+          <p className="text-xs text-tinta-3">
+            HTTP <span className="iv-cifra">{d.http ?? "—"}</span> ·{" "}
+            <span className="iv-cifra">{d.bytes}</span> bytes ·{" "}
+            <span className="iv-cifra">{d.caracteres}</span> caracteres de texto ·{" "}
+            se enviarían <span className="iv-cifra">{d.caracteres_que_se_enviarian}</span>
+          </p>
+          {v && (
+            <p className={`mt-1 text-xs ${v.ok ? "text-tinta-3" : "text-alerta"}`}>
+              {v.ok ? "El texto menciona el filing." :
+                "AVISO: no menciona ni el formulario ni el número de registro."}
+            </p>
+          )}
+          {d.error && <p className="mt-1 text-xs text-baja">{d.error}</p>}
+          {d.texto && (
+            <pre className="mt-2 text-xs text-tinta-2 whitespace-pre-wrap break-words
+                            max-h-96 overflow-y-auto border-l border-linea pl-3">
+              {d.texto}
+            </pre>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 export default function IntelligenceDrawer({ evento, onCerrar }) {
   const cerrar = useRef(null);
 
@@ -149,6 +225,10 @@ export default function IntelligenceDrawer({ evento, onCerrar }) {
             </li>
           </ul>
         </div>
+
+        {/* Solo para lo que tiene documento: un evento de resultados no tiene filing
+            que inspeccionar. */}
+        {evento.url && <Documento evento={evento} />}
 
         <div className="mt-6">
           <div className="iv-seccion"><span className="iv-etiqueta">Trazabilidad</span></div>

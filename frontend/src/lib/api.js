@@ -87,6 +87,11 @@ export const api = {
       client.get(`/intelligence/investigacion`).then((r) => r.data),
     // La ÚNICA que gasta cuota de IA. Descarga el documento de la SEC, llama al modelo y
     // guarda la lectura. Tarda: son varias peticiones encadenadas por evento.
+    // El texto de un filing tal como lo lee la IA, SIN llamar a la IA. Una petición a la
+    // SEC y nada más: cero cuota, cero escrituras.
+    documento: (id) =>
+      client.get(`/intelligence/documento/${encodeURIComponent(id)}`,
+                 { timeout: 45000 }).then((r) => r.data),
     investigar: (ids) =>
       client.post(`/intelligence/investigar`, { ids }, { timeout: 180000 })
         .then((r) => r.data),

@@ -249,6 +249,14 @@ TIMEOUT_DESCARGA = int(os.environ.get("INTEL_INVESTIGACION_TIMEOUT", 20))
 #: del anexo enorme, que costaría memoria para acabar recortado a `MAX_CARACTERES`.
 MAX_BYTES = int(os.environ.get("INTEL_INVESTIGACION_MAX_BYTES", 2_000_000))
 
+#: Cuánto del texto enviado se guarda como evidencia. No es el documento entero: es lo
+#: justo para poder mirar QUÉ leyó el modelo y juzgar su lectura.
+#:
+#: Sin esto, la auditoría dice «3.989 caracteres» y no cuáles — y un «no permitía concluir
+#: nada» es indistinguible de un modelo perezoso o de haberle mandado la portada de un 8-K
+#: cuyo contenido está en el anexo.
+MUESTRA_TEXTO = int(os.environ.get("INTEL_INVESTIGACION_MUESTRA", 2000))
+
 
 async def descargar_documento(url: str) -> dict:
     """Baja el documento y devuelve TODO lo que hace falta para auditarlo.
@@ -520,6 +528,9 @@ async def investigar(evento: dict) -> dict:
 
     enviado = texto[:MAX_CARACTERES]
     auditoria["caracteres_enviados"] = len(enviado)
+    # La evidencia. Se guarda con la investigación porque después ya no se puede
+    # reconstruir: el evento pasa a `investigado` y no se vuelve a descargar.
+    auditoria["muestra_del_texto"] = enviado[:MUESTRA_TEXTO]
     peticion = construir_peticion(evento, enviado)
 
     import ai_analysis
@@ -614,3 +625,43 @@ def panorama(eventos: list, gastadas_hoy: int = 0, tope: int = None) -> dict:
         },
         "niveles_que_pasan_la_puerta": list(ev.INTERRUMPEN),
     }
+
+
+# ── Inspeccionar un documento SIN llamar al modelo ───────────────────────────
+
+async def inspeccionar(evento: dict) -> dict:
+    """Descarga y extrae, y ahí se para. CERO llamadas al modelo, cero cuota.
+
+    PARA QUÉ
+
+    Para poder mirar qué texto recibe —o recibió— el modelo sin volver a pagarlo. Cuando
+    una lectura dice «no permitía concluir nada», hay dos explicaciones muy distintas: el
+    documento no decía nada, o le mandamos el documento equivocado. Muchos 8-K son una
+    carátula que remite a un anexo, y el contenido real está allí.
+
+    Sin poder leer lo que leyó, esas dos cosas son indistinguibles — y una es un
+    resultado correcto y la otra un fallo nuestro.
+
+    Sirve también para eventos YA investigados, que es donde más falta hace: esos no se
+    pueden relanzar, porque la idempotencia lo impide a propósito.
+    """
+    descarga = await descargar_documento((evento or {}).get("url"))
+    salida = {
+        "symbol": (evento or {}).get("symbol"),
+        "url": (evento or {}).get("url"),
+        "http": descarga.get("http"), "bytes": descarga.get("bytes", 0),
+        "ms": descarga.get("ms", 0), "error": descarga.get("error"),
+        "llamada_al_modelo": False,
+    }
+    if not descarga.get("ok"):
+        return {**salida, "ok": False, "texto": None, "caracteres": 0,
+                "verificacion": None}
+    texto = texto_del_documento(descarga.get("html"), maximo=MAX_BYTES)
+    return {**salida, "ok": True,
+            "caracteres": len(texto),
+            "caracteres_que_se_enviarian": min(len(texto), MAX_CARACTERES),
+            "verificacion": parece_el_filing(texto, evento),
+            # El texto ENTERO hasta el tope de envío: es lo que el modelo vería, ni más
+            # ni menos. Recortarlo aquí a una muestra dejaría fuera justo la parte por la
+            # que uno mira, que suele ser el final.
+            "texto": texto[:MAX_CARACTERES]}

@@ -126,6 +126,21 @@ function Resultado({ caso }) {
       )}
       {a.error && <p className="mt-2 text-xs text-baja">{a.error}</p>}
 
+      {/* El texto que recibió el modelo. Es lo que permite juzgar su lectura: un «no
+          permitía concluir nada» sobre una carátula que remite a un anexo es una
+          respuesta correcta, y sobre un documento con contenido es un fallo. */}
+      {a.muestra_del_texto && (
+        <details className="mt-2">
+          <summary className="text-xs text-marca cursor-pointer hover:underline">
+            Ver el texto que recibió el modelo
+          </summary>
+          <pre className="mt-2 text-xs text-tinta-2 whitespace-pre-wrap break-words
+                          max-h-72 overflow-y-auto border-l border-linea pl-3">
+            {a.muestra_del_texto}
+          </pre>
+        </details>
+      )}
+
       {/* La lectura. Solo si la hay: un hueco vacío es más honesto que un relleno. */}
       {i && (
         <div className="mt-3 border-l border-linea-fuerte pl-3">

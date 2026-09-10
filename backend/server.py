@@ -4678,6 +4678,29 @@ async def intelligence_investigar(peticion: InvestigarPeticion,
     return await intel_worker.investigar_eventos(db, ids=peticion.ids)
 
 
+@api_router.get("/intelligence/documento/{evento_id:path}")
+async def intelligence_documento(evento_id: str,
+                                 _user: str = Depends(auth.get_current_user)):
+    """El texto de un filing tal como lo lee la IA. SIN llamar a la IA.
+
+    Una petición a la SEC y nada más: cero cuota de modelo, cero escrituras, cero cambios
+    de etapa.
+
+    POR QUÉ HACE FALTA
+
+    Cuando una lectura dice «no permitía concluir nada» hay dos explicaciones que se ven
+    idénticas: el documento no decía nada, o le mandamos el documento equivocado. Muchos
+    8-K son una carátula que remite a un anexo 99.1, y el contenido está allí.
+
+    Y sirve sobre todo para los eventos YA investigados, que es donde más falta hace: esos
+    no se pueden relanzar porque la idempotencia lo impide a propósito.
+    """
+    evento = await db.intel_eventos.find_one({"id": evento_id}, {"_id": 0})
+    if not evento:
+        raise HTTPException(404, "No existe ese evento")
+    return await intel_investigacion.inspeccionar(evento)
+
+
 @api_router.get("/intelligence/sec/tickers")
 async def intelligence_diagnostico_tickers(_user: str = Depends(auth.get_current_user)):
     """Diagnóstico de la tabla ticker↔CIK. Una petición, cero escrituras.
