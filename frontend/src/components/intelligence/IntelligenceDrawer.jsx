@@ -147,15 +147,54 @@ export default function IntelligenceDrawer({ evento, onCerrar }) {
 
         <p className="mt-4 text-[15px] leading-relaxed text-tinta">{evento.titulo}</p>
 
-        {/* La frase que impide creerse más de lo que hay. */}
-        {!tieneAnalisis(evento) && (
+        {/* La lectura de la IA, entera. Vive aquí porque el resultado de la ejecución
+            desaparece al recargar, y esto es lo que queda: el sitio donde se mira un
+            evento concreto. */}
+        {evento.investigacion && (
+          <div className="mt-4 border-l border-marca pl-3">
+            {evento.investigacion.hay_informacion ? (
+              <>
+                <p className="text-sm text-tinta leading-relaxed">
+                  {evento.investigacion.resumen}
+                </p>
+                {[["Hechos", evento.investigacion.hechos],
+                  ["Implicaciones", evento.investigacion.implicaciones],
+                  ["Incertidumbres", evento.investigacion.incertidumbres]].map(
+                  ([t, lista]) => lista?.length > 0 && (
+                    <div key={t} className="mt-2">
+                      <p className="iv-etiqueta">{t}</p>
+                      <ul className="text-xs text-tinta-2 list-disc pl-4 space-y-0.5">
+                        {lista.map((x, i) => <li key={i}>{x}</li>)}
+                      </ul>
+                    </div>
+                  ))}
+                <p className="mt-2 text-xs text-tinta-3">
+                  {evento.investigacion.fuente && <>{evento.investigacion.fuente} · </>}
+                  confianza{" "}
+                  <span className="iv-cifra">{evento.investigacion.confianza}/100</span>
+                  {" · "}{evento.investigacion.modelo}
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-tinta-3">
+                La IA leyó el documento y no permitía concluir nada. Se queda sin resumen
+                a propósito: un resumen inventado sería peor que ninguno. El documento
+                sigue ahí abajo para mirarlo.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* La frase que impide creerse más de lo que hay. Solo si NADIE lo ha leído: si
+            la IA ya lo miró y dijo que no decía nada, esa es la explicación buena. */}
+        {!tieneAnalisis(evento) && !evento.investigacion && (
           <p className="mt-3 text-xs text-tinta-3 border-l border-linea-fuerte pl-3">
             Esto es el titular tal cual lo publicó la fuente. InverIA no lo ha interpretado:
             todavía no hay análisis automático de eventos, así que la lectura la haces tú
             sobre el documento original.
           </p>
         )}
-        {tieneAnalisis(evento) && (
+        {tieneAnalisis(evento) && !evento.investigacion && (
           <p className="mt-3 text-sm text-tinta-2 leading-relaxed">{evento.resumen}</p>
         )}
 

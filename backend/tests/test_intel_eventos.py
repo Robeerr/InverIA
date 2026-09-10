@@ -264,3 +264,20 @@ def test_el_detalle_deja_DISTINGUIR_dos_registros_del_mismo_dia():
     assert e["detalle"]["fecha_registro"] == "2026-09-08"
     # El CIK sigue sin salir: no es lista negra, es blanca.
     assert "cik" not in e["detalle"]
+
+
+def test_un_evento_INVESTIGADO_no_desaparece_de_la_pantalla():
+    """Pasó de verdad: al hacer alcanzable `investigado`, los tres eventos que se
+    investigaron se esfumaron de la lista. Seguían en Mongo, pero el filtro de la pantalla
+    pedía `significativo` o `alertado`.
+
+    Investigar algo no puede ser la forma de ocultarlo — y menos cuando el investigado es
+    el que más vale, porque además del titular trae la lectura del documento."""
+    assert ev.INVESTIGADO in ev.VISIBLES
+    assert ev.SIGNIFICATIVO in ev.VISIBLES and ev.ALERTADO in ev.VISIBLES
+
+
+def test_lo_DESCARTADO_sigue_sin_salir_solo():
+    """Se guarda para auditar el filtro, no para llenar la lista de lo que no te toca."""
+    assert ev.DESCARTADO not in ev.VISIBLES
+    assert ev.FILTRADO not in ev.VISIBLES

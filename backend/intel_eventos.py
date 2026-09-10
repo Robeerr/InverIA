@@ -218,6 +218,16 @@ def nivel_de(relevancia: Optional[float]) -> Optional[str]:
     return INFO
 
 
+#: Las etapas que la pantalla ENSEÑA. Un evento investigado no desaparece: al contrario,
+#: es el que más vale, porque además del titular trae la lectura del documento.
+#:
+#: Se declara aquí y no se repite en cada consulta porque ya pasó una vez: al hacer
+#: alcanzable `investigado`, los tres eventos que se investigaron se esfumaron de la lista
+#: —seguían en Mongo, pero el filtro pedía `significativo` o `alertado`—. Investigar algo
+#: no puede ser la forma de ocultarlo.
+VISIBLES = (SIGNIFICATIVO, INVESTIGADO, ALERTADO)
+
+
 def interrumpe(evento: dict) -> bool:
     """¿Este evento merece robar la atención del usuario?
 

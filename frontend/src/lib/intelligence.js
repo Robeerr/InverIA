@@ -342,3 +342,19 @@ export function recortar(filas, tope = 12) {
   const visibles = lista.filter((f) => dejar.has(f));
   return { visibles, ocultas: lista.length - visibles.length };
 }
+
+
+/**
+ * ¿Ha leído alguien este documento, y con qué resultado?
+ *
+ * Tres respuestas, no dos: nadie lo ha leído, se leyó y no decía nada, o se leyó y esto
+ * es lo que dice. La segunda y la tercera se ven igual en una lista si no se marcan —y
+ * significan cosas opuestas sobre si merece la pena abrirlo.
+ */
+export const LEIDO = { NO: "no", SIN_INFO: "sin_info", CON_INFO: "con_info" };
+
+export function estadoDeLectura(evento) {
+  const i = evento?.investigacion;
+  if (!i) return LEIDO.NO;
+  return i.hay_informacion ? LEIDO.CON_INFO : LEIDO.SIN_INFO;
+}

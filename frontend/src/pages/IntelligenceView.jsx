@@ -9,7 +9,7 @@ import SondeoSec from "../components/intelligence/SondeoSec";
 import DiagnosticoTickers from "../components/intelligence/DiagnosticoTickers";
 import PlanInvestigacion from "../components/intelligence/PlanInvestigacion";
 import { resumen as resumenDe, ordenados, plegarRepetidos, recortar, tituloCorto,
-         nivelDe, MOTIVOS, ETAPAS } from "../lib/intelligence";
+         nivelDe, estadoDeLectura, LEIDO, MOTIVOS, ETAPAS } from "../lib/intelligence";
 import { fmtHace } from "../lib/format";
 
 /**
@@ -59,6 +59,16 @@ function Fila({ evento, onElegir, dentroDeGrupo = false }) {
         {evento.symbol || "—"}
       </span>
       <span className="flex-1 min-w-0 text-sm text-tinta-2 group-hover:text-tinta truncate">
+        {/* Un punto delante de lo que la IA ya ha leído. Champán si sacó algo, apagado
+            si el documento no decía nada: en una lista las dos cosas se ven igual, y
+            significan lo contrario sobre si merece la pena abrirlo. */}
+        {estadoDeLectura(evento) !== LEIDO.NO && (
+          <span className={estadoDeLectura(evento) === LEIDO.CON_INFO
+                            ? "text-marca" : "text-tinta-3"}
+                title={estadoDeLectura(evento) === LEIDO.CON_INFO
+                        ? "La IA lo ha leído y ha sacado algo"
+                        : "La IA lo ha leído y no decía nada"}>● </span>
+        )}
         {tituloCorto(evento)}
       </span>
       {/* La procedencia se esconde en pantalla estrecha: es contexto, no lo que se

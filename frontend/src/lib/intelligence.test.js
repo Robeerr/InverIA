@@ -11,6 +11,7 @@
 import {
   ESTADOS, escuchando, estadoDe, resumen, nivelDe, ordenados, porValor, tieneAnalisis,
   anguloPorHora, plegarRepetidos, NIVELES, agruparCoincidentes, recortar, tituloCorto,
+  estadoDeLectura, LEIDO,
 } from "./intelligence";
 
 const online = { fuente: "sec", estado: "ONLINE" };
@@ -372,5 +373,21 @@ describe("el título no repite el símbolo", () => {
   test("aguanta un evento sin título o sin símbolo", () => {
     expect(tituloCorto({})).toBe("");
     expect(tituloCorto({ titulo: "algo" })).toBe("algo");
+  });
+});
+
+
+describe("marcar lo que la IA ya ha leído", () => {
+  test("tres estados, no dos", () => {
+    // «Se leyó y no decía nada» y «se leyó y esto dice» se ven igual en una lista si no
+    // se marcan, y significan lo contrario sobre si merece la pena abrirlo.
+    expect(estadoDeLectura({})).toBe(LEIDO.NO);
+    expect(estadoDeLectura({ investigacion: { hay_informacion: false } })).toBe(LEIDO.SIN_INFO);
+    expect(estadoDeLectura({ investigacion: { hay_informacion: true } })).toBe(LEIDO.CON_INFO);
+  });
+
+  test("un evento sin investigar no se marca como leído", () => {
+    expect(estadoDeLectura({ resumen: null, investigacion: null })).toBe(LEIDO.NO);
+    expect(estadoDeLectura(null)).toBe(LEIDO.NO);
   });
 });

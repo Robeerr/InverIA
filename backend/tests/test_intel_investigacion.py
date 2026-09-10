@@ -842,3 +842,12 @@ def test_el_endpoint_de_inspeccion_NO_escribe_ni_llama_al_modelo():
                 assert prohibido not in cuerpo, f"la inspección hace: {prohibido}"
             return
     raise AssertionError("el endpoint de inspección ha desaparecido")
+
+
+def test_la_lista_de_la_pantalla_usa_VISIBLES_y_no_una_lista_a_mano():
+    """Repetir las etapas en cada consulta es lo que hizo que los investigados
+    desaparecieran: se añadió la etapa nueva al modelo y no a los dos filtros."""
+    ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "server.py")
+    src = open(ruta, encoding="utf-8").read()
+    assert src.count("intel_eventos.VISIBLES") >= 2
+    assert "[intel_eventos.SIGNIFICATIVO, intel_eventos.ALERTADO]" not in src

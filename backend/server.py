@@ -4480,7 +4480,7 @@ async def intelligence_estado(_user: str = Depends(auth.get_current_user)):
         "eventos": {
             "total": await db.intel_eventos.count_documents({}),
             "significativos": await db.intel_eventos.count_documents(
-                {"etapa": {"$in": [intel_eventos.SIGNIFICATIVO, intel_eventos.ALERTADO]}}),
+                {"etapa": {"$in": list(intel_eventos.VISIBLES)}}),
         },
         # Para que la pantalla pueda decir «vigilando N valores» sin adivinarlo.
         "universo": len(await _simbolos_que_te_importan()),
@@ -4504,7 +4504,7 @@ async def intelligence_eventos(etapa: str = None, symbol: str = None,
             raise HTTPException(400, f"Etapa desconocida: {etapa}")
         filtro["etapa"] = etapa
     else:
-        filtro["etapa"] = {"$in": [intel_eventos.SIGNIFICATIVO, intel_eventos.ALERTADO]}
+        filtro["etapa"] = {"$in": list(intel_eventos.VISIBLES)}
     if symbol:
         filtro["symbol"] = symbol.upper().strip()
 
