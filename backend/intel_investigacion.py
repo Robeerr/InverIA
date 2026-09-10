@@ -366,3 +366,72 @@ def aplicar(evento: dict, investigacion: dict, cuando: str = None) -> dict:
         nuevo["resumen"] = investigacion.get("resumen")
     # La lista blanca decide: si el evento no estaba en `significativo`, no se mueve.
     return ev.avanzar(nuevo, ev.INVESTIGADO, cuando=cuando)
+
+
+# ── El panorama: qué se investigaría, sin investigar nada ────────────────────
+
+#: Los cinco estados, en el orden en que se leen: de lo que no llegó a lo que llegó del
+#: todo. Se declara la tupla para que la pantalla no tenga que decidir el orden.
+ESTADOS = (DESCARTADO_POR_FILTRO, NO_INVESTIGABLE, PENDIENTE,
+           SIN_INFORMACION, CON_INFORMACION)
+
+_NIVELES_ORDEN = (ev.CRITICAL, ev.IMPORTANT, ev.WATCH, ev.INFO)
+
+
+def _por_nivel(eventos) -> dict:
+    """Recuento por nivel, con todos los niveles presentes aunque valgan cero.
+
+    Que un nivel con cero salga igualmente es lo que permite leer «no hay ningún
+    CRÍTICO» en vez de tener que deducirlo de una ausencia.
+    """
+    conteo = {n: 0 for n in _NIVELES_ORDEN}
+    conteo["sin_evaluar"] = 0
+    for e in eventos or []:
+        nivel = (e or {}).get("nivel_alerta")
+        conteo[nivel if nivel in conteo else "sin_evaluar"] += 1
+    return conteo
+
+
+def panorama(eventos: list, gastadas_hoy: int = 0, tope: int = None) -> dict:
+    """Qué pasaría si se investigara ahora mismo. NO investiga: solo cuenta y ordena.
+
+    PARA QUÉ EXISTE
+
+    La investigación cuesta dinero y llamadas, así que antes de encenderla hay que poder
+    ver sobre los datos REALES cuántos eventos entrarían, cuáles y en qué orden. Un
+    presupuesto que solo se puede comprobar gastándolo no es un presupuesto.
+
+    Es una función pura sobre la lista que se le pase: no toca la red, no escribe nada y
+    no mueve ninguna etapa.
+    """
+    eventos = [e for e in (eventos or []) if isinstance(e, dict)]
+    por_estado = {estado: 0 for estado in ESTADOS}
+    for e in eventos:
+        estado = estado_de_investigacion(e)
+        por_estado[estado] = por_estado.get(estado, 0) + 1
+
+    reparto = a_investigar(eventos, gastadas_hoy=gastadas_hoy, tope=tope)
+    # Todo lo que sigue en `significativo`, pase o no la puerta. Es lo que permite ver
+    # que hay treinta WATCH esperando y que NO se investigan por diseño, en vez de que
+    # desaparezcan del recuento sin explicación.
+    sin_investigar = [e for e in eventos if e.get("etapa") == ev.SIGNIFICATIVO]
+    return {
+        "total_eventos": len(eventos),
+        "por_estado": por_estado,
+        "sin_investigar_por_nivel": _por_nivel(sin_investigar),
+        # Solo los que pasan la puerta. WATCH e INFO salen a cero POR DISEÑO: la puerta
+        # es `INTERRUMPEN`, y verlo a cero aquí junto al recuento de arriba es lo que
+        # enseña dónde se corta.
+        "pendientes_por_nivel": _por_nivel(reparto["elegidos"] + reparto["pendientes"]),
+        "entrarian_en_el_presupuesto": len(reparto["elegidos"]),
+        "quedarian_pendientes": len(reparto["pendientes"]),
+        "elegidos": reparto["elegidos"],
+        "pendientes": reparto["pendientes"],
+        "motivos": reparto["motivos"],
+        "presupuesto": {
+            "tope_diario": TOPE_DIARIO if tope is None else tope,
+            "gastadas_hoy": gastadas_hoy,
+            "restante": reparto["presupuesto_restante"],
+        },
+        "niveles_que_pasan_la_puerta": list(ev.INTERRUMPEN),
+    }

@@ -4607,6 +4607,41 @@ async def intelligence_sondeo_sec(_user: str = Depends(auth.get_current_user)):
     return r
 
 
+@api_router.get("/intelligence/investigacion")
+async def intelligence_plan_investigacion(_user: str = Depends(auth.get_current_user)):
+    """Qué se investigaría si se encendiera la fase de IA. SOLO LECTURA.
+
+    NO descarga ningún documento, NO llama a ningún modelo, NO consume cuota y NO cambia
+    la etapa de nada. Lee los eventos que ya hay en Mongo y aplica sobre ellos las
+    funciones puras de `intel_investigacion`.
+
+    POR QUÉ ANTES DE ENCENDERLA
+
+    La investigación cuesta dinero. Un presupuesto que solo se puede comprobar gastándolo
+    no es un presupuesto — así que primero se enseña, con los datos REALES de producción,
+    cuántos eventos entrarían, cuáles y en qué orden.
+
+    EL CONTADOR DIARIO TODAVÍA NO EXISTE
+
+    Así que se calcula con `gastadas_hoy = 0`. Eso es lo correcto hoy —no se ha
+    investigado nada nunca— pero se dice en la respuesta para que el número no se lea
+    como algo que ya está funcionando.
+    """
+    import intel_investigacion as inv
+    eventos = await db.intel_eventos.find({}, {"_id": 0}).to_list(5000)
+    p = inv.panorama(eventos, gastadas_hoy=0)
+    return {
+        **{k: v for k, v in p.items() if k not in ("elegidos", "pendientes")},
+        # Los eventos, en el ORDEN de prioridad exacto con el que se investigarían. Sin
+        # verlos ordenados, el reparto habría que creérselo.
+        "elegidos": [intel_eventos.para_api(e) for e in p["elegidos"]],
+        "pendientes": [intel_eventos.para_api(e) for e in p["pendientes"][:50]],
+        "pendientes_mostrados": min(50, len(p["pendientes"])),
+        "contador_diario_implementado": False,
+        "ejecuta_investigaciones": False,
+    }
+
+
 @api_router.get("/intelligence/sec/tickers")
 async def intelligence_diagnostico_tickers(_user: str = Depends(auth.get_current_user)):
     """Diagnóstico de la tabla ticker↔CIK. Una petición, cero escrituras.

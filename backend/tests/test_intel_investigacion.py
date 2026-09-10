@@ -390,3 +390,143 @@ def test_la_salida_NO_recomienda_operar():
     campos = inv.validar({"resumen": "x", "que_cambia": "y"})["investigacion"]
     for prohibido in ("recomendacion", "accion", "veredicto", "comprar", "vender"):
         assert prohibido not in campos
+
+
+# ── 7 · El panorama: ver el presupuesto sin gastarlo ─────────────────────────
+# Un presupuesto que solo se puede comprobar gastándolo no es un presupuesto.
+
+def _mundo():
+    """Un conjunto parecido al de producción: mucho trámite, poco importante."""
+    return (
+        [_evento(etapa=ev.DESCARTADO) for _ in range(20)]          # el filtro los tiró
+        + [_evento(nivel=ev.WATCH) for _ in range(15)]             # no pasan la puerta
+        + [_evento(nivel=ev.IMPORTANT, url="") for _ in range(2)]  # sin documento
+        + [_evento(nivel=ev.CRITICAL, relevancia=95) for _ in range(3)]
+        + [_evento(nivel=ev.IMPORTANT, relevancia=80) for _ in range(4)]
+        + [inv.aplicar(_evento(), {"sin_informacion": True, "resumen": None})]
+        + [inv.aplicar(_evento(), {"sin_informacion": False, "resumen": "Dice X."})]
+    )
+
+
+def test_el_panorama_cuenta_LOS_CINCO_estados():
+    p = inv.panorama(_mundo(), tope=20)
+    assert p["total_eventos"] == 46
+    e = p["por_estado"]
+    assert e[inv.DESCARTADO_POR_FILTRO] == 20
+    assert e[inv.NO_INVESTIGABLE] == 17          # 15 WATCH + 2 sin url
+    assert e[inv.PENDIENTE] == 7                 # 3 críticos + 4 importantes
+    assert e[inv.SIN_INFORMACION] == 1
+    assert e[inv.CON_INFORMACION] == 1
+    assert sum(e.values()) == p["total_eventos"]  # ninguno se queda sin clasificar
+
+
+def test_los_cinco_estados_SIEMPRE_salen_aunque_valgan_cero():
+    """Un estado que desaparece del recuento cuando vale cero obliga a deducir su
+    ausencia. Se enseña el cero."""
+    p = inv.panorama([_evento()], tope=20)
+    assert set(p["por_estado"]) == set(inv.ESTADOS)
+    assert p["por_estado"][inv.CON_INFORMACION] == 0
+
+
+def test_el_reparto_por_NIVEL_de_lo_que_sigue_sin_investigar():
+    """Todo lo que sigue en `significativo`, pase o no la puerta. Es lo que enseña que
+    hay quince WATCH esperando y que NO se investigan por diseño, en vez de que
+    desaparezcan del recuento sin explicación."""
+    p = inv.panorama(_mundo(), tope=20)
+    n = p["sin_investigar_por_nivel"]
+    assert n[ev.CRITICAL] == 3 and n[ev.IMPORTANT] == 6 and n[ev.WATCH] == 15
+    assert n[ev.INFO] == 0                       # el nivel sale aunque valga cero
+
+
+def test_WATCH_e_INFO_salen_a_CERO_entre_los_pendientes_por_diseño():
+    """La puerta es `INTERRUMPEN`. Verlo a cero aquí, junto al recuento de arriba que sí
+    los cuenta, es lo que enseña dónde se corta."""
+    p = inv.panorama(_mundo(), tope=20)
+    assert p["pendientes_por_nivel"][ev.WATCH] == 0
+    assert p["pendientes_por_nivel"][ev.INFO] == 0
+    assert p["niveles_que_pasan_la_puerta"] == list(ev.INTERRUMPEN)
+
+
+def test_el_panorama_dice_cuantos_ENTRARIAN_y_cuantos_quedarian():
+    p = inv.panorama(_mundo(), tope=5)
+    assert p["entrarian_en_el_presupuesto"] == 5
+    assert p["quedarian_pendientes"] == 2
+    assert len(p["elegidos"]) == 5 and len(p["pendientes"]) == 2
+
+
+def test_los_elegidos_salen_EN_ORDEN_de_prioridad():
+    """Sin verlos ordenados habría que creerse el reparto."""
+    p = inv.panorama(_mundo(), tope=5)
+    niveles = [e["nivel_alerta"] for e in p["elegidos"]]
+    assert niveles == [ev.CRITICAL] * 3 + [ev.IMPORTANT] * 2
+    assert niveles == [e["nivel_alerta"] for e in sorted(p["elegidos"], key=inv.prioridad)]
+
+
+def test_el_panorama_NO_investiga_ni_mueve_nada():
+    """Es una vista. Si tocara una etapa, dejaría de poder usarse para decidir si
+    encender la fase."""
+    mundo = _mundo()
+    antes = [(e["etapa"], e.get("resumen"), e.get("investigado_en")) for e in mundo]
+    inv.panorama(mundo, tope=5)
+    assert [(e["etapa"], e.get("resumen"), e.get("investigado_en")) for e in mundo] == antes
+
+
+def test_el_panorama_dice_el_PRESUPUESTO_con_el_que_calcula():
+    """El número no se puede leer sin saber contra qué tope se ha calculado."""
+    p = inv.panorama(_mundo(), gastadas_hoy=3, tope=5)
+    assert p["presupuesto"] == {"tope_diario": 5, "gastadas_hoy": 3, "restante": 2}
+    assert p["entrarian_en_el_presupuesto"] == 2
+
+
+def test_sin_eventos_el_panorama_no_inventa_nada():
+    p = inv.panorama([], tope=20)
+    assert p["total_eventos"] == 0 and p["elegidos"] == [] and p["pendientes"] == []
+    assert all(v == 0 for v in p["por_estado"].values())
+
+
+def test_el_panorama_aguanta_basura_en_la_lista():
+    p = inv.panorama([None, "texto", {}, _evento()], tope=20)
+    assert p["total_eventos"] == 2               # el dict vacío cuenta, los otros no
+
+
+# ── 8 · El endpoint es de SOLO LECTURA ───────────────────────────────────────
+
+def _cuerpo_del_endpoint() -> str:
+    """El código de `intelligence_plan_investigacion`, sin comentarios ni docstring."""
+    import ast
+    ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "server.py")
+    arbol = ast.parse(open(ruta, encoding="utf-8").read())
+    for nodo in ast.walk(arbol):
+        if (isinstance(nodo, (ast.AsyncFunctionDef, ast.FunctionDef))
+                and nodo.name == "intelligence_plan_investigacion"):
+            cuerpo = list(nodo.body)
+            if (cuerpo and isinstance(cuerpo[0], ast.Expr)
+                    and isinstance(cuerpo[0].value, ast.Constant)):
+                cuerpo = cuerpo[1:]          # fuera la docstring
+            return "\n".join(ast.unparse(n) for n in cuerpo)
+    raise AssertionError("el endpoint del panorama ha desaparecido")
+
+
+def test_el_endpoint_NO_escribe_en_mongo():
+    """Una vista que cambiara estados no serviría para decidir si encender la fase: al
+    mirarla ya habría cambiado lo que se mira."""
+    cuerpo = _cuerpo_del_endpoint()
+    for escritura in ("update_one", "update_many", "insert_one", "insert_many",
+                      "delete_one", "delete_many", "replace_one", "bulk_write"):
+        assert escritura not in cuerpo, f"el panorama escribe: {escritura}"
+
+
+def test_el_endpoint_NO_llama_a_ningun_modelo_ni_descarga_nada():
+    """Lo que el usuario pidió explícitamente: ver el plan sin consumir cuota."""
+    cuerpo = _cuerpo_del_endpoint()
+    for prohibido in ("_run_model", "ai_analysis", "httpx", "construir_peticion",
+                      "texto_del_documento", "aplicar("):
+        assert prohibido not in cuerpo, f"el panorama ejecuta: {prohibido}"
+
+
+def test_el_endpoint_DECLARA_que_no_ejecuta_nada():
+    """Va en la respuesta, no solo en un comentario: quien lea el JSON tiene que poder
+    saber que esto es una previsión y no algo que ya está corriendo."""
+    cuerpo = _cuerpo_del_endpoint()
+    assert "'ejecuta_investigaciones': False" in cuerpo
+    assert "'contador_diario_implementado': False" in cuerpo

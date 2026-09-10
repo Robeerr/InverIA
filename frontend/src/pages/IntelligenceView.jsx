@@ -7,6 +7,7 @@ import IntelligenceDrawer from "../components/intelligence/IntelligenceDrawer";
 import PruebaDeVida from "../components/intelligence/PruebaDeVida";
 import SondeoSec from "../components/intelligence/SondeoSec";
 import DiagnosticoTickers from "../components/intelligence/DiagnosticoTickers";
+import PlanInvestigacion from "../components/intelligence/PlanInvestigacion";
 import { resumen as resumenDe, ordenados, plegarRepetidos, recortar, tituloCorto,
          nivelDe, MOTIVOS, ETAPAS } from "../lib/intelligence";
 import { fmtHace } from "../lib/format";
@@ -304,6 +305,8 @@ export default function IntelligenceView() {
               <PruebaDeVida alTerminar={cargar} />
 
               <SondeoSec />
+
+              <PlanInvestigacion />
 
               <DiagnosticoTickers />
 

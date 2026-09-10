@@ -81,6 +81,10 @@ export const api = {
     // Diagnóstico de la tabla ticker↔CIK. Una petición a la SEC, cero escrituras.
     tickersSec: () =>
       client.get(`/intelligence/sec/tickers`, { timeout: 60000 }).then((r) => r.data),
+    // Qué se investigaría si se encendiera la fase de IA. SOLO LECTURA: no descarga
+    // documentos, no llama a ningún modelo y no cambia la etapa de nada.
+    planInvestigacion: () =>
+      client.get(`/intelligence/investigacion`).then((r) => r.data),
   },
   indicators: (symbol) => client.get(`/indicators/${symbol}`).then((r) => r.data),
   news: (symbol) => client.get(`/news/${symbol}`).then((r) => r.data),
