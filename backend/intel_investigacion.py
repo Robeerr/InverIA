@@ -357,12 +357,18 @@ No uses lo que recuerdes de la empresa. No completes con contexto de mercado. No
 el impacto en el precio, no recomiendes comprar ni vender y no des un veredicto \
 operativo: nada de eso está en el documento y no es lo que se te pregunta.
 
-SI EL DOCUMENTO NO PERMITE CONCLUIR NADA, DILO.
+LA PREGUNTA ES QUÉ HECHOS CONTIENE EL DOCUMENTO, NO SI SON IMPORTANTES.
 
-Muchos registros son trámites sin contenido: una nota de que se publicará un resultado, \
-un cambio administrativo, un anexo, un índice. En ese caso pon `hay_informacion` a false \
-y deja el resto vacío. Es la respuesta correcta y la esperada la mayoría de las veces. \
-Un resumen inventado para no dejarlo vacío es el peor resultado posible.
+`hay_informacion` es true si el documento afirma algo concreto y comprobable: una fecha, \
+una cifra, una persona, una decisión, un acto convocado. Aunque su efecto sobre la \
+inversión sea pequeño o nulo.
+
+`hay_informacion` es false SOLO si no hay nada que leer: una portada sin cuerpo, un \
+índice, una corrección administrativa, un duplicado, un documento vacío.
+
+«Contiene información y su impacto parece bajo» es una conclusión correcta y frecuente. \
+Dilo en `implicaciones`. Lo que no puedes hacer es inventar un hecho que no esté en el \
+texto: un resumen inventado para no dejarlo vacío es el peor resultado posible.
 
 Devuelve SOLO un objeto JSON con esta forma exacta:
 
@@ -370,7 +376,7 @@ Devuelve SOLO un objeto JSON con esta forma exacta:
   "hay_informacion": true|false,
   "resumen": "Dos o tres frases con lo que dice el documento. Vacío si no hay información.",
   "hechos": ["cada cifra o hecho concreto que aparezca EN EL DOCUMENTO, textual"],
-  "implicaciones": ["qué cambiaría para quien tiene la acción SI lo que dice es cierto"],
+  "implicaciones": ["qué cambiaría para quien tiene la acción SI lo que dice es cierto. Si no cambia nada relevante, dilo con esas palabras. Puede ir vacío: no inventes una implicación para rellenar."],
   "incertidumbres": ["qué NO dice el documento y haría falta saber"],
   "fuente": "el tipo de documento y su fecha, tal como aparecen en el texto",
   "confianza": 0-100
@@ -379,7 +385,8 @@ Devuelve SOLO un objeto JSON con esta forma exacta:
 `incertidumbres` no es opcional cuando hay información: un documento que parece no dejar \
 ninguna duda casi siempre es que no la has buscado.
 
-`confianza` es cuánto de claro está el documento, no cuánto te convence lo que dice."""
+`confianza` es cuánto de claro está el documento, no cuánto te convence lo que dice ni \
+cuánto importa. Un documento nítido sobre algo menor tiene confianza alta."""
 
 
 def construir_peticion(evento: dict, documento: str) -> dict:

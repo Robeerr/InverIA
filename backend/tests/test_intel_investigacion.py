@@ -900,3 +900,100 @@ def test_el_ORDEN_impide_que_una_entidad_se_convierta_en_etiqueta():
 
 def test_decodificar_no_rompe_un_documento_sin_entidades():
     assert inv.texto_del_documento("<p>Item 8.01. Nada raro.</p>") == "Item 8.01. Nada raro."
+
+
+# ── Información ≠ impacto ────────────────────────────────────────────────────
+#
+# Tres cosas distintas que el sistema tenía confundidas en una:
+#
+#   RELEVANCIA   antes de leer, del scoring: ¿merece gastar en abrirlo?
+#   INFORMACIÓN  al leer, del modelo: ¿el documento afirma algún hecho?
+#   IMPACTO      después: ¿eso mueve la tesis?
+#
+# Un 8-K de cartera puntúa 80 tanto si anuncia un consejero nuevo como si convoca
+# un webcast. Eso es correcto: la relevancia no ha leído nada todavía. Lo que era
+# un error es que el modelo devolviera `hay_informacion: false` para el webcast —
+# confundiendo «esto importa poco» con «aquí no pone nada».
+
+
+def test_hechos_concretos_son_informacion():
+    r = inv.validar({
+        "hay_informacion": True,
+        "resumen": "El consejo nombra a una nueva consejera y le concede 4.086 RSU.",
+        "hechos": ["El 8 de septiembre de 2026 el consejo eligió a la consejera.",
+                   "Se le concedieron 4.086 unidades de acciones restringidas."],
+        "implicaciones": ["El comité de auditoría incorpora un perfil nuevo."],
+        "incertidumbres": ["No dice si sustituye a alguien."],
+        "confianza": 90,
+    })
+    assert r["ok"] and r["investigacion"]["hay_informacion"] is True
+
+
+def test_informacion_factual_con_impacto_bajo_SIGUE_siendo_informacion():
+    """El caso SEDG: un Item 7.01 que convoca un Investor Day. Hay fecha, hora y
+    contenido previsto — hechos comprobables. Que mueva poco la tesis se dice en
+    `implicaciones`, no apagando `hay_informacion`."""
+    r = inv.validar({
+        "hay_informacion": True,
+        "resumen": "La compañía retransmite hoy su Investor Day 2026 a las 10:00 ET.",
+        "hechos": ["La presentación empieza a las 10:00 ET y termina sobre las 12:30 ET.",
+                   "Los materiales se publicarán después, con repetición durante 30 días."],
+        "implicaciones": ["No cambia nada de la tesis por sí mismo: es una convocatoria, "
+                          "el contenido se conocerá después."],
+        "incertidumbres": ["El documento no adelanta ninguna cifra de las que se presentarán."],
+        "confianza": 95,
+    })
+    assert r["ok"]
+    assert r["investigacion"]["hay_informacion"] is True
+    assert r["investigacion"]["implicaciones"]           # el impacto bajo, dicho
+
+
+def test_un_documento_realmente_vacio_NO_es_informacion():
+    r = inv.validar({"hay_informacion": False, "resumen": "", "hechos": [],
+                     "implicaciones": [], "confianza": 80})
+    assert r["ok"] and r["investigacion"]["hay_informacion"] is False
+    assert r["investigacion"]["resumen"] is None
+
+
+def test_el_modelo_NO_esta_obligado_a_inventar_implicaciones():
+    """Hay documentos cuyos hechos no implican nada para quien tiene la acción.
+    Exigir una implicación sería pedir que se la invente."""
+    r = inv.validar({
+        "hay_informacion": True,
+        "resumen": "La compañía corrige el domicilio social que figuraba en el registro.",
+        "hechos": ["El domicilio pasa a ser el de la nueva sede."],
+        "implicaciones": [],
+        "incertidumbres": ["No dice desde cuándo."],
+        "confianza": 85,
+    })
+    assert r["ok"] and r["investigacion"]["implicaciones"] == []
+
+
+def test_confianza_alta_con_impacto_bajo_no_es_contradictorio():
+    """`confianza` es cuánto de claro está el documento, NO cuánto importa. Un aviso
+    nítido sobre algo menor es confianza 95 e impacto cero a la vez."""
+    r = inv.validar({
+        "hay_informacion": True,
+        "resumen": "Convocatoria de una presentación pública.",
+        "implicaciones": ["Impacto bajo sobre la tesis."],
+        "confianza": 95,
+    })
+    assert r["ok"] and r["investigacion"]["confianza"] == 95
+
+
+def test_el_prompt_pregunta_por_los_HECHOS_antes_que_por_la_IMPORTANCIA():
+    """El prompt anterior sesgaba al modelo hacia `false`: ponía como ejemplo de
+    documento vacío «una nota de que se publicará un resultado» (justo el caso de
+    SEDG) y le decía que false era «la esperada la mayoría de las veces» — o sea,
+    le daba la respuesta antes de leer."""
+    s = inv.SISTEMA
+    assert "la esperada la mayoría de las veces" not in s
+    assert "trámites sin contenido" not in s
+    assert "NO SI SON IMPORTANTES" in s
+    assert "aunque su efecto sobre la" in s.lower()
+    # Y lo que NO puede perderse: sigue prohibido rellenar.
+    assert "inventar un hecho que no esté en el texto" in s
+
+
+def test_el_prompt_no_deja_que_confianza_signifique_impacto():
+    assert "ni cuánto importa" in inv.SISTEMA
