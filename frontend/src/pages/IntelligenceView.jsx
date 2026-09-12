@@ -193,7 +193,13 @@ export default function IntelligenceView() {
         </p>
       )}
 
-      <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
+      {/* `grid-cols-1` NO es redundante. Sin él, en móvil no hay ninguna columna
+          declarada y la única que se crea es implícita: se dimensiona a `max-content`,
+          o sea al ancho del párrafo más largo que haya dentro. Medido en un navegador a
+          390 px, la columna salía de 693 px y la pantalla se veía cortada a la mitad
+          —sin poder arrastrar, porque `.App` lleva `overflow-x-hidden`—. `grid-cols-1`
+          declara la columna como `minmax(0,1fr)`, que es lo que la obliga a encoger. */}
+      <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
         <div>
           <InvestmentRadar estado={estado} eventos={lista}
                            onElegir={setElegido} seleccionado={elegido} />
