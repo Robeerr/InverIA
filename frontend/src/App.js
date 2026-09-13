@@ -18,6 +18,7 @@ const VentasView       = React.lazy(() => import("./pages/VentasView"));
 const TelegramConnectView = React.lazy(() => import("./pages/TelegramConnectView"));
 const BrainView        = React.lazy(() => import("./pages/BrainView"));
 const IntelligenceView = React.lazy(() => import("./pages/IntelligenceView"));
+const LaboratorioView = React.lazy(() => import("./pages/LaboratorioView"));
 const DiagnosticoView  = React.lazy(() => import("./pages/DiagnosticoView"));
 // Página de estilos viva: la validación de la Fase 1. Va bajo /sistema/ porque es
 // una herramienta de desarrollo, no una sección del producto.
@@ -186,6 +187,7 @@ function AppInner() {
           <Route path="/track-record" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><TrackRecordView /></div>} />
           <Route path="/telegram" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><TelegramConnectView /></div>} />
           <Route path="/intelligence" element={<IntelligenceView />} />
+          <Route path="/laboratorio" element={<LaboratorioView />} />
           <Route path="/cerebro" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><BrainView /></div>} />
           <Route path="/diagnostico" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><DiagnosticoView /></div>} />
           {/* Sin wrapper: EstilosView trae su propio PageShell, que es justamente

@@ -49,6 +49,7 @@ import hoy
 import tesis
 import tesis_registro
 import mercado_registro
+import laboratorio
 import confluencia as confluencia_mod
 import mem
 import levels_engine
@@ -4482,6 +4483,71 @@ TECHO_EVENTOS = 200
 # Los dos son GET y SOLO LEEN. El histórico lo escribe el camino que construye el
 # dashboard; consultarlo no puede crear una versión, porque entonces mirar la pantalla
 # cambiaría lo que la pantalla enseña.
+
+@api_router.get("/laboratorio/panorama")
+async def laboratorio_panorama(_user: str = Depends(auth.get_current_user)):
+    """Qué sabe, qué cree y qué ha medido el laboratorio. Solo lectura.
+
+    Sin puntuación global a propósito: un «InverIA IQ» sumaría conocimiento leído,
+    hipótesis abiertas y experimentos hechos, que no son la misma magnitud. Es el mismo
+    error que `separacion.py` documenta para el score de oportunidades.
+    """
+    return {**await laboratorio.panorama(db),
+            "cobertura": await mercado_registro.cobertura(db)}
+
+
+@api_router.get("/laboratorio/experimentos")
+async def laboratorio_experimentos(limite: int = 50,
+                                   _user: str = Depends(auth.get_current_user)):
+    """Todos los experimentos, también los rechazados. Solo lectura.
+
+    Los fallidos se conservan porque saber que algo NO funcionó es la mitad del valor:
+    sin ellos, dentro de un año alguien probaría lo mismo creyendo que es nuevo.
+    """
+    limite = max(1, min(int(limite or 50), 200))
+    return {"experimentos": await laboratorio.experimentos(db, limite=limite)}
+
+
+@api_router.post("/laboratorio/experimento/distancia-maximo")
+async def laboratorio_experimento_distancia(_user: str = Depends(auth.get_current_user)):
+    """Ejecuta el primer experimento: ¿rinde más una acción cerca de su máximo anual?
+
+    ES MANUAL A PROPÓSITO, COMO «INVESTIGAR AHORA»
+
+    Descarga el histórico semanal de todo el universo. No llama a ningún modelo y no
+    cuesta cuota de IA, pero sí son decenas de peticiones, así que lo dispara una
+    persona y no un bucle. Cuando sepamos cuánto tarda y cuánto aporta repetirlo, se
+    decidirá si merece un horario.
+    """
+    universo = sorted(await _simbolos_que_te_importan())
+    if not universo:
+        return {"estado": laboratorio.SIN_DATOS,
+                "conclusion": "No hay ningún símbolo en watchlist ni en cartera."}
+
+    obs, fallos, fechas = [], [], []
+    for sym in universo:
+        try:
+            df = await asyncio.to_thread(market_data.get_stock_data, sym,
+                                         laboratorio.RESOLUCION)
+        except Exception as e:
+            fallos.append({"symbol": sym, "error": str(e)[:120]})
+            continue
+        if df is None or getattr(df, "empty", True):
+            fallos.append({"symbol": sym, "error": "sin histórico"})
+            continue
+        barras = [{"high": float(r.High), "close": float(r.Close),
+                   "date": str(r.Date)[:10]} for r in df.itertuples()]
+        fechas += [b["date"] for b in barras]
+        obs += laboratorio.observaciones(barras, sym)
+
+    doc = laboratorio.ficha(obs, universo=[s for s in universo
+                                           if s not in {f["symbol"] for f in fallos}],
+                            desde=min(fechas) if fechas else None,
+                            hasta=max(fechas) if fechas else None)
+    doc["fallos"] = fallos
+    guardado = await laboratorio.guardar_experimento(db, doc)
+    return {**doc, "guardado": guardado}
+
 
 @api_router.get("/laboratorio/cobertura")
 async def laboratorio_cobertura(_user: str = Depends(auth.get_current_user)):

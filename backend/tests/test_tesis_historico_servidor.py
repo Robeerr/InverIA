@@ -213,3 +213,53 @@ def test_la_foto_tiene_indice_UNICO_por_simbolo_y_dia():
     i = fuente.index("mercado_registro.COLECCION].create_index")
     trozo = fuente[i:i + 200]
     assert '("symbol", 1)' in trozo and '("dia", -1)' in trozo and "unique=True" in trozo
+
+
+# ── El laboratorio ───────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("nombre", ["laboratorio_panorama", "laboratorio_experimentos"])
+def test_consultar_el_laboratorio_es_GET_y_no_escribe(nombre):
+    fn = _funcion(nombre)
+    metodos = [d.func.attr for d in fn.decorator_list
+               if isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)]
+    assert metodos == ["get"]
+    assert set(_llamadas(fn, "laboratorio")) <= {"panorama", "experimentos"}
+
+
+def test_ejecutar_un_experimento_es_POST_y_es_el_UNICO_que_escribe():
+    """Escribe en el histórico y descarga decenas de series: lo dispara una persona, no
+    un bucle. Mismo criterio que «Investigar ahora»."""
+    fn = _funcion("laboratorio_experimento_distancia")
+    metodos = [d.func.attr for d in fn.decorator_list
+               if isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)]
+    assert metodos == ["post"]
+
+    escrituras = [n for n in ast.walk(ARBOL)
+                  if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                  and isinstance(n.func.value, ast.Name)
+                  and n.func.value.id == "laboratorio"
+                  and n.func.attr == "guardar_experimento"]
+    assert len(escrituras) == 1
+
+
+def test_NINGUN_worker_ejecuta_el_experimento_por_su_cuenta():
+    """No hay bucle que lo lance. Cuando sepamos cuánto tarda y cuánto aporta repetirlo,
+    se decidirá si merece un horario — hoy no lo sabemos."""
+    lanzamientos = []
+    for nodo in ast.walk(ARBOL):
+        if (isinstance(nodo, ast.Call) and isinstance(nodo.func, ast.Attribute)
+                and nodo.func.attr == "create_task"):
+            lanzamientos += [n.func.attr for n in ast.walk(nodo)
+                             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)]
+    assert "guardar_experimento" not in lanzamientos
+    assert "laboratorio_experimento_distancia" not in lanzamientos
+
+
+def test_el_laboratorio_NO_llama_a_ningun_modelo():
+    """Todo el cálculo es determinista. Un experimento que dependiera de un LLM no sería
+    reproducible, y un resultado que no se puede repetir no es evidencia."""
+    import inspect as _i
+    import laboratorio
+    fuente = _i.getsource(laboratorio)
+    for prohibido in ("_run_model", "ai_analysis", "genai", "openai", "gemini"):
+        assert prohibido not in fuente, prohibido

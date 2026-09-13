@@ -65,6 +65,15 @@ export const api = {
   },
   // Inteligencia. Las tres son de LECTURA: la pantalla no dispara ciclos ni pide a
   // ninguna fuente que salga a buscar nada. Lo que enseña es lo que el worker ya escribió.
+  // El laboratorio. Los dos primeros SOLO LEEN; el tercero ejecuta el experimento y
+  // por eso es POST — descarga histórico de todo el universo y lo dispara una persona.
+  laboratorio: {
+    panorama: () => client.get(`/laboratorio/panorama`).then((r) => r.data),
+    experimentos: () => client.get(`/laboratorio/experimentos`).then((r) => r.data),
+    distanciaAlMaximo: () =>
+      client.post(`/laboratorio/experimento/distancia-maximo`, {}, { timeout: 300000 })
+        .then((r) => r.data),
+  },
   intelligence: {
     estado: () => client.get(`/intelligence/estado`).then((r) => r.data),
     eventos: (params = {}) =>
