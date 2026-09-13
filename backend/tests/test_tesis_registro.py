@@ -152,12 +152,25 @@ def test_sin_tesis_no_hay_huella():
     assert tr.identidad(None) is None
 
 
-def test_las_AFIRMACIONES_no_entran_en_la_huella():
-    """Son la traza de auditoría de esta redacción concreta y sus valores cambian con
-    cada dato. Se conservan en la versión guardada, no en la identidad."""
+def test_los_VALORES_de_las_afirmaciones_no_entran_en_la_huella():
+    """Son la traza de auditoría de esta redacción concreta y cambian con cada dato.
+
+    CON UNA EXCEPCIÓN, Y ES DELIBERADA
+
+    `razones_de` saca de ahí las razones de la zona de compra, que son NOMBRES y no
+    medidas. Así que la afirmación de `.reasons` sí forma parte de la identidad — el
+    resto no. Este test comprueba las dos mitades para que la excepción no se lea como
+    un descuido.
+    """
     t = _tesis()
-    sin = {**t, "afirmaciones": []}
-    assert tr.huella(t) == tr.huella(sin)
+    otros = [{**a, "valor": 999999} if not a["campo_origen"].endswith(".reasons") else a
+             for a in t["afirmaciones"]]
+    assert tr.huella(t) == tr.huella({**t, "afirmaciones": otros})
+
+    # …y la de las razones SÍ, que es justo lo que corrige el bug de Fibonacci.
+    sin_razones = [a for a in t["afirmaciones"]
+                   if not a["campo_origen"].endswith(".reasons")]
+    assert tr.huella(t) != tr.huella({**t, "afirmaciones": sin_razones})
 
 
 def test_los_HUECOS_del_titular_no_entran_en_la_huella():
@@ -402,3 +415,192 @@ def test_un_simbolo_vacio_no_registra_nada(symbol):
     r = asyncio.run(tr.guardar_si_cambia(db, symbol, _tesis()))
     assert r["accion"] == "nada"
     assert db[tr.COLECCION].docs == []
+
+
+# ── Las razones de la zona, con las etiquetas DE VERDAD ──────────────────────
+#
+# Estos tests usan `levels_engine._SOURCE_LABELS`, no los nombres cortos del fixture.
+# Es toda la diferencia: el fixture trae `SMA200`, que sobrevive a la normalización
+# porque tiene los dígitos pegados; las etiquetas reales son `Media móvil SMA200` y
+# `Fibonacci 38.2%`, y cuatro de las diecinueve se distinguen SOLO por un número suelto.
+#
+# Escribir el test contra el fixture fue exactamente el mismo error que ya se cometió con
+# el parser de anexos: pasaba en verde sobre una forma que el sistema no produce.
+
+import levels_engine as le  # noqa: E402
+
+FIB_50 = le._SOURCE_LABELS["fib_0.5"]
+FIB_786 = le._SOURCE_LABELS["fib_0.786"]
+SMA200 = le._SOURCE_LABELS["sma200"]
+
+
+def test_las_ETIQUETAS_REALES_de_fibonacci_solo_se_distinguen_por_un_numero():
+    """El hecho que hace falta que exista para que el bug fuera posible. Si algún día
+    las etiquetas cambian y dejan de colisionar al normalizarlas, este test avisa de que
+    el caso que motivó `razones_de` ya no es el mismo."""
+    assert tr.normalizar(FIB_50) == tr.normalizar(FIB_786)
+    assert FIB_50 != FIB_786
+
+
+def test_cambiar_FIBONACCI_50_POR_78_6_cambia_la_huella():
+    """El bug. Con las razones dentro del párrafo normalizado, estas dos tesis tenían la
+    misma huella y el cambio de estructura no creaba versión."""
+    a = _tesis(**{"buy_levels[0].reasons": [SMA200, FIB_50]})
+    b = _tesis(**{"buy_levels[0].reasons": [SMA200, FIB_786]})
+    assert tr.huella(a) != tr.huella(b)
+
+
+@pytest.mark.parametrize("otra", ["fib_0.236", "fib_0.382", "fib_0.618", "fib_0.786"])
+def test_ninguna_pareja_de_FIBONACCI_comparte_huella(otra):
+    a = _tesis(**{"buy_levels[0].reasons": [FIB_50]})
+    b = _tesis(**{"buy_levels[0].reasons": [le._SOURCE_LABELS[otra]]})
+    assert tr.huella(a) != tr.huella(b)
+
+
+def test_QUITAR_una_razon_cambia_la_huella():
+    a = _tesis(**{"buy_levels[0].reasons": [SMA200, FIB_50]})
+    b = _tesis(**{"buy_levels[0].reasons": [SMA200]})
+    assert tr.huella(a) != tr.huella(b)
+
+
+def test_las_razones_entran_VERBATIM_sin_normalizar():
+    t = _tesis(**{"buy_levels[0].reasons": [FIB_786]})
+    assert tr.razones_de(t) == [FIB_786]
+    assert FIB_786 in tr.identidad(t)["razones"]         # con su 78.6 intacto
+
+
+def test_una_tesis_SIN_zona_de_compra_no_tiene_razones():
+    t = _tesis(**{"buy_levels": []})
+    assert tr.razones_de(t) == []
+    assert tr.huella(t)                                  # y sigue teniendo huella
+
+
+def test_con_las_etiquetas_REALES_la_deriva_numerica_SIGUE_sin_crear_version():
+    """La otra mitad: arreglar el bug no puede haber roto lo que el módulo existe para
+    hacer. Mismas razones, todo lo demás derivando."""
+    a = _tesis(**{"buy_levels[0].reasons": [SMA200, FIB_50]})
+    b = _tesis(**{"buy_levels[0].reasons": [SMA200, FIB_50],
+                  "quote.price": 216.80, "quote.change_percent": 1.48,
+                  "indicators.atr_pct": 2.0, "indicators.regime.adx": 32.0,
+                  "indicators.sma.200": 191.9, "buy_levels[0].distance_pct": -17.7})
+    assert a["parrafos"] != b["parrafos"]
+    assert tr.huella(a) == tr.huella(b)
+
+
+# ── Serialización inequívoca ─────────────────────────────────────────────────
+#
+# Cuatro colisiones medidas en la auditoría. Ninguna era alcanzable con los textos que
+# la tesis produce hoy, y las cuatro eran reales: el texto viene en parte de
+# `levels_engine`, y el día que una etiqueta llevara una barra nadie ataría el cabo.
+
+def test_un_SEPARADOR_dentro_de_un_valor_no_imita_la_estructura():
+    assert tr._plano(["a|b"]) != tr._plano(["a", "b"])
+
+
+def test_el_CENTINELA_de_los_ausentes_no_lo_puede_producir_un_texto():
+    assert tr._plano(None) != tr._plano("~")
+
+
+def test_un_NUMERO_y_su_texto_no_son_lo_mismo():
+    assert tr._plano(78) != tr._plano("78")
+    assert tr._plano(True) != tr._plano(1)
+    assert tr._plano(True) != tr._plano("True")
+
+
+def test_las_LLAVES_y_CORCHETES_de_un_texto_no_imitan_la_estructura():
+    """`titular_plantilla` lleva `{p0}` dentro, así que estos caracteres SÍ aparecen."""
+    assert tr._plano(["{a=b}"]) != tr._plano([{"a": "b"}])
+
+
+def test_la_misma_palabra_en_NFC_y_NFD_da_la_MISMA_huella():
+    import unicodedata
+    t = _tesis()
+    nfd = {**t, "parrafos": [unicodedata.normalize("NFD", p) for p in t["parrafos"]]}
+    assert t["parrafos"] != nfd["parrafos"]              # bytes distintos…
+    assert tr.huella(t) == tr.huella(nfd)                # …misma tesis
+
+
+def test_el_orden_de_CAMPOS_USADOS_no_cambia_la_huella():
+    """Se ordena aquí aunque `tesis._campos_usados` ya lo haga: la huella no puede
+    depender de una garantía que vive en otro módulo."""
+    t = _tesis()
+    revuelto = {**t, "campos_usados": list(reversed(t["campos_usados"]))}
+    assert tr.huella(t) == tr.huella(revuelto)
+
+
+# ── La carrera, con el entrelazado exacto de la auditoría ────────────────────
+
+def test_en_una_CARRERA_las_dos_tesis_distintas_quedan_REGISTRADAS():
+    """Reproduce el entrelazado medido: las dos corrutinas leen la vigente ANTES de que
+    escriba ninguna. Sin el reintento, la tesis de la perdedora se descartaba en
+    silencio y el histórico decía que no había pasado nada."""
+    db = _DB()
+    _guardar(db, _tesis())
+    b = _tesis(**{"indicators.regime.regime": "tendencia_bajista"})
+    c = _tesis(**{"indicators.obv_trend": "bajando"})
+
+    original = tr.vigente
+
+    async def lenta(db_, s):
+        r = await original(db_, s)
+        await asyncio.sleep(0)          # cede el control justo entre leer y escribir
+        return r
+
+    async def carrera():
+        tr.vigente = lenta
+        try:
+            return await asyncio.gather(tr.guardar_si_cambia(db, "AAPL", b),
+                                        tr.guardar_si_cambia(db, "AAPL", c))
+        finally:
+            tr.vigente = original
+
+    resultados = asyncio.run(carrera())
+    huellas = {d["huella"] for d in db[tr.COLECCION].docs}
+    assert tr.huella(b) in huellas
+    assert tr.huella(c) in huellas, "la perdedora de la carrera se ha perdido"
+    assert sorted(d["version"] for d in db[tr.COLECCION].docs) == [1, 2, 3]
+    assert all(r["accion"] == "creada" for r in resultados)
+
+
+def test_el_reintento_NO_ES_UN_BUCLE():
+    """Con Mongo caído se intenta dos veces y se rinde. Un bucle giraría para siempre."""
+    db = _DB()
+    intentos = []
+
+    def explota(*a, **k):
+        intentos.append(1)
+        raise RuntimeError("caído")
+    db[tr.COLECCION].insert_one = explota
+
+    r = _guardar(db, _tesis())
+    assert r["accion"] == "nada" and r["motivo"] == "error"
+    assert len(intentos) == 2
+
+
+def test_si_la_que_GANA_escribio_LA_MISMA_tesis_la_otra_solo_observa():
+    """Tras el conflicto se relee la vigente. Si resulta ser esta misma, no se fuerza una
+    versión duplicada: se cuenta como observación."""
+    db = _DB()
+    _guardar(db, _tesis())
+    b = _tesis(**{"indicators.regime.regime": "tendencia_bajista"})
+
+    original = tr.vigente
+
+    async def lenta(db_, s):
+        r = await original(db_, s)
+        await asyncio.sleep(0)
+        return r
+
+    async def carrera():
+        tr.vigente = lenta
+        try:
+            return await asyncio.gather(tr.guardar_si_cambia(db, "AAPL", b),
+                                        tr.guardar_si_cambia(db, "AAPL", b))
+        finally:
+            tr.vigente = original
+
+    resultados = asyncio.run(carrera())
+    assert sorted(d["version"] for d in db[tr.COLECCION].docs) == [1, 2]
+    assert sorted(r["accion"] for r in resultados) == ["creada", "observada"]
+    assert next(d for d in db[tr.COLECCION].docs
+                if d["version"] == 2)["veces_observada"] == 2

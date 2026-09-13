@@ -43,6 +43,7 @@ versión guardada, que es donde se pueden consultar.
 import hashlib
 import logging
 import re
+import unicodedata
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -84,9 +85,16 @@ _TOKEN = re.compile(r"[A-Za-z]*\d+(?:[.,]\d+)*")
 
 
 def normalizar(texto: Optional[str]) -> str:
-    """El texto con los números sueltos sustituidos por `#`. Base de la identidad."""
+    """El texto con los números sueltos sustituidos por `#`. Base de la identidad.
+
+    Antes se normaliza a NFC. «á» se puede escribir de dos formas —un carácter, o una
+    «a» seguida de una tilde combinante— que se leen idénticas y ocupan bytes distintos.
+    Hoy todo el texto sale de literales del código, que son NFC, pero las etiquetas de
+    los niveles vienen de `levels_engine` y nadie relacionaría un cambio de codificación
+    allí con que aquí se duplicara una versión.
+    """
     return _TOKEN.sub(lambda m: m.group(0) if m.group(0)[0].isalpha() else "#",
-                      texto or "")
+                      unicodedata.normalize("NFC", texto or ""))
 
 
 def _textos(bloque) -> list:
@@ -101,6 +109,47 @@ def _textos(bloque) -> list:
             continue
         salida.append([normalizar(item.get("texto")), item.get("campo_origen")])
     return salida
+
+
+#: El sufijo de la ruta que identifica las razones de una zona de compra.
+_RUTA_RAZONES = ".reasons"
+
+
+def razones_de(tesis: Optional[dict]) -> list:
+    """Las razones que sostienen la zona de compra, VERBATIM y sin normalizar.
+
+    POR QUÉ SE SACAN APARTE EN VEZ DE DEJARLAS EN EL PÁRRAFO
+
+    Porque la normalización numérica las funde. Las etiquetas reales que produce
+    `levels_engine._SOURCE_LABELS` se distinguen unas de otras SOLO por un número
+    suelto:
+
+        Fibonacci 23.6%  ─┐
+        Fibonacci 38.2%  ─┼──►  todas normalizan a  "Fibonacci #%"
+        Fibonacci 50%    ─┤
+        Fibonacci 78.6%  ─┘
+
+    Cuatro de las diecinueve etiquetas colapsaban en una. Que una zona deje de apoyarse
+    en el Fibonacci del 50% y pase al del 78,6% es un cambio estructural de lo que
+    sostiene la tesis, y la huella no se enteraba.
+
+    No se vio antes porque el test usaba las razones del fixture —`SMA200`, que
+    sobrevive a la normalización por tener los dígitos pegados— y no las que el sistema
+    produce de verdad, que son `Media móvil SMA200` y `Fibonacci 38.2%`.
+
+    Son NOMBRES, no medidas: no derivan solos, solo cambian cuando cambia la estructura.
+    Por eso pueden entrar sin normalizar sin reintroducir el problema que la
+    normalización resuelve. El resto del párrafo —la distancia, la fuerza— se sigue
+    normalizando.
+    """
+    if not isinstance(tesis, dict):
+        return []
+    for a in tesis.get("afirmaciones") or []:
+        if not isinstance(a, dict):
+            continue
+        if str(a.get("campo_origen") or "").endswith(_RUTA_RAZONES):
+            return [str(v) for v in (a.get("valor") or [])]
+    return []
 
 
 def identidad(tesis: Optional[dict]) -> Optional[dict]:
@@ -150,24 +199,61 @@ def identidad(tesis: Optional[dict]) -> Optional[dict]:
         "a_favor": _textos(tesis.get("a_favor")),
         "en_contra": _textos(tesis.get("en_contra")),
         "limita": _textos([limita] if limita else []),
-        "campos_usados": list(tesis.get("campos_usados") or []),
+        "razones": razones_de(tesis),
+        # Ordenado AQUÍ aunque `tesis._campos_usados` ya devuelva `sorted(rutas)`: la
+        # huella no puede depender de una garantía que vive en otro módulo y que nadie
+        # relacionaría con el hash al cambiarla.
+        "campos_usados": sorted(tesis.get("campos_usados") or []),
     }
 
 
+def _escapar(texto: str) -> str:
+    """Deja el texto sin ningún carácter que pueda hacerse pasar por estructura.
+
+    La versión anterior insertaba los valores en crudo, y eso hacía la serialización
+    AMBIGUA. Medido:
+
+        _plano(["a|b"])  ==  _plano(["a", "b"])  →  "[a|b]"
+
+    Dos identidades distintas, la misma huella. Y el centinela de los ausentes era un
+    carácter corriente, así que `None` y la cadena `"~"` producían lo mismo.
+
+    Hoy ningún texto de la tesis lleva `|` ni `~` y por eso no se había notado — pero el
+    texto viene en parte de `levels_engine`, y el día que una etiqueta llevara una barra
+    nadie ataría el cabo. Escapar es más barato que confiar.
+    """
+    return (texto.replace("\\", "\\\\").replace("|", "\\p")
+                 .replace("=", "\\e").replace("{", "\\a").replace("}", "\\c")
+                 .replace("[", "\\o").replace("]", "\\r").replace("~", "\\t"))
+
+
 def _plano(valor) -> str:
-    """La identidad como texto, de forma estable y sin depender de `json`.
+    """La identidad como texto, de forma estable e inequívoca.
 
     Se escribe a mano en vez de con `json.dumps` para que el resultado no dependa de
     opciones del serializador —separadores, orden de claves, escapado de acentos— que
     alguien podría cambiar sin darse cuenta de que estaba moviendo todas las huellas.
+
+    Los escalares se escapan y se etiquetan con su tipo. Lo segundo evita otra
+    ambigüedad de la misma familia: sin la etiqueta, el número `78` y la cadena `"78"`
+    —o `True` y `"True"`— serían el mismo texto.
     """
     if isinstance(valor, dict):
-        return "{" + "|".join(f"{k}={_plano(valor[k])}" for k in sorted(valor)) + "}"
+        return "{" + "|".join(f"{_plano(k)}={_plano(valor[k])}" for k in sorted(valor)) + "}"
     if isinstance(valor, (list, tuple)):
         return "[" + "|".join(_plano(v) for v in valor) + "]"
     if valor is None:
-        return "~"
-    return str(valor)
+        # `~` a secas era un carácter que un texto podía contener. Con el escapado de
+        # arriba, ningún valor real puede producir esta secuencia.
+        return "~nulo~"
+    if isinstance(valor, str):
+        return "s:" + _escapar(valor)
+    if isinstance(valor, bool):
+        # Antes que `int`: en Python un booleano ES un entero y `True` daría `i:1`.
+        return "b:" + str(valor)
+    if isinstance(valor, int):
+        return "i:" + str(valor)
+    return "x:" + _escapar(str(valor))
 
 
 def huella(tesis: Optional[dict]) -> Optional[str]:
@@ -289,25 +375,36 @@ async def guardar_si_cambia(db, symbol: str, tesis: Optional[dict],
         return {"accion": "nada", "motivo": "sin_tesis"}
 
     cuando = cuando or _ahora()
-    try:
-        actual = await vigente(db, symbol)
-        if actual and actual.get("huella") == h:
-            await db[COLECCION].update_one(
-                {"symbol": symbol, "version": actual["version"]},
-                {"$set": {"observada_por_ultima_vez": cuando},
-                 "$inc": {"veces_observada": 1}})
-            return {"accion": "observada", "version": actual["version"], "huella": h}
+    # UN solo reintento, y con tope explícito. La carrera que resuelve está medida: dos
+    # redacciones del mismo símbolo leen la vigente antes de que escriba ninguna, las dos
+    # construyen la «versión 2», el índice único deja pasar a una y la otra se encontraba
+    # con su tesis DESCARTADA en silencio. No se perdía para siempre —el siguiente
+    # dashboard frío la escribía— pero entretanto el histórico decía que no pasó nada.
+    #
+    # Un intento más basta porque tras el conflicto se relee la vigente: o resulta que la
+    # que ganó ya escribió esta misma tesis —y entonces esto es una observación— o es
+    # otra distinta y esta va detrás. Un bucle no daría más garantía y sí podría girar
+    # indefinidamente si Mongo estuviera caído.
+    for intento in (1, 2):
+        try:
+            actual = await vigente(db, symbol)
+            if actual and actual.get("huella") == h:
+                await db[COLECCION].update_one(
+                    {"symbol": symbol, "version": actual["version"]},
+                    {"$set": {"observada_por_ultima_vez": cuando},
+                     "$inc": {"veces_observada": 1}})
+                return {"accion": "observada", "version": actual["version"], "huella": h}
 
-        doc = nueva_version(actual, {**tesis, "symbol": symbol}, cuando=cuando)
-        await db[COLECCION].insert_one(doc)
-        return {"accion": "creada", "version": doc["version"], "huella": h}
-    except Exception as e:
-        # Incluye la carrera entre dos procesos que redactan el mismo símbolo a la vez:
-        # el índice único `(symbol, version)` deja pasar a uno y el otro cae aquí. No hay
-        # nada que reparar —el que ganó escribió la misma versión— y reintentar solo
-        # abriría la puerta a escribir dos.
-        logger.warning("tesis: no se pudo registrar la de %s: %s", symbol, str(e)[:120])
-        return {"accion": "nada", "motivo": "error", "error": str(e)[:200]}
+            doc = nueva_version(actual, {**tesis, "symbol": symbol}, cuando=cuando)
+            await db[COLECCION].insert_one(doc)
+            return {"accion": "creada", "version": doc["version"], "huella": h}
+        except Exception as e:
+            if intento == 1:
+                logger.info("tesis: conflicto al registrar %s, reintentando: %s",
+                            symbol, str(e)[:120])
+                continue
+            logger.warning("tesis: no se pudo registrar la de %s: %s", symbol, str(e)[:120])
+            return {"accion": "nada", "motivo": "error", "error": str(e)[:200]}
 
 
 async def historial(db, symbol: str, limite: int = 50) -> list:

@@ -2881,11 +2881,18 @@ async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
         logger.exception("dashboard[%s] redacción de la tesis falló", sym)
         result["tesis"] = None
 
-    # El histórico de la tesis. Se registra SOLO desde aquí, el camino frío, y no desde
-    # el refresco de cotización de `_con_cotizacion_fresca`: ese vuelve a redactar la
-    # misma tesis con otro precio, y registrarlo llenaría el histórico de versiones
-    # idénticas en conclusiones. La huella ya lo evitaría; tener las dos barreras
-    # significa que un error en la normalización no puede inundar la colección.
+    _cache.set(cache_key, result, ttl=DASHBOARD_TTL, servible_hasta=_DASHBOARD_STALE_MAX)
+
+    # El histórico de la tesis. Va DESPUÉS de cachear a propósito: son dos viajes a Mongo
+    # y el dashboard ya está listo, así que guardar el histórico no puede retrasar ni la
+    # respuesta ni el momento en que queda disponible para los demás. Si Mongo va lento,
+    # lo paga el histórico y no la página.
+    #
+    # Se registra SOLO desde aquí, el camino frío, y NO desde `_refrescar_cotizacion`:
+    # ese vuelve a redactar la misma tesis con otro precio, y registrarlo llenaría el
+    # histórico de versiones idénticas en conclusiones. La huella ya lo evitaría; tener
+    # las dos barreras significa que un error en la normalización no puede inundar la
+    # colección — y de eso no se vuelve: las filas de más ya estarían escritas.
     #
     # No lanza nunca: el histórico es un extra y los datos de la acción son la pantalla.
     try:
@@ -2893,7 +2900,6 @@ async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
     except Exception:
         logger.exception("dashboard[%s] registro de la tesis falló", sym)
 
-    _cache.set(cache_key, result, ttl=DASHBOARD_TTL, servible_hasta=_DASHBOARD_STALE_MAX)
     return result
 
 
@@ -4466,6 +4472,11 @@ TECHO_EVENTOS = 200
 # dashboard; consultarlo no puede crear una versión, porque entonces mirar la pantalla
 # cambiaría lo que la pantalla enseña.
 
+#: Techo del histórico de la tesis, como `TECHO_EVENTOS` para los eventos. Sin él,
+#: `?limite=999999` viajaba tal cual al `.limit()` de Mongo.
+TECHO_VERSIONES_TESIS = 200
+
+
 @api_router.get("/tesis/{symbol}/versiones")
 async def tesis_versiones(symbol: str, limite: int = 50,
                           _user: str = Depends(auth.get_current_user)):
@@ -4474,7 +4485,8 @@ async def tesis_versiones(symbol: str, limite: int = 50,
     Sin la tesis entera de cada versión: son decenas y lo que se quiere ver de un
     vistazo es cuándo cambió y qué campos entraron o salieron.
     """
-    return {"symbol": (symbol or "").upper(),
+    limite = max(1, min(int(limite or 50), TECHO_VERSIONES_TESIS))
+    return {"symbol": (symbol or "").upper(), "techo": TECHO_VERSIONES_TESIS,
             "versiones": await tesis_registro.historial(db, symbol, limite=limite)}
 
 

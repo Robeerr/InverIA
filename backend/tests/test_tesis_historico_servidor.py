@@ -61,6 +61,26 @@ def test_el_camino_FRIO_registra_la_tesis():
     assert "guardar_si_cambia" in _llamadas(_funcion("_construir_dashboard"))
 
 
+def test_el_registro_va_DESPUES_de_cachear_el_dashboard():
+    """Son dos viajes a Mongo. Delante del `_cache.set` los pagaba la respuesta: si
+    Mongo iba lento, la página tardaba más y tardaba más en quedar disponible para los
+    demás. El histórico es lo secundario, así que va detrás.
+
+    Se comprueba por posición en el cuerpo de la función, que es lo que de verdad
+    determina quién espera a quién.
+    """
+    cold = _funcion("_construir_dashboard")
+    registro = [n.lineno for n in ast.walk(cold)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                and n.func.attr == "guardar_si_cambia"]
+    cacheo = [n.lineno for n in ast.walk(cold)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+              and n.func.attr == "set" and isinstance(n.func.value, ast.Name)
+              and n.func.value.id == "_cache"]
+    assert registro and cacheo
+    assert min(registro) > max(cacheo), "guardar el histórico no puede retrasar la página"
+
+
 def test_el_refresco_de_cotizacion_NO_registra_NADA():
     """El que vuelve a redactar la misma tesis con otro precio."""
     assert _llamadas(_funcion("_refrescar_cotizacion")) == []
@@ -124,6 +144,17 @@ def test_las_funciones_de_LECTURA_del_modulo_no_escriben():
 
 
 # ── El índice que sostiene la concurrencia ───────────────────────────────────
+
+def test_el_historico_tiene_TECHO():
+    """`?limite=999999` viajaba tal cual al `.limit()` de Mongo. Mismo patrón que
+    `TECHO_EVENTOS` para la lista de eventos."""
+    with open(RUTA, encoding="utf-8") as f:
+        fuente = f.read()
+    assert "TECHO_VERSIONES_TESIS = 200" in fuente
+    cuerpo = fuente[fuente.index("async def tesis_versiones"):]
+    cuerpo = cuerpo[:cuerpo.index("@api_router")]
+    assert "min(int(limite" in cuerpo and "TECHO_VERSIONES_TESIS" in cuerpo
+
 
 def test_existe_el_indice_UNICO_que_impide_dos_versiones_iguales():
     """Sin él, dos procesos que redactan el mismo símbolo a la vez escriben dos
