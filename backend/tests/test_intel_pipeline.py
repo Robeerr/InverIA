@@ -373,11 +373,63 @@ def test_la_nota_lleva_la_VERSION_de_la_formula():
     assert _puntuado("8-K")["relevancia_v"] == pl.RELEVANCIA_V
 
 
+def _llamadas_a_puntuar(modulo):
+    """Toda llamada a `puntuar` o `procesar` de un módulo, por AST.
+
+    Por AST y no buscando `"tesis="` en el texto por dos razones medidas: el texto da
+    falso POSITIVO con la palabra «tesis» en un comentario, y falso NEGATIVO con un
+    `**opciones` que la transporte sin que se lea en ninguna parte.
+    """
+    import ast
+    import inspect
+    arbol = ast.parse(inspect.getsource(modulo))
+    for nodo in ast.walk(arbol):
+        if not isinstance(nodo, ast.Call):
+            continue
+        f = nodo.func
+        nombre = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", None)
+        if nombre in ("puntuar", "procesar"):
+            yield nodo
+
+
 def test_el_peso_de_TESIS_existe_pero_hoy_no_llega_a_nada():
-    """`tesis` no lo pasa el worker y no hay ninguna colección de tesis por símbolo. Se
-    conserva para la fase siguiente, pero no se puede contar con él para ningún umbral —
-    y este test lo deja dicho en vez de que alguien lo asuma."""
+    """`tesis` no lo pasa el worker, así que `PESO_TESIS` no suma en ningún sitio.
+
+    AHORA EXISTE UNA COLECCIÓN DE TESIS POR SÍMBOLO
+
+    `tesis_registro` guarda el histórico, y eso convierte «pasar la tesis al scoring» en
+    algo que parece completar lo que faltaba. No lo es: sumaría 15 puntos a todo lo de
+    cartera y movería eventos de ATENCIÓN a IMPORTANTE, metiéndolos en el presupuesto de
+    IA sin haber recalibrado nada.
+
+    La versión anterior de este test solo miraba `ciclo`, y se le escapaba el segundo
+    sitio que puntúa: `repuntuar_pendientes`. Ahora recorre el módulo ENTERO.
+    """
+    import intel_worker
+    llamadas = list(_llamadas_a_puntuar(intel_worker))
+    assert llamadas, "si ya no se puntúa en el worker, este guardián no vigila nada"
+    for nodo in llamadas:
+        claves = [k.arg for k in nodo.keywords]
+        assert "tesis" not in claves, (
+            f"línea {nodo.lineno}: si vas a pasar tesis, recalibra la fórmula primero "
+            "y actualiza este test")
+        # `**algo` llega como una clave a None. Puede transportar `tesis` sin que la
+        # palabra aparezca en ninguna parte del fichero.
+        assert None not in claves, (
+            f"línea {nodo.lineno}: un diccionario desparramado puede colar `tesis` sin "
+            "que se vea; pasa los argumentos por su nombre")
+
+
+def test_el_worker_NO_IMPORTA_nada_de_tesis():
+    """La barrera de antes de la barrera: si no la importa, no puede pasarla."""
+    import ast
     import inspect
     import intel_worker
-    llamada = inspect.getsource(intel_worker.ciclo)
-    assert "tesis=" not in llamada, "si ya se pasa tesis, actualiza este test y la fórmula"
+    arbol = ast.parse(inspect.getsource(intel_worker))
+    importados = set()
+    for nodo in ast.walk(arbol):
+        if isinstance(nodo, ast.Import):
+            importados.update(a.name.split(".")[0] for a in nodo.names)
+        elif isinstance(nodo, ast.ImportFrom) and nodo.module:
+            importados.add(nodo.module.split(".")[0])
+    assert not importados & {"tesis", "tesis_registro"}, importados

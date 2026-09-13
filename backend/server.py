@@ -47,6 +47,7 @@ import chart_lines
 import chartist
 import hoy
 import tesis
+import tesis_registro
 import confluencia as confluencia_mod
 import mem
 import levels_engine
@@ -344,6 +345,11 @@ async def lifespan(app: FastAPI):
     # Único: armar dos veces la misma acción daría dos avisos idénticos. El endpoint ya lo
     # comprueba, pero entre la comprobación y el insert cabe una segunda petición.
     await db.vigilancia_veto.create_index("symbol", unique=True)
+    # Único: es lo que impide que dos procesos que redactan el mismo símbolo a la vez
+    # escriban dos «versión 2». El perdedor de la carrera recibe un error y no reintenta:
+    # el que ganó ya escribió esa misma versión.
+    await db[tesis_registro.COLECCION].create_index(
+        [("symbol", 1), ("version", -1)], unique=True)
     # Se consulta por (símbolo, temporalidad, tipo, estado) al comprobar si ese patrón
     # ya está anotado, y el pre-cálculo lo hace por cada acción y cada temporalidad en
     # cada vuelta. Sin índice serían cinco barridos completos por acción.
@@ -2875,6 +2881,18 @@ async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
         logger.exception("dashboard[%s] redacción de la tesis falló", sym)
         result["tesis"] = None
 
+    # El histórico de la tesis. Se registra SOLO desde aquí, el camino frío, y no desde
+    # el refresco de cotización de `_con_cotizacion_fresca`: ese vuelve a redactar la
+    # misma tesis con otro precio, y registrarlo llenaría el histórico de versiones
+    # idénticas en conclusiones. La huella ya lo evitaría; tener las dos barreras
+    # significa que un error en la normalización no puede inundar la colección.
+    #
+    # No lanza nunca: el histórico es un extra y los datos de la acción son la pantalla.
+    try:
+        await tesis_registro.guardar_si_cambia(db, sym, result.get("tesis"))
+    except Exception:
+        logger.exception("dashboard[%s] registro de la tesis falló", sym)
+
     _cache.set(cache_key, result, ttl=DASHBOARD_TTL, servible_hasta=_DASHBOARD_STALE_MAX)
     return result
 
@@ -4440,6 +4458,34 @@ async def retirar_vigilancia_veto(symbol: str, _user: str = Depends(auth.get_cur
 
 #: Cuántos eventos sirve la lista como máximo. Lo que no cabe se pide con `desde`.
 TECHO_EVENTOS = 200
+
+
+# ── Histórico de la tesis ────────────────────────────────────────────────────
+#
+# Los dos son GET y SOLO LEEN. El histórico lo escribe el camino que construye el
+# dashboard; consultarlo no puede crear una versión, porque entonces mirar la pantalla
+# cambiaría lo que la pantalla enseña.
+
+@api_router.get("/tesis/{symbol}/versiones")
+async def tesis_versiones(symbol: str, limite: int = 50,
+                          _user: str = Depends(auth.get_current_user)):
+    """Cómo ha ido cambiando la tesis de una acción. La más reciente primero.
+
+    Sin la tesis entera de cada versión: son decenas y lo que se quiere ver de un
+    vistazo es cuándo cambió y qué campos entraron o salieron.
+    """
+    return {"symbol": (symbol or "").upper(),
+            "versiones": await tesis_registro.historial(db, symbol, limite=limite)}
+
+
+@api_router.get("/tesis/{symbol}/versiones/{numero}")
+async def tesis_version(symbol: str, numero: int,
+                        _user: str = Depends(auth.get_current_user)):
+    """Una versión concreta, entera y tal como se escribió. El histórico no se reescribe."""
+    doc = await tesis_registro.version(db, symbol, numero)
+    if not doc:
+        raise HTTPException(status_code=404, detail="No hay ninguna versión con ese número.")
+    return doc
 
 
 @api_router.get("/intelligence/estado")

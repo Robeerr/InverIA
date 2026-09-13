@@ -1512,3 +1512,49 @@ def test_el_contexto_NO_pisa_lo_que_ya_habia(monkeypatch):
     doc = db[w.COL_EVENTOS].docs[0]
     assert doc["relevancia"] == 80 and doc["nivel_alerta"] == ev.IMPORTANT
     assert doc["crudo"]["accession"] == "123"
+
+
+# ── Que el histórico de la tesis NO toque el scoring ─────────────────────────
+#
+# Existe una colección de tesis por símbolo desde `tesis_registro`, y eso convierte
+# «pasarle la tesis al scoring» en algo que parece completar lo que faltaba. No lo es:
+# `PESO_TESIS` son 15 puntos que moverían eventos de ATENCIÓN a IMPORTANTE y los meterían
+# en el presupuesto de IA sin haber recalibrado nada.
+#
+# El guardián por AST vive en `test_intel_pipeline` y mira el código. Este mira el
+# RESULTADO, que es lo que de verdad importa: con la colección llena y vacía, la misma
+# vuelta tiene que dar las mismas notas.
+
+
+def test_las_relevancias_son_IDENTICAS_con_y_sin_tesis_persistida(configurada, monkeypatch):
+    import tesis_registro as tr
+
+    def _notas(poblar):
+        db = _DB(watchlist=["AAPL"], cartera=[("NVDA", 10)])
+        if poblar:
+            for s in ("NVDA", "AAPL"):
+                db[tr.COLECCION].docs.append({
+                    "symbol": s, "version": 1, "huella": "abc123",
+                    "tesis": {"titular": f"{s} sube", "campos_usados": ["quote.price"]},
+                    "veces_observada": 3})
+        _con_feed(monkeypatch, _feed("NVDA", "AAPL"))
+        _ciclo(db)
+        return {d["id"]: (d.get("relevancia"), d.get("nivel_alerta"))
+                for d in db[w.COL_EVENTOS].docs}
+
+    vacia, poblada = _notas(False), _notas(True)
+    assert vacia and vacia == poblada
+
+
+def test_el_worker_no_lee_la_coleccion_de_tesis(configurada, monkeypatch):
+    """Ni siquiera la consulta. Un worker que la leyera acabaría usándola."""
+    import tesis_registro as tr
+    db = _DB(watchlist=["AAPL"], cartera=[("NVDA", 10)])
+    db._cols[tr.COLECCION] = _Col()
+    db._cols[tr.COLECCION].find = lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("el worker ha leído tesis_versiones"))
+    db._cols[tr.COLECCION].find_one = db._cols[tr.COLECCION].find
+
+    _con_feed(monkeypatch, _feed("NVDA", "AAPL"))
+    r = _ciclo(db)
+    assert r["nuevos"] == 2
