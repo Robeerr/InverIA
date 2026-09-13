@@ -1381,3 +1381,134 @@ def test_la_investigacion_NO_esta_enganchada_al_bucle_automatico():
         llamadas = {ast.unparse(n.func) for n in ast.walk(arbol) if isinstance(n, ast.Call)}
         assert not any("investigar" in c for c in llamadas), (
             f"{funcion.__name__} ya investiga: {llamadas}")
+
+
+# ── Contexto histórico de la investigación ───────────────────────────────────
+#
+# Tres datos que no cambian lo que hace la investigación, sino lo que se podrá decir de
+# ella dentro de tres meses. La posición es el único IRRECUPERABLE: el precio de aquel
+# día está en el histórico y el documento se puede volver a bajar sin gastar cuota,
+# pero cuánto tenías entonces deja de existir en cuanto compras o vendes.
+
+
+def _con_posicion(db, symbol="NVDA", compras=((10, 100.0),), ventas=()):
+    for i, (n, precio) in enumerate(compras):
+        db.compras.docs.append({"symbol": symbol, "acciones": n, "precio": precio,
+                                "divisa": "USD", "fecha": f"2026-01-0{i + 1}"})
+    for i, (n, precio) in enumerate(ventas):
+        db.ventas.docs.append({"symbol": symbol, "acciones": n, "precio": precio,
+                               "divisa": "USD", "fecha": f"2026-06-0{i + 1}"})
+
+
+def test_se_anota_CUANTO_TENIAS_cuando_se_investigo(monkeypatch):
+    db = _DB()
+    _significativo(db)
+    _con_posicion(db, compras=((10, 100.0), (10, 200.0)))
+    _investigacion(monkeypatch)
+    asyncio.run(w.investigar_eventos(db, ids=["sec:8-K:1"]))
+
+    guardado = db[w.COL_EVENTOS].docs[0]["posicion_t0"]
+    assert guardado["acciones"] == 20
+    assert guardado["precio_medio"] == 150.0        # el mismo PMP que la Cartera
+    assert guardado["divisa"] == "USD"
+    assert guardado["medido_en"]
+
+
+def test_el_precio_medio_es_EL_MISMO_que_calcula_la_Cartera(monkeypatch):
+    """No se recalcula aquí: se llama a `lotes.media_ponderada`. Dos aritméticas del
+    mismo número acabarían dando cifras distintas en dos pantallas."""
+    import lotes
+    compras = [{"symbol": "NVDA", "acciones": 10, "precio": 100.0, "divisa": "USD",
+                "fecha": "2026-01-01"},
+               {"symbol": "NVDA", "acciones": 30, "precio": 140.0, "divisa": "USD",
+                "fecha": "2026-02-01"}]
+    db = _DB()
+    _significativo(db)
+    db.compras.docs.extend(compras)
+    _investigacion(monkeypatch)
+    asyncio.run(w.investigar_eventos(db, ids=["sec:8-K:1"]))
+
+    esperado = lotes.media_ponderada(compras, [])
+    guardado = db[w.COL_EVENTOS].docs[0]["posicion_t0"]
+    assert guardado["precio_medio"] == esperado["precio_medio"]
+    assert guardado["acciones"] == esperado["acciones"]
+
+
+def test_sin_posicion_NO_se_inventa_una(monkeypatch):
+    """Una watchlist no es una posición. Un objeto de ceros se leería como «tenías cero
+    acciones a un precio medio de cero», que es una frase sin sentido."""
+    db = _DB()
+    _significativo(db)
+    _investigacion(monkeypatch)
+    asyncio.run(w.investigar_eventos(db, ids=["sec:8-K:1"]))
+    assert db[w.COL_EVENTOS].docs[0]["posicion_t0"] is None
+
+
+def test_una_posicion_VENDIDA_ENTERA_cuenta_como_ninguna(monkeypatch):
+    db = _DB()
+    _significativo(db)
+    _con_posicion(db, compras=((10, 100.0),), ventas=((10, 120.0),))
+    _investigacion(monkeypatch)
+    asyncio.run(w.investigar_eventos(db, ids=["sec:8-K:1"]))
+    assert db[w.COL_EVENTOS].docs[0]["posicion_t0"] is None
+
+
+def test_si_no_se_puede_leer_la_cartera_la_investigacion_SIGUE(monkeypatch):
+    """El contexto es un adorno valioso, no la lectura. Que falle no puede tirar algo
+    que ya ha costado una llamada al modelo."""
+    db = _DB()
+    _significativo(db)
+    _investigacion(monkeypatch)
+    db.compras.find = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("caído"))
+
+    r = asyncio.run(w.investigar_eventos(db, ids=["sec:8-K:1"]))
+    assert r["investigados"] == 1                            # se guardó igual
+    assert db[w.COL_EVENTOS].docs[0]["etapa"] == ev.INVESTIGADO
+    assert db[w.COL_EVENTOS].docs[0]["posicion_t0"] is None
+
+
+def test_se_persisten_los_anexos_que_citaba_el_documento(monkeypatch):
+    db = _DB()
+    _significativo(db)
+
+    async def falsa(evento):
+        return {"ok": True, "fase": "completa", "llamada_al_modelo": True,
+                "auditoria": {"http": 200, "anexos_citados": ["99.1", "99.2"]},
+                "investigacion": {"hay_informacion": True, "resumen": "Dice X.",
+                                  "hechos": [], "implicaciones": [],
+                                  "incertidumbres": [], "confianza": 80}}
+    monkeypatch.setattr(inv, "investigar", falsa)
+    asyncio.run(w.investigar_eventos(db, ids=["sec:8-K:1"]))
+    assert db[w.COL_EVENTOS].docs[0]["anexos_citados"] == ["99.1", "99.2"]
+
+
+def test_la_version_del_prompt_LLEGA_A_MONGO(monkeypatch):
+    """Viaja dentro de `investigacion`, que se guarda entera. Se comprueba de punta a
+    punta porque el valor lo pone `validar` y lo escribe el worker: entre las dos hay
+    sitio de sobra para que se pierda."""
+    db = _DB()
+    _significativo(db)
+
+    async def falsa(evento):
+        return {"ok": True, "fase": "completa", "llamada_al_modelo": True,
+                "auditoria": {"http": 200},
+                "investigacion": inv.validar(
+                    {"hay_informacion": True, "resumen": "Dice X.",
+                     "confianza": 80})["investigacion"]}
+    monkeypatch.setattr(inv, "investigar", falsa)
+    asyncio.run(w.investigar_eventos(db, ids=["sec:8-K:1"]))
+    assert db[w.COL_EVENTOS].docs[0]["investigacion"]["prompt_v"] == inv.PROMPT_V
+
+
+def test_el_contexto_NO_pisa_lo_que_ya_habia(monkeypatch):
+    """`_guardar_investigacion` escribe campo a campo justamente para esto: hay dos
+    procesos sobre la misma colección."""
+    db = _DB()
+    _significativo(db, relevancia=80, nivel_alerta=ev.IMPORTANT)
+    _con_posicion(db)
+    _investigacion(monkeypatch)
+    asyncio.run(w.investigar_eventos(db, ids=["sec:8-K:1"]))
+
+    doc = db[w.COL_EVENTOS].docs[0]
+    assert doc["relevancia"] == 80 and doc["nivel_alerta"] == ev.IMPORTANT
+    assert doc["crudo"]["accession"] == "123"

@@ -69,6 +69,19 @@ MAX_CARACTERES = int(os.environ.get("INTEL_INVESTIGACION_MAX_CHARS", 12000))
 #: Gemini primero y solo cae a la de pago si esa se agota.
 MODELO = os.environ.get("INTEL_INVESTIGACION_MODELO", "gemini-2.5-flash")
 
+#: Versión del PROMPT, no del modelo. Misma convención que `RELEVANCIA_V` y `SEC_ID_V`:
+#: dos lecturas hechas con prompts distintos no son comparables, y sin esto la única
+#: forma de saber con cuál se hizo cada una es acordarse.
+#:
+#: Ya nos ha pasado. SEDG y TTAN se investigaron con el prompt que confundía «no hay
+#: información» con «esto importa poco»; RH, AAOI y ORCL con el que las separa. El
+#: documento guardado no los distingue.
+#:
+#: v1 no se estampa hacia atrás A PROPÓSITO: las investigaciones sin este campo SON las
+#: de la v1, y darles el valor ahora exigiría una migración que afirmaría algo que no
+#: medimos —solo lo recordamos—. La ausencia es el dato.
+PROMPT_V = 2
+
 SIN_URL, YA_INVESTIGADO, NO_INTERRUMPE, ETAPA = (
     "sin_url", "ya_investigado", "no_interrumpe", "etapa_no_valida")
 
@@ -310,6 +323,66 @@ async def descargar_documento(url: str) -> dict:
                 "error": f"{type(e).__name__}: {str(e)[:200]}"}
 
 
+#: Un anexo se nombra de DOS formas distintas y hacen falta las dos.
+#:
+#:   · en el cuerpo, con su palabra: «furnished as Exhibit 99.1 hereto»;
+#:   · en el índice del Item 9.01, como una tabla donde el número abre la línea y la
+#:     palabra «Exhibit» solo está en el encabezado: «99.1  Press release dated…».
+#:
+#: Con solo la primera se perdía justo el índice, que es donde está la lista completa.
+#: Dónde se busca. Dos intentos fallidos antes de dar con esto, y los dos por la misma
+#: razón: suponer cómo se ve el documento en vez de mirarlo.
+#:
+#: `texto_del_documento` convierte las etiquetas en espacios y colapsa los espacios en
+#: uno. Un 8-K real, que en HTML es un índice en tabla, llega aquí APLANADO A UNA LÍNEA:
+#:
+#:     Item 9.01. Financial Statements and Exhibits. 99.1 Press release dated … 99.2 …
+#:
+#: Así que no hay principio de línea que anclar ni columnas que separar. Lo único
+#: fiable es la cercanía a la palabra: se buscan números de anexo en la VENTANA que
+#: sigue a «Exhibit»/«Exhibits». Un `99.1` suelto en mitad del texto no cuenta —podría
+#: ser una cifra— y eso es deliberado: se prefiere perder un anexo a inventarlo.
+_ANEXO = re.compile(r"\d{1,3}\.\d{1,2}")
+_MENCION = re.compile(r"\bexhibits?\b", re.I)
+
+#: Cuánto texto se mira después de cada «Exhibit». Da para un índice de varios anexos
+#: con sus títulos, y se queda muy corto para arrastrar cifras de otro párrafo.
+VENTANA_ANEXO = 300
+
+
+def anexos_citados(texto: str) -> list:
+    """Los anexos que el documento nombra, ordenados y sin repetir. Pura.
+
+    POR QUÉ UNA LISTA Y NO UN «SÍ/NO»
+
+    Un booleano «remite a un anexo» sería inútil, y conviene explicar por qué antes de
+    que alguien lo simplifique. Casi todos los 8-K llevan un «Item 9.01 Financial
+    Statements and Exhibits» con su índice, así que la respuesta sería `True` siempre y
+    no distinguiría el trámite del caso que nos importa —RH y ORCL, donde las cifras
+    estaban en el anexo y nosotros leímos la carátula—.
+
+    La lista sí distingue: un documento que cita `99.1` y `99.2` —una nota de prensa y
+    una carta a los accionistas— no se parece a uno que no cita ninguno.
+
+    LO QUE ESTO NO DICE
+
+    No dice que el contenido esté en el anexo, ni que nos falte nada: dice qué anexos
+    nombra el texto. Es una MEDIDA, no un veredicto — y se guarda ahora precisamente
+    para poder decidir con datos, cuando haya muestra, si merece la pena bajarlos.
+    """
+    texto = texto or ""
+    vistos = []
+    for m in _MENCION.finditer(texto):
+        for n in _ANEXO.findall(texto[m.end():m.end() + VENTANA_ANEXO]):
+            if n not in vistos:
+                vistos.append(n)
+    # Orden numérico por tramos: «99.2» después de «99.1», y «104» después de «99.2».
+    def _clave(n):
+        partes = n.split(".")
+        return tuple(int(p) for p in partes) + (0,) * (2 - len(partes))
+    return sorted(vistos, key=_clave)
+
+
 def parece_el_filing(texto: str, evento: dict) -> dict:
     """¿Lo descargado es de verdad el documento de ESTE evento?
 
@@ -470,6 +543,10 @@ def validar(bruto) -> dict:
         "fuente": str(bruto.get("fuente") or "").strip()[:MAX_ITEM] or None,
         "confianza": confianza,
         "modelo": MODELO,
+        # Con qué prompt se leyó. Va JUNTO al modelo y por la misma razón: las dos cosas
+        # cambian el resultado, y una lectura sin saber con qué reglas se hizo no se
+        # puede comparar con otra.
+        "prompt_v": PROMPT_V,
     }}
 
 
@@ -539,6 +616,9 @@ async def investigar(evento: dict) -> dict:
     texto = texto_del_documento(descarga.get("html"), maximo=MAX_BYTES)
     auditoria["caracteres_extraidos"] = len(texto)
     auditoria["verificacion"] = parece_el_filing(texto, evento)
+    # Se mide sobre el texto ENTERO, no sobre el recorte que va al modelo: el índice de
+    # anexos de un 8-K vive al final, justo en la parte que el recorte se come.
+    auditoria["anexos_citados"] = anexos_citados(texto)
     if not texto.strip():
         auditoria["error"] = "el documento no tenía texto extraíble"
         return {"ok": False, "fase": "extraccion", "llamada_al_modelo": False,

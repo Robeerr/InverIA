@@ -43,6 +43,10 @@ import intel_eventos as ev
 import intel_investigacion as inv
 import intel_pipeline as pl
 import intel_sec as sec
+# `lotes` es el módulo que ya sabe calcular el precio medio, y es PURO: recibe compras y
+# ventas y devuelve números. Se usa el mismo que la Cartera para que las dos pantallas no
+# puedan dar precios medios distintos del mismo símbolo.
+import lotes
 
 # Las fuentes que existen. Añadir una es añadirla aquí y en `lifespan`: el bucle no sabe
 # de cuál se trata, solo le pide `recolectar(contexto)` y trata a todas igual.
@@ -361,6 +365,11 @@ async def investigar_eventos(db, ids: list = None, tope: int = None) -> dict:
             llamadas += 1
         if r["ok"]:
             actualizado = inv.aplicar(evento, r["investigacion"])
+            # Contexto de t0. Va DESPUÉS de `aplicar` y no dentro: `aplicar` es pura y
+            # solo sabe de la lectura; esto sale de la base de datos y de la auditoría
+            # de la descarga, que son cosa de quien tiene la conexión.
+            actualizado["posicion_t0"] = await _posicion_en_t0(db, evento.get("symbol"))
+            actualizado["anexos_citados"] = r["auditoria"].get("anexos_citados")
             if await _guardar_investigacion(db, actualizado):
                 guardados += 1
         resultados.append({
@@ -382,6 +391,53 @@ async def investigar_eventos(db, ids: list = None, tope: int = None) -> dict:
     }
 
 
+async def _posicion_en_t0(db, symbol: str):
+    """Cuánto tenías de ese símbolo CUANDO se investigó. None si no tenías nada.
+
+    ES EL ÚNICO DE LOS TRES METADATOS QUE NO SE PUEDE RECONSTRUIR
+
+    El precio de aquel día está en el histórico y el texto del documento se puede volver
+    a bajar sin gastar cuota. Tu posición, no: compras y vendes, y la de entonces deja de
+    existir sin dejar rastro. Dentro de tres meses, «¿cuánto dinero tenía yo expuesto
+    cuando entró este 8-K?» solo se puede responder si se anotó en su momento.
+
+    NO SE VALORA, SOLO SE CUENTA
+
+    Nada de cotización ni de cambio de divisa: eso serían llamadas de red dentro del
+    camino de la investigación, y esta función no puede hacer más lento ni más frágil
+    algo que ya funciona. Acciones y precio medio salen de tus apuntes y de `lotes`.
+    """
+    symbol = (symbol or "").strip().upper()
+    if not symbol:
+        return None
+    try:
+        compras = await db.compras.find({"symbol": symbol}, {"_id": 0}).to_list(5000)
+        ventas = await db.ventas.find({"symbol": symbol}, {"_id": 0}).to_list(5000)
+    except Exception as e:
+        # Un fallo aquí NO puede tumbar la investigación: es un dato de contexto, no la
+        # lectura. Se queda sin anotar y se dice en el log.
+        logger.warning("intel: no se pudo leer la posición de %s: %s", symbol, str(e)[:120])
+        return None
+    if not compras:
+        return None
+    pmp = lotes.media_ponderada(compras, ventas)
+    if not (pmp.get("acciones") or 0) > 0:
+        # La tenías y la vendiste entera. No es lo mismo que no haberla tenido nunca,
+        # pero para «cuánto exponía este evento» la respuesta es cero, y cero se
+        # representa con la ausencia del dato, no con un objeto lleno de nulos.
+        return None
+    return {
+        # Mismos nombres que `lotes.media_ponderada` y que la Cartera. Renombrarlos aquí
+        # obligaría a traducir en cada sitio que lea las dos cosas a la vez.
+        "acciones": pmp.get("acciones"),
+        "precio_medio": pmp.get("precio_medio"),
+        "precio_medio_eur": pmp.get("precio_medio_eur"),
+        "coste_eur": pmp.get("coste_eur"),
+        "divisa": (compras[0] or {}).get("divisa"),
+        "medido_en": ev._ahora(),
+    }
+
+
 async def _guardar_investigacion(db, evento: dict) -> bool:
     """Escribe la lectura y la etapa nueva. Solo esos campos.
 
@@ -395,6 +451,10 @@ async def _guardar_investigacion(db, evento: dict) -> bool:
                       "resumen": evento.get("resumen"),
                       "investigacion": evento.get("investigacion"),
                       "investigado_en": evento.get("investigado_en"),
+                      # Contexto histórico. No cambia nada de lo que hace la
+                      # investigación: se anota para poder interpretarla después.
+                      "posicion_t0": evento.get("posicion_t0"),
+                      "anexos_citados": evento.get("anexos_citados"),
                       "historial": evento.get("historial") or []}})
         return True
     except Exception as e:

@@ -997,3 +997,96 @@ def test_el_prompt_pregunta_por_los_HECHOS_antes_que_por_la_IMPORTANCIA():
 
 def test_el_prompt_no_deja_que_confianza_signifique_impacto():
     assert "ni cuánto importa" in inv.SISTEMA
+
+
+# ── Los tres metadatos históricos ────────────────────────────────────────────
+#
+# No cambian lo que hace la investigación: cambian lo que se podrá decir de ella
+# dentro de tres meses. Dos de los tres son irrecuperables si no se anotan ahora.
+
+
+def test_cada_lectura_dice_con_que_PROMPT_se_hizo():
+    """Sin esto, dos lecturas hechas con reglas distintas se comparan como si fueran
+    lo mismo. Nos pasó con SEDG y RH y solo lo sabíamos de memoria."""
+    r = inv.validar({"hay_informacion": True, "resumen": "Dice algo.", "confianza": 90})
+    assert r["investigacion"]["prompt_v"] == inv.PROMPT_V
+    assert r["investigacion"]["modelo"] == inv.MODELO      # el modelo sigue estando
+
+
+def test_la_version_del_prompt_va_TAMBIEN_cuando_no_hay_informacion():
+    """«No decía nada» es un resultado, y también depende del prompt con que se leyó."""
+    r = inv.validar({"hay_informacion": False, "resumen": "", "confianza": 70})
+    assert r["investigacion"]["prompt_v"] == inv.PROMPT_V
+
+
+def test_la_version_del_prompt_es_un_ENTERO_que_sube():
+    # Misma convención que `relevancia_v` y `SEC_ID_V`. Una cadena o una fecha no se
+    # pueden comparar con `>=` para decir «de la v2 en adelante».
+    assert isinstance(inv.PROMPT_V, int) and inv.PROMPT_V >= 2
+
+
+def test_se_anotan_los_anexos_del_indice_DE_UN_DOCUMENTO_REAL():
+    """A TRAVÉS de `texto_del_documento`, que es como llega en producción.
+
+    La primera versión de este test escribía la tabla con dos espacios entre el número
+    y el título, y el patrón exigía dos o más. Pasaba en verde y no habría encontrado
+    un solo anexo en la SEC: la extracción colapsa los espacios del HTML a uno antes de
+    que esto se ejecute. Por eso ahora la muestra entra en HTML y se mide al final.
+    """
+    html = ("<p>Item 9.01. Financial Statements and Exhibits.</p>"
+            "<table><tr><td>99.1</td><td>Press release dated September 10, 2026</td></tr>"
+            "<tr><td>99.2</td><td>Shareholder letter</td></tr></table>")
+    texto = inv.texto_del_documento(html)
+    assert "\n" not in texto and "  " not in texto   # aplanado a UNA línea, sin dobles
+    assert inv.anexos_citados(texto) == ["99.1", "99.2"]
+
+
+def test_se_anotan_los_anexos_que_el_CUERPO_nombra():
+    texto = ("The press release is furnished as Exhibit 99.1 hereto and the shareholder "
+             "letter as Exhibit 99.2.")
+    assert inv.anexos_citados(texto) == ["99.1", "99.2"]
+
+
+def test_los_anexos_NO_se_repiten_y_van_en_orden():
+    texto = "as Exhibit 99.2 hereto ... furnished as Exhibit 99.1 ... see Exhibit 99.2 again"
+    assert inv.anexos_citados(texto) == ["99.1", "99.2"]
+
+
+def test_un_documento_sin_anexos_devuelve_lista_VACIA():
+    # Vacío, no None: «se miró y no había» y «no se miró» tienen que poder distinguirse
+    # cuando esto se cuente sobre la muestra.
+    assert inv.anexos_citados("Item 7.01. Regulation FD Disclosure. Nada más.") == []
+    assert inv.anexos_citados("") == []
+    assert inv.anexos_citados(None) == []
+
+
+def test_la_forma_plural_tambien_cuenta():
+    assert inv.anexos_citados("Financial Statements and Exhibits 99.1") == ["99.1"]
+
+
+def test_NO_se_confunde_un_Item_con_un_anexo():
+    """«Item 9.01» es la sección, no el anexo. Contarlo metería un 9.01 fantasma en
+    casi todos los 8-K y haría inútil la medida. Va ANTES de la palabra, y solo se
+    mira lo que va después."""
+    assert inv.anexos_citados("Item 9.01. Financial Statements and Exhibits.") == []
+
+
+def test_una_cifra_lejos_de_la_palabra_NO_es_un_anexo():
+    """Se prefiere perder un anexo a inventarlo: un número suelto en otro párrafo no
+    cuenta por mucho que tenga forma de anexo."""
+    lejos = "Exhibit 99.1 Press release. " + ("relleno " * 60) + "El margen fue 10.2 puntos."
+    assert inv.anexos_citados(lejos) == ["99.1"]
+
+
+def test_los_anexos_se_miden_sobre_el_texto_ENTERO_no_sobre_el_recorte():
+    """El índice de anexos vive al FINAL del 8-K, justo en lo que se come el recorte de
+    12.000 caracteres. Medirlo sobre lo enviado al modelo daría cero casi siempre.
+
+    Se comprueba leyendo el código porque la alternativa —montar una descarga entera—
+    probaría la red, no esta decisión.
+    """
+    import inspect
+    cuerpo = inspect.getsource(inv.investigar)
+    linea = next(l for l in cuerpo.splitlines() if "anexos_citados(" in l)
+    assert "anexos_citados(texto)" in linea          # `texto`, no `enviado`
+    assert cuerpo.index("anexos_citados(") < cuerpo.index("enviado = texto[")
