@@ -48,6 +48,7 @@ import chartist
 import hoy
 import tesis
 import tesis_registro
+import mercado_registro
 import confluencia as confluencia_mod
 import mem
 import levels_engine
@@ -350,6 +351,11 @@ async def lifespan(app: FastAPI):
     # el que ganó ya escribió esa misma versión.
     await db[tesis_registro.COLECCION].create_index(
         [("symbol", 1), ("version", -1)], unique=True)
+    # Único: una foto por símbolo y día. Es lo que hace que la PRIMERA del día mande —
+    # sin él, dos construcciones del mismo dashboard podrían dejar dos fotos del mismo
+    # día y al estudiarlas después no se sabría cuál correspondía a la decisión.
+    await db[mercado_registro.COLECCION].create_index(
+        [("symbol", 1), ("dia", -1)], unique=True)
     # Se consulta por (símbolo, temporalidad, tipo, estado) al comprobar si ese patrón
     # ya está anotado, y el pre-cálculo lo hace por cada acción y cada temporalidad en
     # cada vuelta. Sin índice serían cinco barridos completos por acción.
@@ -2896,7 +2902,12 @@ async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
     #
     # No lanza nunca: el histórico es un extra y los datos de la acción son la pantalla.
     try:
-        await tesis_registro.guardar_si_cambia(db, sym, result.get("tesis"))
+        r = await tesis_registro.guardar_si_cambia(db, sym, result.get("tesis"))
+        # La foto del día: lo que el sistema VEÍA de este símbolo en esta fecha. Va aquí
+        # y no en un worker propio porque el dashboard ya está construido y la foto no
+        # cuesta ni una petición — si tuviera que pedir datos, el coste dependería del
+        # tamaño del universo y acabaríamos recortando la muestra para pagar menos.
+        await mercado_registro.guardar(db, result, tesis_huella=r.get("huella"))
     except Exception:
         logger.exception("dashboard[%s] registro de la tesis falló", sym)
 
@@ -4471,6 +4482,30 @@ TECHO_EVENTOS = 200
 # Los dos son GET y SOLO LEEN. El histórico lo escribe el camino que construye el
 # dashboard; consultarlo no puede crear una versión, porque entonces mirar la pantalla
 # cambiaría lo que la pantalla enseña.
+
+@api_router.get("/laboratorio/cobertura")
+async def laboratorio_cobertura(_user: str = Depends(auth.get_current_user)):
+    """Cuánto histórico lleva anotado el laboratorio. Solo lectura.
+
+    Es deliberadamente aburrido: días y símbolos, no «conceptos aprendidos». Contar
+    documentos ingeridos no dice nada sobre si el sistema piensa mejor; los días de
+    historia sí, porque son exactamente lo que limita qué se puede estudiar.
+    """
+    return await mercado_registro.cobertura(db)
+
+
+@api_router.get("/laboratorio/fotos/{symbol}")
+async def laboratorio_fotos(symbol: str, limite: int = 90,
+                            _user: str = Depends(auth.get_current_user)):
+    """Lo que el sistema veía de un símbolo, día a día. Solo lectura."""
+    limite = max(1, min(int(limite or 90), TECHO_FOTOS))
+    return {"symbol": (symbol or "").upper(), "techo": TECHO_FOTOS,
+            "fotos": await mercado_registro.historial(db, symbol, limite=limite)}
+
+
+#: Techo del histórico de fotos, mismo patrón que `TECHO_EVENTOS`.
+TECHO_FOTOS = 400
+
 
 #: Techo del histórico de la tesis, como `TECHO_EVENTOS` para los eventos. Sin él,
 #: `?limite=999999` viajaba tal cual al `.limit()` de Mongo.

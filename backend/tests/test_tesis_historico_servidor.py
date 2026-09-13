@@ -165,3 +165,51 @@ def test_existe_el_indice_UNICO_que_impide_dos_versiones_iguales():
     trozo = fuente[i:i + 200]
     assert '("symbol", 1)' in trozo and '("version", -1)' in trozo
     assert "unique=True" in trozo
+
+
+# ── La foto diaria del laboratorio ───────────────────────────────────────────
+
+def test_el_camino_frio_anota_la_FOTO_del_dia():
+    assert "guardar" in _llamadas(_funcion("_construir_dashboard"), "mercado_registro")
+
+
+def test_la_foto_va_DESPUES_de_cachear_y_dentro_del_TRY():
+    """Igual que el registro de la tesis: el histórico es lo secundario, y un fallo de
+    Mongo no puede dejar sin página a quien abre una acción."""
+    cold = _funcion("_construir_dashboard")
+    foto = [n.lineno for n in ast.walk(cold)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+            and isinstance(n.func.value, ast.Name) and n.func.value.id == "mercado_registro"]
+    cacheo = [n.lineno for n in ast.walk(cold)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+              and n.func.attr == "set" and isinstance(n.func.value, ast.Name)
+              and n.func.value.id == "_cache"]
+    assert foto and min(foto) > max(cacheo)
+    dentro = [n for t in ast.walk(cold) if isinstance(t, ast.Try) for n in ast.walk(t)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+              and isinstance(n.func.value, ast.Name)
+              and n.func.value.id == "mercado_registro"]
+    assert dentro
+
+
+def test_el_refresco_de_cotizacion_TAMPOCO_anota_fotos():
+    assert _llamadas(_funcion("_refrescar_cotizacion"), "mercado_registro") == []
+
+
+@pytest.mark.parametrize("nombre", ["laboratorio_cobertura", "laboratorio_fotos"])
+def test_los_endpoints_del_laboratorio_son_GET_y_no_escriben(nombre):
+    fn = _funcion(nombre)
+    metodos = [d.func.attr for d in fn.decorator_list
+               if isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)]
+    assert metodos == ["get"]
+    assert set(_llamadas(fn, "mercado_registro")) <= {"cobertura", "historial"}
+
+
+def test_la_foto_tiene_indice_UNICO_por_simbolo_y_dia():
+    """Es lo que hace que la PRIMERA del día mande. Sin él, dos construcciones del mismo
+    dashboard podrían dejar dos fotos del mismo día."""
+    with open(RUTA, encoding="utf-8") as f:
+        fuente = f.read()
+    i = fuente.index("mercado_registro.COLECCION].create_index")
+    trozo = fuente[i:i + 200]
+    assert '("symbol", 1)' in trozo and '("dia", -1)' in trozo and "unique=True" in trozo
