@@ -1306,11 +1306,21 @@ def veredicto_aguante(d: dict, ruido: dict) -> dict:
         return {**base, "estado": SIN_DATOS,
                 "conclusion": "No se ha podido medir el suelo de ruido."}
     if observado < suelo:
-        return {**base, "estado": NO_CONCLUYENTE,
+        # NO SABER POR FALTA DE MUESTRA Y SABER QUE ES PEQUEÑO NO ES LO MISMO.
+        #
+        # Con muestra suficiente, quedarse por debajo del suelo SÍ dice algo: que un
+        # efecto mayor que el suelo se habría visto. Eso es una cota superior, y es
+        # información. Decir solo «no concluyente» la tiraría a la basura.
+        n = d.get("n") or 0
+        cota = (f" Con {n} toques resueltos, un efecto real mayor que {suelo} pp se "
+                "habría visto: si existe algo, es más pequeño que eso."
+                if n >= MUESTRA_MINIMA * 10 else
+                " La muestra es corta, así que tampoco se puede acotar cuánto.")
+        return {**base, "estado": NO_CONCLUYENTE, "cota_superior_pp": suelo,
                 "conclusion": f"Los cubos se separan {observado} pp, por debajo del suelo "
                               f"de ruido ({suelo} pp): cabe dentro de lo que el azar "
-                              "produce solo. La puntuación de fuerza NO queda demostrada, "
-                              "y tampoco desmentida."}
+                              "produce solo. La puntuación de fuerza NO ordena las zonas "
+                              "por lo bien que aguantan." + cota}
     if tasas == sorted(tasas):
         return {**base, "estado": VALIDADA,
                 "conclusion": f"Las zonas fuertes aguantan más que las medias y estas más "

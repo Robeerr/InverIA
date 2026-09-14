@@ -907,7 +907,9 @@ def test_si_los_tres_cubos_aguantan_IGUAL_no_se_concluye():
     v = lab.veredicto_aguante(lab.aguante_por_cubo(regs),
                               lab.azar_del_aguante(regs, vueltas=30))
     assert v["estado"] == lab.NO_CONCLUYENTE
-    assert "tampoco desmentida" in v["conclusion"]
+    # El texto cambió al añadir la cota superior: con muestra grande, «no concluyente»
+    # ya no es un «no sé» a secas.
+    assert "NO ordena las zonas" in v["conclusion"]
 
 
 def test_sin_MUESTRA_en_algun_cubo_no_se_concluye():
@@ -965,3 +967,50 @@ def test_el_aguante_NO_reimplementa_el_backtest():
         elif isinstance(n, _ast.ImportFrom) and n.module:
             importados.add(n.module.split(".")[0])
     assert not importados & {"pandas", "numpy", "levels_engine", "indicators"}, importados
+
+
+# ── No saber por falta de muestra ≠ saber que es pequeño ────────────────────
+#
+# El experimento del aguante salió NO CONCLUYENTE con 1.136 toques y 0,8 pp de
+# separación sobre un suelo de 5,7. Esa etiqueta se queda corta: con esa muestra, un
+# efecto mayor que el suelo se habría visto. Es una cota superior, y es información.
+
+def test_con_MUESTRA_GRANDE_el_veredicto_da_una_COTA_SUPERIOR():
+    regs = _toques(probs=(0.55, 0.55, 0.55), por_fecha=6, fechas=60)
+    v = lab.veredicto_aguante(lab.aguante_por_cubo(regs),
+                              lab.azar_del_aguante(regs, vueltas=25))
+    assert v["estado"] == lab.NO_CONCLUYENTE
+    assert v["cota_superior_pp"] == v["suelo_de_ruido_pp"]
+    assert "se habría visto" in v["conclusion"]
+    assert "más pequeño que eso" in v["conclusion"]
+
+
+def test_con_muestra_CORTA_no_se_acota_nada():
+    """Ahí sí es un «no sé» a secas, y el veredicto no puede fingir otra cosa."""
+    regs = _toques(probs=(0.55, 0.55, 0.55), por_fecha=1, fechas=25)
+    v = lab.veredicto_aguante(lab.aguante_por_cubo(regs),
+                              lab.azar_del_aguante(regs, vueltas=15))
+    if v["estado"] == lab.NO_CONCLUYENTE:
+        assert "tampoco se puede acotar" in v["conclusion"]
+
+
+def test_el_hallazgo_queda_escrito_DONDE_VIVE_EL_NUMERO():
+    """No en una tabla aparte. Quien lea `levels_engine` para tocar el score tiene que
+    encontrarse con la medida delante."""
+    import inspect
+    import levels_engine
+    fuente = inspect.getsource(levels_engine)
+    i = fuente.index("strength = int(min(100")
+    contexto = fuente[max(0, i - 2000):i]
+    assert "MEDIDO el 15-09-2026" in contexto
+    assert "88,0%" in contexto and "5,7 pp" in contexto
+    assert "SATURA" in contexto, "hay que decir POR QUÉ no separó"
+
+
+def test_se_dice_que_la_metrica_LIMPIA_no_estaba_pre_registrada():
+    """Mirarla ahora sería elegir la métrica después de ver los datos."""
+    import inspect
+    import levels_engine
+    fuente = inspect.getsource(levels_engine)
+    assert "no estaba" in fuente and "pre-registrada" in fuente
+    assert "Necesita su propio experimento" in fuente

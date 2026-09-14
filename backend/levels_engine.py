@@ -386,6 +386,34 @@ def compute_buy_levels(
         n_families = len([f for f in best_by_family if f != "round"])
         if n_families >= 2:
             raw += (n_families - 1) * 0.6
+        # MEDIDO el 15-09-2026, y el resultado obliga a leer este número con cuidado.
+        #
+        # 1.136 toques resueltos del universo vigilado, walk-forward punto-en-el-tiempo,
+        # dos años de velas diarias. Con qué frecuencia rebotó el precio, por cubo:
+        #
+        #     débil    359 toques    88,0%
+        #     media    203 toques    87,2%
+        #     fuerte   574 toques    87,8%
+        #
+        # Ocho décimas de punto entre el mejor y el peor, con un suelo de ruido de 5,7 pp.
+        # NO es que falte muestra: con esta n, un efecto real de más de ~6 pp se habría
+        # visto. Si existe algo, es pequeño.
+        #
+        # Así que este número NO ordena las zonas por lo bien que aguantan, y la etiqueta
+        # «Nivel fuerte (78/100)» que sale en la ficha no está respaldada por esa medida.
+        #
+        # POR QUÉ NO SE TOCA NADA
+        #
+        # Porque el experimento eligió mal la métrica, y eso es un fallo del experimento
+        # antes que del score: el 88% sale igual en los tres cubos porque el criterio de
+        # «aguantó» SATURA — casi todo lo cumple, y una métrica que aprueba al 88% no
+        # puede separar nada. La tasa de aguante LIMPIO (rebotó sin llegar a perder el
+        # nivel en ningún momento) sí se reparte —36,2 / 47,3 / 34,5— pero no estaba
+        # pre-registrada, así que mirarla ahora sería elegir la métrica después de ver los
+        # datos. Necesita su propio experimento.
+        #
+        # Mientras tanto el score se queda como está: quitarlo o cambiarlo por una medida
+        # que aún no se ha hecho sería sustituir un número sin respaldo por otro.
         strength = int(min(100, round(raw / _STRENGTH_DIVISOR * 100)))
 
         prices_in_cl = [c[0] for c in cl]
