@@ -578,6 +578,163 @@ def ficha_distribucion(obs: list, universo: list, desde: str = None,
     }
 
 
+# ── El corte temporal: ¿el patrón vive en un año concreto? ──────────────────
+#
+# LO QUE OBLIGÓ A ESTE EXPERIMENTO
+#
+# El diagnóstico salió NO CONCLUYENTE y enseñó dos cosas a la vez:
+#
+#     tramo       media   mediana   media/mediana
+#     0-5%         8,66     4,67        1,85x
+#     5-10%       12,72     8,55        1,49x
+#     10-20%      12,87    10,04        1,28x
+#     20-33%      13,11     8,57        1,53x
+#     33-100%     24,74     9,89        2,50x
+#
+# La primera: el +24,74% del tramo hundido SÍ es cola. Su mediana (9,89) está en línea
+# con la del 5-10% y la del 10-20%, y su media casi triplica a su mediana mientras el
+# resto se queda entre 1,28x y 1,85x. Gana lo mismo de forma típica y muchísimo más en
+# sus mejores casos.
+#
+# La segunda, que no estaba prevista: las medianas NO son planas, pero tampoco forman un
+# gradiente. Van 4,67 → 8,55 → 10,04 → 8,57 → 9,89: suben, bajan y vuelven a subir.
+# Quitando el primer tramo, las otras cuatro caben en 1,49 pp. Lo único que se distingue
+# es que estar a MENOS DE UN 5% del máximo va con una mediana bastante peor.
+#
+# Un escalón en una frontera no es un efecto de la distancia al máximo: puede ser
+# perfectamente el mercado. Cinco años que incluyen un año bajista y su recuperación
+# bastan para que «estar en máximos» y «el año que todo cayó» sean casi la misma cosa.
+#
+# Este experimento parte la muestra por año y mira si el escalón sigue ahí dentro de cada
+# uno. Es la única forma de separar «esto es la distancia al máximo» de «esto es 2022».
+
+#: Cuántos años tienen que repetir el patrón para que deje de parecer un año concreto.
+#: Dos de tres es el mínimo que distingue un patrón de una casualidad sin exigir una
+#: regularidad que cinco años de datos no pueden demostrar.
+AÑOS_MINIMOS = 3
+
+
+def por_periodo(obs: list) -> dict:
+    """Las medianas de cada tramo, año a año. Pura.
+
+    Un año solo entra si TODOS sus tramos llegan a la muestra mínima. Un año a medias
+    daría medianas calculadas sobre puñados y se leerían igual que las demás.
+    """
+    años = {}
+    for o in obs or []:
+        año = str(o.get("fecha") or "")[:4]
+        if año:
+            años.setdefault(año, {}).setdefault(o["tramo"], []).append(o["retorno_pct"])
+
+    filas, descartados = [], []
+    for año in sorted(años):
+        tramos = años[año]
+        rs = {f"{b}-{a}%": sorted(tramos.get(f"{b}-{a}%") or []) for b, a in TRAMOS}
+        if any(len(v) < MUESTRA_MINIMA for v in rs.values()):
+            descartados.append({"año": año,
+                                "n_por_tramo": {k: len(v) for k, v in rs.items()}})
+            continue
+        medianas = {k: _percentil(v, 0.5) for k, v in rs.items()}
+        primero = medianas[f"{TRAMOS[0][0]}-{TRAMOS[0][1]}%"]
+        resto = [v for k, v in medianas.items()
+                 if k != f"{TRAMOS[0][0]}-{TRAMOS[0][1]}%"]
+        filas.append({
+            "año": año,
+            "n": sum(len(v) for v in rs.values()),
+            "medianas": medianas,
+            # El escalón que hay que confirmar: ¿el tramo pegado al máximo es el peor?
+            "el_tramo_en_maximos_es_el_PEOR": primero < min(resto),
+            "escalon_pp": round(min(resto) - primero, 2),
+        })
+    return {"años": filas, "años_descartados": descartados,
+            "años_con_muestra": len(filas)}
+
+
+def veredicto_periodo(d: dict) -> dict:
+    """¿El escalón es de la distancia al máximo o del calendario? Puro.
+
+    Tampoco aquí se puede llegar a VALIDATED. Confirmar que un patrón se repite en
+    varios años lo hace más creíble, no lo convierte en una regla: seguirían en pie el
+    sesgo de supervivencia y el hecho de que cinco años son un solo ciclo.
+    """
+    filas = d.get("años") or []
+    if len(filas) < AÑOS_MINIMOS:
+        return {"estado": SIN_DATOS,
+                "conclusion": f"Solo {len(filas)} año(s) con muestra suficiente en los "
+                              f"cinco tramos; hacen falta {AÑOS_MINIMOS}. Los años "
+                              "descartados y su reparto van en el resultado."}
+
+    repiten = [f["año"] for f in filas if f["el_tramo_en_maximos_es_el_PEOR"]]
+    base = {"años_con_muestra": len(filas), "años_que_repiten": repiten,
+            "escalones_pp": {f["año"]: f["escalon_pp"] for f in filas}}
+    if len(repiten) == len(filas):
+        return {**base, "estado": NO_CONCLUYENTE,
+                "conclusion": "El escalón aparece en TODOS los años con muestra, así que "
+                              "no es un año concreto. Sigue sin ser una regla: el "
+                              "universo arrastra supervivencia y cinco años son un solo "
+                              "ciclo. Lo que gana es credibilidad, no permiso."}
+    if len(repiten) >= AÑOS_MINIMOS:
+        return {**base, "estado": NO_CONCLUYENTE,
+                "conclusion": f"El escalón aparece en {len(repiten)} de {len(filas)} "
+                              "años. Se repite, pero no siempre: lo que sea que lo "
+                              "produce no está actuando todo el tiempo."}
+    return {**base, "estado": RECHAZADA,
+            "conclusion": f"El escalón solo aparece en {len(repiten)} de {len(filas)} "
+                          "años. No es una propiedad de la distancia al máximo: es lo "
+                          "que pasó en esos años concretos."}
+
+
+def ficha_periodo(obs: list, universo: list, desde: str = None,
+                  hasta: str = None) -> dict:
+    """El corte temporal, listo para guardar. Puro."""
+    d = por_periodo(obs)
+    v = veredicto_periodo(d)
+    return {
+        "hipotesis_id": "DISTANCIA_MAX_A_MAXIMO_52S",
+        "tipo": "corte_temporal",
+        "deriva_de": "El diagnóstico, que salió NO CONCLUYENTE: las medianas se separan "
+                     "5,37 pp, pero casi todo viene del tramo 0-5% y las otras cuatro "
+                     "caben en 1,49 pp sin orden.",
+        "titulo": "¿El escalón de los que están en máximos se repite cada año, o es un año concreto?",
+        "metodo": {
+            "que_pregunta": "Mediana de cada tramo AÑO A AÑO, sobre las mismas "
+                            "observaciones. Se comprueba si el tramo 0-5% es el peor "
+                            "dentro de cada año por separado.",
+            "universo": sorted(universo or []),
+            "simbolos": len(universo or []),
+            "desde": desde, "hasta": hasta,
+            "resolucion": RESOLUCION,
+            "ventana_maximo": VENTANA, "horizonte": HORIZONTE, "paso": PASO,
+            "muestra_minima_por_tramo_y_año": MUESTRA_MINIMA,
+            "años_minimos": AÑOS_MINIMOS,
+            "direccion_esperada": "Si el escalón es real, se repite en la mayoría de los "
+                                  "años. Si solo aparece en uno, es ese año. Fijada "
+                                  "ANTES de ejecutar.",
+        },
+        "controles": {
+            "leakage": "Las mismas observaciones: el máximo usa solo barras anteriores "
+                       "al ancla y el retorno solo posteriores.",
+            "solapamiento": f"Dentro de un año hay pocas observaciones independientes: "
+                            f"con paso {PASO} y horizonte {HORIZONTE}, una observación "
+                            "de enero y otra de febrero comparten casi todo el camino. "
+                            "Por eso se exige la muestra mínima por tramo Y por año, y "
+                            "por eso no hay ningún p-valor.",
+            "supervivencia": "Intacto: el universo sigue siendo el de hoy. Partir por "
+                             "año no lo corrige, solo separa el efecto del calendario.",
+            "un_solo_ciclo": "Cinco años con un mercado bajista y su recuperación son UN "
+                             "ciclo. Que un patrón se repita dentro de él no dice que "
+                             "sobreviva al siguiente.",
+            "costes": "Ninguno. No es una estrategia, es una medida de comportamiento.",
+            "parametros_ajustados": "Ninguno. Tramos, horizonte y ventana son los del "
+                                    "experimento 1, sin tocar.",
+        },
+        "resultado": {**d, **v},
+        "estado": v["estado"],
+        "ejecutado_en": _ahora(),
+        "lab_v": 1,
+    }
+
+
 # ── Persistencia. Todo queda, también lo que salió mal ───────────────────────
 
 async def guardar_experimento(db, doc: dict) -> dict:

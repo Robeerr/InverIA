@@ -226,28 +226,35 @@ def test_consultar_el_laboratorio_es_GET_y_no_escribe(nombre):
     assert set(_llamadas(fn, "laboratorio")) <= {"panorama", "experimentos"}
 
 
-def test_ejecutar_un_experimento_es_POST_y_es_el_UNICO_que_escribe():
-    """Escribe en el histórico y descarga decenas de series: lo dispara una persona, no
-    un bucle. Mismo criterio que «Investigar ahora»."""
-    fn = _funcion("laboratorio_experimento_distancia")
-    metodos = [d.func.attr for d in fn.decorator_list
-               if isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)]
-    assert metodos == ["post"]
+def test_solo_se_ESCRIBE_en_el_historico_desde_un_POST():
+    """El invariante no es cuántos escritores hay —eran uno, luego dos, ahora la
+    escritura vive en un ayudante compartido—. Es que a esa escritura solo se llegue
+    desde un POST: nunca desde un GET, nunca desde un bucle.
 
-    # El invariante NO es «solo hay un escritor»: son dos desde que existe el
-    # diagnóstico, y serán más. Lo que tiene que seguir siendo cierto es que TODO el que
-    # escribe en el histórico sea un POST — nunca un GET, nunca un bucle.
-    escritores = []
-    for nodo in ast.walk(ARBOL):
-        if not isinstance(nodo, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        if "guardar_experimento" not in _llamadas(nodo, "laboratorio"):
-            continue
-        escritores.append(nodo.name)
-        metodos = [d.func.attr for d in nodo.decorator_list
-                   if isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)]
-        assert metodos == ["post"], f"{nodo.name} escribe y no es un POST"
+    Se comprueba en dos tramos porque el refactor metió un intermediario: quién llama a
+    `guardar_experimento`, y quién llama a ese.
+    """
+    escritores = [n.name for n in ast.walk(ARBOL)
+                  if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                  and "guardar_experimento" in _llamadas(n, "laboratorio")]
     assert escritores, "si ya nadie registra experimentos, este guardián no vigila nada"
+
+    for escritor in escritores:
+        llamantes = [n for n in ast.walk(ARBOL)
+                     if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                     and any(isinstance(c, ast.Call) and isinstance(c.func, ast.Name)
+                             and c.func.id == escritor for c in ast.walk(n))]
+        # O el escritor ES el endpoint, o todos los que lo invocan son POST.
+        propios = [d.func.attr for d in _funcion(escritor).decorator_list
+                   if isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)]
+        if propios:
+            assert propios == ["post"], f"{escritor} escribe y no es un POST"
+            continue
+        assert llamantes, f"nadie llama a {escritor}: entonces no debería escribir"
+        for fn in llamantes:
+            metodos = [d.func.attr for d in fn.decorator_list
+                       if isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)]
+            assert metodos == ["post"], f"{fn.name} llega a la escritura y no es un POST"
 
 
 def test_NINGUN_worker_ejecuta_el_experimento_por_su_cuenta():
@@ -285,3 +292,18 @@ def test_el_DIAGNOSTICO_tambien_es_POST_y_no_lo_lanza_ningun_worker():
             lanzamientos += [n.func.attr for n in ast.walk(nodo)
                              if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)]
     assert "ficha_distribucion" not in lanzamientos
+
+
+def test_los_TRES_experimentos_comparten_el_mismo_cuerpo():
+    """Los tres miden sobre las MISMAS observaciones y solo cambian cómo las agregan.
+    Tres copias del cuerpo habrían divergido, y entonces el diagnóstico y el corte
+    temporal dejarían de explicar el experimento que dicen explicar."""
+    for nombre in ("laboratorio_experimento_distancia",
+                   "laboratorio_experimento_distribucion",
+                   "laboratorio_experimento_periodo"):
+        fn = _funcion(nombre)
+        llamadas = [n.func.id for n in ast.walk(fn)
+                    if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)]
+        assert "_experimento_distancia" in llamadas, nombre
+        # Y ninguno baja datos por su cuenta.
+        assert "get_stock_data" not in _llamadas(fn, "market_data")

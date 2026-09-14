@@ -98,7 +98,15 @@ function Experimento({ e }) {
                   <th className="text-right font-normal">Muestra</th>
                   <th className="text-right font-normal">Retorno medio</th>
                   {r.tramos.some((t) => t.mediana != null) && (
-                    <th className="text-right font-normal">Mediana</th>
+                    <>
+                      <th className="text-right font-normal">Mediana</th>
+                      {/* La amplitud responde «¿es solo que se mueve más?» y el peso del
+                          10% mejor, «¿lo explica un puñado de aciertos?». Las dos se
+                          medían desde el principio y no se enseñaban. */}
+                      <th className="text-right font-normal">P25–P75</th>
+                      <th className="text-right font-normal">Amplitud</th>
+                      <th className="text-right font-normal">10% mejor</th>
+                    </>
                   )}
                   <th className="text-right font-normal">Positivos</th></tr>
             </thead>
@@ -112,13 +120,75 @@ function Experimento({ e }) {
                       ? "—" : `${t.retorno_medio ?? t.media}%`}
                   </td>
                   {r.tramos.some((x) => x.mediana != null) && (
-                    <td className="text-right text-tinta">
-                      {t.mediana == null ? "—" : `${t.mediana}%`}
-                    </td>
+                    <>
+                      <td className="text-right text-tinta">
+                        {t.mediana == null ? "—" : `${t.mediana}%`}
+                      </td>
+                      <td className="text-right text-tinta-3 whitespace-nowrap">
+                        {t.p25 == null ? "—" : `${t.p25} / ${t.p75}`}
+                      </td>
+                      <td className="text-right text-tinta-3">
+                        {t.amplitud_intercuartil == null
+                          ? "—" : `${t.amplitud_intercuartil} pp`}
+                      </td>
+                      <td className="text-right text-tinta-3">
+                        {t.peso_del_10pct_mejor == null
+                          ? "—" : `${t.peso_del_10pct_mejor}%`}
+                      </td>
+                    </>
                   )}
                   <td className="text-right text-tinta-3">
                     {t.positivos_pct == null ? "—" : `${t.positivos_pct}%`}
                   </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {!!(r.tramos || []).some((t) => t.por_año) && (
+        <details className="mt-2">
+          <summary className="text-xs text-marca cursor-pointer">Reparto por año</summary>
+          <p className="mt-1 text-xs text-tinta-3 max-w-[70ch] leading-relaxed">
+            Si un tramo se concentra en un año concreto, lo que mide es ese año.
+          </p>
+          <div className="mt-2 overflow-x-auto">
+            <table className="text-xs w-full iv-cifra">
+              <tbody>
+                {r.tramos.map((t) => (
+                  <tr key={t.tramo} className="border-t border-linea">
+                    <td className="py-1 text-tinta-2">{t.tramo}</td>
+                    {Object.entries(t.por_año || {}).map(([a, n]) => (
+                      <td key={a} className="text-right text-tinta-3 px-2">
+                        {a}: {n}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
+      {!!(r.años || []).length && (
+        <div className="mt-2 overflow-x-auto">
+          <table className="text-xs w-full">
+            <thead className="text-tinta-3">
+              <tr><th className="text-left font-normal py-1">Año</th>
+                  <th className="text-right font-normal">Muestra</th>
+                  <th className="text-right font-normal">¿Peor el tramo en máximos?</th>
+                  <th className="text-right font-normal">Escalón</th></tr>
+            </thead>
+            <tbody className="iv-cifra">
+              {r.años.map((a) => (
+                <tr key={a.año} className="border-t border-linea">
+                  <td className="py-1 text-tinta-2">{a.año}</td>
+                  <td className="text-right text-tinta-3">{a.n}</td>
+                  <td className={`text-right ${a.el_tramo_en_maximos_es_el_PEOR
+                                    ? "text-tinta" : "text-tinta-3"}`}>
+                    {a.el_tramo_en_maximos_es_el_PEOR ? "sí" : "no"}
+                  </td>
+                  <td className="text-right text-tinta-3">{a.escalon_pp} pp</td>
                 </tr>
               ))}
             </tbody>
@@ -173,9 +243,7 @@ export default function LaboratorioView() {
   const ejecutar = async (cual) => {
     setCorriendo(true);
     try {
-      await (cual === "distribucion"
-        ? api.laboratorio.distribucion()
-        : api.laboratorio.distanciaAlMaximo());
+      await (api.laboratorio[cual] || api.laboratorio.distanciaAlMaximo)();
       await cargar();
     } catch (err) {
       setError(err?.response?.data?.detail || err.message || "El experimento falló");
@@ -253,12 +321,19 @@ export default function LaboratorioView() {
           </ul>
 
           <div className="mt-4 flex flex-wrap gap-2">
-            <button onClick={() => ejecutar("distancia")} disabled={corriendo}
+            <button onClick={() => ejecutar("distanciaAlMaximo")} disabled={corriendo}
                     className="iv-etiqueta flex items-center gap-2 border border-linea
                                px-3 py-2 hover:text-tinta disabled:opacity-50"
                     data-testid="lab-ejecutar">
               <FlaskIcon size={14} />
               {corriendo ? "Midiendo…" : "Medir: distancia al máximo anual"}
+            </button>
+            <button onClick={() => ejecutar("periodo")} disabled={corriendo}
+                    className="iv-etiqueta flex items-center gap-2 border border-linea
+                               px-3 py-2 hover:text-tinta disabled:opacity-50"
+                    data-testid="lab-ejecutar-periodo">
+              <FlaskIcon size={14} />
+              {corriendo ? "Midiendo…" : "Corte temporal: ¿se repite cada año?"}
             </button>
             <button onClick={() => ejecutar("distribucion")} disabled={corriendo}
                     className="iv-etiqueta flex items-center gap-2 border border-linea

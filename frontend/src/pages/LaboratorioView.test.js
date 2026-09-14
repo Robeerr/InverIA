@@ -72,6 +72,19 @@ test("el diagnóstico enseña la MEDIANA, que es lo que lo distingue del primero
   expect(VISTA).toContain("t.mediana");
 });
 
+test("se enseña TODO lo que el diagnóstico mide, no solo la mediana", () => {
+  // La amplitud y el peso del 10% mejor se medían desde el principio y no se veían.
+  // Un confundido que se calcula y no se pinta es un confundido que nadie mira.
+  expect(VISTA).toContain("amplitud_intercuartil");
+  expect(VISTA).toContain("peso_del_10pct_mejor");
+  expect(VISTA).toContain("por_año");
+});
+
+test("el corte temporal enseña si el patrón se repite AÑO A AÑO", () => {
+  expect(VISTA).toContain("el_tramo_en_maximos_es_el_PEOR");
+  expect(VISTA).toContain("escalon_pp");
+});
+
 test("la rejilla declara su columna de móvil", () => {
   // Mismo fallo que ya cortó la pantalla de Inteligencia por la mitad: sin `grid-cols-1`
   // la columna implícita se dimensiona a `max-content` y no encoge.

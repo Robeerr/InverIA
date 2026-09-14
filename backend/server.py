@@ -4508,6 +4508,51 @@ async def laboratorio_experimentos(limite: int = 50,
     return {"experimentos": await laboratorio.experimentos(db, limite=limite)}
 
 
+async def _experimento_distancia(hacer_ficha):
+    """El cuerpo común de los tres experimentos sobre la distancia al máximo.
+
+    Los tres necesitan EXACTAMENTE las mismas observaciones —el mismo universo, el mismo
+    histórico semanal, el mismo cálculo sin leakage— y solo se diferencian en cómo las
+    agregan. Tenerlo escrito una vez no es un ahorro de líneas: es lo que garantiza que
+    el diagnóstico y el corte temporal midan sobre los mismos datos que el experimento
+    que están explicando. Tres copias habrían divergido y las conclusiones dejarían de
+    ser comparables.
+
+    Vuelve a descargar el histórico cada vez. Es una decisión consciente: guardar las
+    1.933 observaciones dentro del documento habría hecho pesada la lista de
+    experimentos, y bajarlas otra vez no gasta cuota de IA.
+    """
+    universo = sorted(await _simbolos_que_te_importan())
+    if not universo:
+        return {"estado": laboratorio.SIN_DATOS,
+                "conclusion": "No hay ningún símbolo en watchlist ni en cartera."}
+
+    obs, fallos, fechas = [], [], []
+    for sym in universo:
+        try:
+            df = await asyncio.to_thread(market_data.get_stock_data, sym,
+                                         laboratorio.RESOLUCION)
+        except Exception as e:
+            fallos.append({"symbol": sym, "error": str(e)[:120]})
+            continue
+        if df is None or getattr(df, "empty", True):
+            fallos.append({"symbol": sym, "error": "sin histórico"})
+            continue
+        barras = [{"high": float(r.High), "close": float(r.Close),
+                   "date": str(r.Date)[:10]} for r in df.itertuples()]
+        fechas += [b["date"] for b in barras]
+        obs += laboratorio.observaciones(barras, sym)
+
+    doc = hacer_ficha(obs,
+                      universo=[s for s in universo
+                                if s not in {f["symbol"] for f in fallos}],
+                      desde=min(fechas) if fechas else None,
+                      hasta=max(fechas) if fechas else None)
+    doc["fallos"] = fallos
+    guardado = await laboratorio.guardar_experimento(db, doc)
+    return {**doc, "guardado": guardado}
+
+
 @api_router.post("/laboratorio/experimento/distancia-maximo")
 async def laboratorio_experimento_distancia(_user: str = Depends(auth.get_current_user)):
     """Ejecuta el primer experimento: ¿rinde más una acción cerca de su máximo anual?
@@ -4517,75 +4562,29 @@ async def laboratorio_experimento_distancia(_user: str = Depends(auth.get_curren
     Descarga el histórico semanal de todo el universo. No llama a ningún modelo y no
     cuesta cuota de IA, pero sí son decenas de peticiones, así que lo dispara una
     persona y no un bucle. Cuando sepamos cuánto tarda y cuánto aporta repetirlo, se
-    decidirá si merece un horario.
+    decidirá si merece un horario."""
+    return await _experimento_distancia(laboratorio.ficha)
+
+
+@api_router.post("/laboratorio/experimento/distancia-maximo/periodo")
+async def laboratorio_experimento_periodo(_user: str = Depends(auth.get_current_user)):
+    """Corte temporal del experimento 1: ¿el escalón se repite cada año?
+
+    El diagnóstico dejó un escalón en el tramo 0-5% y no pudo decir si era de la
+    distancia al máximo o del calendario. Esto lo separa.
     """
-    universo = sorted(await _simbolos_que_te_importan())
-    if not universo:
-        return {"estado": laboratorio.SIN_DATOS,
-                "conclusion": "No hay ningún símbolo en watchlist ni en cartera."}
-
-    obs, fallos, fechas = [], [], []
-    for sym in universo:
-        try:
-            df = await asyncio.to_thread(market_data.get_stock_data, sym,
-                                         laboratorio.RESOLUCION)
-        except Exception as e:
-            fallos.append({"symbol": sym, "error": str(e)[:120]})
-            continue
-        if df is None or getattr(df, "empty", True):
-            fallos.append({"symbol": sym, "error": "sin histórico"})
-            continue
-        barras = [{"high": float(r.High), "close": float(r.Close),
-                   "date": str(r.Date)[:10]} for r in df.itertuples()]
-        fechas += [b["date"] for b in barras]
-        obs += laboratorio.observaciones(barras, sym)
-
-    doc = laboratorio.ficha(obs, universo=[s for s in universo
-                                           if s not in {f["symbol"] for f in fallos}],
-                            desde=min(fechas) if fechas else None,
-                            hasta=max(fechas) if fechas else None)
-    doc["fallos"] = fallos
-    guardado = await laboratorio.guardar_experimento(db, doc)
-    return {**doc, "guardado": guardado}
+    return await _experimento_distancia(laboratorio.ficha_periodo)
 
 
 @api_router.post("/laboratorio/experimento/distancia-maximo/distribucion")
-async def laboratorio_experimento_distribucion(
-        _user: str = Depends(auth.get_current_user)):
+async def laboratorio_experimento_distribucion(_user: str = Depends(auth.get_current_user)):
     """Diagnóstico del experimento 1: ¿el gradiente está en el centro o en la cola?
 
     Vuelve a descargar el histórico porque el experimento 1 guardó su conclusión pero no
     sus 1.933 observaciones. Es una decisión consciente: guardarlas habría hecho pesada
     la lista de experimentos, y volver a bajarlas cuesta lo mismo que la primera vez y
-    no gasta cuota de IA.
-    """
-    universo = sorted(await _simbolos_que_te_importan())
-    if not universo:
-        return {"estado": laboratorio.SIN_DATOS,
-                "conclusion": "No hay ningún símbolo en watchlist ni en cartera."}
-
-    obs, fallos, fechas = [], [], []
-    for sym in universo:
-        try:
-            df = await asyncio.to_thread(market_data.get_stock_data, sym,
-                                         laboratorio.RESOLUCION)
-        except Exception as e:
-            fallos.append({"symbol": sym, "error": str(e)[:120]})
-            continue
-        if df is None or getattr(df, "empty", True):
-            fallos.append({"symbol": sym, "error": "sin histórico"})
-            continue
-        barras = [{"high": float(r.High), "close": float(r.Close),
-                   "date": str(r.Date)[:10]} for r in df.itertuples()]
-        fechas += [b["date"] for b in barras]
-        obs += laboratorio.observaciones(barras, sym)
-
-    doc = laboratorio.ficha_distribucion(
-        obs, universo=[s for s in universo if s not in {f["symbol"] for f in fallos}],
-        desde=min(fechas) if fechas else None, hasta=max(fechas) if fechas else None)
-    doc["fallos"] = fallos
-    guardado = await laboratorio.guardar_experimento(db, doc)
-    return {**doc, "guardado": guardado}
+    no gasta cuota de IA."""
+    return await _experimento_distancia(laboratorio.ficha_distribucion)
 
 
 @api_router.get("/laboratorio/cobertura")

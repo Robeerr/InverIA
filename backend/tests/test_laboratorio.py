@@ -444,3 +444,72 @@ def test_se_dice_si_el_tramo_que_MAS_GANA_es_tambien_el_MAS_ANCHO():
                  "symbol": "X", "distancia_pct": 1} for v in vals]
     v = lab.veredicto_distribucion(lab.distribucion(obs))
     assert v["mas_ancho_es_el_de_mas_media"] is True
+
+
+# ── El corte temporal ────────────────────────────────────────────────────────
+#
+# El diagnóstico dejó un escalón en el tramo 0-5% y no pudo decir si era de la distancia
+# al máximo o del calendario. Cinco años que incluyen un mercado bajista y su
+# recuperación bastan para que «estar en máximos» y «el año que todo cayó» sean casi lo
+# mismo. Estos tests protegen la herramienta que los separa.
+
+def _años(escalon_en, años=("2022", "2023", "2024"), n=lab.MUESTRA_MINIMA + 5):
+    """Observaciones por año; el tramo 0-5% sale peor solo en los años indicados."""
+    obs = []
+    for año in años:
+        for i, (bajo, alto) in enumerate(lab.TRAMOS):
+            med = 3 if (i == 0 and año in escalon_en) else 10
+            obs += [{"tramo": f"{bajo}-{alto}%", "retorno_pct": med,
+                     "fecha": f"{año}-05-01", "symbol": "X", "distancia_pct": 1}] * n
+    return obs
+
+
+def test_si_el_escalon_solo_esta_en_UN_año_es_ese_año():
+    v = lab.veredicto_periodo(lab.por_periodo(_años({"2022"})))
+    assert v["estado"] == lab.RECHAZADA
+    assert v["años_que_repiten"] == ["2022"]
+    assert "es lo que pasó en esos años" in v["conclusion"]
+
+
+def test_si_el_escalon_esta_en_TODOS_los_años_gana_credibilidad_pero_no_permiso():
+    v = lab.veredicto_periodo(lab.por_periodo(_años({"2022", "2023", "2024"})))
+    assert v["estado"] == lab.NO_CONCLUYENTE
+    assert "credibilidad, no permiso" in v["conclusion"]
+    assert "supervivencia" in v["conclusion"]
+
+
+def test_un_año_a_MEDIAS_se_descarta_entero():
+    """Un año con tramos flacos daría medianas sobre puñados que se leerían igual que
+    las demás."""
+    obs = _años({"2022"}) + [{"tramo": "0-5%", "retorno_pct": 50, "fecha": "2019-05-01",
+                              "symbol": "X", "distancia_pct": 1}] * 3
+    d = lab.por_periodo(obs)
+    assert "2019" in [x["año"] for x in d["años_descartados"]]
+    assert "2019" not in [f["año"] for f in d["años"]]
+    assert d["años_descartados"][0]["n_por_tramo"], "hay que decir CUÁNTO faltaba"
+
+
+def test_con_POCOS_AÑOS_no_se_concluye():
+    v = lab.veredicto_periodo(lab.por_periodo(_años({"2022"}, años=("2022", "2023"))))
+    assert v["estado"] == lab.SIN_DATOS
+    assert str(lab.AÑOS_MINIMOS) in v["conclusion"]
+
+
+def test_el_corte_temporal_TAMPOCO_puede_validar():
+    """Confirmar que un patrón se repite lo hace más creíble, no lo convierte en regla:
+    siguen en pie la supervivencia y el hecho de que cinco años son un solo ciclo."""
+    for escalon in (set(), {"2022"}, {"2022", "2023"}, {"2022", "2023", "2024"}):
+        v = lab.veredicto_periodo(lab.por_periodo(_años(escalon)))
+        assert v["estado"] != lab.VALIDADA
+
+
+def test_el_corte_temporal_es_OTRO_intento_de_la_misma_hipotesis():
+    f = lab.ficha_periodo([], universo=["AAPL"])
+    assert f["hipotesis_id"] == "DISTANCIA_MAX_A_MAXIMO_52S"
+    assert f["tipo"] == "corte_temporal" and f["deriva_de"]
+
+
+def test_el_corte_temporal_declara_que_cinco_años_son_UN_ciclo():
+    c = lab.ficha_periodo([], universo=["AAPL"])["controles"]
+    assert "un_solo_ciclo" in c and "UN" in c["un_solo_ciclo"]
+    assert "no lo corrige" in c["supervivencia"]
