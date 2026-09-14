@@ -624,12 +624,61 @@ def _fetch_earnings_for_symbol(sym: str, from_date: str, to_date: str, key: str)
         return []
 
 
+#: La ventana ANCHA que se descarga siempre, pase quien pase por aquí.
+#:
+#: Había DOS consumidores pidiendo este calendario por su cuenta: el endpoint de la
+#: portada con 60 días y el vigilante de Intelligence con 21, cada uno con su caché. Dos
+#: llamadas a Finnhub para el mismo dato, y —lo que de verdad molestaba— dos cachés que
+#: podían envejecer distinto: la portada podía decir que una empresa presenta el día 4 y
+#: el radar el día 6, sin que nada estuviera roto.
+#:
+#: La llamada de Finnhub es MASIVA por rango de fechas y el filtro por símbolo va en
+#: cliente, así que la ventana de 60 días ya contiene la de 21. Se descarga una sola vez
+#: la más ancha y cada consumidor recorta la suya. Un dato, una verdad.
+DIAS_CALENDARIO = int(os.environ.get("FINNHUB_CALENDARIO_DIAS", 60))
+
+#: Media hora. Es lo que ya usaba el endpoint de la portada; el calendario se mueve poco.
+_CALENDARIO_TTL = 1800
+
+
+def _calendario_completo(key: str):
+    """El calendario ENTERO de la ventana ancha, sin filtrar. Cacheado.
+
+    Sin símbolos en la clave: la petición a Finnhub no los lleva —filtra el cliente— así
+    que meterlos en la caché habría creado una entrada por cada conjunto distinto y
+    seguiría bajando lo mismo varias veces.
+    """
+    from datetime import datetime, timedelta
+    cached, hit = _ext_cache_get("calendario_earnings", _CALENDARIO_TTL)
+    if hit:
+        return cached
+    today = datetime.utcnow().date()
+    to = today + timedelta(days=DIAS_CALENDARIO)
+    from_str, to_str = today.isoformat(), to.isoformat()
+    try:
+        r = _finnhub_get("/calendar/earnings",
+                         {"from": from_str, "to": to_str, "token": key}, timeout=15)
+        if r.status_code != 200:
+            return None
+    except Exception:
+        return None
+    datos = {"items": r.json().get("earningsCalendar") or [],
+             "from": from_str, "to": to_str}
+    _ext_cache_set("calendario_earnings", datos)
+    return datos
+
+
 def finnhub_earnings_calendar(days: int = 14, symbols=None):
     """Upcoming earnings from Finnhub for next `days` days.
 
     Uses a SINGLE bulk Finnhub call (1 API slot) and filters client-side.
     Previously made 50 per-symbol calls that saturated the rate limiter.
     Falls back to per-symbol only if bulk returns nothing useful.
+
+    La descarga la hace `_calendario_completo`, que baja SIEMPRE la ventana ancha y la
+    cachea. Esta función recorta: por fecha y por símbolo. La firma y la forma de la
+    respuesta no cambian, así que sus dos consumidores no se enteran — lo único que
+    desaparece es la segunda descarga.
     """
     from datetime import datetime, timedelta
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -642,17 +691,21 @@ def finnhub_earnings_calendar(days: int = 14, symbols=None):
 
     sym_set = set(symbols) if symbols else None
 
-    # Bulk call: 1 Finnhub API slot instead of N per-symbol calls.
-    # Finnhub free tier returns all events in the range (up to a few hundred).
     try:
-        r = _finnhub_get("/calendar/earnings", {"from": from_str, "to": to_str, "token": key}, timeout=15)
-        if r.status_code != 200:
+        completo = _calendario_completo(key)
+        if completo is None:
             return None
-        items = r.json().get("earningsCalendar") or []
+        items = completo["items"]
         out = []
         for it in items:
             sym = (it.get("symbol") or "").upper()
             if sym_set and sym not in sym_set:
+                continue
+            # Recorte por fecha: la caché guarda la ventana ancha y quien pide menos días
+            # se queda solo con los suyos. Sin esto, un consumidor que pide 21 recibiría
+            # resultados a 60 días vista y creería que son inminentes.
+            fecha = it.get("date")
+            if fecha and not (from_str <= str(fecha) <= to_str):
                 continue
             out.append({
                 "symbol": sym,
@@ -672,8 +725,16 @@ def finnhub_earnings_calendar(days: int = 14, symbols=None):
         # NINGUNA → las que faltaban no aparecían nunca. Ahora cada símbolo pedido que no
         # esté en el resultado se busca individualmente.
         if sym_set:
-            encontrados = {x["symbol"] for x in out}
-            faltan = [s for s in sym_set if s not in encontrados][:25]
+            # Se compara contra la ventana ANCHA, no contra lo ya recortado. Una empresa
+            # que presenta dentro de cuarenta días no «falta» del lote cuando se piden
+            # veintiuno: es que no presenta pronto. Preguntando por ella una a una se
+            # gastaba una petición por símbolo para volver a saber lo mismo.
+            #
+            # Antes de unificar la descarga esto no se podía distinguir, porque solo se
+            # bajaba la ventana corta y un símbolo ausente podía serlo por las dos
+            # razones. Es una mejora que sale gratis de tener una sola verdad.
+            en_la_ventana_ancha = {(x.get("symbol") or "").upper() for x in items}
+            faltan = [s for s in sym_set if s not in en_la_ventana_ancha][:25]
             if faltan:
                 with ThreadPoolExecutor(max_workers=5) as ex:
                     futs = [ex.submit(_fetch_earnings_for_symbol, s, from_str, to_str, key)
