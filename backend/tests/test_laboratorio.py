@@ -256,7 +256,9 @@ def test_un_fallo_de_MONGO_no_lanza():
     db[lab.COL_EXPERIMENTOS].insert_one = lambda *a, **k: (_ for _ in ()).throw(
         RuntimeError("caído"))
     r = asyncio.run(lab.guardar_experimento(db, lab.ficha([], universo=["A"])))
-    assert r["ok"] is False and r["motivo"] == "error"
+    # El motivo es el TIPO de excepción: distingue «Mongo caído» de «BSON no sabe
+    # codificar esto», que son dos arreglos distintos y llegaban con la misma etiqueta.
+    assert r["ok"] is False and r["motivo"] == "RuntimeError"
 
 
 def test_no_se_guarda_un_documento_VACIO():
@@ -1191,7 +1193,7 @@ def test_si_el_AJUSTADO_falla_mas_se_VALIDA():
     v = lab.veredicto_stops(lab.stops(_toques_con_mae()),
                             lab.banda_de_la_diferencia(_toques_con_mae(), vueltas=40))
     assert v["estado"] == lab.VALIDADA
-    assert v["falsos_pct"][1.0] > v["falsos_pct"][2.4]
+    assert v["falsos_pct"]["1.0"] > v["falsos_pct"]["2.4"]
 
 
 def test_si_la_BANDA_incluye_el_cero_no_se_concluye():
@@ -1329,7 +1331,7 @@ def test_el_resultado_del_EXCLUIDO_sigue_publicandose():
     se ve después de mirarla."""
     regs = _tres_con_uno_flaco()
     v = lab.veredicto_stops(lab.stops(regs), lab.banda_de_la_diferencia(regs, vueltas=30))
-    assert 2.4 in v["falsos_pct"] and 2.4 in v["ahorro_atr"]
+    assert "2.4" in v["falsos_pct"] and "2.4" in v["ahorro_atr"]
 
 
 def test_el_cambio_tras_el_primer_intento_queda_DECLARADO():
@@ -1341,3 +1343,32 @@ def test_el_cambio_tras_el_primer_intento_queda_DECLARADO():
     assert "DESPUÉS de ver el resultado" in texto
     assert "por muestra y nunca por resultado" in texto
     assert "juega en contra" in texto
+
+
+def test_el_documento_de_CADA_experimento_se_puede_guardar():
+    """Mongo solo admite claves de texto, y un experimento que agrupa por un número
+    produce un documento válido en Python que revienta al insertarlo.
+
+    Pasó con los stops: las cifras iban en un diccionario con el múltiplo (1.0, 1.6,
+    2.4) de clave. El experimento corría entero, contestaba 200, el guardado fallaba,
+    el fallo se recogía para no tumbar la petición — y la pantalla quedaba idéntica a
+    un botón muerto. Ningún error, ninguna línea nueva, nada que mirar.
+    """
+    bson = pytest.importorskip("bson")
+    fichas = {
+        "stops": lab.ficha_stops(_toques_con_mae(), universo=["AAPL"]),
+        "aguante": lab.ficha_aguante(_toques(), universo=["AAPL"]),
+        "aguante_limpio": lab.ficha_aguante_limpio(_toques_limpios(), universo=["AAPL"]),
+    }
+    for nombre, doc in fichas.items():
+        bson.encode(lab.claves_en_texto({**doc, "intento": 1})), nombre
+
+
+def test_pasar_las_claves_a_texto_no_pierde_el_numero():
+    """Convierte, no descarta: si tirara la clave, el experimento se guardaría vacío y
+    el fallo silencioso solo cambiaría de sitio."""
+    d = lab.claves_en_texto({"falsos_pct": {1.0: 22.9, 2.4: 0.0}, "n": 253})
+    assert d["falsos_pct"] == {"1.0": 22.9, "2.4": 0.0}
+    assert d["n"] == 253
+    # Y las listas se recorren: el valor a convertir puede venir dentro de una.
+    assert lab.claves_en_texto([{2: "a"}]) == [{"2": "a"}]

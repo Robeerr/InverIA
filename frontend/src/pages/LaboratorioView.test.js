@@ -163,3 +163,11 @@ test("se dice CUÁL experimento está corriendo, no solo que hay uno", () => {
   expect(CODIGO).toContain("useState(null)");
   expect(CODIGO).not.toContain("setCorriendo(true)");
 });
+
+test("un experimento que se mide pero no se guarda NO pasa por bueno", () => {
+  // El endpoint devuelve `guardado`, y la pantalla lo tiraba. Un experimento que corre
+  // entero, contesta 200 y falla al insertar era idéntico a un botón muerto: sin error,
+  // sin línea nueva y sin nada que mirar.
+  expect(CODIGO).toContain("r.guardado.ok === false");
+  expect(CODIGO).toContain("NO se ha podido guardar");
+});

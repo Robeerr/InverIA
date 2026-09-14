@@ -408,10 +408,24 @@ export default function LaboratorioView() {
     setCorriendo(cual);
     setFallo(null);
     try {
-      await (api.laboratorio[cual] || api.laboratorio.distanciaAlMaximo)();
+      const r = await (api.laboratorio[cual] || api.laboratorio.distanciaAlMaximo)();
+      // El backend dice si LLEGÓ A GUARDARSE, y hasta ahora se tiraba. Un experimento
+      // que corre entero, devuelve 200 y falla al insertar era indistinguible de un
+      // botón muerto: sin error, sin línea nueva, sin nada que mirar.
+      if (r?.guardado && r.guardado.ok === false) {
+        setFallo(`el experimento se ha ejecutado pero NO se ha podido guardar `
+                 + `(${r.guardado.motivo || "sin motivo"}`
+                 + `${r.guardado.error ? `: ${r.guardado.error}` : ""}). `
+                 + `Salió «${r.estado || "sin estado"}»`);
+      } else if (r?.estado && r.guardado === undefined) {
+        // Salida temprana del endpoint: ni se midió ni se guardó, pero devuelve 200.
+        setFallo(`el experimento no ha llegado a medirse: `
+                 + `${r.conclusion || r.estado}`);
+      }
       await cargar();
     } catch (err) {
-      setFallo(err?.response?.data?.detail || err.message || "El experimento falló");
+      setFallo(`la petición ha fallado: `
+               + (err?.response?.data?.detail || err.message || "sin detalle"));
     } finally {
       setCorriendo(null);
     }
@@ -514,8 +528,8 @@ export default function LaboratorioView() {
           )}
           {fallo && (
             <p className="mt-2 text-sm text-baja" role="alert" data-testid="lab-fallo">
-              El experimento no ha llegado a ejecutarse: {String(fallo)}. No se ha
-              guardado nada, así que lo que ves arriba sigue siendo la tirada anterior.
+              No hay línea nueva porque {String(fallo)}. Lo que ves arriba sigue siendo
+              la tirada anterior.
             </p>
           )}
           <p className="mt-2 text-xs text-tinta-3 max-w-[70ch] leading-relaxed">

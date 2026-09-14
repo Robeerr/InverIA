@@ -1642,8 +1642,12 @@ def veredicto_stops(d: dict, banda: dict) -> dict:
                               "para compararlos." + aviso}
 
     falsos = [f["falsos_pct"] for f in con_muestra]
-    base = {"falsos_pct": {f["multiplo"]: f["falsos_pct"] for f in filas},
-            "ahorro_atr": {f["multiplo"]: f["ahorro_atr_mediana"] for f in filas},
+    # LAS CLAVES VAN EN TEXTO PORQUE MONGO NO ADMITE OTRA COSA. Con el múltiplo como
+    # número (1.0, 1.6, 2.4) el documento se calcula entero y luego revienta al
+    # insertarlo, y como el fallo se recoge, la pantalla queda exactamente igual que si
+    # el botón no hiciera nada: sin error, sin línea nueva.
+    base = {"falsos_pct": {str(f["multiplo"]): f["falsos_pct"] for f in filas},
+            "ahorro_atr": {str(f["multiplo"]): f["ahorro_atr_mediana"] for f in filas},
             "juzgados": [f["multiplo"] for f in con_muestra],
             "sin_muestra": [f["multiplo"] for f in flacos],
             "banda": banda, "n": d.get("n")}
@@ -1747,6 +1751,24 @@ def ficha_stops(registros: list, universo: list, ventana: int = None) -> dict:
 
 # ── Persistencia. Todo queda, también lo que salió mal ───────────────────────
 
+def claves_en_texto(valor):
+    """Deja el documento en algo que Mongo admita: claves de texto, y nada más. Puro.
+
+    Mongo solo acepta cadenas como clave. Un experimento que agrupa por un número —el
+    múltiplo del stop, un percentil, un año— produce un documento perfectamente válido
+    en Python que revienta al insertarlo. Como el fallo de guardado se recoge para no
+    tumbar la petición, el resultado era un botón que corría minutos y no dejaba rastro.
+
+    Convierte, no descarta: el número sigue estando, escrito. Y no toca nada más — si el
+    documento falla por otra causa, tiene que seguir fallando y verse.
+    """
+    if isinstance(valor, dict):
+        return {str(k): claves_en_texto(v) for k, v in valor.items()}
+    if isinstance(valor, (list, tuple)):
+        return [claves_en_texto(v) for v in valor]
+    return valor
+
+
 async def guardar_experimento(db, doc: dict) -> dict:
     """Anota un experimento. Los rechazados también, y por eso existe esto.
 
@@ -1759,12 +1781,18 @@ async def guardar_experimento(db, doc: dict) -> dict:
     try:
         anteriores = await db[COL_EXPERIMENTOS].count_documents(
             {"hipotesis_id": doc["hipotesis_id"]})
-        doc = {**doc, "intento": anteriores + 1}
+        doc = claves_en_texto({**doc, "intento": anteriores + 1})
         await db[COL_EXPERIMENTOS].insert_one(doc)
         return {"ok": True, "intento": doc["intento"], "estado": doc.get("estado")}
     except Exception as e:
-        logger.warning("laboratorio: no se pudo guardar el experimento: %s", str(e)[:120])
-        return {"ok": False, "motivo": "error", "error": str(e)[:200]}
+        # ERROR y no warning: el experimento ya ha corrido entero —minutos de descarga y
+        # de cálculo— y perderlo aquí deja la pantalla exactamente igual que si el botón
+        # no hiciera nada. El tipo de excepción va delante porque distingue las dos
+        # causas que importan: Mongo caído, o un valor que BSON no sabe codificar.
+        logger.error("laboratorio: el experimento %s se ha medido pero NO se ha "
+                     "guardado: %s: %s", doc.get("hipotesis_id"),
+                     type(e).__name__, str(e)[:200])
+        return {"ok": False, "motivo": type(e).__name__, "error": str(e)[:200]}
 
 
 async def experimentos(db, limite: int = 50) -> list:
