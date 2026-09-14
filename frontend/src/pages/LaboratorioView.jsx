@@ -357,12 +357,33 @@ function Experimento({ e }) {
   );
 }
 
+/** Un botón de experimento. Solo el que corre cambia de texto. */
+function Boton({ cual, activo, on, testid, acento, verbo = "Midiendo…", children }) {
+  const yo = activo === cual;
+  return (
+    <button onClick={() => on(cual)} disabled={!!activo} data-testid={testid}
+            aria-busy={yo || undefined}
+            className={`iv-etiqueta flex items-center gap-2 border px-3 py-2
+                        hover:text-tinta disabled:opacity-50
+                        ${acento ? "border-marca" : "border-linea"}`}>
+      <FlaskIcon size={14} />
+      {yo ? verbo : children}
+    </button>
+  );
+}
+
 export default function LaboratorioView() {
   const [datos, setDatos] = useState(null);
   const [experimentos, setExperimentos] = useState([]);
   const [cargando, setCargando] = useState(true);
-  const [corriendo, setCorriendo] = useState(false);
+  // Cuál se está ejecutando, no «si hay alguno»: con un booleano los nueve botones
+  // decían «Midiendo…» a la vez y ninguno decía cuál. Un experimento tarda minutos.
+  const [corriendo, setCorriendo] = useState(null);
   const [error, setError] = useState(null);
+  // El fallo de EJECUTAR es otro que el de LEER. Compartían estado y compartían
+  // cartel, así que un experimento caído se anunciaba como «no se ha podido leer el
+  // laboratorio» y encima arriba del todo, lejos del botón que acababas de pulsar.
+  const [fallo, setFallo] = useState(null);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -384,14 +405,15 @@ export default function LaboratorioView() {
   useEffect(() => { cargar(); }, [cargar]);
 
   const ejecutar = async (cual) => {
-    setCorriendo(true);
+    setCorriendo(cual);
+    setFallo(null);
     try {
       await (api.laboratorio[cual] || api.laboratorio.distanciaAlMaximo)();
       await cargar();
     } catch (err) {
-      setError(err?.response?.data?.detail || err.message || "El experimento falló");
+      setFallo(err?.response?.data?.detail || err.message || "El experimento falló");
     } finally {
-      setCorriendo(false);
+      setCorriendo(null);
     }
   };
 
@@ -464,63 +486,38 @@ export default function LaboratorioView() {
           </ul>
 
           <div className="mt-4 flex flex-wrap gap-2">
-            <button onClick={() => ejecutar("distanciaAlMaximo")} disabled={corriendo}
-                    className="iv-etiqueta flex items-center gap-2 border border-linea
-                               px-3 py-2 hover:text-tinta disabled:opacity-50"
-                    data-testid="lab-ejecutar">
-              <FlaskIcon size={14} />
-              {corriendo ? "Midiendo…" : "Medir: distancia al máximo anual"}
-            </button>
-            <button onClick={() => ejecutar("aguante")} disabled={corriendo}
-                    className="iv-etiqueta flex items-center gap-2 border border-marca
-                               px-3 py-2 hover:text-tinta disabled:opacity-50"
-                    data-testid="lab-ejecutar-aguante">
-              <FlaskIcon size={14} />
-              {corriendo ? "Midiendo…" : "Medir: ¿aguantan las zonas fuertes?"}
-            </button>
-            <button onClick={() => ejecutar("stops")} disabled={corriendo}
-                    className="iv-etiqueta flex items-center gap-2 border border-marca
-                               px-3 py-2 hover:text-tinta disabled:opacity-50"
-                    data-testid="lab-ejecutar-stops">
-              <FlaskIcon size={14} />
-              {corriendo ? "Midiendo…" : "Medir: ¿dónde poner el stop?"}
-            </button>
-            <button onClick={() => ejecutar("aguanteLimpio")} disabled={corriendo}
-                    className="iv-etiqueta flex items-center gap-2 border border-marca
-                               px-3 py-2 hover:text-tinta disabled:opacity-50"
-                    data-testid="lab-ejecutar-aguante-limpio">
-              <FlaskIcon size={14} />
-              {corriendo ? "Midiendo…" : "Réplica fuera de muestra: aguante limpio"}
-            </button>
-            <button onClick={() => ejecutar("azar")} disabled={corriendo}
-                    className="iv-etiqueta flex items-center gap-2 border border-marca
-                               px-3 py-2 hover:text-tinta disabled:opacity-50"
-                    data-testid="lab-ejecutar-azar">
-              <FlaskIcon size={14} />
-              {corriendo ? "Barajando…" : "Auditar el método: ¿qué produce el azar?"}
-            </button>
-            <button onClick={() => ejecutar("pendiente")} disabled={corriendo}
-                    className="iv-etiqueta flex items-center gap-2 border border-linea
-                               px-3 py-2 hover:text-tinta disabled:opacity-50"
-                    data-testid="lab-ejecutar-pendiente">
-              <FlaskIcon size={14} />
-              {corriendo ? "Midiendo…" : "Medir: persistencia de la tendencia"}
-            </button>
-            <button onClick={() => ejecutar("periodo")} disabled={corriendo}
-                    className="iv-etiqueta flex items-center gap-2 border border-linea
-                               px-3 py-2 hover:text-tinta disabled:opacity-50"
-                    data-testid="lab-ejecutar-periodo">
-              <FlaskIcon size={14} />
-              {corriendo ? "Midiendo…" : "Corte temporal: ¿se repite cada año?"}
-            </button>
-            <button onClick={() => ejecutar("distribucion")} disabled={corriendo}
-                    className="iv-etiqueta flex items-center gap-2 border border-linea
-                               px-3 py-2 hover:text-tinta disabled:opacity-50"
-                    data-testid="lab-ejecutar-distribucion">
-              <FlaskIcon size={14} />
-              {corriendo ? "Midiendo…" : "Diagnóstico: ¿centro o cola?"}
-            </button>
+            <Boton cual="distanciaAlMaximo" activo={corriendo} on={ejecutar}
+                   testid="lab-ejecutar">Medir: distancia al máximo anual</Boton>
+            <Boton cual="aguante" activo={corriendo} on={ejecutar} acento
+                   testid="lab-ejecutar-aguante">Medir: ¿aguantan las zonas fuertes?</Boton>
+            <Boton cual="stops" activo={corriendo} on={ejecutar} acento
+                   testid="lab-ejecutar-stops">Medir: ¿dónde poner el stop?</Boton>
+            <Boton cual="aguanteLimpio" activo={corriendo} on={ejecutar} acento
+                   testid="lab-ejecutar-aguante-limpio">
+              Réplica fuera de muestra: aguante limpio
+            </Boton>
+            <Boton cual="azar" activo={corriendo} on={ejecutar} acento verbo="Barajando…"
+                   testid="lab-ejecutar-azar">Auditar el método: ¿qué produce el azar?</Boton>
+            <Boton cual="pendiente" activo={corriendo} on={ejecutar}
+                   testid="lab-ejecutar-pendiente">Medir: persistencia de la tendencia</Boton>
+            <Boton cual="periodo" activo={corriendo} on={ejecutar}
+                   testid="lab-ejecutar-periodo">Corte temporal: ¿se repite cada año?</Boton>
+            <Boton cual="distribucion" activo={corriendo} on={ejecutar}
+                   testid="lab-ejecutar-distribucion">Diagnóstico: ¿centro o cola?</Boton>
           </div>
+
+          {corriendo && (
+            <p className="mt-2 text-xs text-tinta-3" role="status">
+              Descargando histórico y midiendo. Tarda minutos y la pestaña tiene que
+              seguir abierta: si la cierras, el experimento no se guarda.
+            </p>
+          )}
+          {fallo && (
+            <p className="mt-2 text-sm text-baja" role="alert" data-testid="lab-fallo">
+              El experimento no ha llegado a ejecutarse: {String(fallo)}. No se ha
+              guardado nada, así que lo que ves arriba sigue siendo la tirada anterior.
+            </p>
+          )}
           <p className="mt-2 text-xs text-tinta-3 max-w-[70ch] leading-relaxed">
             Descarga el histórico semanal de tu universo y mide el retorno posterior
             según lo lejos que estuviera cada acción de su máximo anual. No llama a

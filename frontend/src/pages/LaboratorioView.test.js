@@ -143,3 +143,23 @@ test("la pantalla está enganchada a la navegación y a una ruta", () => {
   expect(APP).toContain('path="/laboratorio"');
   expect(APP).toContain("LaboratorioView");
 });
+
+test("un experimento caído NO se anuncia como un fallo de lectura", () => {
+  // Compartían `error` y compartían cartel: si la ejecución fallaba, la pantalla decía
+  // «no se ha podido leer el laboratorio» arriba del todo, lejos del botón pulsado, y
+  // la lectura sí había funcionado. Son dos estados distintos.
+  expect(CODIGO).toContain("setFallo(");
+  expect(CODIGO).toContain('data-testid="lab-fallo"');
+  // El catch de `ejecutar` no puede volver a escribir en el estado de lectura.
+  const ejecutar = CODIGO.slice(CODIGO.indexOf("const ejecutar"),
+                                CODIGO.indexOf("const c = datos"));
+  expect(ejecutar).not.toContain("setError(");
+});
+
+test("se dice CUÁL experimento está corriendo, no solo que hay uno", () => {
+  // Con un booleano los ocho botones ponían «Midiendo…» a la vez. Un experimento tarda
+  // minutos: no saber cuál corre es indistinguible de que el botón no hiciera nada.
+  expect(CODIGO).toContain("const yo = activo === cual");
+  expect(CODIGO).toContain("useState(null)");
+  expect(CODIGO).not.toContain("setCorriendo(true)");
+});
