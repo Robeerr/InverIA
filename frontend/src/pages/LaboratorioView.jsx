@@ -140,7 +140,14 @@ function Experimento({ e }) {
             <p className="mt-2 text-xs text-tinta-3 max-w-[70ch] leading-relaxed">
               Diferencia observada {r.banda.observada_pp} pp · banda de{" "}
               {r.banda.banda_baja_pp} a {r.banda.banda_alta_pp} pp, por remuestreo de{" "}
-              {r.banda.bloques} días. Si incluye el cero, no se distinguen.
+              {r.banda.bloques} días.{" "}
+              {/* Antes decía «Si incluye el cero, no se distinguen» pasara lo que
+                  pasara. Es la regla, no el resultado — y puesta debajo de una banda
+                  que NO incluye el cero se lee como si dijera que no se distinguen,
+                  justo lo contrario de lo medido. Dice lo que ha salido. */}
+              {r.banda.banda_baja_pp <= 0 && r.banda.banda_alta_pp >= 0
+                ? "Incluye el cero: no se distinguen."
+                : "No incluye el cero: se distinguen."}
             </p>
           )}
         </div>

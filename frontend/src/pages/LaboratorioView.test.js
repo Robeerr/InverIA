@@ -187,3 +187,14 @@ test("una réplica dice DE QUÉ experimento nace", () => {
   expect(VISTA).toContain("e.deriva_de");
   expect(VISTA).toContain("Réplica de:");
 });
+
+test("la banda dice lo que ha salido, no la regla general", () => {
+  // «Si incluye el cero, no se distinguen» salía pasara lo que pasara. Debajo de una
+  // banda de 11,09 a 22,31 —que NO incluye el cero— se lee como si dijera que no se
+  // distinguen: justo lo contrario de lo medido.
+  // Sobre el código sin comentarios: el comentario que explica el arreglo cita la
+  // frase vieja, y buscarla en el fichero entero daba un falso positivo.
+  expect(CODIGO).not.toContain("Si incluye el cero");
+  expect(VISTA).toContain("Incluye el cero: no se distinguen.");
+  expect(VISTA).toContain("No incluye el cero: se distinguen.");
+});
