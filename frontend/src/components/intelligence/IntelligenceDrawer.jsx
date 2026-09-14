@@ -232,8 +232,16 @@ export default function IntelligenceDrawer({ evento, onCerrar }) {
         )}
 
         {/* La fecha del calendario es del proveedor, no un anuncio de la empresa. Decirlo
-            no es letra pequeña: es la diferencia entre un hecho y una previsión. */}
-        {d?.suceso && d.suceso !== "publicado" && (
+            no es letra pequeña: es la diferencia entre un hecho y una previsión.
+            
+            LA CONDICIÓN MIRA LA FUENTE, NO EL SUCESO
+            
+            Miraba `suceso !== "publicado"`, y un 8-K tiene `suceso: "8-K"`: la condición
+            se cumplía, así que este aviso salía en TODOS los filings de la SEC desde que
+            existe Earnings. Decía que la fecha de un documento registrado en la SEC era
+            una estimación de Finnhub — justo lo contrario de lo que es, y sobre la fuente
+            más fiable que tenemos. */}
+        {evento.fuente === "earnings" && d?.suceso && d.suceso !== "publicado" && (
           <p className="mt-3 text-xs text-tinta-3 border-l border-linea-fuerte pl-3">
             Fecha del calendario de Finnhub. Puede ser una estimación suya y no un anuncio
             de la empresa, y por eso puede moverse — cuando se mueve, entra como un evento
