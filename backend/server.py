@@ -327,67 +327,105 @@ async def lifespan(app: FastAPI):
             logger.info("tracemalloc ACTIVO (MEM_TRACE=1)")
         except Exception as e:
             logger.warning("No se pudo arrancar tracemalloc: %s", e)
-    # DB indexes
-    await db.signal_entries.create_index("symbol")
-    await db.signal_entries.create_index("active")
+    # LOS ÍNDICES NO PUEDEN TUMBAR EL ARRANQUE
+    #
+    # Crear un índice es una ESCRITURA. El 14-09-2026 Atlas se quedó sin primario
+    # —`ReplicaSetNoPrimary`, un nodo en `Unknown` y dos secundarios— durante una
+    # elección, la primera escritura falló con `ServerSelectionTimeoutError` a los 5 s y
+    # la aplicación entera murió con «Application startup failed. Exiting.». Render
+    # reintentó y el segundo arranque funcionó, pero entre medias hubo un despliegue
+    # caído por algo que no era nuestro y que dura segundos.
+    #
+    # Estos índices ya existen: se crearon en arranques anteriores y `create_index` es
+    # idempotente. Fallar al RE-crearlos no rompe nada — la aplicación sirve igual.
+    #
+    # Se reintenta UNA vez tras una espera, porque una elección de Atlas se resuelve en
+    # decenas de segundos y ese reintento habría evitado la caída. Si tampoco entonces,
+    # se sigue arrancando y se deja constancia: el arranque no es el sitio donde morir
+    # por un índice.
+    async def _crear_indices():
+        # DB indexes
+        await db.signal_entries.create_index("symbol")
+        await db.signal_entries.create_index("active")
 
-    # Limpieza: el grupo "Cimientos" se ha retirado. Borra sus entradas para que no
-    # aparezcan en Alertas ni en el Calendario. (No se crean nuevas: la UI ya no lo ofrece.)
-    try:
-        _rm = await db.signal_entries.delete_many({"grupo": "cimientos"})
-        if _rm.deleted_count:
-            logger.info("Cimientos retirado: %d entradas borradas", _rm.deleted_count)
-            _cache._store.pop("signals_list", None)
-            _invalidar_signals_hot()
-    except Exception as e:
-        logger.warning(f"Purga de Cimientos falló: {e}")
-    await db.analyses.create_index([("symbol", 1), ("created_at", -1)])
-    await db.watchlist.create_index("symbol")
-    await db.chartist_state.create_index("symbol", unique=True)
-    # Único: armar dos veces la misma acción daría dos avisos idénticos. El endpoint ya lo
-    # comprueba, pero entre la comprobación y el insert cabe una segunda petición.
-    await db.vigilancia_veto.create_index("symbol", unique=True)
-    # Único: es lo que impide que dos procesos que redactan el mismo símbolo a la vez
-    # escriban dos «versión 2». El perdedor de la carrera recibe un error y no reintenta:
-    # el que ganó ya escribió esa misma versión.
-    await db[tesis_registro.COLECCION].create_index(
-        [("symbol", 1), ("version", -1)], unique=True)
-    # Único: una foto por símbolo y día. Es lo que hace que la PRIMERA del día mande —
-    # sin él, dos construcciones del mismo dashboard podrían dejar dos fotos del mismo
-    # día y al estudiarlas después no se sabría cuál correspondía a la decisión.
-    await db[mercado_registro.COLECCION].create_index(
-        [("symbol", 1), ("dia", -1)], unique=True)
-    # Se consulta por (símbolo, temporalidad, tipo, estado) al comprobar si ese patrón
-    # ya está anotado, y el pre-cálculo lo hace por cada acción y cada temporalidad en
-    # cada vuelta. Sin índice serían cinco barridos completos por acción.
-    await db.cartera_historico.create_index("dia", unique=True)
-    await db.patrones_detectados.create_index(
-        [("symbol", 1), ("timeframe", 1), ("tipo", 1), ("estado", 1)])
-    await db.alerts.create_index("symbol")
-    # Libro de operaciones: todo se consulta por símbolo y se ordena por fecha.
-    await db.isin_map.create_index("isin", unique=True)
-    for coleccion in (db.compras, db.ventas, db.dividendos):
-        await coleccion.create_index([("symbol", 1), ("fecha", 1)])
-        await coleccion.create_index("id", unique=True)
-    # Las tres consultas de newsletters filtran por received_at >= cutoff y ordenan por
-    # received_at descendente. Sin índice, Mongo recorría la colección entera y ordenaba en
-    # memoria en cada cambio de ticker (/fuentes está en ese camino).
-    await db.newsletter_summaries.create_index([("received_at", -1)])
-    await db.analyst_ideas.create_index([("symbol", 1), ("detected_at", -1)])
-    # Intelligence. El índice único sobre `id` es LA garantía de idempotencia: aunque dos
-    # ciclos se solapen tras un reinicio, el mismo filing no puede existir dos veces.
-    await db.intel_eventos.create_index("id", unique=True)
-    # El radar pide los últimos de cada fuente y la pantalla filtra por etapa: sin estos
-    # dos, cada carga recorrería la colección entera y ordenaría en memoria.
-    await db.intel_eventos.create_index([("fuente", 1), ("recibido_en", -1)])
-    await db.intel_eventos.create_index([("etapa", 1), ("recibido_en", -1)])
-    await db.intel_salud.create_index("fuente", unique=True)
-    # Un cursor por empresa: hasta dónde llegamos con su historial de registros. Único
-    # porque dos cursores del mismo CIK harían que uno de los dos se ignorara en silencio.
-    await db.intel_cursores.create_index("cik", unique=True)
-    # El presupuesto diario de IA: un documento por día y concepto. Único porque dos
-    # documentos del mismo día harían que uno de los dos no frenara nada.
-    await db.intel_uso_ia.create_index([("dia", 1), ("concepto", 1)], unique=True)
+        # Limpieza: el grupo "Cimientos" se ha retirado. Borra sus entradas para que no
+        # aparezcan en Alertas ni en el Calendario. (No se crean nuevas: la UI ya no lo ofrece.)
+        try:
+            _rm = await db.signal_entries.delete_many({"grupo": "cimientos"})
+            if _rm.deleted_count:
+                logger.info("Cimientos retirado: %d entradas borradas", _rm.deleted_count)
+                _cache._store.pop("signals_list", None)
+                _invalidar_signals_hot()
+        except Exception as e:
+            logger.warning(f"Purga de Cimientos falló: {e}")
+        await db.analyses.create_index([("symbol", 1), ("created_at", -1)])
+        await db.watchlist.create_index("symbol")
+        await db.chartist_state.create_index("symbol", unique=True)
+        # Único: armar dos veces la misma acción daría dos avisos idénticos. El endpoint ya lo
+        # comprueba, pero entre la comprobación y el insert cabe una segunda petición.
+        await db.vigilancia_veto.create_index("symbol", unique=True)
+        # Único: es lo que impide que dos procesos que redactan el mismo símbolo a la vez
+        # escriban dos «versión 2». El perdedor de la carrera recibe un error y no reintenta:
+        # el que ganó ya escribió esa misma versión.
+        await db[tesis_registro.COLECCION].create_index(
+            [("symbol", 1), ("version", -1)], unique=True)
+        # Único: una foto por símbolo y día. Es lo que hace que la PRIMERA del día mande —
+        # sin él, dos construcciones del mismo dashboard podrían dejar dos fotos del mismo
+        # día y al estudiarlas después no se sabría cuál correspondía a la decisión.
+        await db[mercado_registro.COLECCION].create_index(
+            [("symbol", 1), ("dia", -1)], unique=True)
+        # Se consulta por (símbolo, temporalidad, tipo, estado) al comprobar si ese patrón
+        # ya está anotado, y el pre-cálculo lo hace por cada acción y cada temporalidad en
+        # cada vuelta. Sin índice serían cinco barridos completos por acción.
+        await db.cartera_historico.create_index("dia", unique=True)
+        await db.patrones_detectados.create_index(
+            [("symbol", 1), ("timeframe", 1), ("tipo", 1), ("estado", 1)])
+        await db.alerts.create_index("symbol")
+        # Libro de operaciones: todo se consulta por símbolo y se ordena por fecha.
+        await db.isin_map.create_index("isin", unique=True)
+        for coleccion in (db.compras, db.ventas, db.dividendos):
+            await coleccion.create_index([("symbol", 1), ("fecha", 1)])
+            await coleccion.create_index("id", unique=True)
+        # Las tres consultas de newsletters filtran por received_at >= cutoff y ordenan por
+        # received_at descendente. Sin índice, Mongo recorría la colección entera y ordenaba en
+        # memoria en cada cambio de ticker (/fuentes está en ese camino).
+        await db.newsletter_summaries.create_index([("received_at", -1)])
+        await db.analyst_ideas.create_index([("symbol", 1), ("detected_at", -1)])
+        # Intelligence. El índice único sobre `id` es LA garantía de idempotencia: aunque dos
+        # ciclos se solapen tras un reinicio, el mismo filing no puede existir dos veces.
+        await db.intel_eventos.create_index("id", unique=True)
+        # El radar pide los últimos de cada fuente y la pantalla filtra por etapa: sin estos
+        # dos, cada carga recorrería la colección entera y ordenaría en memoria.
+        await db.intel_eventos.create_index([("fuente", 1), ("recibido_en", -1)])
+        await db.intel_eventos.create_index([("etapa", 1), ("recibido_en", -1)])
+        await db.intel_salud.create_index("fuente", unique=True)
+        # Un cursor por empresa: hasta dónde llegamos con su historial de registros. Único
+        # porque dos cursores del mismo CIK harían que uno de los dos se ignorara en silencio.
+        await db.intel_cursores.create_index("cik", unique=True)
+        # El presupuesto diario de IA: un documento por día y concepto. Único porque dos
+        # documentos del mismo día harían que uno de los dos no frenara nada.
+        await db.intel_uso_ia.create_index([("dia", 1), ("concepto", 1)], unique=True)
+
+    global _INDICES
+    for intento in (1, 2):
+        try:
+            await _crear_indices()
+            _INDICES = {"ok": True, "intento": intento}
+            break
+        except Exception as e:
+            if intento == 1:
+                logger.warning("Índices: fallo al crearlos (%s). Reintento en %ds.",
+                               str(e)[:200], ESPERA_REINTENTO_INDICES)
+                await asyncio.sleep(ESPERA_REINTENTO_INDICES)
+                continue
+            # DEGRADACIÓN VISIBLE, no silenciosa. Sin los índices únicos, las garantías
+            # que dependen de ellos —una foto por símbolo y día, una versión de tesis por
+            # número, un evento por id— dejan de estar aseguradas por la base de datos.
+            # Eso tiene que poder verse desde fuera, no solo en un log que nadie lee.
+            logger.error("Índices: NO se han podido crear tras %d intentos (%s). La "
+                         "aplicación arranca igual, pero las garantías de unicidad no "
+                         "están aseguradas por Mongo.", intento, str(e)[:200])
+            _INDICES = {"ok": False, "error": str(e)[:300], "intentos": intento}
 
     # Wire the persistent snapshot cache and hydrate in-memory caches from the last
     # saved scan so the first request returns data instantly (no "warming" screen).
@@ -1179,11 +1217,25 @@ async def root():
     return {"app": "InverIA", "status": "ok"}
 
 
+#: Cuánto se espera antes de reintentar los índices. Una elección de réplica en Atlas
+#: se resuelve en decenas de segundos; el `ServerSelectionTimeoutError` salta a los 5.
+ESPERA_REINTENTO_INDICES = int(os.environ.get("ESPERA_REINTENTO_INDICES", 20))
+
+#: Cómo fue la creación de índices en este arranque. `None` mientras no se ha intentado.
+_INDICES = None
+
+
 @api_router.api_route("/health", methods=["GET", "HEAD"])
 async def health():
     """Lightweight liveness probe (Render health check / uptime monitoring).
-    Accepts both GET and HEAD."""
-    return {"status": "ok", "ts": datetime.now(timezone.utc).isoformat()}
+    Accepts both GET and HEAD.
+
+    Lleva además el estado de los ÍNDICES. Si no se pudieron crear, la aplicación sirve
+    igual pero las garantías de unicidad no están aseguradas por Mongo, y eso tiene que
+    poder verse desde fuera en vez de quedarse en un log.
+    """
+    return {"status": "ok", "ts": datetime.now(timezone.utc).isoformat(),
+            "indices": _INDICES}
 
 
 # ---------- Auth ----------

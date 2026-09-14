@@ -69,7 +69,13 @@ def test_el_analisis_devuelve_el_nombre_legible_ademas_de_la_clave():
 
 def test_la_pantalla_no_pinta_la_clave_cruda():
     """El aviso de "Análisis completado" era el sitio donde el usuario lo vio."""
-    dash = Path(server.__file__).parent.parent / "frontend/src/pages/Dashboard.jsx"
+    # `.resolve()` y no `.parent.parent` a secas. Los tests insertan en `sys.path` una
+    # ruta SIN normalizar —`.../backend/tests/..`— así que `server.__file__` puede llegar
+    # como `.../backend/tests/../server.py` y entonces `.parent.parent` apunta a
+    # `.../backend/tests`. Funcionaba por casualidad: dependía de qué fichero de tests
+    # importara `server` primero, y añadir uno que empezara por «a» lo rompió.
+    dash = (Path(server.__file__).resolve().parent.parent
+            / "frontend/src/pages/Dashboard.jsx")
     src = dash.read_text(encoding="utf-8")
     assert "${res.model}" not in src, "eso pinta la clave de routing, no el modelo"
     assert "${res.requested_model}" not in src
