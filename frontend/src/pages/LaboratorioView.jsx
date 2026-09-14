@@ -97,6 +97,38 @@ function Experimento({ e }) {
       <p className="mt-1 text-xs text-tinta-3 max-w-[70ch] leading-relaxed">
         {r.conclusion}
       </p>
+      {!!(r.cubos || []).length && (
+        <div className="mt-2 overflow-x-auto">
+          <table className="text-xs w-full">
+            <thead className="text-tinta-3">
+              <tr><th className="text-left font-normal py-1">Fuerza</th>
+                  <th className="text-right font-normal">Toques resueltos</th>
+                  <th className="text-right font-normal">Aguantó</th>
+                  <th className="text-right font-normal">Aguantó limpio</th></tr>
+            </thead>
+            <tbody className="iv-cifra">
+              {r.cubos.map((c) => (
+                <tr key={c.cubo} className="border-t border-linea">
+                  <td className="py-1 text-tinta-2">{c.cubo}</td>
+                  <td className="text-right text-tinta-3">{c.n}</td>
+                  <td className="text-right text-tinta">
+                    {c.aguante_pct == null ? "—" : `${c.aguante_pct}%`}
+                  </td>
+                  <td className="text-right text-tinta-3">
+                    {c.aguante_limpio_pct == null ? "—" : `${c.aguante_limpio_pct}%`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {r.ruido && (
+            <p className="mt-2 text-xs text-tinta-3 max-w-[70ch] leading-relaxed">
+              Separación observada {r.ruido.observado_pp} pp · suelo de ruido{" "}
+              {r.ruido.azar_p95_pp} pp, medido barajando los cubos dentro de cada fecha.
+            </p>
+          )}
+        </div>
+      )}
       {!!(r.tramos || []).length && (
         <div className="mt-2 overflow-x-auto">
           <table className="text-xs w-full">
@@ -359,6 +391,13 @@ export default function LaboratorioView() {
                     data-testid="lab-ejecutar">
               <FlaskIcon size={14} />
               {corriendo ? "Midiendo…" : "Medir: distancia al máximo anual"}
+            </button>
+            <button onClick={() => ejecutar("aguante")} disabled={corriendo}
+                    className="iv-etiqueta flex items-center gap-2 border border-marca
+                               px-3 py-2 hover:text-tinta disabled:opacity-50"
+                    data-testid="lab-ejecutar-aguante">
+              <FlaskIcon size={14} />
+              {corriendo ? "Midiendo…" : "Medir: ¿aguantan las zonas fuertes?"}
             </button>
             <button onClick={() => ejecutar("azar")} disabled={corriendo}
                     className="iv-etiqueta flex items-center gap-2 border border-marca

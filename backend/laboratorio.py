@@ -1171,6 +1171,213 @@ def ficha_azar(obs: list, universo: list, desde: str = None, hasta: str = None) 
     }
 
 
+# ── Tercera hipótesis: ¿aguantan las zonas de compra? ───────────────────────
+#
+# POR QUÉ ESTA PREGUNTA Y NO OTRA VARIABLE DE PRECIO
+#
+# Las dos hipótesis anteriores murieron por lo mismo: preguntaban «¿qué retorno viene
+# después?», y el retorno a trece semanas es tan ruidoso que con nuestra muestra hace
+# falta un efecto de más de 8 pp de mediana para verlo. No existe ninguno así.
+#
+# Esta pregunta es de otra forma, y ahí está toda la diferencia:
+#
+#   · el resultado es BINARIO —el nivel aguantó o se rompió—, no un retorno continuo;
+#   · hay MILES de toques en lugar de ~1.900 observaciones;
+#   · el evento es LOCAL: lo que pasa en los días siguientes a tocar un soporte depende
+#     mucho menos del régimen del año que un retorno trimestral.
+#
+# Las tres cosas bajan el ruido. Es la primera pregunta que hacemos donde el instrumento
+# tiene una posibilidad real de detectar algo.
+#
+# Y AFECTA A LO QUE YA SE ENSEÑA EN PANTALLA
+#
+# `levels_engine` puntúa cada zona de 0 a 100 y la ficha de la acción dice «Nivel fuerte
+# (78/100)». Ese número nunca se ha comprobado. Si las zonas «fuertes» no aguantan más
+# que las «débiles», el usuario está leyendo una etiqueta sin respaldo — y la tesis
+# determinista la cita («la zona de compra más sólida es el NIVEL 1»).
+#
+# `backtest.py` lleva meses escrito, hace el walk-forward punto-en-el-tiempo y nunca se
+# ha ejecutado como experimento registrado: sus resultados viven en una caché de 24 h y
+# se pierden. Aquí no se reimplementa nada; se le pone alrededor la disciplina que les
+# falta a sus dos endpoints — dirección fijada antes, suelo de ruido medido, corte por
+# año y un veredicto que puede decir que no sabe.
+
+#: Los tres cubos que ya usa `backtest._bucket`, de menos a más fuerte. El orden importa:
+#: es la dirección que la hipótesis afirma.
+CUBOS_FUERZA = ("debil", "media", "fuerte")
+
+
+def aguante_por_cubo(registros: list) -> dict:
+    """Con qué frecuencia aguantó cada cubo de fuerza. Pura.
+
+    Solo cuentan los toques RESUELTOS: un nivel que no llegó a tocarse no aguantó ni se
+    rompió, y contarlo como cualquiera de las dos cosas sería inventar el dato.
+    """
+    filas = []
+    for cubo in CUBOS_FUERZA:
+        rs = [r for r in (registros or [])
+              if r.get("bucket") == cubo and r.get("held") is not None]
+        aguantan = sum(1 for r in rs if r["held"])
+        limpios = [r for r in rs if r.get("clean") is not None]
+        años = {}
+        for r in rs:
+            a = str(r.get("anchor") or "")[:4]
+            if a:
+                años[a] = años.get(a, 0) + 1
+        filas.append({
+            "cubo": cubo,
+            "n": len(rs),
+            "aguante_pct": round(aguantan / len(rs) * 100, 1) if rs else None,
+            # «Limpio» es más exigente: aguantó Y no llegó a romperse en ningún momento
+            # de la ventana. Un rebote que llega después de haber perdido el nivel no es
+            # lo que promete una zona de compra.
+            "aguante_limpio_pct": (
+                round(sum(1 for r in limpios if r["clean"]) / len(limpios) * 100, 1)
+                if limpios else None),
+            "por_año": dict(sorted(años.items())),
+        })
+    return {"cubos": filas, "n": sum(f["n"] for f in filas)}
+
+
+def _rango_de_aguante(registros: list) -> Optional[float]:
+    filas = aguante_por_cubo(registros)["cubos"]
+    tasas = [f["aguante_pct"] for f in filas if f["aguante_pct"] is not None]
+    return round(max(tasas) - min(tasas), 2) if len(tasas) > 1 else None
+
+
+def azar_del_aguante(registros: list, vueltas: int = None) -> dict:
+    """Qué diferencia de aguante produce el azar con ESTOS toques. Pura y determinista.
+
+    Se barajan los cubos de fuerza DENTRO de cada fecha, por el mismo motivo que en el
+    otro experimento: en un mismo día el mercado entero empuja en la misma dirección, y
+    romper eso haría que el azar pareciera más manso de lo que es.
+    """
+    import random
+    vueltas = VUELTAS_AZAR if vueltas is None else vueltas
+    generador = random.Random(SEMILLA)
+    observado = _rango_de_aguante(registros)
+
+    por_fecha = {}
+    for r in registros or []:
+        por_fecha.setdefault(r.get("anchor"), []).append(r)
+
+    simulados = []
+    for _ in range(vueltas):
+        barajados = []
+        for items in por_fecha.values():
+            cubos = [r["bucket"] for r in items]
+            generador.shuffle(cubos)
+            barajados += [{**r, "bucket": c} for r, c in zip(items, cubos)]
+        s = _rango_de_aguante(barajados)
+        if s is not None:
+            simulados.append(s)
+    simulados.sort()
+    if not simulados:
+        return {"observado_pp": observado, "vueltas": 0}
+    return {
+        "observado_pp": observado,
+        "vueltas": len(simulados),
+        "azar_p95_pp": _percentil(simulados, 0.95),
+        "azar_mediana_pp": _percentil(simulados, 0.5),
+        "azar_maximo_pp": simulados[-1],
+    }
+
+
+def veredicto_aguante(d: dict, ruido: dict) -> dict:
+    """¿Aguantan más las zonas fuertes? Puro.
+
+    La dirección se fijó antes de mirar y es la que el propio número afirma: si la
+    pantalla dice «Nivel fuerte (78/100)», las zonas fuertes tienen que aguantar más que
+    las medias, y estas más que las débiles.
+    """
+    filas = d.get("cubos") or []
+    flacos = [f["cubo"] for f in filas if f["n"] < MUESTRA_MINIMA]
+    if flacos:
+        return {"estado": SIN_DATOS,
+                "conclusion": "Cubos sin muestra suficiente: " + ", ".join(flacos)}
+
+    tasas = [f["aguante_pct"] for f in filas]
+    observado = ruido.get("observado_pp")
+    suelo = ruido.get("azar_p95_pp")
+    base = {"aguantes": {f["cubo"]: f["aguante_pct"] for f in filas},
+            "rango_pp": observado, "suelo_de_ruido_pp": suelo, "n": d.get("n")}
+
+    if suelo is None or observado is None:
+        return {**base, "estado": SIN_DATOS,
+                "conclusion": "No se ha podido medir el suelo de ruido."}
+    if observado < suelo:
+        return {**base, "estado": NO_CONCLUYENTE,
+                "conclusion": f"Los cubos se separan {observado} pp, por debajo del suelo "
+                              f"de ruido ({suelo} pp): cabe dentro de lo que el azar "
+                              "produce solo. La puntuación de fuerza NO queda demostrada, "
+                              "y tampoco desmentida."}
+    if tasas == sorted(tasas):
+        return {**base, "estado": VALIDADA,
+                "conclusion": f"Las zonas fuertes aguantan más que las medias y estas más "
+                              f"que las débiles, con {observado} pp entre la mejor y la "
+                              f"peor — por encima del suelo de ruido ({suelo} pp). La "
+                              "puntuación de fuerza mide algo real."}
+    return {**base, "estado": RECHAZADA,
+            "conclusion": f"Los cubos se separan {observado} pp, por encima del ruido "
+                          f"({suelo} pp), pero NO en el orden que la puntuación afirma. "
+                          "El número que la pantalla enseña como «fuerza» no ordena las "
+                          "zonas por lo bien que aguantan."}
+
+
+def ficha_aguante(registros: list, universo: list, ventana: int = None) -> dict:
+    """El experimento del aguante, listo para guardar. Puro."""
+    d = aguante_por_cubo(registros)
+    ruido = azar_del_aguante(registros)
+    v = veredicto_aguante(d, ruido)
+    fechas = [str(r.get("anchor") or "")[:10] for r in (registros or []) if r.get("anchor")]
+    return {
+        "hipotesis_id": "FUERZA_DE_LAS_ZONAS",
+        "tipo": "primero",
+        "titulo": "¿Aguantan más las zonas de compra que el motor puntúa como fuertes?",
+        "metodo": {
+            "que_pregunta": "De los soportes que el precio llegó a TOCAR, con qué "
+                            "frecuencia rebotó antes de romperse, agrupado por el cubo de "
+                            "fuerza que les asignó `levels_engine`.",
+            "universo": sorted(universo or []),
+            "simbolos": len(universo or []),
+            "desde": min(fechas) if fechas else None,
+            "hasta": max(fechas) if fechas else None,
+            "motor": "backtest.backtest_universe · walk-forward punto-en-el-tiempo",
+            "ventana_dias": ventana,
+            "cubos": list(CUBOS_FUERZA),
+            "muestra_minima_por_cubo": MUESTRA_MINIMA,
+            "direccion_esperada": "débil < media < fuerte en tasa de aguante. Fijada "
+                                  "ANTES de ejecutar, y no la elegí yo: es lo que afirma "
+                                  "el propio número que la pantalla enseña.",
+        },
+        "controles": {
+            "leakage": "Cada zona se calcula con las velas ANTERIORES al ancla y se juzga "
+                       "con las posteriores. Lo garantiza `backtest._walk_forward_records`, "
+                       "que es el mismo motor que sirve los dos endpoints de backtest.",
+            "solo_los_tocados": "Un nivel que el precio no llegó a tocar no aguantó ni se "
+                                "rompió. Contarlo de cualquiera de las dos formas sería "
+                                "inventar el dato, así que se excluye.",
+            "por_que_esta_pregunta_tiene_mas_fuerza": "El resultado es binario, hay miles "
+                                                      "de toques en vez de ~1.900 "
+                                                      "observaciones, y el evento es "
+                                                      "local: depende mucho menos del "
+                                                      "régimen del año que un retorno "
+                                                      "trimestral.",
+            "supervivencia": "El universo es el de hoy. Aquí pesa poco: se mide qué pasó "
+                             "al tocar un soporte, no qué acción acabó sobreviviendo.",
+            "costes": "Ninguno. No es una estrategia: mide si una etiqueta que ya se "
+                      "enseña en pantalla describe algo real.",
+            "parametros_ajustados": "Ninguno. Los cubos (75/50) y las tolerancias son los "
+                                    "que `backtest.py` ya usaba en producción; no se han "
+                                    "movido para este experimento.",
+        },
+        "resultado": {**d, **v, "ruido": ruido},
+        "estado": v["estado"],
+        "ejecutado_en": _ahora(),
+        "lab_v": 1,
+    }
+
+
 # ── Persistencia. Todo queda, también lo que salió mal ───────────────────────
 
 async def guardar_experimento(db, doc: dict) -> dict:

@@ -39,6 +39,16 @@ def _df_slice_to_bars(df_slice: pd.DataFrame) -> list:
     return bars
 
 
+def _fecha_de(df, i: int):
+    """La fecha de la fila `i` como `YYYY-MM-DD`, venga en el índice o en una columna."""
+    try:
+        if "Date" in df.columns:
+            return str(df["Date"].iloc[i])[:10]
+        return str(df.index[i])[:10]
+    except Exception:
+        return None
+
+
 def _bucket(strength: int) -> str:
     if strength >= 75:
         return "fuerte"
@@ -147,6 +157,12 @@ def _walk_forward_records(
             broke_ever = bool((fwd_close[touch_at:] <= (L - break_amt)).any())
 
             records.append({
+                # La FECHA del ancla. Sin ella un registro no se puede fechar, y hay dos
+                # cosas que dependen de eso: auditar cuándo ocurrió cada toque, y poder
+                # barajar las etiquetas DENTRO de cada fecha para medir cuánto de lo
+                # observado produce el azar. Barajar sin respetar la fecha rompería que
+                # en un mismo día todo el mercado se mueve a la vez.
+                "anchor": _fecha_de(df, i),
                 "strength": int(z.get("strength", 0)),
                 "bucket": _bucket(int(z.get("strength", 0))),
                 "tactical": bool(z.get("tactical", False)),
@@ -276,4 +292,9 @@ def backtest_universe(load_history, symbols: List[str], **kwargs) -> dict:
     agg = _aggregate(all_records, fw)
     agg["per_symbol"] = per_symbol
     agg["symbols_tested"] = len(per_symbol)
+    # Los registros CRUDOS solo si se piden. El laboratorio los necesita para medir su
+    # propio suelo de ruido barajando las etiquetas; los dos endpoints que ya existen no,
+    # y devolverles miles de filas por defecto habría engordado su respuesta sin motivo.
+    if kwargs.get("devolver_registros"):
+        agg["registros"] = all_records
     return agg

@@ -80,6 +80,21 @@ test("se enseña TODO lo que el diagnóstico mide, no solo la mediana", () => {
   expect(VISTA).toContain("por_año");
 });
 
+test("el aguante de las zonas tiene su propia tabla, no la de tramos", () => {
+  // Son magnitudes distintas: una tasa de aguante no es un retorno medio, y meterlas en
+  // la misma tabla habría obligado a que una de las dos se leyera mal.
+  expect(VISTA).toContain("r.cubos");
+  expect(VISTA).toContain("Toques resueltos");
+  expect(VISTA).toContain("aguante_limpio_pct");
+});
+
+test("el aguante enseña su suelo de ruido junto al resultado", () => {
+  // Una separación sin el suelo al lado no se puede leer: 7,91 pp parecían mucho hasta
+  // saber que el azar llega a 8,26.
+  expect(VISTA).toContain("suelo de ruido");
+  expect(VISTA).toContain("azar_p95_pp");
+});
+
 test("el corte temporal enseña si el patrón se repite AÑO A AÑO", () => {
   expect(VISTA).toContain("el_primer_tramo_es_el_PEOR");
   expect(VISTA).toContain("escalon_pp");

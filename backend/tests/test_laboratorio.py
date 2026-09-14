@@ -852,3 +852,116 @@ def test_ninguna_hipotesis_MEDIDA_vuelve_a_la_cola_de_pendientes():
     for cual in ("DISTANCIA_MAX_A_MAXIMO_52S", "SMA200_PENDIENTE_SESIONES"):
         d = next(h for h in lab.hipotesis() if h["id"] == cual)
         assert d["estado"] != lab.LISTA and d["valor_actual"] is None
+
+
+# ── Tercera hipótesis: ¿aguantan las zonas fuertes? ─────────────────────────
+#
+# La primera pregunta que hacemos donde el instrumento tiene una posibilidad real: el
+# resultado es binario, hay miles de toques y el evento es local. Y afecta a algo que ya
+# se enseña en pantalla — «Nivel fuerte (78/100)» nunca se ha comprobado.
+
+def _toques(probs=(0.40, 0.55, 0.70), por_fecha=6, fechas=60, semilla=2):
+    import random
+    r = random.Random(semilla)
+    regs = []
+    for d in range(fechas):
+        for cubo, p in zip(lab.CUBOS_FUERZA, probs):
+            for _ in range(por_fecha):
+                regs.append({"anchor": f"202{3 + d // 24}-{(d % 12) + 1:02d}-01",
+                             "bucket": cubo, "held": r.random() < p,
+                             "clean": r.random() < p})
+    return regs
+
+
+def test_un_nivel_que_NO_se_toco_no_cuenta():
+    """No aguantó ni se rompió. Contarlo de cualquiera de las dos formas sería inventar
+    el dato."""
+    regs = _toques() + [{"anchor": "2024-01-01", "bucket": "fuerte", "held": None,
+                         "clean": None}] * 50
+    d = lab.aguante_por_cubo(regs)
+    assert d["n"] == len(_toques()), "los no resueltos se han colado en la cuenta"
+
+
+def test_si_las_fuertes_aguantan_MAS_se_valida():
+    regs = _toques()
+    v = lab.veredicto_aguante(lab.aguante_por_cubo(regs),
+                              lab.azar_del_aguante(regs, vueltas=30))
+    assert v["estado"] == lab.VALIDADA
+    assert v["aguantes"]["fuerte"] > v["aguantes"]["debil"]
+    assert v["rango_pp"] > v["suelo_de_ruido_pp"]
+
+
+def test_si_el_orden_es_el_CONTRARIO_se_rechaza():
+    """Sería un resultado grave: el número que la pantalla llama «fuerza» ordenaría las
+    zonas al revés de lo bien que aguantan."""
+    regs = _toques(probs=(0.75, 0.55, 0.35))
+    v = lab.veredicto_aguante(lab.aguante_por_cubo(regs),
+                              lab.azar_del_aguante(regs, vueltas=30))
+    assert v["estado"] == lab.RECHAZADA
+    assert "no ordena las zonas" in v["conclusion"]
+
+
+def test_si_los_tres_cubos_aguantan_IGUAL_no_se_concluye():
+    """La puntuación no queda demostrada, y tampoco desmentida."""
+    regs = _toques(probs=(0.55, 0.55, 0.55))
+    v = lab.veredicto_aguante(lab.aguante_por_cubo(regs),
+                              lab.azar_del_aguante(regs, vueltas=30))
+    assert v["estado"] == lab.NO_CONCLUYENTE
+    assert "tampoco desmentida" in v["conclusion"]
+
+
+def test_sin_MUESTRA_en_algun_cubo_no_se_concluye():
+    regs = _toques(por_fecha=1, fechas=3)
+    v = lab.veredicto_aguante(lab.aguante_por_cubo(regs),
+                              lab.azar_del_aguante(regs, vueltas=5))
+    assert v["estado"] == lab.SIN_DATOS
+
+
+def test_el_suelo_de_ruido_del_aguante_es_DETERMINISTA():
+    regs = _toques()
+    assert lab.azar_del_aguante(regs, vueltas=20) == lab.azar_del_aguante(regs, vueltas=20)
+
+
+def test_barajar_el_aguante_respeta_la_FECHA():
+    """En un mismo día el mercado entero empuja igual. Romper eso haría que el azar
+    pareciera más manso y el suelo saldría bajo."""
+    import inspect
+    fuente = inspect.getsource(lab.azar_del_aguante)
+    assert 'por_fecha.setdefault(r.get("anchor")' in fuente
+
+
+def test_la_DIRECCION_esperada_no_la_elegi_yo():
+    """Es lo que afirma el propio número que la pantalla enseña: si dice «Nivel fuerte
+    (78/100)», las fuertes tienen que aguantar más."""
+    f = lab.ficha_aguante(_toques(), universo=["AAPL"])
+    assert "no la elegí yo" in f["metodo"]["direccion_esperada"]
+    assert "ANTES" in f["metodo"]["direccion_esperada"]
+
+
+def test_la_ficha_del_aguante_declara_POR_QUE_tiene_mas_fuerza():
+    c = lab.ficha_aguante(_toques(), universo=["AAPL"])["controles"]
+    assert "por_que_esta_pregunta_tiene_mas_fuerza" in c
+    assert "binario" in c["por_que_esta_pregunta_tiene_mas_fuerza"]
+    assert "solo_los_tocados" in c
+
+
+def test_el_aguante_NO_reimplementa_el_backtest():
+    """`backtest.py` lleva meses haciendo el walk-forward sin lookahead. Aquí solo se le
+    pone la disciplina alrededor."""
+    f = lab.ficha_aguante(_toques(), universo=["AAPL"])
+    assert "backtest.backtest_universe" in f["metodo"]["motor"]
+
+    # Se comprueba el HECHO, no la palabra: la primera versión buscaba «_walk_forward» en
+    # el fichero y fallaba porque el docstring lo CITA para decir quién garantiza el
+    # leakage. Lo que de verdad importa es que el laboratorio no pueda calcular zonas por
+    # su cuenta — sin pandas ni `levels_engine` no hay forma de reimplementar el motor.
+    import ast as _ast
+    import inspect
+    arbol = _ast.parse(inspect.getsource(lab))
+    importados = set()
+    for n in _ast.walk(arbol):
+        if isinstance(n, _ast.Import):
+            importados.update(a.name.split(".")[0] for a in n.names)
+        elif isinstance(n, _ast.ImportFrom) and n.module:
+            importados.add(n.module.split(".")[0])
+    assert not importados & {"pandas", "numpy", "levels_engine", "indicators"}, importados

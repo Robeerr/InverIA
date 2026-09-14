@@ -4610,6 +4610,54 @@ async def _experimento_distancia(hacer_ficha, observar=None):
     return {**doc, "guardado": guardado}
 
 
+#: Cuántas sesiones hacia delante se juzga si un soporte aguantó. El mismo que ya usan
+#: los dos endpoints de backtest: cambiarlo aquí mediría otra cosa que allí.
+VENTANA_AGUANTE = 60
+
+#: Tope de símbolos del backtest del laboratorio. Cada uno carga dos años de velas
+#: diarias; sin tope, el universo entero se comería la memoria del contenedor.
+TOPE_SIMBOLOS_AGUANTE = 60
+
+
+@api_router.post("/laboratorio/experimento/aguante-zonas")
+async def laboratorio_experimento_aguante(_user: str = Depends(auth.get_current_user)):
+    """Tercera hipótesis: ¿aguantan más las zonas que el motor puntúa como fuertes?
+
+    NO REIMPLEMENTA NADA. Usa `backtest.backtest_universe`, el mismo motor walk-forward
+    que sirve los dos endpoints de backtest desde hace meses, y le pone alrededor la
+    disciplina que a esos endpoints les falta: dirección fijada antes de mirar, suelo de
+    ruido medido barajando, y un veredicto que puede decir que no sabe.
+
+    Pesado —carga el histórico diario de decenas de símbolos— y por eso lo dispara una
+    persona. No gasta cuota de IA.
+    """
+    universo = sorted(await _simbolos_que_te_importan())[:TOPE_SIMBOLOS_AGUANTE]
+    if not universo:
+        return {"estado": laboratorio.SIN_DATOS,
+                "conclusion": "No hay ningún símbolo en watchlist ni en cartera."}
+
+    def _load(sym):
+        return market_data.get_full_indicator_history(sym)
+
+    crudo = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: backtest.backtest_universe(
+            _load, universo, forward_window=VENTANA_AGUANTE, devolver_registros=True))
+    mem.trim()          # decenas de DataFrames de dos años: devuélvelos al SO
+
+    doc = laboratorio.ficha_aguante(
+        crudo.get("registros") or [],
+        universo=list((crudo.get("per_symbol") or {}).keys()) or universo,
+        ventana=VENTANA_AGUANTE)
+    # El desglose por FUENTE que `backtest` ya calcula: qué metodología —SMA200,
+    # Fibonacci, VWAP…— aguanta mejor cuando participa en un nivel. Viaja con el
+    # experimento porque es lo que permitiría recalibrar los pesos de `levels_engine`
+    # con datos, y sin guardarlo aquí se perdería con la caché.
+    doc["por_fuente"] = crudo.get("by_source")
+    doc["por_tipo"] = crudo.get("by_kind")
+    guardado = await laboratorio.guardar_experimento(db, doc)
+    return {**doc, "guardado": guardado}
+
+
 @api_router.post("/laboratorio/experimento/azar")
 async def laboratorio_experimento_azar(_user: str = Depends(auth.get_current_user)):
     """Audita el INSTRUMENTO, no una hipótesis: ¿cuánta separación produce el azar?

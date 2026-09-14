@@ -77,6 +77,10 @@ export const api = {
     pendiente: () =>
       client.post(`/laboratorio/experimento/pendiente-media`, {},
                   { timeout: 300000 }).then((r) => r.data),
+    // Tercera hipótesis: ¿aguantan las zonas que el motor puntúa como fuertes?
+    aguante: () =>
+      client.post(`/laboratorio/experimento/aguante-zonas`, {}, { timeout: 600000 })
+        .then((r) => r.data),
     // La auditoría del propio método: ¿cuánta separación produce el azar?
     azar: () =>
       client.post(`/laboratorio/experimento/azar`, {}, { timeout: 300000 })
