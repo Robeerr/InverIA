@@ -170,7 +170,11 @@ function Experimento({ e }) {
           </div>
         </details>
       )}
-      {!!(r.años || []).length && (
+      {/* `r.años` cuando el experimento ES el corte temporal; `r.por_periodo.años`
+          cuando el corte viaja DENTRO de otro experimento, que es como llega desde que
+          las lecciones vienen de serie. Se calculaba y quedaba enterrado un nivel más
+          abajo, así que no se veía. */}
+      {!!((r.años || r.por_periodo?.años) || []).length && (
         <div className="mt-2 overflow-x-auto">
           <table className="text-xs w-full">
             <thead className="text-tinta-3">
@@ -180,7 +184,7 @@ function Experimento({ e }) {
                   <th className="text-right font-normal">Escalón</th></tr>
             </thead>
             <tbody className="iv-cifra">
-              {r.años.map((a) => (
+              {(r.años || r.por_periodo?.años || []).map((a) => (
                 <tr key={a.año} className="border-t border-linea">
                   <td className="py-1 text-tinta-2">{a.año}</td>
                   <td className="text-right text-tinta-3">{a.n}</td>

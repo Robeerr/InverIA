@@ -592,3 +592,70 @@ def test_generalizar_los_tramos_NO_cambio_el_experimento_original():
     obs = _todos_los_tramos([8, 6, 4, 2, 1])
     assert lab.agregar(obs) == lab.agregar(obs, tramos=lab.TRAMOS)
     assert lab.distribucion(obs) == lab.distribucion(obs, tramos=lab.TRAMOS)
+
+
+# ── El veredicto de una hipótesis nueva no es el de un diagnóstico ──────────
+#
+# `ficha_pendiente` reutilizó `veredicto_distribucion`, que diagnostica si un gradiente
+# de MEDIAS ya encontrado vive en la cola. Aplicado a una hipótesis nueva devolvía «el
+# efecto no es solo de cola» sobre algo que nunca había afirmado tener cola, y etiquetaba
+# NO CONCLUYENTE lo que era un RECHAZO. Estos tests fijan la separación.
+
+def _medianas(valores, n=lab.MUESTRA_MINIMA + 5):
+    obs = []
+    for (bajo, alto), med in zip(lab.TRAMOS_PENDIENTE, valores):
+        obs += [{"tramo": f"{bajo}-{alto}%", "retorno_pct": med, "fecha": "2024-01-01",
+                 "symbol": "X"}] * n
+    return lab.distribucion(obs, tramos=lab.TRAMOS_PENDIENTE)
+
+
+def test_si_las_medianas_siguen_la_direccion_fijada_se_VALIDA():
+    v = lab.veredicto_direccion(_medianas([2, 5, 8, 11, 14]), creciente=True)
+    assert v["estado"] == lab.VALIDADA and v["separacion_mediana_pp"] == 12.0
+
+
+def test_si_NO_siguen_la_direccion_fijada_se_RECHAZA():
+    """Los números REALES del primer intento: 10,29 → 9,56 → 10,30 → 13,70 → 5,79. Ni
+    crecientes ni decrecientes, y con el peor tramo en el extremo."""
+    v = lab.veredicto_direccion(_medianas([10.29, 9.56, 10.30, 13.70, 5.79]))
+    assert v["estado"] == lab.RECHAZADA
+    assert v["mejor_tramo"] == "13-27%" and v["peor_tramo"] == "27-999%"
+    assert "hipótesis NUEVA" in v["conclusion"]
+
+
+def test_una_curva_con_forma_de_U_INVERTIDA_no_valida_nada():
+    """Aunque el dibujo sea sugerente. Verlo después de mirar los datos no es medirlo."""
+    v = lab.veredicto_direccion(_medianas([5, 8, 12, 9, 4]))
+    assert v["estado"] == lab.RECHAZADA
+
+
+def test_sin_SEPARACION_no_se_concluye_aunque_el_orden_cuadre():
+    v = lab.veredicto_direccion(_medianas([10.0, 10.1, 10.2, 10.3, 10.4]))
+    assert v["estado"] == lab.NO_CONCLUYENTE
+
+
+def test_el_veredicto_de_direccion_juzga_por_la_MEDIANA_no_por_la_media():
+    """La lección de la hipótesis anterior. Un solo acierto enorme no puede decidir si
+    una hipótesis se valida."""
+    obs = []
+    for i, (bajo, alto) in enumerate(lab.TRAMOS_PENDIENTE):
+        vals = [10.0] * 25
+        if i == 0:
+            vals = vals + [100000.0]        # media altísima, mediana intacta
+        obs += [{"tramo": f"{bajo}-{alto}%", "retorno_pct": v, "fecha": "2024-01-01",
+                 "symbol": "X"} for v in vals]
+    v = lab.veredicto_direccion(lab.distribucion(obs, tramos=lab.TRAMOS_PENDIENTE))
+    assert v["estado"] == lab.NO_CONCLUYENTE       # las medianas no se mueven
+
+
+def test_sin_muestra_el_veredicto_de_direccion_tampoco_concluye():
+    v = lab.veredicto_direccion(_medianas([2, 5, 8, 11, 14], n=3))
+    assert v["estado"] == lab.SIN_DATOS
+
+
+def test_la_ficha_de_la_pendiente_usa_el_veredicto_de_DIRECCION():
+    """Y no el del diagnóstico, que responde a otra pregunta."""
+    import inspect
+    fuente = inspect.getsource(lab.ficha_pendiente)
+    assert "veredicto_direccion" in fuente
+    assert "veredicto_distribucion(" not in fuente

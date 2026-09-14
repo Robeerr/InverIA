@@ -825,6 +825,54 @@ def observaciones_pendiente(barras: list, symbol: str = None) -> list:
     return fuera
 
 
+def veredicto_direccion(d: dict, creciente: bool = True) -> dict:
+    """¿Se cumple la dirección que se fijó ANTES de mirar? Sobre la MEDIANA. Puro.
+
+    POR QUÉ ESTA FUNCIÓN EXISTE Y NO SE REUTILIZÓ `veredicto_distribucion`
+
+    Porque responden a preguntas distintas y confundirlas ya costó un resultado mal
+    etiquetado. `veredicto_distribucion` diagnostica si un gradiente de MEDIAS ya
+    encontrado vive en la cola; su salida habla de colas. Aplicada a una hipótesis nueva
+    devolvía «el efecto no es solo de cola» sobre algo que nunca había afirmado tener una
+    cola, y marcaba NO CONCLUYENTE lo que en realidad era un RECHAZO.
+
+    SOBRE LA MEDIANA Y NO SOBRE LA MEDIA
+
+    Es la lección de la hipótesis anterior, aplicada. Allí la media subía 16 pp y resultó
+    ser cola; la mediana no se movía. Juzgar la dirección por la media vuelve a poner el
+    veredicto en manos de unos pocos aciertos enormes.
+    """
+    filas = d.get("tramos") or []
+    flacos = [f["tramo"] for f in filas if f["n"] < MUESTRA_MINIMA]
+    if flacos:
+        return {"estado": SIN_DATOS,
+                "conclusion": "Tramos sin muestra suficiente: " + ", ".join(flacos)}
+
+    medianas = [f["mediana"] for f in filas]
+    esperado = sorted(medianas) if creciente else sorted(medianas, reverse=True)
+    separacion = round(max(medianas) - min(medianas), 2)
+    mejor = filas[medianas.index(max(medianas))]["tramo"]
+    peor = filas[medianas.index(min(medianas))]["tramo"]
+    base = {"separacion_mediana_pp": separacion, "n": d.get("n"),
+            "mejor_tramo": mejor, "peor_tramo": peor,
+            "medianas": {f["tramo"]: f["mediana"] for f in filas}}
+
+    if separacion < SEPARACION_MINIMA:
+        return {**base, "estado": NO_CONCLUYENTE,
+                "conclusion": f"Las medianas no se distinguen ({separacion} pp entre el "
+                              "mejor y el peor tramo). No hay diferencia que aprovechar."}
+    if medianas == esperado:
+        return {**base, "estado": VALIDADA,
+                "conclusion": f"Las medianas siguen la dirección fijada antes de mirar, "
+                              f"con {separacion} pp entre el mejor y el peor tramo."}
+    return {**base, "estado": RECHAZADA,
+            "conclusion": f"Las medianas se separan {separacion} pp pero NO en la "
+                          f"dirección fijada antes de mirar: el mejor tramo es {mejor} y "
+                          f"el peor {peor}. La hipótesis, tal como se planteó, no se "
+                          "sostiene. Lo que se vea ahora en la forma de la curva es una "
+                          "hipótesis NUEVA y necesita su propio experimento."}
+
+
 def ficha_pendiente(obs: list, universo: list, desde: str = None,
                     hasta: str = None) -> dict:
     """La segunda hipótesis, con las lecciones de la primera aplicadas. Pura.
@@ -838,7 +886,11 @@ def ficha_pendiente(obs: list, universo: list, desde: str = None,
     volver a equivocarse dos veces.
     """
     d = distribucion(obs, tramos=TRAMOS_PENDIENTE)
-    v = veredicto_distribucion(d)
+    # `veredicto_direccion` y NO `veredicto_distribucion`: esta hipótesis se juzga por si
+    # cumple la dirección que se fijó antes de mirar, no por si un gradiente ya conocido
+    # vive en la cola. Reutilizar el otro etiquetó el primer resultado como NO
+    # CONCLUYENTE cuando era un RECHAZO.
+    v = veredicto_direccion(d, creciente=True)
     periodo = por_periodo(obs, tramos=TRAMOS_PENDIENTE)
     return {
         "hipotesis_id": "SMA200_PENDIENTE_SESIONES",
