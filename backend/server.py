@@ -3181,15 +3181,21 @@ async def crear_venta(item: VentaLoteCreate, _user: str = Depends(auth.get_curre
 
 
 @api_router.post("/cartera/estimar-comisiones")
-async def estimar_comisiones(aplicar: bool = False,
+async def estimar_comisiones(aplicar: bool = False, incluir_csv: bool = False,
                              _user: str = Depends(auth.get_current_user)):
-    """Pone la comisión estimada a los apuntes tecleados que se quedaron a cero.
+    """Pone la comisión estimada a los apuntes que se quedaron a cero.
 
     Dos pasos a propósito: sin `aplicar` solo dice qué tocaría y cuánto suma, porque esto
-    reescribe apuntes del usuario. Nunca toca lo que vino del CSV: ahí la comisión es la
-    del fichero, y un cero real es un dato, no un hueco.
+    reescribe apuntes del usuario.
+
+    Por defecto no toca lo que vino del CSV: ahí la comisión es la del fichero, y un cero
+    real es un dato, no un hueco. `incluir_csv` levanta esa regla para el caso en que el
+    fichero se importó sin reconocer las columnas de comisión y entró todo a cero — ahí la
+    huella existe pero detrás no hay ninguna cifra del extracto. No se activa solo porque
+    los dos ceros son indistinguibles por código: lo pide quien sabe cuál de los dos es.
     """
-    r = await cartera_api.estimar_comisiones_pendientes(db, aplicar=aplicar)
+    r = await cartera_api.estimar_comisiones_pendientes(db, aplicar=aplicar,
+                                                        incluir_csv=incluir_csv)
     if aplicar:
         for k in ("signals_list", "signals_hot"):
             _cache._store.pop(k, None)

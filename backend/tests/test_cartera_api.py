@@ -2203,3 +2203,37 @@ def test_niveles_en_dias_distintos_llevan_UNA_comision_CADA_UNO():
         db2, "MU", [("nivel1", 6), ("nivel2", 6)], 100.0, fecha="2026-09-04",
         divisa="USD", tasa=1.16))
     assert r["comision_total"] < a["comision"] + b["comision"]
+
+
+def test_con_incluir_csv_SI_se_tocan_las_del_fichero():
+    """El caso al que no había salida: un CSV importado sin reconocer las columnas de
+    comisión entra entero a cero. La huella existe, pero detrás no hay ninguna cifra del
+    extracto, así que ese cero no lo afirmó nadie. El aviso decía «reimpórtalo con la
+    casilla marcada», y eso solo sirve si conservas aquel fichero."""
+    db = _db_con_apuntes_a_cero()
+    db.ventas.docs[0]["huella"] = "h1"
+    r = _correr(cartera_api.estimar_comisiones_pendientes(db, aplicar=True,
+                                                          incluir_csv=True))
+    assert r["ventas"] == 1 and r["incluir_csv"] is True
+    v = db.ventas.docs[0]
+    assert v["comision"] > 0 and v["comision_estimada"] is True
+
+
+def test_incluir_csv_NO_es_el_comportamiento_por_defecto():
+    """Los dos ceros son indistinguibles por código —el fichero ya no está y la huella no
+    guarda la diferencia—, así que esto lo pide quien sabe cuál de los dos es. Activarlo
+    solo convertiría comisiones reales de cero en costes inventados."""
+    db = _db_con_apuntes_a_cero()
+    db.ventas.docs[0]["huella"] = "h1"
+    assert _correr(cartera_api.estimar_comisiones_pendientes(db, aplicar=True))["ventas"] == 0
+    assert db.ventas.docs[0]["comision"] == 0
+
+
+def test_incluir_csv_sigue_respetando_una_comision_ya_puesta():
+    """Levanta la regla de la huella, no la de no pisar datos buenos."""
+    db = _db_con_apuntes_a_cero()
+    db.ventas.docs[0].update({"huella": "h1", "comision": 10.04})
+    r = _correr(cartera_api.estimar_comisiones_pendientes(db, aplicar=True,
+                                                          incluir_csv=True))
+    assert r["ventas"] == 0
+    assert db.ventas.docs[0]["comision"] == 10.04

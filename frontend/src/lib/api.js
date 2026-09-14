@@ -273,8 +273,11 @@ export const api = {
     borrarVenta: (id) => client.delete(`/cartera/ventas/${id}`).then((r) => r.data),
     // Comisiones que se quedaron a cero por el fallo del campo vacío. Sin `aplicar` solo
     // dice qué tocaría: esto reescribe apuntes, así que se mira antes de hacerlo.
-    estimarComisiones: (aplicar = false) =>
-      client.post(`/cartera/estimar-comisiones`, null, { params: { aplicar } })
+    // `incluirCsv` añade las que vinieron del fichero, para el caso en que se importó sin
+    // reconocer las columnas de comisión y entró todo a cero.
+    estimarComisiones: (aplicar = false, incluirCsv = false) =>
+      client.post(`/cartera/estimar-comisiones`, null,
+                  { params: { aplicar, ...(incluirCsv ? { incluir_csv: true } : {}) } })
         .then((r) => r.data),
     // `reemplazar` rehace las posiciones ya importadas: sirve cuando la primera vez salió
     // mal y borrar los lotes a mano serían decenas de clics. Nunca toca las que ya tienen

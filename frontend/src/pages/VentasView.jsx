@@ -1637,20 +1637,30 @@ export default function VentasView() {
   // Dos pasos: primero se pregunta qué tocaría, se enseña, y solo si dices que sí se
   // escribe. Reescribir apuntes del usuario sin que vea antes el alcance no es aceptable,
   // por muy claro que esté el fallo que los dejó así.
+  // `incluirCsv` añade las que vinieron del fichero. Va por el mismo camino y con el
+  // mismo aviso porque es la misma escritura; lo que cambia es que ahí el cero SÍ tiene
+  // huella, y hay que decirlo en la pregunta para que se elija sabiéndolo.
   const repararComisiones = useMutation({
-    mutationFn: async () => {
-      const previo = await api.cartera.estimarComisiones(false);
+    mutationFn: async (incluirCsv = false) => {
+      const previo = await api.cartera.estimarComisiones(false, incluirCsv);
       const n = previo.compras + previo.ventas;
       if (!n) {
-        toast.success("No hay nada que estimar: todo lo tecleado ya tiene comisión.");
+        toast.success("No hay nada que estimar: todo tiene ya su comisión.");
         return null;
       }
       const ok = window.confirm(
         `Se va a poner la comisión estimada (2 € + 0,25% de AutoFX) a ${n} apunte(s) `
-        + `tecleados a mano que están a cero: ${previo.compras} compra(s) y `
+        + `que están a cero: ${previo.compras} compra(s) y `
         + `${previo.ventas} venta(s).\n\nSuman unos ${previo.total_eur} €. Quedarán `
-        + "marcados como ESTIMADOS.\n\nLo que vino del CSV no se toca.\n\n¿Continuar?");
-      return ok ? api.cartera.estimarComisiones(true) : null;
+        + "marcados como ESTIMADOS.\n\n"
+        + (incluirCsv
+            ? "INCLUYE LAS QUE VINIERON DEL CSV. Ahí el cero llegó con el fichero, así "
+              + "que solo tiene sentido si aquel CSV se importó sin reconocer las "
+              + "columnas de comisión. Si alguna de esas ventas de verdad fue gratis, "
+              + "esto le pone un coste que no tuvo."
+            : "Lo que vino del CSV no se toca.")
+        + "\n\n¿Continuar?");
+      return ok ? api.cartera.estimarComisiones(true, incluirCsv) : null;
     },
     onSuccess: (r) => {
       if (!r) return;
@@ -1936,8 +1946,10 @@ export default function VentasView() {
                 + " que sí trae la comisión buena. Se arreglan borrándolas aquí abajo y"
                 + " volviendo a importar el CSV."
               : " Las que vinieron del CSV se corrigen reimportándolo con la casilla de"
-                + " corregir comisiones marcada; las tecleadas a mano hay que borrarlas y"
-                + " reimportar, porque no tienen huella que emparejar."}
+                + " corregir comisiones marcada, que es lo mejor porque trae la cifra"
+                + " real; si ya no conservas aquel fichero, aquí abajo puedes estimarlas."
+                + " Las tecleadas a mano hay que borrarlas y reimportar, porque no tienen"
+                + " huella que emparejar."}
           </p>
           {/* CUÁLES. Sin el símbolo y la fecha delante, «10 ventas» es un dato que no se
               puede accionar: hay que rebuscarlas una a una entre cientos de filas. */}
@@ -1956,15 +1968,32 @@ export default function VentasView() {
               ceros que nadie afirmara: son huecos. Se rellenan con la tarifa publicada y
               quedan marcados como estimados, para poder distinguirlos luego de una cifra
               sacada del extracto. Lo que vino del CSV no se toca: ahí un cero es un dato. */}
-          {!!hist.ventas_sin_comision_manuales && (
-            <button onClick={() => repararComisiones.mutate()}
-                    disabled={repararComisiones.isPending}
-                    className="mt-2 text-[11px] underline text-aviso disabled:opacity-60">
-              {repararComisiones.isPending
-                ? "Calculando…"
-                : "Poner la comisión estimada a las que tecleaste a mano"}
-            </button>
-          )}
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+            {!!hist.ventas_sin_comision_manuales && (
+              <button onClick={() => repararComisiones.mutate(false)}
+                      disabled={repararComisiones.isPending}
+                      className="text-[11px] underline text-aviso disabled:opacity-60">
+                {repararComisiones.isPending
+                  ? "Calculando…"
+                  : "Poner la comisión estimada a las que tecleaste a mano"}
+              </button>
+            )}
+            {/* Las del CSV no tenían salida. El aviso decía «reimpórtalo con la casilla
+                marcada», y eso solo funciona si conservas aquel fichero: si no lo
+                tienes, la venta se queda a cero para siempre y el aviso no se va nunca.
+                Va aparte y con su propia advertencia porque ahí el cero SÍ llegó con
+                huella, y estimarlo puede estar inventando un coste que no existió. */}
+            {hist.ventas_sin_comision > hist.ventas_sin_comision_manuales && (
+              <button onClick={() => repararComisiones.mutate(true)}
+                      disabled={repararComisiones.isPending}
+                      className="text-[11px] underline text-tinta-3 hover:text-aviso
+                                 disabled:opacity-60">
+                Estimar también las{" "}
+                {hist.ventas_sin_comision - hist.ventas_sin_comision_manuales} que vinieron
+                del CSV
+              </button>
+            )}
+          </div>
         </div>
       )}
 

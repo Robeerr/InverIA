@@ -448,7 +448,8 @@ async def registrar_venta(db, symbol: str, acciones: float, precio: float,
     return res
 
 
-async def estimar_comisiones_pendientes(db, aplicar: bool = False) -> dict:
+async def estimar_comisiones_pendientes(db, aplicar: bool = False,
+                                        incluir_csv: bool = False) -> dict:
     """Pone la comisión estimada a los apuntes que se quedaron a cero por el fallo del vacío.
 
     Durante un tiempo el formulario enviaba 0 cuando dejabas el campo en blanco, y el
@@ -460,6 +461,18 @@ async def estimar_comisiones_pendientes(db, aplicar: bool = False) -> dict:
     fichero, y si esa es cero es que de verdad fue cero: sustituirla por una estimación
     sería cambiar un dato bueno por uno inventado.
 
+    `incluir_csv` LEVANTA ESA REGLA, Y HACE FALTA DECIRLO APARTE
+
+    Hay un caso en que el cero del fichero tampoco es un dato: cuando el CSV se importó sin
+    que se reconocieran las columnas de comisión —`degiro_csv` ya avisa de eso— y todas las
+    operaciones entraron a cero. Ahí la huella existe pero detrás no hay ninguna cifra del
+    extracto, así que el cero no lo afirmó nadie.
+
+    No se puede distinguir por código un cero que vino vacío de un cero que vino cero: el
+    fichero ya no está y la huella no guarda esa diferencia. Por eso esto NO se activa
+    solo. Lo pide quien sabe si aquellas operaciones le costaron algo, y lo que se escribe
+    queda marcado como estimación igual que el resto.
+
     Sin `aplicar` solo se calcula y se devuelve, para poder ver qué va a pasar antes de que
     pase. Lo que se escribe queda marcado como estimado, que es lo que permite distinguirlo
     después de una cifra sacada de tu extracto.
@@ -468,7 +481,7 @@ async def estimar_comisiones_pendientes(db, aplicar: bool = False) -> dict:
     total_eur = 0.0
     for col, clave in (("compras", "compras"), ("ventas", "ventas")):
         for d in await getattr(db, col).find({}, {"_id": 0}).to_list(5000):
-            if d.get("huella"):
+            if d.get("huella") and not incluir_csv:
                 continue
             if float(d.get("comision") or 0) > 0.01:
                 continue
@@ -492,7 +505,7 @@ async def estimar_comisiones_pendientes(db, aplicar: bool = False) -> dict:
                     {"$set": {"comision": round(est["total"], 4),
                               "comision_estimada": True,
                               "comision_detalle": est["detalle"]}})
-    return {"aplicado": aplicar,
+    return {"aplicado": aplicar, "incluir_csv": incluir_csv,
             "compras": len(cambios["compras"]), "ventas": len(cambios["ventas"]),
             "total_eur": round(total_eur, 2),
             "detalle": cambios}
