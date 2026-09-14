@@ -328,6 +328,13 @@ export default function LaboratorioView() {
               <FlaskIcon size={14} />
               {corriendo ? "Midiendo…" : "Medir: distancia al máximo anual"}
             </button>
+            <button onClick={() => ejecutar("pendiente")} disabled={corriendo}
+                    className="iv-etiqueta flex items-center gap-2 border border-linea
+                               px-3 py-2 hover:text-tinta disabled:opacity-50"
+                    data-testid="lab-ejecutar-pendiente">
+              <FlaskIcon size={14} />
+              {corriendo ? "Midiendo…" : "Medir: persistencia de la tendencia"}
+            </button>
             <button onClick={() => ejecutar("periodo")} disabled={corriendo}
                     className="iv-etiqueta flex items-center gap-2 border border-linea
                                px-3 py-2 hover:text-tinta disabled:opacity-50"

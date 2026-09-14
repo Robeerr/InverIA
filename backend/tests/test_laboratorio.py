@@ -405,8 +405,11 @@ def test_la_hipotesis_MEDIDA_Y_RECHAZADA_ya_no_figura_como_pendiente():
 def test_el_rechazo_explica_por_que_NO_se_invierte_la_regla():
     d = next(h for h in lab.hipotesis() if h["id"] == "DISTANCIA_MAX_A_MAXIMO_52S")
     medido = (d.get("medido") or "").lower()
-    assert "acierto" in medido and "dispersión" in medido
-    assert "supervivencia" in medido
+    # Tras los tres experimentos el registro dice POR QUÉ no se invierte, y el argumento
+    # ya no es la dispersión sino algo más fuerte: el efecto cambia de signo con el año.
+    assert "acierto" in medido
+    assert "signo" in medido and "régimen" in medido or "regímenes" in medido
+    assert "ni el original ni el inverso" in medido
 
 
 def test_un_umbral_con_NUMERO_manda_sobre_el_texto(monkeypatch):
@@ -513,3 +516,79 @@ def test_el_corte_temporal_declara_que_cinco_años_son_UN_ciclo():
     c = lab.ficha_periodo([], universo=["AAPL"])["controles"]
     assert "un_solo_ciclo" in c and "UN" in c["un_solo_ciclo"]
     assert "no lo corrige" in c["supervivencia"]
+
+
+# ── Segunda hipótesis: la persistencia de la tendencia ──────────────────────
+#
+# Es de OTRA familia. Sobre «dónde está el precio respecto a un extremo» se gastaron tres
+# experimentos para acabar en nada; medir lo mismo con otro nombre daría el mismo nada.
+
+def _sube(n, paso=0.5, desde=100.0):
+    return [{"close": desde + i * paso, "high": desde + i * paso,
+             "date": f"2022-01-{(i % 28) + 1:02d}"} for i in range(n)]
+
+
+def test_una_serie_que_SUBE_SIEMPRE_da_rachas_largas():
+    obs = lab.observaciones_pendiente(_sube(200), "X")
+    assert obs
+    assert all(o["racha"] > 27 for o in obs)
+    assert {o["tramo"] for o in obs} == {"27-999%"}
+
+
+def test_una_serie_que_BAJA_da_racha_CERO():
+    barras = [{"close": 200 - i * 0.5, "high": 200 - i * 0.5, "date": "2022-01-01"}
+              for i in range(200)]
+    obs = lab.observaciones_pendiente(barras, "X")
+    assert obs and all(o["racha"] == 0 for o in obs)
+    assert {o["tramo"] for o in obs} == {"0-1%"}
+
+
+def test_la_racha_NO_mira_hacia_delante():
+    """El mismo cuidado que en la otra hipótesis: la media del ancla usa las barras que
+    terminan en ella y la racha mira hacia atrás. Si la racha viera el futuro, una serie
+    que sube y luego se desploma daría rachas largas en el tramo final."""
+    barras = _sube(150) + [{"close": 10, "high": 10, "date": "2023-01-01"}] * 60
+    obs = lab.observaciones_pendiente(barras, "X")
+    tardios = [o for o in obs if o["fecha"] == "2023-01-01"]
+    assert tardios, "la serie tiene que producir observaciones en el tramo desplomado"
+    assert all(o["racha"] == 0 for o in tardios)
+
+
+def test_una_serie_CORTA_no_produce_observaciones():
+    assert lab.observaciones_pendiente(_sube(lab.VENTANA_MEDIA), "X") == []
+    assert lab.observaciones_pendiente([], "X") == []
+    assert lab.observaciones_pendiente(None, "X") == []
+
+
+def test_la_segunda_hipotesis_trae_las_LECCIONES_de_la_primera():
+    """Mediana, cuartiles, amplitud, peso del 10% mejor Y corte por año desde la PRIMERA
+    ejecución. El experimento 1 reportó solo medias y hicieron falta dos más para
+    descubrir que mentían."""
+    f = lab.ficha_pendiente([], universo=["AAPL"])
+    r = f["resultado"]
+    assert "por_periodo" in r
+    assert all(k in r["tramos"][0] for k in
+               ("mediana", "p25", "p75", "amplitud_intercuartil", "peso_del_10pct_mejor"))
+    assert "MEDIANA" in f["metodo"]["direccion_esperada"]
+
+
+def test_la_segunda_hipotesis_declara_que_la_MEDIA_no_es_la_de_produccion():
+    """`tendencia.py` usa la de 200 sesiones diarias; aquí se usa la de 40 semanales, que
+    cubre el mismo calendario pero suaviza distinto."""
+    c = lab.ficha_pendiente([], universo=["AAPL"])["controles"]
+    assert "aproximacion" in c
+    assert "200 SESIONES" in c["aproximacion"] and "40 barras semanales" in c["aproximacion"]
+
+
+def test_la_segunda_hipotesis_es_de_OTRA_familia():
+    f = lab.ficha_pendiente([], universo=["AAPL"])
+    assert f["hipotesis_id"] == "SMA200_PENDIENTE_SESIONES"
+    assert f["hipotesis_id"] != "DISTANCIA_MAX_A_MAXIMO_52S"
+
+
+def test_generalizar_los_tramos_NO_cambio_el_experimento_original():
+    """La generalización se hizo con el valor de siempre por defecto: el experimento 1
+    tiene que seguir dando exactamente lo mismo."""
+    obs = _todos_los_tramos([8, 6, 4, 2, 1])
+    assert lab.agregar(obs) == lab.agregar(obs, tramos=lab.TRAMOS)
+    assert lab.distribucion(obs) == lab.distribucion(obs, tramos=lab.TRAMOS)

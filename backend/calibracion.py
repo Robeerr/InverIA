@@ -58,26 +58,59 @@ intuición aquí: el componente «punto de entrada» de `_potential_score` punt�
 alto una acción a un 33% de su máximo que una pegada a él, lo cual apuesta en la
 dirección contraria a la literatura sin que nadie lo haya medido.
 
-MEDIDO el 14-09-2026. HIPÓTESIS RECHAZADA. SIGUE VALIENDO None.
+MEDIDO el 14-09-2026, tres veces. HIPÓTESIS CERRADA Y RECHAZADA. SIGUE VALIENDO None.
 
 1.933 observaciones semanales sobre el universo vigilado, cinco años, horizonte de trece
-semanas. El retorno medio NO cae al alejarse del máximo: sube (8,66% → 24,74%). La
-dirección se había fijado antes de mirar, así que la hipótesis queda rechazada.
+semanas. Tres experimentos sobre los MISMOS datos, cada uno respondiendo a lo que dejaba
+abierto el anterior. Los tres apuntan a lo mismo: la distancia al máximo anual no lleva
+información estable sobre el retorno posterior.
 
-Y NO SE INVIERTE, porque los mismos datos dicen que ese gradiente no es una ventaja:
+1 · LA MEDIA SUBE AL ALEJARSE DEL MÁXIMO — pero no es una ventaja
 
-  · los tres tramos centrales son PLANOS —12,72 / 12,87 / 13,11— con 0,39 pp entre
-    ellos. No hay gradiente: hay dos saltos, uno al salir de máximos y otro al entrar
-    en el tramo más hundido;
-  · la TASA DE ACIERTO no acompaña. Va de 59,7% a 65,4% sin orden, y el tramo que más
-    gana de media (33-100%, 62,9%) acierta MENOS que el 5-10% (65,4%). Ganar lo mismo
-    de veces y mucho más cuando se gana es dispersión, no ventaja;
-  · el tramo hundido es justo donde el sesgo de supervivencia muerde: una acción que
-    cayó un 60% y se recuperó está hoy en la lista; la que no se recuperó, no.
+8,66% → 12,72% → 12,87% → 13,11% → 24,74%. La dirección se había fijado antes de mirar
+y salió la contraria, así que la hipótesis original queda rechazada. Pero los tres
+tramos centrales están a 0,39 pp unos de otros y la tasa de acierto va de 59,7% a 65,4%
+SIN ORDEN: el que más gana de media acierta menos que el 5-10%.
 
-Poner aquí un número invertido —«comprar solo lo hundido»— sería exactamente el error
-que este fichero existe para impedir, con el agravante de que además tendríamos un
-experimento para justificarlo.
+2 · EL GRADIENTE ERA COLA
+
+La mediana del tramo hundido (9,89) está en línea con la del 5-10% (8,55) y la del
+10-20% (10,04). Lo que lo distingue es que su media casi TRIPLICA a su mediana —2,50x
+frente a 1,28x-1,85x del resto—. Gana lo mismo de forma típica y muchísimo más en sus
+mejores casos.
+
+3 · Y EL ÚNICO ESCALÓN QUE QUEDABA CAMBIA DE SIGNO SEGÚN EL AÑO
+
+Quedaba una mediana peor en el tramo 0-5%. Partido por año:
+
+    2023   -4,39 pp    estar en máximos era MEJOR
+    2024   -5,35 pp    estar en máximos era MEJOR
+    2025   +1,69 pp    estar en máximos era peor
+    2026   +7,68 pp    estar en máximos era peor
+
+No es que el escalón falte en dos años: es que en esos dos iba al revés. El escalón
+agregado era el promedio de dos regímenes opuestos.
+
+POR QUÉ NO SE PONE NINGÚN NÚMERO, NI EL ORIGINAL NI EL INVERSO
+
+Porque un efecto que cambia de signo con el año no es un umbral: es el mercado de ese
+año. Poner aquí «comprar solo lo hundido» sería el error que este fichero existe para
+impedir, con el agravante de tener un experimento para justificarlo.
+
+OBSERVACIÓN NO PRE-REGISTRADA, que por eso NO cuenta como evidencia
+
+La amplitud intercuartílica sí es monótona con la distancia: 25,84 → 27,50 → 30,27 →
+37,95 → 45,58 pp. El tramo hundido es un 76% más ancho que el pegado al máximo, mientras
+su mediana no se distingue. Sugiere que esta variable mide VOLATILIDAD y no retorno
+esperado. Se anota como pista, no como hallazgo: se vio después de mirar los datos, y
+afirmarlo exigiría su propio experimento con la dirección fijada de antemano.
+
+LO QUE ESTO DICE DE `_potential_score`, y que NO se ha tocado
+
+Su componente de «punto de entrada» puntúa más alto una acción a un 33% de su máximo que
+una pegada a él. Ahora sabemos que esa variable no lleva señal estable en NINGUNA
+dirección, así que el componente no está respaldado. Quitarlo o cambiarlo es una
+decisión de producto que no se toma desde aquí.
 """
 
 SMA200_PENDIENTE_SESIONES: Optional[int] = None

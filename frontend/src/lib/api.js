@@ -73,6 +73,10 @@ export const api = {
     distanciaAlMaximo: () =>
       client.post(`/laboratorio/experimento/distancia-maximo`, {}, { timeout: 300000 })
         .then((r) => r.data),
+    // Segunda hipótesis, de otra familia: la persistencia de la tendencia.
+    pendiente: () =>
+      client.post(`/laboratorio/experimento/pendiente-media`, {},
+                  { timeout: 300000 }).then((r) => r.data),
     // El corte temporal: ¿el escalón se repite cada año o es un año concreto?
     periodo: () =>
       client.post(`/laboratorio/experimento/distancia-maximo/periodo`, {},

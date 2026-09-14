@@ -4508,7 +4508,7 @@ async def laboratorio_experimentos(limite: int = 50,
     return {"experimentos": await laboratorio.experimentos(db, limite=limite)}
 
 
-async def _experimento_distancia(hacer_ficha):
+async def _experimento_distancia(hacer_ficha, observar=None):
     """El cuerpo común de los tres experimentos sobre la distancia al máximo.
 
     Los tres necesitan EXACTAMENTE las mismas observaciones —el mismo universo, el mismo
@@ -4517,6 +4517,11 @@ async def _experimento_distancia(hacer_ficha):
     el diagnóstico y el corte temporal midan sobre los mismos datos que el experimento
     que están explicando. Tres copias habrían divergido y las conclusiones dejarían de
     ser comparables.
+
+    `observar` permite que una hipótesis de otra familia —la persistencia de la
+    tendencia, por ejemplo— use la MISMA descarga y el mismo universo cambiando solo cómo
+    convierte las barras en observaciones. Dos descargas distintas darían resultados que
+    no se podrían comparar entre sí.
 
     Vuelve a descargar el histórico cada vez. Es una decisión consciente: guardar las
     1.933 observaciones dentro del documento habría hecho pesada la lista de
@@ -4541,7 +4546,7 @@ async def _experimento_distancia(hacer_ficha):
         barras = [{"high": float(r.High), "close": float(r.Close),
                    "date": str(r.Date)[:10]} for r in df.itertuples()]
         fechas += [b["date"] for b in barras]
-        obs += laboratorio.observaciones(barras, sym)
+        obs += (observar or laboratorio.observaciones)(barras, sym)
 
     doc = hacer_ficha(obs,
                       universo=[s for s in universo
@@ -4551,6 +4556,20 @@ async def _experimento_distancia(hacer_ficha):
     doc["fallos"] = fallos
     guardado = await laboratorio.guardar_experimento(db, doc)
     return {**doc, "guardado": guardado}
+
+
+@api_router.post("/laboratorio/experimento/pendiente-media")
+async def laboratorio_experimento_pendiente(_user: str = Depends(auth.get_current_user)):
+    """Segunda hipótesis: ¿rinde más una acción cuya tendencia de fondo lleva más tiempo
+    subiendo?
+
+    Es de OTRA familia que la primera. La distancia al máximo, la profundidad de un
+    retroceso y las variables de ese estilo miden dónde está el precio respecto a un
+    extremo, y sobre esa familia ya se gastaron tres experimentos para acabar en nada.
+    Esta mide cuánto tiempo lleva la tendencia apuntando hacia arriba.
+    """
+    return await _experimento_distancia(laboratorio.ficha_pendiente,
+                                        observar=laboratorio.observaciones_pendiente)
 
 
 @api_router.post("/laboratorio/experimento/distancia-maximo")

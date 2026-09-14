@@ -279,7 +279,7 @@ def observaciones(barras: list, symbol: str = None) -> list:
     return fuera
 
 
-def agregar(obs: list) -> dict:
+def agregar(obs: list, tramos=None) -> dict:
     """De observaciones a resultado, con su veredicto. Pura.
 
     EL VEREDICTO NO PUEDE SER OPTIMISTA POR DEFECTO
@@ -293,12 +293,13 @@ def agregar(obs: list) -> dict:
     quinientas cosas y una salió espectacular»: aquí solo hay una hipótesis y solo puede
     salir bien de una manera.
     """
+    tramos = TRAMOS if tramos is None else tramos
     por_tramo = {}
     for o in obs or []:
         por_tramo.setdefault(o["tramo"], []).append(o["retorno_pct"])
 
     filas = []
-    for bajo, alto in TRAMOS:
+    for bajo, alto in tramos:
         clave = f"{bajo}-{alto}%"
         rs = por_tramo.get(clave) or []
         filas.append({
@@ -422,7 +423,7 @@ def _percentil(ordenados: list, q: float):
     return round(ordenados[bajo] * (1 - peso) + ordenados[alto] * peso, 2)
 
 
-def distribucion(obs: list) -> dict:
+def distribucion(obs: list, tramos=None) -> dict:
     """La forma de la distribución por tramo, no solo su media. Pura.
 
     Añade tres cosas que el primer experimento no miraba y que aquí lo son todo:
@@ -432,12 +433,13 @@ def distribucion(obs: list) -> dict:
       · CUÁNDO ocurrió cada observación, porque si un tramo se concentra en un año
         concreto lo que mide no es la distancia al máximo sino ese año.
     """
+    tramos = TRAMOS if tramos is None else tramos
     por_tramo = {}
     for o in obs or []:
         por_tramo.setdefault(o["tramo"], []).append(o)
 
     filas = []
-    for bajo, alto in TRAMOS:
+    for bajo, alto in tramos:
         clave = f"{bajo}-{alto}%"
         items = por_tramo.get(clave) or []
         rs = sorted(o["retorno_pct"] for o in items)
@@ -614,12 +616,14 @@ def ficha_distribucion(obs: list, universo: list, desde: str = None,
 AÑOS_MINIMOS = 3
 
 
-def por_periodo(obs: list) -> dict:
+def por_periodo(obs: list, tramos=None) -> dict:
     """Las medianas de cada tramo, año a año. Pura.
 
     Un año solo entra si TODOS sus tramos llegan a la muestra mínima. Un año a medias
     daría medianas calculadas sobre puñados y se leerían igual que las demás.
     """
+    tramos = TRAMOS if tramos is None else tramos
+    primera_clave = f"{tramos[0][0]}-{tramos[0][1]}%"
     años = {}
     for o in obs or []:
         año = str(o.get("fecha") or "")[:4]
@@ -628,16 +632,19 @@ def por_periodo(obs: list) -> dict:
 
     filas, descartados = [], []
     for año in sorted(años):
-        tramos = años[año]
-        rs = {f"{b}-{a}%": sorted(tramos.get(f"{b}-{a}%") or []) for b, a in TRAMOS}
+        # `del_año` y no `tramos`: al generalizar la función, `tramos` pasó a ser el
+        # parámetro, y esta variable local lo pisaba dentro del bucle. Los tests lo
+        # cazaron con un `too many values to unpack`.
+        del_año = años[año]
+        rs = {f"{b}-{a}%": sorted(del_año.get(f"{b}-{a}%") or []) for b, a in tramos}
         if any(len(v) < MUESTRA_MINIMA for v in rs.values()):
             descartados.append({"año": año,
                                 "n_por_tramo": {k: len(v) for k, v in rs.items()}})
             continue
         medianas = {k: _percentil(v, 0.5) for k, v in rs.items()}
-        primero = medianas[f"{TRAMOS[0][0]}-{TRAMOS[0][1]}%"]
+        primero = medianas[primera_clave]
         resto = [v for k, v in medianas.items()
-                 if k != f"{TRAMOS[0][0]}-{TRAMOS[0][1]}%"]
+                 if k != primera_clave]
         filas.append({
             "año": año,
             "n": sum(len(v) for v in rs.values()),
@@ -729,6 +736,148 @@ def ficha_periodo(obs: list, universo: list, desde: str = None,
                                     "experimento 1, sin tocar.",
         },
         "resultado": {**d, **v},
+        "estado": v["estado"],
+        "ejecutado_en": _ahora(),
+        "lab_v": 1,
+    }
+
+
+# ── Segunda hipótesis: la persistencia de la tendencia ──────────────────────
+#
+# POR QUÉ ESTA Y NO `PROFUNDIDAD_MAX_RETROCESO`
+#
+# Porque la profundidad de un retroceso es OTRA VEZ cuánto ha caído el precio, y sobre
+# esa familia de variables ya hemos gastado tres experimentos para acabar en nada: la
+# media era cola, la mediana no tenía gradiente y el único escalón cambiaba de signo
+# según el año. Medir lo mismo con otro nombre daría el mismo nada.
+#
+# Esta es de otra familia: no mide dónde está el precio respecto a un extremo, sino
+# CUÁNTO TIEMPO lleva la tendencia apuntando hacia arriba. Y tiene una ventaja que
+# ninguna otra de la lista tiene: `tendencia.py` está en producción precisamente porque
+# NO aplica esta condición —el umbral vale None—, así que medirla no cuestiona un número
+# existente, decide si hace falta uno.
+#
+# SMA40 SEMANAL EN VEZ DE SMA200 DIARIA, Y HAY QUE DECIRLO
+#
+# `tendencia.py` mira la media de 200 sesiones sobre velas diarias. En diario solo
+# tenemos dos años, y 200 de calentamiento dejan una muestra ridícula. Cuarenta barras
+# semanales cubren el mismo tramo de calendario —unas 200 sesiones— y dan cinco años.
+#
+# No es lo mismo: una media de 40 puntos semanales suaviza distinto que una de 200
+# puntos diarios, aunque abarquen las mismas fechas. Lo que se mide aquí es la DIRECCIÓN
+# de la tendencia de fondo, que es lo que la condición pretende capturar, no el valor
+# exacto de la media. Va declarado en el método.
+
+#: Cuántas barras semanales lleva subiendo la media de fondo. El último tramo recoge el
+#: resto. Fijados antes de ejecutar y no se tocan después.
+TRAMOS_PENDIENTE = ((0, 1), (1, 5), (5, 13), (13, 27), (27, 999))
+
+#: Barras de la media de fondo. 40 semanales ≈ 200 sesiones.
+VENTANA_MEDIA = 40
+
+
+def _media(valores: list):
+    return sum(valores) / len(valores) if valores else None
+
+
+def observaciones_pendiente(barras: list, symbol: str = None) -> list:
+    """Observaciones por CUÁNTAS barras lleva subiendo la media de fondo. Pura.
+
+    El mismo cuidado con el leakage que en el otro experimento, y por el mismo motivo:
+    la media del ancla se calcula con las barras que TERMINAN en ella, la racha mira
+    hacia atrás, y el retorno solo hacia delante. Ni la racha ni la media saben nada de
+    lo que pasa después.
+    """
+    fuera = []
+    n = len(barras or [])
+    # Hace falta la ventana de la media MÁS margen para poder mirar la racha hacia atrás.
+    arranque = VENTANA_MEDIA * 2
+    for ancla in range(arranque, n - HORIZONTE, PASO):
+        try:
+            cierres = [float(b["close"]) for b in barras[:ancla + 1]]
+            despues = float(barras[ancla + HORIZONTE]["close"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if cierres[ancla] <= 0:
+            continue
+        # Cuántas barras consecutivas lleva subiendo la media, mirando hacia atrás.
+        racha = 0
+        i = ancla
+        while i - VENTANA_MEDIA >= 0:
+            actual = _media(cierres[i - VENTANA_MEDIA + 1:i + 1])
+            previa = _media(cierres[i - VENTANA_MEDIA:i])
+            if actual is None or previa is None or actual <= previa:
+                break
+            racha += 1
+            i -= 1
+            if racha >= TRAMOS_PENDIENTE[-1][1]:
+                break
+        tramo = next((f"{b}-{a}%" for b, a in TRAMOS_PENDIENTE if b <= racha < a), None)
+        if tramo is None:
+            continue
+        fuera.append({
+            "symbol": symbol,
+            "fecha": barras[ancla].get("date") or barras[ancla].get("time"),
+            "racha": racha,
+            "tramo": tramo,
+            "retorno_pct": round((despues - cierres[ancla]) / cierres[ancla] * 100, 2),
+        })
+    return fuera
+
+
+def ficha_pendiente(obs: list, universo: list, desde: str = None,
+                    hasta: str = None) -> dict:
+    """La segunda hipótesis, con las lecciones de la primera aplicadas. Pura.
+
+    LO QUE SE APRENDIÓ Y AQUÍ YA VIENE DE SERIE
+
+    El primer experimento reportó solo medias y hubo que hacer dos experimentos más para
+    descubrir que mentían: una era cola y el resto cambiaba de signo con el año. Este
+    trae mediana, cuartiles, amplitud, peso del 10% mejor Y el corte por año desde la
+    primera ejecución. No es cortesía: es lo único que permite leer el resultado sin
+    volver a equivocarse dos veces.
+    """
+    d = distribucion(obs, tramos=TRAMOS_PENDIENTE)
+    v = veredicto_distribucion(d)
+    periodo = por_periodo(obs, tramos=TRAMOS_PENDIENTE)
+    return {
+        "hipotesis_id": "SMA200_PENDIENTE_SESIONES",
+        "tipo": "primero",
+        "titulo": "¿Rinde más una acción cuya tendencia de fondo lleva más tiempo subiendo?",
+        "metodo": {
+            "que_pregunta": f"Retorno a {HORIZONTE} semanas según cuántas barras lleva "
+                            "subiendo la media de fondo en la fecha de la observación.",
+            "universo": sorted(universo or []),
+            "simbolos": len(universo or []),
+            "desde": desde, "hasta": hasta,
+            "resolucion": RESOLUCION,
+            "media_de_fondo": f"{VENTANA_MEDIA} barras semanales ≈ 200 sesiones",
+            "horizonte": HORIZONTE, "paso": PASO,
+            "tramos": [f"{b}-{a}%" for b, a in TRAMOS_PENDIENTE],
+            "muestra_minima_por_tramo": MUESTRA_MINIMA,
+            "direccion_esperada": "Más barras subiendo → mayor retorno posterior, tanto "
+                                  "en media como en MEDIANA. Fijada ANTES de ejecutar.",
+        },
+        "controles": {
+            "leakage": "La media del ancla usa las barras que terminan en ella, la racha "
+                       "mira hacia atrás y el retorno solo hacia delante.",
+            "solapamiento": f"Una observación cada {PASO} barras con horizonte "
+                            f"{HORIZONTE}: NO son independientes. Ningún p-valor.",
+            "supervivencia": "El universo es el de hoy. Aquí pesa menos que en la "
+                             "hipótesis anterior —una racha alcista no selecciona "
+                             "supervivientes como lo hace una caída del 60%— pero sigue.",
+            "aproximacion": "La condición de producción habla de la media de 200 SESIONES "
+                            "sobre velas diarias; aquí se usa la de 40 barras semanales, "
+                            "que cubre el mismo calendario. Suaviza distinto. Se mide la "
+                            "DIRECCIÓN de la tendencia de fondo, no el valor de la media.",
+            "un_solo_ciclo": "Los mismos cinco años, el mismo ciclo. Por eso el corte por "
+                             "año viene de serie: el experimento anterior enseñó que un "
+                             "resultado agregado puede ser el promedio de dos regímenes "
+                             "opuestos.",
+            "costes": "Ninguno. No es una estrategia, es una medida de comportamiento.",
+            "parametros_ajustados": "Ninguno. Tramos, ventana y horizonte fijados antes.",
+        },
+        "resultado": {**d, **v, "por_periodo": periodo},
         "estado": v["estado"],
         "ejecutado_en": _ahora(),
         "lab_v": 1,
