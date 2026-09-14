@@ -113,6 +113,7 @@ def _secciones(texto: str) -> dict:
     """
     claves = {"MIDE": "mide", "BLOQUEADO POR": "bloqueado_por",
               "RELACIÓN CON LO QUE HAY": "relacion_con_produccion",
+              "MEDIDO": "medido",
               "NO COPIAR": "no_copiar", "IMPORTANTE": "importante"}
     fuera, actual = {}, None
     for linea in (texto or "").splitlines():
@@ -120,12 +121,46 @@ def _secciones(texto: str) -> dict:
         etiqueta = next((v for k, v in claves.items() if limpia.startswith(k)), None)
         if etiqueta:
             actual = etiqueta
-            fuera[actual] = limpia.split(":", 1)[-1].strip() if ":" in limpia else ""
+            # Se queda TODO lo que sigue a la palabra clave, lleve dos puntos o no. La
+            # primera versión solo guardaba lo de detrás de los «:», y una cabecera sin
+            # ellos —«MEDIDO el 14-09-2026. HIPÓTESIS RECHAZADA»— se perdía entera: la
+            # sección quedaba vacía y el registro seguía diciendo que estaba pendiente.
+            clave = next(k for k in claves if limpia.startswith(k))
+            resto = limpia[len(clave):].lstrip(": ").strip()
+            fuera[actual] = resto
         elif actual and limpia:
             fuera[actual] = (fuera[actual] + " " + limpia).strip()
-        elif not limpia:
-            actual = None
-    return fuera
+        elif actual and not limpia:
+            # Una línea en blanco NO cierra la sección: la separa en párrafos. La
+            # primera versión cortaba ahí, y de «MEDIDO» solo sobrevivía la cabecera
+            # —«hipótesis rechazada»— sin el razonamiento de por qué NO se invierte la
+            # regla, que es justo la parte que impide repetir el error.
+            #
+            # Una sección se cierra cuando empieza otra, o cuando se acaba el docstring.
+            if not fuera[actual].endswith("\n\n"):
+                fuera[actual] = fuera[actual] + "\n\n"
+    return {k: v.strip() for k, v in fuera.items()}
+
+
+def _estado_de(valor, medible: bool, medido: Optional[str]) -> str:
+    """El estado de una hipótesis, deducido y no escrito a mano en ningún sitio.
+
+    El orden importa. Un umbral con NÚMERO es una regla en vigor, se haya medido o no —
+    el código ya lo aplica—. Uno que se midió y salió rechazado NO vuelve a la cola de
+    «medible»: eso lo haría reaparecer como pendiente y alguien lo repetiría.
+
+    Que el rechazo viva en el docstring de `calibracion` y no en una tabla es lo que
+    impide la contradicción de siempre: el código diciendo una cosa y el registro otra.
+    """
+    if valor is not None:
+        return VALIDADA
+    # Se busca la palabra CASTELLANA, no la constante: los docstrings de `calibracion`
+    # están escritos en castellano y `RECHAZADA` vale «REJECTED». Comparar la constante
+    # contra ese texto no casaba nunca, y el registro seguía anunciando como pendiente
+    # una hipótesis ya medida — que es exactamente lo que haría que se repitiera.
+    if medido and "RECHAZADA" in medido.upper():
+        return RECHAZADA
+    return LISTA if medible else IDEA
 
 
 def hipotesis() -> list:
@@ -155,8 +190,7 @@ def hipotesis() -> list:
                 "titulo": lineas[0].strip() if lineas else pendiente,
                 **_secciones(doc),
                 "valor_actual": valor,
-                # Un umbral con número ya no es una hipótesis: es una regla en vigor.
-                "estado": VALIDADA if valor is not None else (LISTA if medible else IDEA),
+                "estado": _estado_de(valor, medible, _secciones(doc).get("medido")),
                 "medible_hoy": medible,
                 "por_que": motivo,
             })
@@ -340,6 +374,188 @@ def ficha(obs: list, universo: list, desde: str = None, hasta: str = None) -> di
         },
         "resultado": r,
         "estado": r["estado"],
+        "ejecutado_en": _ahora(),
+        "lab_v": 1,
+    }
+
+
+# ── El diagnóstico: ¿el efecto está en el centro o en la cola? ───────────────
+#
+# POR QUÉ ESTE ES EL SIGUIENTE EXPERIMENTO Y NO OTRA VARIABLE
+#
+# El primero salió RECHAZADO con un gradiente llamativo —8,66% a 24,74%— y la tentación
+# es pasar a la siguiente hipótesis con la sensación de haber descubierto algo. Los
+# mismos datos dicen que no:
+#
+#     tramo        n    media   %aciertos
+#     0-5%       282     8,66      64,2
+#     5-10%      292    12,72      65,4
+#     10-20%     425    12,87      64,5
+#     20-33%     330    13,11      59,7
+#     33-100%    604    24,74      62,9
+#
+# La media se dispara 16 pp y el acierto se mueve 5,7 pp SIN ORDEN. Ganar las mismas
+# veces y mucho más cuando se gana no es una ventaja: es dispersión. Y los tres tramos
+# centrales están a 0,39 pp unos de otros, así que ni siquiera hay gradiente — hay dos
+# saltos en los extremos.
+#
+# Este experimento separa esas dos explicaciones mirando la MEDIANA en vez de la media.
+# Si la mediana es plana mientras la media se dispara, el efecto vive en la cola derecha
+# y no en el comportamiento típico.
+#
+# Y va ANTES que cualquier hipótesis nueva porque el confundido afecta a TODAS. El
+# siguiente umbral de la lista —`PROFUNDIDAD_MAX_RETROCESO`— mide otra vez cuánto ha
+# caído el precio contra el retorno posterior: reproduciría el mismo sesgo y
+# «aprenderíamos» lo mismo dos veces.
+
+
+def _percentil(ordenados: list, q: float):
+    """Percentil por interpolación lineal. Sin dependencias nuevas."""
+    if not ordenados:
+        return None
+    if len(ordenados) == 1:
+        return ordenados[0]
+    pos = q * (len(ordenados) - 1)
+    bajo = int(pos)
+    alto = min(bajo + 1, len(ordenados) - 1)
+    peso = pos - bajo
+    return round(ordenados[bajo] * (1 - peso) + ordenados[alto] * peso, 2)
+
+
+def distribucion(obs: list) -> dict:
+    """La forma de la distribución por tramo, no solo su media. Pura.
+
+    Añade tres cosas que el primer experimento no miraba y que aquí lo son todo:
+
+      · la MEDIANA, que no se mueve porque unas pocas observaciones sean enormes;
+      · los cuartiles y los extremos, para ver de dónde sale la media;
+      · CUÁNDO ocurrió cada observación, porque si un tramo se concentra en un año
+        concreto lo que mide no es la distancia al máximo sino ese año.
+    """
+    por_tramo = {}
+    for o in obs or []:
+        por_tramo.setdefault(o["tramo"], []).append(o)
+
+    filas = []
+    for bajo, alto in TRAMOS:
+        clave = f"{bajo}-{alto}%"
+        items = por_tramo.get(clave) or []
+        rs = sorted(o["retorno_pct"] for o in items)
+        años = {}
+        for o in items:
+            año = str(o.get("fecha") or "")[:4]
+            if año:
+                años[año] = años.get(año, 0) + 1
+        filas.append({
+            "tramo": clave,
+            "n": len(rs),
+            "media": round(sum(rs) / len(rs), 2) if rs else None,
+            "mediana": _percentil(rs, 0.5),
+            "p25": _percentil(rs, 0.25),
+            "p75": _percentil(rs, 0.75),
+            "peor": rs[0] if rs else None,
+            "mejor": rs[-1] if rs else None,
+            "positivos_pct": round(sum(1 for r in rs if r > 0) / len(rs) * 100, 1) if rs else None,
+            "por_año": dict(sorted(años.items())),
+            # Cuánto del retorno total lo aporta el 10% mejor. Si un puñado de
+            # observaciones explica la media, la media no describe a nadie.
+            "peso_del_10pct_mejor": (
+                round(sum(rs[int(len(rs) * 0.9):]) / sum(rs) * 100, 1)
+                if rs and sum(rs) > 0 else None),
+        })
+    return {"tramos": filas, "n": sum(f["n"] for f in filas)}
+
+
+#: Cuánto tienen que separarse las medianas para que el efecto esté en el CENTRO.
+#: Mismo listón que usó el primer experimento para su separación de medias: si allí
+#: 1 pp bastaba para afirmar algo, aquí tiene que bastar para negarlo.
+SEPARACION_MINIMA = 1.0
+
+
+def veredicto_distribucion(d: dict) -> dict:
+    """Qué explica el gradiente de medias: el centro o la cola. Puro.
+
+    Los tres finales posibles son todos informativos, y ninguno rehabilita la hipótesis
+    original — esa quedó rechazada y no se reabre aquí.
+    """
+    filas = d.get("tramos") or []
+    flacos = [f["tramo"] for f in filas if f["n"] < MUESTRA_MINIMA]
+    if flacos:
+        return {"estado": SIN_DATOS,
+                "conclusion": "Tramos sin muestra suficiente: " + ", ".join(flacos)}
+
+    medias = [f["media"] for f in filas]
+    medianas = [f["mediana"] for f in filas]
+    rango_media = round(max(medias) - min(medias), 2)
+    rango_mediana = round(max(medianas) - min(medianas), 2)
+
+    base = {"rango_media_pp": rango_media, "rango_mediana_pp": rango_mediana,
+            "n": d.get("n")}
+    if rango_mediana < SEPARACION_MINIMA <= rango_media:
+        return {**base, "estado": RECHAZADA,
+                "conclusion": f"El gradiente vive en la COLA, no en el centro: las medias "
+                              f"se separan {rango_media} pp y las medianas solo "
+                              f"{rango_mediana} pp. El comportamiento típico de los tramos "
+                              "es el mismo; lo que cambia es el tamaño de los aciertos "
+                              "grandes. No hay ventaja que aprovechar."}
+    if rango_mediana >= SEPARACION_MINIMA:
+        return {**base, "estado": NO_CONCLUYENTE,
+                "conclusion": f"Las medianas TAMBIÉN se separan ({rango_mediana} pp), así "
+                              "que el efecto no es solo de cola. Queda descartar régimen "
+                              "y supervivencia antes de poder decir nada: mira el reparto "
+                              "por año de cada tramo."}
+    return {**base, "estado": NO_CONCLUYENTE,
+            "conclusion": f"Ni las medias ({rango_media} pp) ni las medianas "
+                          f"({rango_mediana} pp) se separan lo suficiente. No hay nada "
+                          "que explicar."}
+
+
+def ficha_distribucion(obs: list, universo: list, desde: str = None,
+                       hasta: str = None) -> dict:
+    """El experimento de diagnóstico, listo para guardar. Puro."""
+    d = distribucion(obs)
+    v = veredicto_distribucion(d)
+    return {
+        # MISMA hipótesis: esto no abre una línea nueva, profundiza en la que ya se
+        # rechazó. Así el contador de intentos dice la verdad — llevamos dos sobre ella.
+        "hipotesis_id": "DISTANCIA_MAX_A_MAXIMO_52S",
+        "tipo": "diagnostico",
+        "deriva_de": "Experimento 1, que salió RECHAZADO con un gradiente de medias de "
+                     "16 pp y una tasa de acierto plana.",
+        "titulo": "¿El gradiente de retornos está en el centro de la distribución o en la cola?",
+        "metodo": {
+            "que_pregunta": "Mediana, cuartiles y reparto por año de cada tramo, sobre "
+                            "las MISMAS observaciones del experimento 1.",
+            "universo": sorted(universo or []),
+            "simbolos": len(universo or []),
+            "desde": desde, "hasta": hasta,
+            "resolucion": RESOLUCION,
+            "ventana_maximo": VENTANA, "horizonte": HORIZONTE, "paso": PASO,
+            "muestra_minima_por_tramo": MUESTRA_MINIMA,
+            "direccion_esperada": "Se espera que las medianas NO se separen mientras las "
+                                  "medias sí. Fijada ANTES de ejecutar, a partir de la "
+                                  "tasa de acierto plana del experimento 1.",
+        },
+        "controles": {
+            "leakage": "Las mismas observaciones del experimento 1: el máximo usa solo "
+                       "barras anteriores al ancla y el retorno solo posteriores.",
+            "solapamiento": f"Una observación cada {PASO} barras con horizonte "
+                            f"{HORIZONTE}: NO son independientes. Con ~1.900 "
+                            "observaciones, las independientes son del orden de 600, y "
+                            "menos aún porque todas comparten mercado. Ningún p-valor.",
+            "supervivencia": "El sesgo NO es uniforme entre tramos, y esa es la clave: "
+                             "una acción que cayó un 60% y se recuperó está hoy en el "
+                             "universo; la que no se recuperó, no. El tramo más hundido "
+                             "es justo donde más muerde.",
+            "regimen": "El reparto por año de cada tramo se publica precisamente para "
+                       "poder ver si un tramo se concentra en un periodo concreto. Si "
+                       "el tramo hundido vive en 2022, lo que mide es 2022.",
+            "costes": "Ninguno. No es una estrategia, es una medida de comportamiento.",
+            "parametros_ajustados": "Ninguno. Tramos, horizonte y ventana son los mismos "
+                                    "del experimento 1, sin tocar.",
+        },
+        "resultado": {**d, **v},
+        "estado": v["estado"],
         "ejecutado_en": _ahora(),
         "lab_v": 1,
     }

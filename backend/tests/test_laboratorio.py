@@ -42,8 +42,11 @@ def test_cada_hipotesis_trae_QUE_MEDIR():
         assert h.get("mide"), f"{h['id']} no dice qué medir"
 
 
-def test_un_umbral_SIN_numero_es_una_hipotesis_y_no_una_regla():
-    d = next(h for h in lab.hipotesis() if h["id"] == "DISTANCIA_MAX_A_MAXIMO_52S")
+def test_un_umbral_SIN_numero_y_SIN_medir_sigue_siendo_una_hipotesis():
+    """Se cambió de `DISTANCIA_MAX_A_MAXIMO_52S` a otro umbral porque aquel YA se midió
+    el 14-09-2026 y salió rechazado: usarlo aquí habría convertido este test en una
+    comprobación de que el rechazo no se registra."""
+    d = next(h for h in lab.hipotesis() if h["id"] == "ATR_MULTIPLO_STOP")
     assert d["valor_actual"] is None
     assert d["estado"] == lab.LISTA          # medible, pero todavía sin medir
 
@@ -293,3 +296,122 @@ def test_el_panorama_separa_lo_MEDIBLE_de_lo_bloqueado():
                                     lab.NO_CONCLUYENTE])
 def test_los_cuatro_finales_son_estados_legitimos(estado):
     assert estado in lab.FINALES
+
+
+# ── El diagnóstico: centro o cola ────────────────────────────────────────────
+#
+# El experimento 1 salió RECHAZADO con un gradiente de medias de 16 pp y una tasa de
+# acierto PLANA (59,7% a 65,4%, sin orden). Ganar las mismas veces y mucho más cuando se
+# gana es dispersión, no ventaja. Estos tests protegen la herramienta que distingue las
+# dos cosas.
+
+def _dist(medias, n=lab.MUESTRA_MINIMA, año="2022", cola=None):
+    """Observaciones con la media pedida por tramo. `cola` mete un valor enorme en el
+    último tramo para simular el caso real: media alta con mediana igual."""
+    obs = []
+    for i, ((bajo, alto), media) in enumerate(zip(lab.TRAMOS, medias)):
+        vals = [media] * n
+        if cola is not None and i == len(lab.TRAMOS) - 1:
+            vals = [media] * (n - 1) + [cola]
+        obs += [{"tramo": f"{bajo}-{alto}%", "retorno_pct": v, "fecha": f"{año}-03-01",
+                 "symbol": "X", "distancia_pct": 1} for v in vals]
+    return obs
+
+
+def test_la_MEDIANA_no_la_mueve_un_solo_acierto_enorme():
+    """La propiedad que hace útil este diagnóstico. Si la mediana se moviera como la
+    media, no distinguiría nada."""
+    d = lab.distribucion(_dist([10, 10, 10, 10, 10], cola=1000))
+    ultimo = d["tramos"][-1]
+    assert ultimo["mediana"] == 10
+    assert ultimo["media"] > 40                  # la media SÍ se dispara
+
+
+def test_si_la_mediana_es_PLANA_el_efecto_vive_en_la_COLA():
+    """El caso que se sospecha del experimento 1: medias muy separadas, medianas no."""
+    v = lab.veredicto_distribucion(lab.distribucion(_dist([10, 10, 10, 10, 10], cola=3000)))
+    assert v["estado"] == lab.RECHAZADA
+    assert "COLA" in v["conclusion"]
+    assert v["rango_mediana_pp"] < lab.SEPARACION_MINIMA <= v["rango_media_pp"]
+
+
+def test_si_la_mediana_TAMBIEN_se_separa_no_se_concluye():
+    """Entonces el efecto no es solo de cola, pero siguen en pie régimen y
+    supervivencia: no se puede afirmar nada todavía."""
+    v = lab.veredicto_distribucion(lab.distribucion(_dist([2, 6, 10, 14, 20])))
+    assert v["estado"] == lab.NO_CONCLUYENTE
+    assert "régimen" in v["conclusion"] and "supervivencia" in v["conclusion"]
+
+
+def test_sin_separacion_en_NINGUNA_de_las_dos_no_hay_nada_que_explicar():
+    v = lab.veredicto_distribucion(lab.distribucion(_dist([10, 10.2, 10.1, 10, 10.3])))
+    assert v["estado"] == lab.NO_CONCLUYENTE
+    assert "nada que explicar" in v["conclusion"]
+
+
+def test_el_diagnostico_NO_puede_rehabilitar_la_hipotesis_original():
+    """Ninguna combinación devuelve VALIDATED. Este experimento explica un rechazo; no
+    lo reabre."""
+    for medias in ([10] * 5, [2, 6, 10, 14, 20], [20, 14, 10, 6, 2], [10, 10.1, 10, 10, 10]):
+        v = lab.veredicto_distribucion(lab.distribucion(_dist(medias)))
+        assert v["estado"] != lab.VALIDADA
+
+
+def test_se_publica_el_reparto_POR_AÑO_de_cada_tramo():
+    """Si un tramo vive en un año concreto, lo que mide es ese año. Sin esta columna el
+    confundido de régimen sería invisible."""
+    obs = _dist([10] * 5, año="2022") + _dist([10] * 5, año="2024")
+    d = lab.distribucion(obs)
+    assert d["tramos"][0]["por_año"] == {"2022": lab.MUESTRA_MINIMA,
+                                         "2024": lab.MUESTRA_MINIMA}
+
+
+def test_se_publica_CUANTO_aporta_el_10_por_ciento_mejor():
+    """Si un puñado de observaciones explica la media, la media no describe a nadie."""
+    d = lab.distribucion(_dist([1] * 5, n=100, cola=100000))
+    assert d["tramos"][-1]["peso_del_10pct_mejor"] > 90
+
+
+def test_sin_MUESTRA_el_diagnostico_tampoco_concluye():
+    v = lab.veredicto_distribucion(lab.distribucion(_dist([10] * 5, n=3)))
+    assert v["estado"] == lab.SIN_DATOS
+
+
+def test_el_diagnostico_es_el_SEGUNDO_intento_de_la_MISMA_hipotesis():
+    """No abre una línea nueva: profundiza en la que ya se rechazó. Así el contador de
+    intentos dice la verdad."""
+    f = lab.ficha_distribucion([], universo=["AAPL"])
+    assert f["hipotesis_id"] == "DISTANCIA_MAX_A_MAXIMO_52S"
+    assert f["tipo"] == "diagnostico" and f["deriva_de"]
+
+
+def test_el_diagnostico_declara_el_sesgo_que_MAS_importa():
+    """La supervivencia no es uniforme entre tramos, y ese es el punto."""
+    c = lab.ficha_distribucion([], universo=["AAPL"])["controles"]
+    assert "NO es uniforme" in c["supervivencia"]
+    assert "regimen" in c and "2022" in c["regimen"]
+
+
+# ── El rechazo queda registrado donde vive la verdad ─────────────────────────
+
+def test_la_hipotesis_MEDIDA_Y_RECHAZADA_ya_no_figura_como_pendiente():
+    """Si volviera a la cola de «medible», alguien la repetiría."""
+    d = next(h for h in lab.hipotesis() if h["id"] == "DISTANCIA_MAX_A_MAXIMO_52S")
+    assert d["estado"] == lab.RECHAZADA
+    assert d["valor_actual"] is None, "rechazar NO es poner el número al revés"
+    assert "RECHAZADA" in (d.get("medido") or "").upper()
+
+
+def test_el_rechazo_explica_por_que_NO_se_invierte_la_regla():
+    d = next(h for h in lab.hipotesis() if h["id"] == "DISTANCIA_MAX_A_MAXIMO_52S")
+    medido = (d.get("medido") or "").lower()
+    assert "acierto" in medido and "dispersión" in medido
+    assert "supervivencia" in medido
+
+
+def test_un_umbral_con_NUMERO_manda_sobre_el_texto(monkeypatch):
+    """El orden importa: si alguien le pone un número, el código YA lo aplica, diga lo
+    que diga el docstring."""
+    monkeypatch.setattr(calibracion, "DISTANCIA_MAX_A_MAXIMO_52S", 25.0)
+    d = next(h for h in lab.hipotesis() if h["id"] == "DISTANCIA_MAX_A_MAXIMO_52S")
+    assert d["estado"] == lab.VALIDADA

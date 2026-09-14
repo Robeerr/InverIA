@@ -57,11 +57,19 @@ test("cuando no hay experimentos se dice, en vez de enseñar una tabla vacía", 
   expect(VISTA).toContain("Todavía no se ha ejecutado ningún experimento");
 });
 
-test("solo el experimento ESCRIBE; el resto de la pantalla lee", () => {
+test("solo los experimentos ESCRIBEN; el resto de la pantalla lee", () => {
   const lab = API.slice(API.indexOf("laboratorio: {"), API.indexOf("intelligence: {"));
-  expect((lab.match(/client\.post/g) || []).length).toBe(1);
+  // Dos POST —el experimento y su diagnóstico— y dos GET de consulta. El invariante no
+  // es cuántos hay, sino que consultar el laboratorio nunca escriba.
   expect((lab.match(/client\.get/g) || []).length).toBe(2);
   expect(lab).toContain("distanciaAlMaximo");
+  expect(lab).toContain("distribucion");
+});
+
+test("el diagnóstico enseña la MEDIANA, que es lo que lo distingue del primero", () => {
+  // El experimento 1 solo daba medias, y una media la mueve un solo acierto enorme.
+  expect(VISTA).toContain("Mediana");
+  expect(VISTA).toContain("t.mediana");
 });
 
 test("la rejilla declara su columna de móvil", () => {

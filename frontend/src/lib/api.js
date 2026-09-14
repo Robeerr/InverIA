@@ -73,6 +73,10 @@ export const api = {
     distanciaAlMaximo: () =>
       client.post(`/laboratorio/experimento/distancia-maximo`, {}, { timeout: 300000 })
         .then((r) => r.data),
+    // El diagnóstico del anterior: ¿el gradiente está en el centro o en la cola?
+    distribucion: () =>
+      client.post(`/laboratorio/experimento/distancia-maximo/distribucion`, {},
+                  { timeout: 300000 }).then((r) => r.data),
   },
   intelligence: {
     estado: () => client.get(`/intelligence/estado`).then((r) => r.data),

@@ -234,12 +234,20 @@ def test_ejecutar_un_experimento_es_POST_y_es_el_UNICO_que_escribe():
                if isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)]
     assert metodos == ["post"]
 
-    escrituras = [n for n in ast.walk(ARBOL)
-                  if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
-                  and isinstance(n.func.value, ast.Name)
-                  and n.func.value.id == "laboratorio"
-                  and n.func.attr == "guardar_experimento"]
-    assert len(escrituras) == 1
+    # El invariante NO es «solo hay un escritor»: son dos desde que existe el
+    # diagnóstico, y serán más. Lo que tiene que seguir siendo cierto es que TODO el que
+    # escribe en el histórico sea un POST — nunca un GET, nunca un bucle.
+    escritores = []
+    for nodo in ast.walk(ARBOL):
+        if not isinstance(nodo, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if "guardar_experimento" not in _llamadas(nodo, "laboratorio"):
+            continue
+        escritores.append(nodo.name)
+        metodos = [d.func.attr for d in nodo.decorator_list
+                   if isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)]
+        assert metodos == ["post"], f"{nodo.name} escribe y no es un POST"
+    assert escritores, "si ya nadie registra experimentos, este guardián no vigila nada"
 
 
 def test_NINGUN_worker_ejecuta_el_experimento_por_su_cuenta():
@@ -263,3 +271,17 @@ def test_el_laboratorio_NO_llama_a_ningun_modelo():
     fuente = _i.getsource(laboratorio)
     for prohibido in ("_run_model", "ai_analysis", "genai", "openai", "gemini"):
         assert prohibido not in fuente, prohibido
+
+
+def test_el_DIAGNOSTICO_tambien_es_POST_y_no_lo_lanza_ningun_worker():
+    fn = _funcion("laboratorio_experimento_distribucion")
+    metodos = [d.func.attr for d in fn.decorator_list
+               if isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)]
+    assert metodos == ["post"]
+    lanzamientos = []
+    for nodo in ast.walk(ARBOL):
+        if (isinstance(nodo, ast.Call) and isinstance(nodo.func, ast.Attribute)
+                and nodo.func.attr == "create_task"):
+            lanzamientos += [n.func.attr for n in ast.walk(nodo)
+                             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)]
+    assert "ficha_distribucion" not in lanzamientos

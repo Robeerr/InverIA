@@ -57,6 +57,27 @@ NO COPIAR el 25% de Minervini. Y hay un motivo concreto para desconfiar de nuest
 intuición aquí: el componente «punto de entrada» de `_potential_score` puntúa HOY más
 alto una acción a un 33% de su máximo que una pegada a él, lo cual apuesta en la
 dirección contraria a la literatura sin que nadie lo haya medido.
+
+MEDIDO el 14-09-2026. HIPÓTESIS RECHAZADA. SIGUE VALIENDO None.
+
+1.933 observaciones semanales sobre el universo vigilado, cinco años, horizonte de trece
+semanas. El retorno medio NO cae al alejarse del máximo: sube (8,66% → 24,74%). La
+dirección se había fijado antes de mirar, así que la hipótesis queda rechazada.
+
+Y NO SE INVIERTE, porque los mismos datos dicen que ese gradiente no es una ventaja:
+
+  · los tres tramos centrales son PLANOS —12,72 / 12,87 / 13,11— con 0,39 pp entre
+    ellos. No hay gradiente: hay dos saltos, uno al salir de máximos y otro al entrar
+    en el tramo más hundido;
+  · la TASA DE ACIERTO no acompaña. Va de 59,7% a 65,4% sin orden, y el tramo que más
+    gana de media (33-100%, 62,9%) acierta MENOS que el 5-10% (65,4%). Ganar lo mismo
+    de veces y mucho más cuando se gana es dispersión, no ventaja;
+  · el tramo hundido es justo donde el sesgo de supervivencia muerde: una acción que
+    cayó un 60% y se recuperó está hoy en la lista; la que no se recuperó, no.
+
+Poner aquí un número invertido —«comprar solo lo hundido»— sería exactamente el error
+que este fichero existe para impedir, con el agravante de que además tendríamos un
+experimento para justificarlo.
 """
 
 SMA200_PENDIENTE_SESIONES: Optional[int] = None

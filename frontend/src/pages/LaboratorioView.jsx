@@ -97,6 +97,9 @@ function Experimento({ e }) {
               <tr><th className="text-left font-normal py-1">Tramo</th>
                   <th className="text-right font-normal">Muestra</th>
                   <th className="text-right font-normal">Retorno medio</th>
+                  {r.tramos.some((t) => t.mediana != null) && (
+                    <th className="text-right font-normal">Mediana</th>
+                  )}
                   <th className="text-right font-normal">Positivos</th></tr>
             </thead>
             <tbody className="iv-cifra">
@@ -105,8 +108,14 @@ function Experimento({ e }) {
                   <td className="py-1 text-tinta-2">{t.tramo}</td>
                   <td className="text-right text-tinta-3">{t.n}</td>
                   <td className="text-right text-tinta-2">
-                    {t.retorno_medio == null ? "—" : `${t.retorno_medio}%`}
+                    {(t.retorno_medio ?? t.media) == null
+                      ? "—" : `${t.retorno_medio ?? t.media}%`}
                   </td>
+                  {r.tramos.some((x) => x.mediana != null) && (
+                    <td className="text-right text-tinta">
+                      {t.mediana == null ? "—" : `${t.mediana}%`}
+                    </td>
+                  )}
                   <td className="text-right text-tinta-3">
                     {t.positivos_pct == null ? "—" : `${t.positivos_pct}%`}
                   </td>
@@ -161,10 +170,12 @@ export default function LaboratorioView() {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  const ejecutar = async () => {
+  const ejecutar = async (cual) => {
     setCorriendo(true);
     try {
-      await api.laboratorio.distanciaAlMaximo();
+      await (cual === "distribucion"
+        ? api.laboratorio.distribucion()
+        : api.laboratorio.distanciaAlMaximo());
       await cargar();
     } catch (err) {
       setError(err?.response?.data?.detail || err.message || "El experimento falló");
@@ -241,13 +252,22 @@ export default function LaboratorioView() {
             {experimentos.map((e, i) => <Experimento key={`${e.hipotesis_id}-${i}`} e={e} />)}
           </ul>
 
-          <button onClick={ejecutar} disabled={corriendo}
-                  className="mt-4 iv-etiqueta flex items-center gap-2 border border-linea
-                             px-3 py-2 hover:text-tinta disabled:opacity-50"
-                  data-testid="lab-ejecutar">
-            <FlaskIcon size={14} />
-            {corriendo ? "Midiendo…" : "Medir: distancia al máximo anual"}
-          </button>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button onClick={() => ejecutar("distancia")} disabled={corriendo}
+                    className="iv-etiqueta flex items-center gap-2 border border-linea
+                               px-3 py-2 hover:text-tinta disabled:opacity-50"
+                    data-testid="lab-ejecutar">
+              <FlaskIcon size={14} />
+              {corriendo ? "Midiendo…" : "Medir: distancia al máximo anual"}
+            </button>
+            <button onClick={() => ejecutar("distribucion")} disabled={corriendo}
+                    className="iv-etiqueta flex items-center gap-2 border border-linea
+                               px-3 py-2 hover:text-tinta disabled:opacity-50"
+                    data-testid="lab-ejecutar-distribucion">
+              <FlaskIcon size={14} />
+              {corriendo ? "Midiendo…" : "Diagnóstico: ¿centro o cola?"}
+            </button>
+          </div>
           <p className="mt-2 text-xs text-tinta-3 max-w-[70ch] leading-relaxed">
             Descarga el histórico semanal de tu universo y mide el retorno posterior
             según lo lejos que estuviera cada acción de su máximo anual. No llama a

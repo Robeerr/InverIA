@@ -4549,6 +4549,45 @@ async def laboratorio_experimento_distancia(_user: str = Depends(auth.get_curren
     return {**doc, "guardado": guardado}
 
 
+@api_router.post("/laboratorio/experimento/distancia-maximo/distribucion")
+async def laboratorio_experimento_distribucion(
+        _user: str = Depends(auth.get_current_user)):
+    """Diagnóstico del experimento 1: ¿el gradiente está en el centro o en la cola?
+
+    Vuelve a descargar el histórico porque el experimento 1 guardó su conclusión pero no
+    sus 1.933 observaciones. Es una decisión consciente: guardarlas habría hecho pesada
+    la lista de experimentos, y volver a bajarlas cuesta lo mismo que la primera vez y
+    no gasta cuota de IA.
+    """
+    universo = sorted(await _simbolos_que_te_importan())
+    if not universo:
+        return {"estado": laboratorio.SIN_DATOS,
+                "conclusion": "No hay ningún símbolo en watchlist ni en cartera."}
+
+    obs, fallos, fechas = [], [], []
+    for sym in universo:
+        try:
+            df = await asyncio.to_thread(market_data.get_stock_data, sym,
+                                         laboratorio.RESOLUCION)
+        except Exception as e:
+            fallos.append({"symbol": sym, "error": str(e)[:120]})
+            continue
+        if df is None or getattr(df, "empty", True):
+            fallos.append({"symbol": sym, "error": "sin histórico"})
+            continue
+        barras = [{"high": float(r.High), "close": float(r.Close),
+                   "date": str(r.Date)[:10]} for r in df.itertuples()]
+        fechas += [b["date"] for b in barras]
+        obs += laboratorio.observaciones(barras, sym)
+
+    doc = laboratorio.ficha_distribucion(
+        obs, universo=[s for s in universo if s not in {f["symbol"] for f in fallos}],
+        desde=min(fechas) if fechas else None, hasta=max(fechas) if fechas else None)
+    doc["fallos"] = fallos
+    guardado = await laboratorio.guardar_experimento(db, doc)
+    return {**doc, "guardado": guardado}
+
+
 @api_router.get("/laboratorio/cobertura")
 async def laboratorio_cobertura(_user: str = Depends(auth.get_current_user)):
     """Cuánto histórico lleva anotado el laboratorio. Solo lectura.
