@@ -386,68 +386,57 @@ def compute_buy_levels(
         n_families = len([f for f in best_by_family if f != "round"])
         if n_families >= 2:
             raw += (n_families - 1) * 0.6
-        # MEDIDO el 15-09-2026, y el resultado obliga a leer este número con cuidado.
+        # ESTO YA ESTABA MEDIDO, Y NO LO VI
         #
-        # 1.136 toques resueltos del universo vigilado, walk-forward punto-en-el-tiempo,
-        # dos años de velas diarias. Con qué frecuencia rebotó el precio, por cubo:
+        # La cabecera de este mismo fichero lo dice desde antes: «el bucket de fuerza está
+        # limitado por ruido (SE≈3.5pts con n≈190): fuerte≈media≈débil en durabilidad
+        # porque los niveles ultra-obvios concentran stops», y añade que un intento de
+        # ensanchar los pesos «en backtest dio media > fuerte».
         #
-        #     débil    359 toques    88,0%
-        #     media    203 toques    87,2%
-        #     fuerte   574 toques    87,8%
+        # En septiembre de 2026 el laboratorio volvió a medirlo sin haber leído esa nota —
+        # estaba 370 líneas más arriba, en el mismo archivo— y llegó a lo mismo. Se deja
+        # constancia porque un hallazgo «nuevo» que ya estaba escrito dice más del que lo
+        # buscó que del hallazgo.
         #
-        # Ocho décimas de punto entre el mejor y el peor, con un suelo de ruido de 5,7 pp.
-        # NO es que falte muestra: con esta n, un efecto real de más de ~6 pp se habría
-        # visto. Si existe algo, es pequeño.
+        # QUÉ AÑADE LA MEDIDA DE 2026
         #
-        # Así que este número NO ordena las zonas por lo bien que aguantan, y la etiqueta
-        # «Nivel fuerte (78/100)» que sale en la ficha no está respaldada por esa medida.
-        #
-        # POR QUÉ LA PRIMERA MEDIDA NO SEPARÓ
-        #
-        # El 88% sale igual en los tres cubos porque el criterio de «aguantó» SATURA:
-        # casi todo lo cumple, y una métrica que aprueba al 88% no puede separar nada.
-        # Fue un fallo del pre-registro, no del score.
-        #
-        # SEGUNDA MEDIDA, MÁS EXIGENTE, Y REPLICADA FUERA DE MUESTRA
-        #
-        # «Limpio» pide rebotar SIN haber perdido el nivel en ningún momento de la
-        # ventana. Aprueba a un tercio en vez de al 88%, así que sí discrimina. Medido
-        # dos veces, sobre conjuntos de símbolos DISJUNTOS:
+        # La anterior concluyó «fuerte≈media≈débil», es decir, que no se distinguen. La
+        # nueva mide un SUELO DE RUIDO —barajando los cubos dentro de cada fecha— y con
+        # él la diferencia sí sale del ruido, en la dirección contraria a la que el score
+        # afirma. Medido dos veces sobre conjuntos de símbolos DISJUNTOS:
         #
         #                  universo vigilado        símbolos independientes
         #     débil        n=359   36,2%            n=600   35,0%
         #     media        n=203   47,3%            n=215   41,4%
         #     fuerte       n=574   34,5%            n=711   31,8%
         #
-        # El mismo orden en los dos: «media» la mejor, «fuerte» la PEOR. Fuera de muestra
-        # la separación es de 9,6 pp sobre un suelo de ruido de 8,61.
+        # Mismo orden en los dos: «media» la mejor, «fuerte» la PEOR. Fuera de muestra,
+        # 9,6 pp de separación sobre un suelo de 8,61. Así que no es solo que no ordene:
+        # en el extremo ordena AL REVÉS.
         #
-        # Así que el número no solo no ordena las zonas por lo bien que aguantan: en el
-        # extremo las ordena AL REVÉS. Una zona que la pantalla llama «fuerte» aguanta
-        # limpiamente MENOS que una que llama «débil».
+        # Y la primera métrica que se probó —«aguantó», sin exigir que el nivel nunca se
+        # perdiera— salió plana al 88% en los tres cubos: SATURA, y algo que aprueba al
+        # 88% no puede separar nada. Fue un fallo del pre-registro, no del score.
         #
         # CUÁNTO CREÉRSELO
         #
-        # La réplica sobre símbolos independientes es lo que le da peso: el patrón no se
-        # eligió mirando estos datos. Pero el margen sobre el ruido es de un solo punto
-        # porcentual, y es la SEGUNDA métrica que se prueba sobre la misma idea — dos
-        # intentos dan el doble de oportunidades a que algo salga por azar. Es un
-        # resultado replicado y ajustado, no una certeza.
+        # Tres análisis independientes apuntan igual: el de los pesos (641 toques, 30
+        # acciones), el del universo vigilado y el de fuera de muestra. Eso es lo que le
+        # da peso. Pero el margen sobre el ruido es de un solo punto porcentual y es la
+        # SEGUNDA métrica probada sobre la misma idea. Replicado y ajustado, no una
+        # certeza.
         #
-        # UNA EXPLICACIÓN QUE NO SE HA PROBADO
+        # QUÉ SE HIZO CON ESTO, Y QUÉ NO
         #
-        # `strength` premia la confluencia, y las zonas con mucha confluencia son las
-        # OBVIAS —SMA200, fibos grandes, números redondos—: las que todo el mundo mira y
-        # por eso se perforan antes de rebotar. Eso explicaría que fallen justo en la
-        # métrica que exige no perder el nivel. Es una hipótesis, se le ocurrió a nadie
-        # después de ver el resultado, y no está medida.
+        # NO se tocó el cálculo. Quitar o invertir el score son decisiones de producto, y
+        # sustituir un número flojo por otro sin medir sería repetir el error con el signo
+        # cambiado. Los pesos por FUENTE sí están calibrados con datos —la cabecera lo
+        # documenta— y esa es la parte del motor que sí tiene respaldo.
         #
-        # POR QUÉ NO SE TOCA NADA AÚN
-        #
-        # Porque quitar o invertir el score son decisiones de producto, no del
-        # laboratorio, y porque sustituir un número flojo por otro sin medir sería
-        # repetir el error con el signo cambiado. Lo que este bloque garantiza es que
-        # nadie toque estas líneas sin haber leído la medida.
+        # Lo que SÍ se cambió son las PALABRAS. Este número mide confluencia: cuántas
+        # metodologías coinciden en un precio. Eso es un hecho. Llamarlo «fuerza» y
+        # hablar de «la zona más sólida» era una promesa sobre el futuro que hemos medido
+        # que no se cumple, así que la pantalla y la tesis dicen ahora «confluencia».
         strength = int(min(100, round(raw / _STRENGTH_DIVISOR * 100)))
 
         prices_in_cl = [c[0] for c in cl]

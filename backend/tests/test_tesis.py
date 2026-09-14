@@ -168,7 +168,7 @@ def test_el_indice_del_nivel_citado_es_el_correcto():
     d = dash()
     t = tesis.redactar(d)
     rutas = [a["campo_origen"] for a in t["afirmaciones"] if a["campo_origen"].startswith("buy_levels")]
-    assert rutas, "la tesis debería citar la zona más sólida"
+    assert rutas, "la tesis debería citar la zona con más confluencia"
     # La de fuerza 78 es la primera de la lista.
     assert all(r.startswith("buy_levels[0]") for r in rutas), rutas
 
@@ -351,7 +351,7 @@ def test_la_zona_citada_es_la_mas_fuerte_no_la_primera():
 
 
 def test_todas_las_rutas_del_nivel_usan_el_indice_realmente_elegido():
-    """Tres zonas y la más sólida es la ÚLTIMA. Si alguna ruta se quedara en [0], la
+    """Tres zonas y la de más confluencia es la ÚLTIMA. Si alguna ruta se quedara en [0], la
     auditoría compararía la fuerza de una zona contra el precio de otra y cuadraría
     sin ser cierta: cada campo existiría, pero no todos serían del mismo nivel."""
     d = dash(**{"buy_levels": [
@@ -364,7 +364,7 @@ def test_todas_las_rutas_del_nivel_usan_el_indice_realmente_elegido():
 
     rutas = [a["campo_origen"] for a in t["afirmaciones"]
              if a["campo_origen"].startswith("buy_levels")]
-    assert rutas, "la tesis debería citar la zona más sólida"
+    assert rutas, "la tesis debería citar la zona con más confluencia"
     assert all(r.startswith("buy_levels[2]") for r in rutas), rutas
 
     # Y cada valor citado es el de ESA zona, no el de otra que también existiera.
@@ -373,7 +373,7 @@ def test_todas_las_rutas_del_nivel_usan_el_indice_realmente_elegido():
             assert tesis._leer(d, a["campo_origen"]) == a["valor"]
 
     parrafos = " ".join(t["parrafos"])
-    assert "178.40" in parrafos and "fuerza 91/100" in parrafos
+    assert "178.40" in parrafos and "confluencia 91/100" in parrafos
     assert "205.00" not in parrafos and "195.00" not in parrafos
 
 
@@ -498,7 +498,7 @@ def test_el_lector_de_rutas_devuelve_none_sin_reventar(ruta):
 # ── El nivel se nombra, no solo se cotiza ────────────────────────────────────
 def test_la_zona_mas_solida_se_cita_por_su_nombre():
     """Un precio suelto no se puede cruzar con el panel de niveles. Con FORM eso hizo que
-    «la zona más sólida está en 95.55» y «entrada 109.36» parecieran dos recomendaciones
+    «la zona con más confluencia está en 95.55» y «entrada 109.36» parecieran dos recomendaciones
     en conflicto, cuando eran el escalón 3 y el borde del escalón 1 del MISMO plan."""
     t = tesis.redactar(dash())
     parrafos = " ".join(t["parrafos"])
@@ -508,7 +508,7 @@ def test_la_zona_mas_solida_se_cita_por_su_nombre():
 
 
 def test_el_nombre_es_el_del_nivel_realmente_elegido():
-    """Si la más sólida no es la primera, el nombre citado tiene que ser el suyo."""
+    """Si la de más confluencia no es la primera, el nombre citado tiene que ser el suyo."""
     d = dash(**{"buy_levels": [
         {"price": 200.0, "strength": 30, "distance_pct": -5.0, "label": "NIVEL 1"},
         {"price": 180.0, "strength": 85, "distance_pct": -15.0, "label": "NIVEL 2",

@@ -131,9 +131,13 @@ describe("panel de niveles · un canal por dimensión", () => {
 
   test("la confluencia se cuenta en métodos, no se mide con una barra", () => {
     expect(TL).toContain("Coinciden ${metodos} métodos");
-    // La barra de porcentaje desaparece; la fuerza ponderada queda en el title.
+    // La barra de porcentaje desaparece; el número ponderado queda en el title.
     expect(TL).not.toContain("width: `${Math.max(0, Math.min(100, z.strength))}%`");
-    expect(TL).toContain("Fuerza ponderada ${z.strength}/100");
+    // «Confluencia» y no «Fuerza»: se midió en septiembre de 2026 que ese número no
+    // predice que la zona aguante —y en el extremo apunta al revés—, así que la etiqueta
+    // dejó de prometer solidez y pasó a describir lo que cuenta.
+    expect(TL).toContain("Confluencia ponderada ${z.strength}/100");
+    expect(TL).not.toContain("Fuerza ponderada");
   });
 
   test("la cercanía se codifica con posición: hay raíl de distancia", () => {

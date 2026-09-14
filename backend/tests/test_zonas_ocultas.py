@@ -133,7 +133,7 @@ def test_ocultar_aguanta_basura():
 
 def test_el_dashboard_aplica_el_estado_antes_de_la_tesis():
     """La tesis se redacta sobre `result`. Si el estado se aplicara después, la frase
-    «la zona de compra más sólida es…» seguiría señalando una lista ya vacía."""
+    «la zona de compra con más confluencia es…» seguiría señalando una lista ya vacía."""
     cuerpo = _cuerpo("_construir_dashboard")
     assert "_aplicar_estado_tendencia" in cuerpo
     assert cuerpo.index("_aplicar_estado_tendencia") < cuerpo.index("tesis.redactar")

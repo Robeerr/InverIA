@@ -57,7 +57,17 @@ def _ahora() -> str:
 #: Versión del FORMATO de la huella. Si algún día cambia qué entra en ella, las versiones
 #: anteriores dejan de ser comparables con las nuevas y hay que poder saberlo. Misma
 #: convención que `RELEVANCIA_V`, `SEC_ID_V` y `PROMPT_V`.
-TESIS_V = 1
+#:
+#: v2 (15-09-2026): la tesis dejó de decir «la zona de compra más sólida» y pasó a decir
+#: «con más confluencia», porque lo primero era una promesa sobre el futuro que se midió
+#: y no se cumple. Cambia el TEXTO, no las conclusiones — pero el texto entra en la
+#: huella, así que todos los símbolos van a generar una versión nueva la primera vez que
+#: se reconstruya su dashboard.
+#:
+#: Esa tanda de versiones NO significa que sus tesis cambiaran: significa que cambiamos
+#: nosotros cómo las decimos. Sin este sello, dentro de seis meses ese salto masivo del
+#: mismo día parecería un giro de mercado.
+TESIS_V = 2
 
 #: Cuánto se conserva del SHA-256. 16 hex son 64 bits: de sobra para que dos tesis
 #: distintas no colisionen nunca en una colección de decenas de símbolos, y corto para

@@ -2928,7 +2928,7 @@ async def _construir_dashboard(sym: str, timeframe: str, cache_key: str):
     # una explicación en frío, sin pulsar «Análisis completo IA» ni esperar.
     # Estado de la acción y visibilidad de las zonas. Va ANTES de la tesis a propósito:
     # la tesis se redacta sobre `result`, así que si las zonas se ocultaran después, la
-    # frase «la zona de compra más sólida es…» seguiría en pantalla señalando una lista
+    # frase «la zona de compra con más confluencia es…» seguiría en pantalla señalando una lista
     # que ya no está. Aplicado aquí, la tesis describe lo mismo que se ve.
     _aplicar_estado_tendencia(result, quote.get("price"), indicators_data)
 

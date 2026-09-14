@@ -101,9 +101,15 @@ def _precio(v) -> str:
 
 
 def _mejor_zona(dashboard: dict):
-    """(índice, zona) de la zona de compra más sólida, o (None, None).
+    """(índice, zona) de la zona de compra con más confluencia, o (None, None).
 
-    Se elige por FUERZA y, a igualdad, por cercanía. Devolver el índice no es un
+    Se elige por CONFLUENCIA y, a igualdad, por cercanía.
+
+    Ojo con lo que esto NO significa. Medido en septiembre de 2026 sobre dos conjuntos
+    disjuntos de símbolos: la confluencia no predice que la zona aguante, y en el extremo
+    apunta al revés. Se sigue eligiendo por ella porque es el criterio del motor y
+    cambiarlo exigiría medir el sustituto antes; lo que se ha corregido es la PALABRA,
+    que prometía solidez. Devolver el índice no es un
     detalle: es lo que permite registrar la ruta `buy_levels[i].price` y auditarla.
     """
     niveles = (dashboard or {}).get("buy_levels") or []
@@ -243,19 +249,20 @@ def _niveles(f: _Fuente) -> Optional[str]:
     precio_zona = f.dato(f"buy_levels[{i}].price")
 
     # El nombre del peldaño va DELANTE del precio. Un precio suelto no se puede cruzar con
-    # el panel de niveles, y eso hizo que «la zona más sólida está en 95.55» y «entrada
+    # el panel de niveles, y eso hizo que «la zona con más confluencia está en 95.55» y «entrada
     # 109.36» parecieran dos recomendaciones en conflicto cuando eran el escalón 3 y el
     # borde del escalón 1 del mismo plan. Con el nombre, la frase apunta a algo que se ve.
     etiqueta = f.dato(f"buy_levels[{i}].label")
     if etiqueta:
         cabeza = f.afirmar(
-            f"La zona de compra más sólida es el {etiqueta}, en {_precio(precio_zona)}",
+            f"La zona de compra con más confluencia es el {etiqueta}, en {_precio(precio_zona)}",
             f"buy_levels[{i}].label", etiqueta)
         f.afirmar(f"{_precio(precio_zona)}", f"buy_levels[{i}].price", precio_zona)
     else:
         # Sin etiqueta no se inventa un número de peldaño: se cae a la redacción de
         # siempre. Un dato ausente no produce una afirmación sobre sí mismo.
-        cabeza = f.afirmar(f"La zona de compra más sólida está en {_precio(precio_zona)}",
+        cabeza = f.afirmar(
+            f"La zona de compra con más confluencia está en {_precio(precio_zona)}",
                            f"buy_levels[{i}].price", precio_zona)
     partes = [cabeza]
 
@@ -268,7 +275,12 @@ def _niveles(f: _Fuente) -> Optional[str]:
     fuerza = f.dato(f"buy_levels[{i}].strength")
     razones = f.dato(f"buy_levels[{i}].reasons")
     if fuerza is not None:
-        cola = f.afirmar(f"fuerza {fuerza}/100", f"buy_levels[{i}].strength", fuerza)
+        # «confluencia» y no «fuerza»: el número cuenta cuántas metodologías coinciden
+        # en ese precio, que es un hecho. «Fuerza» era una promesa sobre lo que va a
+        # pasar, y está medido que no se cumple — ver el bloque del score en
+        # `levels_engine`.
+        cola = f.afirmar(f"confluencia {fuerza}/100",
+                         f"buy_levels[{i}].strength", fuerza)
         if razones:
             # Las razones son la parte más citable de la frase, así que llevan su propia
             # ruta: sin ella, «donde coinciden SMA200 + Fibonacci» iría sin respaldo.

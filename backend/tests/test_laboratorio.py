@@ -996,17 +996,49 @@ def test_con_muestra_CORTA_no_se_acota_nada():
 
 def test_el_hallazgo_queda_escrito_DONDE_VIVE_EL_NUMERO():
     """No en una tabla aparte. Quien lea `levels_engine` para tocar el score tiene que
-    encontrarse con la medida delante."""
+    encontrarse las medidas delante."""
+    contexto = _junto_al_score()
+    assert "88%" in contexto and "SATURA" in contexto, "hay que decir POR QUÉ no separó"
+    assert "9,6 pp" in contexto and "8,61" in contexto
+
+
+def test_se_reconoce_que_el_hallazgo_YA_ESTABA_en_el_mismo_fichero():
+    """La cabecera de `levels_engine` ya decía que el bucket de fuerza no discrimina y
+    por qué. El laboratorio lo volvió a medir sin haberla leído — estaba 370 líneas más
+    arriba, en el mismo archivo.
+
+    Se comprueba que queda escrito porque un hallazgo «nuevo» que ya estaba dice más del
+    que lo buscó que del hallazgo, y borrarlo dejaría el mérito donde no toca.
+    """
+    contexto = _junto_al_score()
+    assert "YA ESTABA MEDIDO, Y NO LO VI" in contexto
+    assert "370 líneas" in contexto
+
+    # Y la nota anterior sigue ahí: no se ha sustituido por la nueva.
     import inspect
     import levels_engine
-    fuente = inspect.getsource(levels_engine)
-    i = fuente.index("strength = int(min(100")
-    # La ventana creció con el bloque: al añadir la réplica fuera de muestra, «SATURA»
-    # quedó a más de 2.000 caracteres de la línea del score.
-    contexto = fuente[max(0, i - 4000):i]
-    assert "MEDIDO el 15-09-2026" in contexto
-    assert "88,0%" in contexto and "5,7 pp" in contexto
-    assert "SATURA" in contexto, "hay que decir POR QUÉ no separó"
+    cabecera = inspect.getsource(levels_engine)[:4000]
+    assert "fuerte≈media≈débil" in cabecera
+    assert "641 touches" in cabecera, "los pesos por fuente SÍ están calibrados con datos"
+
+
+def test_se_dice_CUANTO_creerselo():
+    """Tres análisis independientes apuntan igual, pero con un punto de margen sobre el
+    ruido y siendo la segunda métrica probada. El código no puede insinuar certeza."""
+    contexto = _junto_al_score()
+    # Sin saltos ni prefijos de comentario: la frase parte en dos líneas y compararla
+    # tal cual daba un falso negativo.
+    plano = " ".join(contexto.replace("#", " ").split())
+    assert "CUÁNTO CREÉRSELO" in plano
+    assert "SEGUNDA métrica probada" in plano
+    assert "no una certeza" in plano
+
+
+def test_se_dice_QUE_se_cambio_y_que_NO():
+    """Las palabras sí; el cálculo no. Y por qué."""
+    contexto = _junto_al_score()
+    assert "NO se tocó el cálculo" in contexto
+    assert "confluencia" in contexto and "promesa sobre el futuro" in contexto
 
 
 def test_la_REPLICA_fuera_de_muestra_queda_escrita_junto_al_score():
@@ -1022,24 +1054,13 @@ def test_la_REPLICA_fuera_de_muestra_queda_escrita_junto_al_score():
     assert "AL REVÉS" in contexto, "hay que decir lo incómodo con claridad"
 
 
-def test_se_dice_CUANTO_creerselo():
-    """Un resultado replicado pero con un punto de margen sobre el ruido y segundo en la
-    cuenta de métricas probadas no es una certeza, y el código no puede insinuar que sí."""
+def _junto_al_score():
+    """El bloque de comentarios que precede al cálculo del score."""
     import inspect
     import levels_engine
     fuente = inspect.getsource(levels_engine)
-    assert "CUÁNTO CREÉRSELO" in fuente
-    assert "SEGUNDA métrica" in fuente
-    assert "no una certeza" in fuente
-
-
-def test_la_explicacion_del_porque_se_marca_como_NO_PROBADA():
-    """Se le ocurrió a alguien después de ver el resultado. Eso no es evidencia."""
-    import inspect
-    import levels_engine
-    fuente = inspect.getsource(levels_engine)
-    assert "UNA EXPLICACIÓN QUE NO SE HA PROBADO" in fuente
-    assert "no está medida" in fuente
+    i = fuente.index("strength = int(min(100")
+    return fuente[max(0, i - 5000):i]
 
 
 # ── La réplica fuera de muestra ─────────────────────────────────────────────

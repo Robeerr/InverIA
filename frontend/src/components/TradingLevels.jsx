@@ -118,7 +118,7 @@ function Nivel({ z, estructural }) {
             </span>
             <span
               className="ml-1"
-              title={`Fuerza ponderada ${z.strength}/100`}
+              title={`Confluencia ponderada ${z.strength}/100 · cuántas metodologías coinciden en este precio. No predice que la zona aguante: medido.`}
             >
               {estructural ? "" : `: ${z.reasons.join(" · ")}`}
             </span>
@@ -139,7 +139,7 @@ function SmartBuyLevels({ levels }) {
   const estructurales = hayPlan ? levels.filter((z) => !z.en_plan) : [];
 
   // Dos roles con nombre, y solo dos: son las dos preguntas que uno se hace, y el puente
-  // con la tesis, que cita «la zona más sólida» por su NIVEL.
+  // con la tesis, que cita «la zona con más confluencia» por su NIVEL.
   const masSolido = levels.reduce(
     (mejor, z) => (mejor == null || (z.strength ?? 0) > (mejor.strength ?? 0) ? z : mejor), null);
   const marcar = (z) => ({

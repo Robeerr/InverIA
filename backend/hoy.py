@@ -10,7 +10,7 @@ LAS TRES PREGUNTAS
 Cada tarjeta responde exactamente a tres cosas, y esos son sus tres campos:
 
     que_pasa     → ¿Qué está pasando?      "MRVL está a un 1,8% de tu Nivel 3"
-    por_que      → ¿Por qué?               "Nivel fuerte (78/100): SMA200 + Fib 38,2%"
+    por_que      → ¿Por qué?               "Zona de confluencia 78/100: SMA200 + Fib 38,2%"
     que_vigilar  → ¿Qué debería revisar?   "Si pierde 178,40 el plan cambia"
 
 Un dato que no cabe en ninguna de las tres no entra. Es el filtro que evita que
@@ -233,11 +233,11 @@ def tarjeta_nivel(caliente, nivel_motor=None, aviso=None, tiene_posicion=False,
     # Aquí solo se habla del primero, y se nombra entero para no confundirlos.
     if fuerza and razones:
         estado_motor = "confirma"
-        por_que = (f"Motor de niveles: zona de fuerza {fuerza}/100 · "
+        por_que = (f"Motor de niveles: zona de confluencia {fuerza}/100 · "
                    + " + ".join(razones[:3]) + ".")
     elif fuerza:
         estado_motor = "confirma"
-        por_que = f"Motor de niveles: zona de fuerza {fuerza}/100."
+        por_que = f"Motor de niveles: zona de confluencia {fuerza}/100."
     elif motor_con_datos:
         # Ha calculado, pero sus zonas caen lejos de ESTE precio. No es lo mismo que
         # no haber calculado, y desde luego no es un rechazo.

@@ -98,7 +98,7 @@ def test_un_nivel_con_respaldo_del_motor_pesa_mas_que_uno_escrito_a_mano():
     con = hoy.tarjeta_nivel(caliente("X"), zona(strength=85))
     sin = hoy.tarjeta_nivel(caliente("Y"), None)
     assert con["urgencia"] > sin["urgencia"]
-    assert "fuerza 85/100" in con["por_que"]
+    assert "confluencia 85/100" in con["por_que"]
     assert con["datos"]["motor_niveles"] == "confirma"
 
 
