@@ -1548,6 +1548,17 @@ def stops(registros: list) -> dict:
                       if r.get("mae_atr") is not None and r.get("held") is not None])}
 
 
+def juzgables(registros: list) -> list:
+    """Los múltiplos con saltos suficientes para poder decir algo de ellos. Puro.
+
+    Uno que casi nunca actúa no se puede evaluar, y fingir que sí sería peor que
+    excluirlo. Se excluye por MUESTRA, nunca por resultado, y el veredicto dice cuáles
+    se han quedado fuera y con cuántos casos.
+    """
+    return [f["multiplo"] for f in stops(registros)["multiplos"]
+            if (f["n_saltan"] or 0) >= MUESTRA_MINIMA]
+
+
 def banda_de_la_diferencia(registros: list, vueltas: int = None) -> dict:
     """Cuánto se distingue el más ajustado del más ancho, con su incertidumbre. Puro.
 
@@ -1568,12 +1579,21 @@ def banda_de_la_diferencia(registros: list, vueltas: int = None) -> dict:
     if len(fechas) < 3:
         return {"vueltas": 0}
 
+    # Los dos EXTREMOS de los que sí se pueden juzgar. Con los tres fijos, un múltiplo
+    # que casi nunca actúa dejaba la banda sin calcular y se perdía una comparación
+    # perfectamente válida entre los otros dos.
+    evaluables = juzgables(registros)
+    if len(evaluables) < 2:
+        return {"vueltas": 0, "juzgables": evaluables}
+    ajustado, ancho = evaluables[0], evaluables[-1]
+
     def _dif(regs):
-        a = _falsos_de(regs, MULTIPLOS_STOP[0])["falsos_pct"]
-        b = _falsos_de(regs, MULTIPLOS_STOP[-1])["falsos_pct"]
+        a = _falsos_de(regs, ajustado)["falsos_pct"]
+        b = _falsos_de(regs, ancho)["falsos_pct"]
         return None if a is None or b is None else round(a - b, 2)
 
     observada = _dif([r for rs in por_fecha.values() for r in rs])
+    extremos = (ajustado, ancho)
     muestras = []
     for _ in range(vueltas):
         elegidas = [generador.choice(fechas) for _ in fechas]
@@ -1590,6 +1610,8 @@ def banda_de_la_diferencia(registros: list, vueltas: int = None) -> dict:
         "banda_baja_pp": _percentil(muestras, 0.05),
         "banda_alta_pp": _percentil(muestras, 0.95),
         "bloques": len(fechas),
+        "comparados": list(extremos),
+        "juzgables": evaluables,
     }
 
 
@@ -1602,15 +1624,28 @@ def veredicto_stops(d: dict, banda: dict) -> dict:
     calidad del corte.
     """
     filas = d.get("multiplos") or []
-    flacos = [f["multiplo"] for f in filas if (f["n_saltan"] or 0) < MUESTRA_MINIMA]
+    con_muestra = [f for f in filas if (f["n_saltan"] or 0) >= MUESTRA_MINIMA]
+    flacos = [f for f in filas if (f["n_saltan"] or 0) < MUESTRA_MINIMA]
+    aviso = ""
     if flacos:
+        # SE EXCLUYEN POR MUESTRA, NO POR RESULTADO, y se dice con cuántos casos.
+        #
+        # La primera versión se rendía entera si fallaba UNO de los tres, y tiraba una
+        # comparación válida entre los otros dos. Un múltiplo tan ancho que casi nunca
+        # actúa no se puede evaluar — pero eso no impide evaluar los que sí actúan.
+        aviso = (" Fuera por falta de saltos: "
+                 + ", ".join(f"{f['multiplo']}×ATR ({f['n_saltan']})" for f in flacos)
+                 + ". Un stop que casi nunca actúa no se puede juzgar.")
+    if len(con_muestra) < 2:
         return {"estado": SIN_DATOS,
-                "conclusion": "Múltiplos con pocos saltos para juzgarlos: "
-                              + ", ".join(f"{m}×ATR" for m in flacos)}
+                "conclusion": "Hacen falta al menos dos múltiplos con saltos suficientes "
+                              "para compararlos." + aviso}
 
-    falsos = [f["falsos_pct"] for f in filas]
+    falsos = [f["falsos_pct"] for f in con_muestra]
     base = {"falsos_pct": {f["multiplo"]: f["falsos_pct"] for f in filas},
             "ahorro_atr": {f["multiplo"]: f["ahorro_atr_mediana"] for f in filas},
+            "juzgados": [f["multiplo"] for f in con_muestra],
+            "sin_muestra": [f["multiplo"] for f in flacos],
             "banda": banda, "n": d.get("n")}
 
     baja, alta = banda.get("banda_baja_pp"), banda.get("banda_alta_pp")
@@ -1625,18 +1660,18 @@ def veredicto_stops(d: dict, banda: dict) -> dict:
                               f"{baja} a {alta} pp e incluye el cero: no se distinguen. "
                               "Los tres múltiplos de producción cortan con la misma "
                               "calidad; lo único que cambia es cuánto pierdes cuando "
-                              "aciertan."}
+                              "aciertan." + aviso}
     if falsos == sorted(falsos, reverse=True):
         return {**base, "estado": VALIDADA,
                 "conclusion": f"El stop más ajustado salta en falso más a menudo, en la "
                               f"dirección fijada antes de mirar: {banda.get('observada_pp')} "
                               f"pp de diferencia, banda de {baja} a {alta}. Los números "
-                              "de producción sí distinguen la calidad del corte."}
+                              "de producción sí distinguen la calidad del corte." + aviso}
     return {**base, "estado": RECHAZADA,
             "conclusion": f"Los múltiplos se distinguen (banda de {baja} a {alta} pp) "
                           "pero NO en la dirección esperada: el stop más ancho salta en "
                           "falso MÁS que el ajustado. Eso invierte el motivo de tener "
-                          "tres."}
+                          "tres." + aviso}
 
 
 def ficha_stops(registros: list, universo: list, ventana: int = None) -> dict:
@@ -1689,6 +1724,19 @@ def ficha_stops(registros: list, universo: list, ventana: int = None) -> dict:
             "supervivencia": "El universo es el de hoy. Pesa poco: se mide qué pasó tras "
                              "tocar un soporte.",
             "parametros_ajustados": "Ninguno. Los tres múltiplos son los de producción.",
+            "cambio_tras_el_primer_intento": "El intento 1 salió SIN MUESTRA porque "
+                                             "2,4×ATR solo saltó 16 veces — es tan ancho "
+                                             "que apenas actúa. El veredicto se rendía "
+                                             "entero y tiraba la comparación válida entre "
+                                             "1,0 y 1,6. Ahora se juzgan los que tienen "
+                                             "muestra y se dice cuáles quedan fuera. El "
+                                             "cambio se hizo DESPUÉS de ver el resultado, "
+                                             "así que conviene saber que la exclusión es "
+                                             "por muestra y nunca por resultado, que la "
+                                             "dirección no se tocó, y que el excluido "
+                                             "tenía 0% de falsos — el dato MÁS favorable "
+                                             "a la hipótesis. Dejarlo fuera juega en "
+                                             "contra de lo que se quiere demostrar.",
         },
         "resultado": {**d, **v},
         "estado": v["estado"],

@@ -1258,3 +1258,86 @@ def test_los_multiplos_son_los_de_PRODUCCION():
     assert f["metodo"]["multiplos"] == [1.0, 1.6, 2.4]
     assert f["hipotesis_id"] == "ATR_MULTIPLO_STOP"
     assert "Ninguno" in f["controles"]["parametros_ajustados"]
+
+
+# ── Un múltiplo sin muestra no puede tumbar la comparación de los otros ─────
+#
+# La primera ejecución real salió SIN MUESTRA porque 2,4×ATR solo saltó 16 veces: es tan
+# ancho que apenas actúa (el 1,4% de los toques). El veredicto se rendía entero y tiraba
+# una comparación perfectamente válida entre 1,0 y 1,6, que tenían 166 y 71 saltos.
+#
+# EL CAMBIO SE HIZO DESPUÉS DE VER EL RESULTADO, y por eso importa cómo:
+#
+#   · se excluye por MUESTRA, nunca por resultado;
+#   · la dirección esperada NO se ha tocado;
+#   · y el excluido tenía 0% de falsos, que era el dato MÁS favorable a la hipótesis.
+#     Dejarlo fuera juega en contra de lo que queremos demostrar, no a favor.
+
+def _tres_con_uno_flaco():
+    """Reproduce la forma de la ejecución real: el más ancho casi nunca salta."""
+    regs = []
+    for i in range(600):
+        if i < 10:      mae, held = 3.0, False      # salta a 2,4 — solo 10 casos
+        elif i < 60:    mae, held = 2.0, i < 14     # salta a 1,6
+        elif i < 200:   mae, held = 1.2, i < 120    # salta a 1,0
+        else:           mae, held = 0.3, True
+        regs.append({"anchor": f"2024-{(i % 12) + 1:02d}-{(i % 28) + 1:02d}",
+                     "mae_atr": mae, "held": held})
+    return regs
+
+
+def test_se_juzgan_los_multiplos_CON_saltos_suficientes():
+    regs = _tres_con_uno_flaco()
+    assert lab.juzgables(regs) == [1.0, 1.6]
+
+
+def test_un_multiplo_flaco_NO_tumba_la_comparacion_de_los_otros():
+    regs = _tres_con_uno_flaco()
+    v = lab.veredicto_stops(lab.stops(regs), lab.banda_de_la_diferencia(regs, vueltas=30))
+    assert v["estado"] != lab.SIN_DATOS
+    assert v["juzgados"] == [1.0, 1.6] and v["sin_muestra"] == [2.4]
+
+
+def test_se_DICE_cual_queda_fuera_y_con_cuantos_casos():
+    """Excluir en silencio sería peor que rendirse: el lector creería que se han juzgado
+    los tres."""
+    regs = _tres_con_uno_flaco()
+    v = lab.veredicto_stops(lab.stops(regs), lab.banda_de_la_diferencia(regs, vueltas=30))
+    assert "Fuera por falta de saltos" in v["conclusion"]
+    assert "2.4×ATR (10)" in v["conclusion"]
+    assert "casi nunca actúa no se puede juzgar" in v["conclusion"]
+
+
+def test_la_banda_compara_los_extremos_JUZGABLES():
+    """Con los tres fijos, un múltiplo que casi nunca actúa dejaba la banda sin calcular."""
+    b = lab.banda_de_la_diferencia(_tres_con_uno_flaco(), vueltas=30)
+    assert b["comparados"] == [1.0, 1.6]
+    assert b["banda_baja_pp"] is not None
+
+
+def test_con_MENOS_DE_DOS_juzgables_sigue_sin_concluirse():
+    """Comparar exige dos. Si solo uno tiene muestra, no hay nada que comparar."""
+    regs = [{"anchor": f"2024-01-{(i % 28) + 1:02d}", "mae_atr": 1.2, "held": i < 20}
+            for i in range(200)]
+    v = lab.veredicto_stops(lab.stops(regs), lab.banda_de_la_diferencia(regs, vueltas=10))
+    assert v["estado"] == lab.SIN_DATOS
+    assert "al menos dos múltiplos" in v["conclusion"]
+
+
+def test_el_resultado_del_EXCLUIDO_sigue_publicandose():
+    """Se excluye de la COMPARACIÓN, no del informe. Esconder su cifra sería elegir qué
+    se ve después de mirarla."""
+    regs = _tres_con_uno_flaco()
+    v = lab.veredicto_stops(lab.stops(regs), lab.banda_de_la_diferencia(regs, vueltas=30))
+    assert 2.4 in v["falsos_pct"] and 2.4 in v["ahorro_atr"]
+
+
+def test_el_cambio_tras_el_primer_intento_queda_DECLARADO():
+    """Cambiar un experimento después de ver su resultado es exactamente lo que hay que
+    declarar, no esconder."""
+    c = lab.ficha_stops(_tres_con_uno_flaco(), universo=["AAPL"])["controles"]
+    assert "cambio_tras_el_primer_intento" in c
+    texto = c["cambio_tras_el_primer_intento"]
+    assert "DESPUÉS de ver el resultado" in texto
+    assert "por muestra y nunca por resultado" in texto
+    assert "juega en contra" in texto
