@@ -4610,6 +4610,17 @@ async def _experimento_distancia(hacer_ficha, observar=None):
     return {**doc, "guardado": guardado}
 
 
+@api_router.post("/laboratorio/experimento/azar")
+async def laboratorio_experimento_azar(_user: str = Depends(auth.get_current_user)):
+    """Audita el INSTRUMENTO, no una hipótesis: ¿cuánta separación produce el azar?
+
+    `SEPARACION_MINIMA = 1.0` es un número que nadie midió. Si el ruido lo supera
+    rutinariamente con nuestra muestra, no filtra nada y cualquier validación futura
+    sería ruido con formato de hallazgo.
+    """
+    return await _experimento_distancia(laboratorio.ficha_azar)
+
+
 @api_router.post("/laboratorio/experimento/pendiente-media")
 async def laboratorio_experimento_pendiente(_user: str = Depends(auth.get_current_user)):
     """Segunda hipótesis: ¿rinde más una acción cuya tendencia de fondo lleva más tiempo

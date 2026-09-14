@@ -360,6 +360,13 @@ export default function LaboratorioView() {
               <FlaskIcon size={14} />
               {corriendo ? "Midiendo…" : "Medir: distancia al máximo anual"}
             </button>
+            <button onClick={() => ejecutar("azar")} disabled={corriendo}
+                    className="iv-etiqueta flex items-center gap-2 border border-marca
+                               px-3 py-2 hover:text-tinta disabled:opacity-50"
+                    data-testid="lab-ejecutar-azar">
+              <FlaskIcon size={14} />
+              {corriendo ? "Barajando…" : "Auditar el método: ¿qué produce el azar?"}
+            </button>
             <button onClick={() => ejecutar("pendiente")} disabled={corriendo}
                     className="iv-etiqueta flex items-center gap-2 border border-linea
                                px-3 py-2 hover:text-tinta disabled:opacity-50"

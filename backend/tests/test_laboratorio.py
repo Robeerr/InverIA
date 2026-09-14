@@ -659,3 +659,92 @@ def test_la_ficha_de_la_pendiente_usa_el_veredicto_de_DIRECCION():
     fuente = inspect.getsource(lab.ficha_pendiente)
     assert "veredicto_direccion" in fuente
     assert "veredicto_distribucion(" not in fuente
+
+
+# ── La auditoría del propio método ──────────────────────────────────────────
+#
+# `SEPARACION_MINIMA = 1.0` lo inventé yo. Es el listón que decide si dos tramos «se
+# distinguen», y salió de que un punto porcentual parecía razonable. Si el azar lo supera
+# rutinariamente con nuestra muestra, no filtra nada: cualquier validación futura sería
+# ruido con formato de hallazgo. Es el error que `calibracion.py` existe para impedir,
+# cometido dentro del módulo que vigila que no se cometa.
+
+def _ruido(dias=40, por_tramo=6, semilla=7):
+    """Observaciones SIN ninguna relación entre tramo y retorno."""
+    import random
+    r = random.Random(semilla)
+    return [{"tramo": f"{b}-{a}%", "retorno_pct": round(r.gauss(10, 25), 2),
+             "fecha": f"2024-{(d % 12) + 1:02d}-{(d % 28) + 1:02d}", "symbol": "X"}
+            for d in range(dias) for b, a in lab.TRAMOS for _ in range(por_tramo)]
+
+
+def test_barajar_conserva_el_RETORNO_y_la_FECHA_de_cada_observacion():
+    """Lo único que viaja es la etiqueta del tramo. Si se moviera el retorno, se estaría
+    midiendo otra cosa."""
+    import random
+    obs = _ruido(dias=5)
+    barajada = lab.barajar_dentro_del_dia(obs, random.Random(1))
+    assert len(barajada) == len(obs)
+    assert (sorted((o["fecha"], o["retorno_pct"]) for o in barajada)
+            == sorted((o["fecha"], o["retorno_pct"]) for o in obs))
+
+
+def test_barajar_NO_mezcla_observaciones_de_FECHAS_distintas():
+    """Barajar todo junto rompería que en una misma semana todas las acciones se mueven
+    a la vez. Esa dependencia es real y es la que más infla el ruido: destruirla haría
+    que el azar pareciera más manso y el listón saldría demasiado bajo."""
+    import random
+    obs = _ruido(dias=6)
+    barajada = lab.barajar_dentro_del_dia(obs, random.Random(3))
+    for fecha in {o["fecha"] for o in obs}:
+        antes = sorted(o["tramo"] for o in obs if o["fecha"] == fecha)
+        despues = sorted(o["tramo"] for o in barajada if o["fecha"] == fecha)
+        assert antes == despues, "los tramos han cruzado de fecha"
+
+
+def test_la_auditoria_es_DETERMINISTA():
+    """Un listón que cambia con cada ejecución no es un listón."""
+    obs = _ruido()
+    assert lab.azar(obs, vueltas=25) == lab.azar(obs, vueltas=25)
+
+
+def test_sobre_RUIDO_PURO_el_liston_de_1pp_no_filtra_nada():
+    """El resultado que justifica la auditoría: sin ninguna relación real entre tramo y
+    retorno, el azar produce separaciones muy por encima del punto porcentual."""
+    d = lab.azar(_ruido(), vueltas=40)
+    assert d["azar_p95"] > lab.SEPARACION_MINIMA
+    assert d["veces_que_el_azar_supera_el_liston_pct"] > 50
+    assert lab.veredicto_azar(d)["estado"] == lab.RECHAZADA
+
+
+def test_el_veredicto_dice_A_CUANTO_habria_que_subirlo():
+    """Decir «no vale» sin decir cuánto haría falta deja el problema donde estaba."""
+    v = lab.veredicto_azar(lab.azar(_ruido(), vueltas=40))
+    assert "Habría que subirlo" in v["conclusion"]
+    assert "una vez de cada veinte" in v["conclusion"]
+
+
+def test_el_veredicto_NO_invalida_los_rechazos_anteriores():
+    """Rechazar por DIRECCIÓN no depende del listón: las medianas no seguían el orden
+    fijado, y eso sigue siendo cierto suba o baje el umbral."""
+    v = lab.veredicto_azar(lab.azar(_ruido(), vueltas=40))
+    assert "rechazos anteriores siguen siendo válidos" in v["conclusion"]
+
+
+def test_la_auditoria_NO_declara_ninguna_direccion_esperada():
+    """No prueba una hipótesis: mide la herramienta. El resultado se acepta como salga."""
+    f = lab.ficha_azar([], universo=["AAPL"])
+    assert "Ninguna" in f["metodo"]["direccion_esperada"]
+    assert f["tipo"] == "auditoria_del_metodo"
+    assert f["hipotesis_id"] == "SEPARACION_MINIMA"
+
+
+def test_la_auditoria_declara_que_NO_es_un_p_valor():
+    """Las observaciones se solapan en el tiempo y barajar no lo arregla."""
+    c = lab.ficha_azar([], universo=["AAPL"])["controles"]
+    assert "no_es_un_p_valor" in c and "solapan" in c["no_es_un_p_valor"]
+    assert "por_que_dentro_del_dia" in c
+
+
+def test_sin_observaciones_la_auditoria_no_concluye():
+    assert lab.ficha_azar([], universo=[])["estado"] == lab.SIN_DATOS

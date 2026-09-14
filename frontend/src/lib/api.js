@@ -77,6 +77,10 @@ export const api = {
     pendiente: () =>
       client.post(`/laboratorio/experimento/pendiente-media`, {},
                   { timeout: 300000 }).then((r) => r.data),
+    // La auditoría del propio método: ¿cuánta separación produce el azar?
+    azar: () =>
+      client.post(`/laboratorio/experimento/azar`, {}, { timeout: 300000 })
+        .then((r) => r.data),
     // El corte temporal: ¿el escalón se repite cada año o es un año concreto?
     periodo: () =>
       client.post(`/laboratorio/experimento/distancia-maximo/periodo`, {},

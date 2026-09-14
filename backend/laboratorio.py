@@ -953,6 +953,177 @@ def ficha_pendiente(obs: list, universo: list, desde: str = None,
     }
 
 
+# ── El instrumento: ¿cuánta separación produce el puro azar? ────────────────
+#
+# POR QUÉ ESTO VA ANTES QUE UNA TERCERA VARIABLE
+#
+# Dos hipótesis medidas, dos rechazadas. La tentación es seguir con la lista. Pero hay
+# una pregunta sin responder que afecta a TODAS las que vengan y a las dos que ya se
+# cerraron:
+#
+#     `SEPARACION_MINIMA = 1.0` me lo inventé yo.
+#
+# Es el listón que decide si dos tramos «se distinguen». Salió de que un punto porcentual
+# parecía razonable, no de ninguna medida. Y si el azar, con nuestra muestra concreta,
+# produce rutinariamente separaciones de tres o cuatro puntos, entonces ese listón no
+# filtra nada: cualquier hipótesis futura podría «validarse» por ruido, y las dos que
+# rechazamos lo habrían hecho igual.
+#
+# Es exactamente el error que `calibracion.py` existe para impedir, cometido por mí
+# dentro del módulo que vigila que no se cometa.
+#
+# CÓMO SE MIDE SIN DATOS NUEVOS
+#
+# Barajando. Se toman las observaciones REALES y se cambia de sitio la etiqueta del
+# tramo, rompiendo cualquier relación entre el tramo y el retorno. Si tras barajar
+# siguen saliendo separaciones grandes, la separación no venía del tramo.
+#
+# SE BARAJA DENTRO DE CADA FECHA, Y ESO ES LA MITAD DEL MÉTODO
+#
+# Barajar todo junto rompería también el hecho de que en una misma semana todas las
+# acciones se mueven a la vez. Esa dependencia es real y es la que más infla el ruido:
+# destruirla haría que el azar pareciera más manso de lo que es, y el listón saldría
+# demasiado bajo. Barajando dentro de cada fecha, el mercado de esa semana se conserva
+# intacto y solo se rompe lo que queremos romper: qué tramo le tocó a cada acción.
+
+#: Cuántas veces se baraja. Doscientas bastan para situar el observado entre los
+#: percentiles sin que la medición tarde más que el experimento que audita.
+VUELTAS_AZAR = 200
+
+#: Semilla fija: el mismo dataset tiene que dar el mismo listón. Un umbral que cambia
+#: con cada ejecución no es un umbral.
+SEMILLA = 20260915
+
+
+def separacion_de(obs: list, tramos=None) -> Optional[float]:
+    """La separación de medianas entre el mejor y el peor tramo. Pura."""
+    filas = distribucion(obs, tramos=tramos)["tramos"]
+    medianas = [f["mediana"] for f in filas if f["mediana"] is not None]
+    if len(medianas) < 2:
+        return None
+    return round(max(medianas) - min(medianas), 2)
+
+
+def barajar_dentro_del_dia(obs: list, azar) -> list:
+    """Las mismas observaciones con los tramos cambiados de sitio DENTRO de cada fecha.
+
+    Cada observación conserva su retorno y su fecha; lo único que viaja es la etiqueta
+    del tramo, y solo entre observaciones de la misma semana.
+    """
+    por_fecha = {}
+    for o in obs or []:
+        por_fecha.setdefault(o.get("fecha"), []).append(o)
+    fuera = []
+    for items in por_fecha.values():
+        etiquetas = [o["tramo"] for o in items]
+        azar.shuffle(etiquetas)
+        fuera += [{**o, "tramo": t} for o, t in zip(items, etiquetas)]
+    return fuera
+
+
+def azar(obs: list, tramos=None, vueltas: int = None) -> dict:
+    """Qué separaciones produce el puro azar con ESTA muestra. Pura y determinista."""
+    import random
+    vueltas = VUELTAS_AZAR if vueltas is None else vueltas
+    generador = random.Random(SEMILLA)
+    observada = separacion_de(obs, tramos=tramos)
+    simuladas = []
+    for _ in range(vueltas):
+        s = separacion_de(barajar_dentro_del_dia(obs, generador), tramos=tramos)
+        if s is not None:
+            simuladas.append(s)
+    simuladas.sort()
+    if not simuladas:
+        return {"observada": observada, "vueltas": 0}
+    # Cuántas veces el azar iguala o supera lo observado. No es un p-valor —las
+    # observaciones se solapan en el tiempo y eso no lo arregla barajar— pero sí dice si
+    # lo que vimos cabe cómodamente dentro de lo que el ruido produce solo.
+    mayores = sum(1 for s in simuladas if observada is not None and s >= observada)
+    return {
+        "observada": observada,
+        "vueltas": len(simuladas),
+        "azar_mediana": _percentil(simuladas, 0.5),
+        "azar_p90": _percentil(simuladas, 0.90),
+        "azar_p95": _percentil(simuladas, 0.95),
+        "azar_maxima": simuladas[-1],
+        "veces_que_el_azar_lo_iguala_pct": round(mayores / len(simuladas) * 100, 1),
+        "liston_actual": SEPARACION_MINIMA,
+        "veces_que_el_azar_supera_el_liston_pct": round(
+            sum(1 for s in simuladas if s >= SEPARACION_MINIMA) / len(simuladas) * 100, 1),
+    }
+
+
+def veredicto_azar(d: dict) -> dict:
+    """¿Sirve de algo el listón que usamos? Puro.
+
+    No juzga ninguna hipótesis: juzga la herramienta con la que las juzgamos.
+    """
+    if not d.get("vueltas"):
+        return {"estado": SIN_DATOS,
+                "conclusion": "No hay observaciones suficientes para barajar."}
+    p95 = d["azar_p95"]
+    cuela = d["veces_que_el_azar_supera_el_liston_pct"]
+    if cuela >= 50:
+        return {"estado": RECHAZADA,
+                "conclusion": f"El listón NO filtra nada: el puro azar lo supera el "
+                              f"{cuela}% de las veces con esta muestra. Habría que "
+                              f"subirlo al menos a {p95} pp, que es lo que el ruido "
+                              "alcanza una vez de cada veinte. Los rechazos anteriores "
+                              "siguen siendo válidos —rechazar por dirección no depende "
+                              "del listón— pero cualquier VALIDACIÓN con el listón actual "
+                              "habría sido ruido."}
+    if cuela >= 10:
+        return {"estado": NO_CONCLUYENTE,
+                "conclusion": f"El azar supera el listón el {cuela}% de las veces. Filtra, "
+                              f"pero poco: el percentil 95 del ruido está en {p95} pp."}
+    return {"estado": VALIDADA,
+            "conclusion": f"El listón aguanta: el azar solo lo supera el {cuela}% de las "
+                          f"veces, y su percentil 95 está en {p95} pp."}
+
+
+def ficha_azar(obs: list, universo: list, desde: str = None, hasta: str = None) -> dict:
+    """La auditoría del propio instrumento, lista para guardar. Pura."""
+    d = azar(obs)
+    v = veredicto_azar(d)
+    return {
+        "hipotesis_id": "SEPARACION_MINIMA",
+        "tipo": "auditoria_del_metodo",
+        "deriva_de": "Dos hipótesis rechazadas con un listón de 1 pp que nadie midió.",
+        "titulo": "¿Cuánta separación entre tramos produce el puro azar con nuestra muestra?",
+        "metodo": {
+            "que_pregunta": "Se barajan las etiquetas de tramo DENTRO de cada fecha y se "
+                            "mide cuánta separación de medianas sale. Si el azar produce "
+                            "rutinariamente lo que exigimos, el listón no filtra nada.",
+            "universo": sorted(universo or []),
+            "simbolos": len(universo or []),
+            "desde": desde, "hasta": hasta,
+            "resolucion": RESOLUCION,
+            "vueltas": VUELTAS_AZAR,
+            "semilla": SEMILLA,
+            "direccion_esperada": "Ninguna. Esto no prueba una hipótesis: mide la "
+                                  "herramienta. El resultado se acepta como salga.",
+        },
+        "controles": {
+            "por_que_dentro_del_dia": "Barajar todo junto rompería también que en una "
+                                      "misma semana todas las acciones se mueven a la "
+                                      "vez. Esa dependencia es real y es la que más "
+                                      "infla el ruido: destruirla haría que el azar "
+                                      "pareciera más manso y el listón saldría bajo.",
+            "no_es_un_p_valor": "Las observaciones se solapan en el tiempo y barajar no "
+                                "lo arregla. Esto dice si lo observado cabe dentro de lo "
+                                "que el ruido produce solo, no cuál es su probabilidad.",
+            "determinismo": f"Semilla fija ({SEMILLA}). Un listón que cambia con cada "
+                            "ejecución no es un listón.",
+            "alcance": "Mide ESTA muestra: este universo, estos cinco años, esta "
+                       "resolución. Con más símbolos o más historia, el ruido bajaría.",
+        },
+        "resultado": {**d, **v},
+        "estado": v["estado"],
+        "ejecutado_en": _ahora(),
+        "lab_v": 1,
+    }
+
+
 # ── Persistencia. Todo queda, también lo que salió mal ───────────────────────
 
 async def guardar_experimento(db, doc: dict) -> dict:

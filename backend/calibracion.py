@@ -122,6 +122,30 @@ reduce el número de señales.
 IMPORTANTE: mientras valga None, `tendencia.py` NO la aplica, y esa ausencia es lo que
 permite que ese módulo esté en producción sin backtest. Ponerle un número aquí obliga a
 medirlo antes, no después.
+
+MEDIDO el 15-09-2026. HIPÓTESIS RECHAZADA. SIGUE VALIENDO None.
+
+1.787 observaciones semanales sobre el universo vigilado, cinco años, horizonte de trece
+semanas, media de fondo de 40 barras semanales (≈200 sesiones). La dirección se fijó
+antes de mirar: más barras subiendo, más retorno, también en mediana.
+
+Las medianas salieron 10,29 → 9,56 → 10,30 → 13,70 → 5,79. Ni crecientes ni
+decrecientes. Y el tramo de rachas más largas —27 barras o más, el que la condición
+habría privilegiado— es el PEOR de los cinco: la mediana más baja y el peor porcentaje
+de aciertos (60,6%).
+
+NO ES UN PROBLEMA DE RÉGIMEN. El corte por año lo dice: la dirección no se cumple en
+2023, ni en 2024, ni en 2025. Ni uno. Aquí no hay dos regímenes opuestos promediándose
+como en la hipótesis de la distancia al máximo: simplemente no está.
+
+CONSECUENCIA PARA `tendencia.py`: seguir sin aplicar la condición es lo correcto, y ahora
+por una razón medida y no por prudencia. Añadirla habría filtrado señales sin ninguna
+mejora, y en el extremo habría preferido justo las rachas que peor se comportan.
+
+APROXIMACIÓN, declarada: la condición de producción habla de la media de 200 SESIONES
+sobre velas diarias; se midió con la de 40 barras semanales, que cubre el mismo
+calendario pero suaviza distinto. Se midió la DIRECCIÓN de la tendencia de fondo, que es
+lo que la condición pretende capturar, no el valor exacto de la media.
 """
 
 
