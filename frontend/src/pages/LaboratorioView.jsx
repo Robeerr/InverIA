@@ -94,6 +94,15 @@ function Experimento({ e }) {
         <span className="iv-cifra text-xs text-tinta-3">intento {e.intento}</span>
         <Estado valor={e.estado} />
       </div>
+      {/* De qué experimento nace éste. Una réplica sin su motivo delante se lee como
+          otra tirada más, y lo que la hace valer es exactamente lo contrario: que
+          responde a una duda concreta del experimento anterior. El backend lo venía
+          calculando desde el aguante limpio y la pantalla nunca lo enseñó. */}
+      {e.deriva_de && (
+        <p className="mt-1 text-xs text-aviso max-w-[70ch] leading-relaxed">
+          <b>Réplica de:</b> {e.deriva_de}
+        </p>
+      )}
       <p className="mt-1 text-xs text-tinta-3 max-w-[70ch] leading-relaxed">
         {r.conclusion}
       </p>
@@ -506,6 +515,10 @@ export default function LaboratorioView() {
                    testid="lab-ejecutar-aguante">Medir: ¿aguantan las zonas fuertes?</Boton>
             <Boton cual="stops" activo={corriendo} on={ejecutar} acento
                    testid="lab-ejecutar-stops">Medir: ¿dónde poner el stop?</Boton>
+            <Boton cual="stopsFuera" activo={corriendo} on={ejecutar} acento
+                   testid="lab-ejecutar-stops-fuera">
+              Réplica fuera de muestra: ¿dónde poner el stop?
+            </Boton>
             <Boton cual="aguanteLimpio" activo={corriendo} on={ejecutar} acento
                    testid="lab-ejecutar-aguante-limpio">
               Réplica fuera de muestra: aguante limpio

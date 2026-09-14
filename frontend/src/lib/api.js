@@ -89,6 +89,10 @@ export const api = {
     stops: () =>
       client.post(`/laboratorio/experimento/stops`, {}, { timeout: 600000 })
         .then((r) => r.data),
+    // La réplica de la anterior, en símbolos que no vigilas.
+    stopsFuera: () =>
+      client.post(`/laboratorio/experimento/stops-fuera`, {}, { timeout: 600000 })
+        .then((r) => r.data),
     // La auditoría del propio método: ¿cuánta separación produce el azar?
     azar: () =>
       client.post(`/laboratorio/experimento/azar`, {}, { timeout: 300000 })

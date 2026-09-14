@@ -1684,7 +1684,7 @@ def ficha_stops(registros: list, universo: list, ventana: int = None) -> dict:
     banda = banda_de_la_diferencia(registros)
     v = veredicto_stops(d, banda)
     fechas = [str(r.get("anchor") or "")[:10] for r in (registros or []) if r.get("anchor")]
-    return {
+    ficha = {
         "hipotesis_id": "ATR_MULTIPLO_STOP",
         "tipo": "primero",
         "titulo": "¿Los tres múltiplos de stop distinguen un corte bueno de uno en falso?",
@@ -1747,6 +1747,57 @@ def ficha_stops(registros: list, universo: list, ventana: int = None) -> dict:
         "ejecutado_en": _ahora(),
         "lab_v": 1,
     }
+    # LA MUESTRA EFECTIVA SON LOS BLOQUES, NO LOS SALTOS, y tiene que leerse al lado del
+    # resultado. El remuestreo es por fecha porque los toques del mismo día comparten
+    # mercado; eso es lo correcto, pero significa que 166 saltos repartidos en 23 días
+    # son 23 unidades independientes, no 166. Sin esto la banda se lee como si tuviera
+    # detrás un tamaño de muestra que no tiene.
+    bloques = banda.get("bloques")
+    if bloques:
+        ficha["controles"]["muestra_efectiva"] = (
+            f"El remuestreo tiene {bloques} bloques de fecha. Ésa es la muestra "
+            f"independiente: los saltos del mismo día no cuentan por separado. Con "
+            f"pocos bloques la banda es real, pero descansa sobre poco.")
+    return ficha
+
+
+def ficha_stops_fuera(registros: list, universo: list, ventana: int = None) -> dict:
+    """Los mismos stops, en símbolos que no vigilas. Pura.
+
+    POR QUÉ NO BASTA CON EL PRIMERO
+
+    El intento 1 salió VALIDADO: 22,9% de saltos en falso con 1,0xATR contra 5,6% con
+    1,6xATR, banda de 12,48 a 21,8 pp sin tocar el cero. Dos cosas piden una replica
+    antes de que eso gobierne una decision.
+
+    La primera: la regla de exclusion por muestra se escribio DESPUES de ver el intento
+    1. Esta declarada y juega en contra de la hipotesis, pero se escribio despues.
+
+    La segunda, y pesa mas: el universo son TUS simbolos. Los elegiste tu, y el mismo
+    motor que dibuja los niveles es el que decide donde mirarlos. Aqui corre sobre los
+    del universo de oportunidades que NO estan en tu watchlist ni en tu cartera.
+
+    LA DIRECCION ES LA MISMA Y NO SE TOCA
+
+    Se prueba «el mas ajustado salta en falso MAS que el mas ancho», que es lo que
+    justifica tener tres multiplos en produccion. Es la misma frase del intento 1. Ya
+    paso con el aguante: la primera metrica saturaba, cambie de metrica al ver el
+    resultado, y la replica fuera de muestra lo tumbo. Ese es el trabajo de esto.
+    """
+    f = ficha_stops(registros, universo, ventana)
+    f["tipo"] = "replica_fuera_de_muestra"
+    f["titulo"] = ("¿El stop ajustado sigue cortando en falso más, en símbolos que no "
+                   "vigilas?")
+    f["deriva_de"] = ("El intento 1 salió validado sobre TUS símbolos, y con una regla "
+                      "de exclusión escrita después de ver el resultado.")
+    f["controles"]["fuera_de_muestra"] = (
+        "Símbolos distintos de los del intento 1: ni watchlist ni cartera. Dato nuevo "
+        "para una pregunta ya formulada, no el mismo dato mirado dos veces.")
+    f["controles"]["que_contaria_como_fallo"] = (
+        "Que la banda incluya el cero, o que el ajustado NO salte en falso más que el "
+        "ancho. Cualquiera de las dos deja el hallazgo del intento 1 en «solo pasó "
+        "allí», y los múltiplos de producción siguen sin respaldo.")
+    return f
 
 
 # ── Persistencia. Todo queda, también lo que salió mal ───────────────────────

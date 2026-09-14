@@ -4729,6 +4729,42 @@ async def laboratorio_experimento_aguante_limpio(
     return {**doc, "guardado": guardado}
 
 
+@api_router.post("/laboratorio/experimento/stops-fuera")
+async def laboratorio_experimento_stops_fuera(
+        _user: str = Depends(auth.get_current_user)):
+    """Réplica FUERA DE MUESTRA de los múltiplos de stop.
+
+    El intento 1 salió validado, pero sobre TUS símbolos y con una regla de exclusión
+    por muestra escrita después de ver el resultado. Los dos motivos piden datos nuevos
+    antes de que el hallazgo gobierne una decisión.
+
+    Mismo universo independiente que la réplica del aguante: los de oportunidades que no
+    están en watchlist ni en cartera. La dirección esperada es la misma del intento 1 y
+    no se toca.
+    """
+    mios = await _simbolos_que_te_importan()
+    universo = [s for s in opportunities.UNIVERSE if s not in mios][:TOPE_SIMBOLOS_AGUANTE]
+    if len(universo) < 10:
+        return {"estado": laboratorio.SIN_DATOS,
+                "conclusion": "Casi todo el universo de oportunidades está ya en tu "
+                              "watchlist o cartera: no queda muestra independiente."}
+
+    def _load(sym):
+        return market_data.get_full_indicator_history(sym)
+
+    crudo = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: backtest.backtest_universe(
+            _load, universo, forward_window=VENTANA_AGUANTE, devolver_registros=True))
+    mem.trim()
+
+    doc = laboratorio.ficha_stops_fuera(
+        crudo.get("registros") or [],
+        universo=list((crudo.get("per_symbol") or {}).keys()) or universo,
+        ventana=VENTANA_AGUANTE)
+    guardado = await laboratorio.guardar_experimento(db, doc)
+    return {**doc, "guardado": guardado}
+
+
 @api_router.post("/laboratorio/experimento/azar")
 async def laboratorio_experimento_azar(_user: str = Depends(auth.get_current_user)):
     """Audita el INSTRUMENTO, no una hipótesis: ¿cuánta separación produce el azar?

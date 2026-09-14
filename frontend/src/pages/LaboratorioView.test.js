@@ -171,3 +171,19 @@ test("un experimento que se mide pero no se guarda NO pasa por bueno", () => {
   expect(CODIGO).toContain("r.guardado.ok === false");
   expect(CODIGO).toContain("NO se ha podido guardar");
 });
+
+test("la réplica de los stops tiene su botón y su endpoint propios", () => {
+  // No es el mismo experimento repetido: corre sobre símbolos que el usuario no ha
+  // elegido. Compartir botón con el intento 1 lo convertiría en «mirar dos veces».
+  expect(VISTA).toContain('cual="stopsFuera"');
+  expect(VISTA).toContain("Réplica fuera de muestra: ¿dónde poner el stop?");
+  expect(API).toContain("/laboratorio/experimento/stops-fuera");
+});
+
+test("una réplica dice DE QUÉ experimento nace", () => {
+  // `deriva_de` se venía calculando desde el aguante limpio y no se enseñaba nunca. Sin
+  // el motivo delante, una réplica se lee como otra tirada más — y lo que la hace valer
+  // es justo lo contrario: responde a una duda concreta del experimento anterior.
+  expect(VISTA).toContain("e.deriva_de");
+  expect(VISTA).toContain("Réplica de:");
+});

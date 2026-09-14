@@ -1372,3 +1372,34 @@ def test_pasar_las_claves_a_texto_no_pierde_el_numero():
     assert d["n"] == 253
     # Y las listas se recorren: el valor a convertir puede venir dentro de una.
     assert lab.claves_en_texto([{2: "a"}]) == [{"2": "a"}]
+
+
+def test_la_replica_de_los_stops_prueba_LO_MISMO_que_el_intento_1():
+    """Fijar como hipótesis lo que ya se ha visto es hacerse trampas al solitario.
+
+    La réplica existe porque el intento 1 salió validado sobre los símbolos del usuario
+    y con una regla de exclusión escrita DESPUÉS de ver el resultado. Si además cambiara
+    la dirección o la métrica, no replicaría nada.
+    """
+    regs = _toques_con_mae()
+    uno = lab.ficha_stops(regs, universo=["AAPL"])
+    dos = lab.ficha_stops_fuera(regs, universo=["AAPL"])
+    assert uno["hipotesis_id"] == dos["hipotesis_id"] == "ATR_MULTIPLO_STOP"
+    assert uno["metodo"]["direccion_esperada"] == dos["metodo"]["direccion_esperada"]
+    assert uno["metodo"]["que_pregunta"] == dos["metodo"]["que_pregunta"]
+    assert uno["metodo"]["multiplos"] == dos["metodo"]["multiplos"]
+    # Sobre los MISMOS registros el veredicto tiene que ser el mismo: lo único que
+    # cambia entre los dos es de dónde salen los datos, nunca cómo se juzgan.
+    assert uno["estado"] == dos["estado"]
+    assert dos["tipo"] == "replica_fuera_de_muestra"
+    assert "fuera_de_muestra" in dos["controles"]
+    assert "que_contaria_como_fallo" in dos["controles"]
+
+
+def test_la_muestra_efectiva_son_los_BLOQUES_y_se_dice():
+    """166 saltos repartidos en 23 días son 23 unidades independientes, no 166. Sin
+    decirlo, la banda se lee como si tuviera detrás un tamaño que no tiene."""
+    f = lab.ficha_stops(_toques_con_mae(), universo=["AAPL"])
+    aviso = f["controles"].get("muestra_efectiva", "")
+    assert "bloques de fecha" in aviso
+    assert str(f["resultado"]["banda"]["bloques"]) in aviso
