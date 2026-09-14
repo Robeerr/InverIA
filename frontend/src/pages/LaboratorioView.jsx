@@ -259,6 +259,46 @@ function Experimento({ e }) {
           )}
         </div>
       )}
+      {/* El desglose por metodología. `backtest` ya lo calculaba y nadie lo guardaba;
+          ahora viaja con el experimento. Va como DESCRIPTIVO y con el aviso delante:
+          buscar aquí «la fuente buena» después de ver la tabla sería elegir el ganador
+          mirando el marcador, que es justo lo que el laboratorio existe para no hacer. */}
+      {!!Object.keys(e.por_fuente || {}).length && (
+        <details className="mt-2">
+          <summary className="text-xs text-marca cursor-pointer">
+            Por metodología · descriptivo, NO probado
+          </summary>
+          <p className="mt-1 text-xs text-aviso max-w-[70ch] leading-relaxed">
+            Estas cifras no se han contrastado contra ruido ni tenían dirección fijada de
+            antemano. Sirven para saber dónde mirar después; elegir una de aquí porque
+            sale bien en la tabla sería escoger al ganador mirando el marcador.
+          </p>
+          <div className="mt-2 overflow-x-auto">
+            <table className="text-xs w-full">
+              <thead className="text-tinta-3">
+                <tr><th className="text-left font-normal py-1">Metodología</th>
+                    <th className="text-right font-normal">Toques</th>
+                    <th className="text-right font-normal">Aguantó</th>
+                    <th className="text-right font-normal">Limpio</th></tr>
+              </thead>
+              <tbody className="iv-cifra">
+                {Object.entries(e.por_fuente).map(([fuente, v]) => (
+                  <tr key={fuente} className="border-t border-linea">
+                    <td className="py-1 text-tinta-2">{fuente}</td>
+                    <td className="text-right text-tinta-3">{v.n}</td>
+                    <td className="text-right text-tinta-3">
+                      {v.hold_rate == null ? "—" : `${v.hold_rate}%`}
+                    </td>
+                    <td className="text-right text-tinta">
+                      {v.clean_hold_rate == null ? "—" : `${v.clean_hold_rate}%`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
       {/* El método viaja con el resultado. Un «+14%» sin saber sobre qué universo, con
           qué horizonte y con qué sesgos no se puede revisar dentro de seis meses. */}
       {e.controles && (

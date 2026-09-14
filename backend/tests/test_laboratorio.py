@@ -1001,19 +1001,45 @@ def test_el_hallazgo_queda_escrito_DONDE_VIVE_EL_NUMERO():
     import levels_engine
     fuente = inspect.getsource(levels_engine)
     i = fuente.index("strength = int(min(100")
-    contexto = fuente[max(0, i - 2000):i]
+    # La ventana creció con el bloque: al añadir la réplica fuera de muestra, «SATURA»
+    # quedó a más de 2.000 caracteres de la línea del score.
+    contexto = fuente[max(0, i - 4000):i]
     assert "MEDIDO el 15-09-2026" in contexto
     assert "88,0%" in contexto and "5,7 pp" in contexto
     assert "SATURA" in contexto, "hay que decir POR QUÉ no separó"
 
 
-def test_se_dice_que_la_metrica_LIMPIA_no_estaba_pre_registrada():
-    """Mirarla ahora sería elegir la métrica después de ver los datos."""
+def test_la_REPLICA_fuera_de_muestra_queda_escrita_junto_al_score():
+    """Dos medidas sobre conjuntos disjuntos con el mismo orden. Quien vaya a tocar el
+    score tiene que encontrarse las dos delante, no una."""
     import inspect
     import levels_engine
     fuente = inspect.getsource(levels_engine)
-    assert "no estaba" in fuente and "pre-registrada" in fuente
-    assert "Necesita su propio experimento" in fuente
+    i = fuente.index("strength = int(min(100")
+    contexto = fuente[max(0, i - 4000):i]
+    assert "36,2%" in contexto and "35,0%" in contexto, "faltan las dos medidas"
+    assert "DISJUNTOS" in contexto
+    assert "AL REVÉS" in contexto, "hay que decir lo incómodo con claridad"
+
+
+def test_se_dice_CUANTO_creerselo():
+    """Un resultado replicado pero con un punto de margen sobre el ruido y segundo en la
+    cuenta de métricas probadas no es una certeza, y el código no puede insinuar que sí."""
+    import inspect
+    import levels_engine
+    fuente = inspect.getsource(levels_engine)
+    assert "CUÁNTO CREÉRSELO" in fuente
+    assert "SEGUNDA métrica" in fuente
+    assert "no una certeza" in fuente
+
+
+def test_la_explicacion_del_porque_se_marca_como_NO_PROBADA():
+    """Se le ocurrió a alguien después de ver el resultado. Eso no es evidencia."""
+    import inspect
+    import levels_engine
+    fuente = inspect.getsource(levels_engine)
+    assert "UNA EXPLICACIÓN QUE NO SE HA PROBADO" in fuente
+    assert "no está medida" in fuente
 
 
 # ── La réplica fuera de muestra ─────────────────────────────────────────────

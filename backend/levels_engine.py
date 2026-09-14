@@ -402,18 +402,52 @@ def compute_buy_levels(
         # Así que este número NO ordena las zonas por lo bien que aguantan, y la etiqueta
         # «Nivel fuerte (78/100)» que sale en la ficha no está respaldada por esa medida.
         #
-        # POR QUÉ NO SE TOCA NADA
+        # POR QUÉ LA PRIMERA MEDIDA NO SEPARÓ
         #
-        # Porque el experimento eligió mal la métrica, y eso es un fallo del experimento
-        # antes que del score: el 88% sale igual en los tres cubos porque el criterio de
-        # «aguantó» SATURA — casi todo lo cumple, y una métrica que aprueba al 88% no
-        # puede separar nada. La tasa de aguante LIMPIO (rebotó sin llegar a perder el
-        # nivel en ningún momento) sí se reparte —36,2 / 47,3 / 34,5— pero no estaba
-        # pre-registrada, así que mirarla ahora sería elegir la métrica después de ver los
-        # datos. Necesita su propio experimento.
+        # El 88% sale igual en los tres cubos porque el criterio de «aguantó» SATURA:
+        # casi todo lo cumple, y una métrica que aprueba al 88% no puede separar nada.
+        # Fue un fallo del pre-registro, no del score.
         #
-        # Mientras tanto el score se queda como está: quitarlo o cambiarlo por una medida
-        # que aún no se ha hecho sería sustituir un número sin respaldo por otro.
+        # SEGUNDA MEDIDA, MÁS EXIGENTE, Y REPLICADA FUERA DE MUESTRA
+        #
+        # «Limpio» pide rebotar SIN haber perdido el nivel en ningún momento de la
+        # ventana. Aprueba a un tercio en vez de al 88%, así que sí discrimina. Medido
+        # dos veces, sobre conjuntos de símbolos DISJUNTOS:
+        #
+        #                  universo vigilado        símbolos independientes
+        #     débil        n=359   36,2%            n=600   35,0%
+        #     media        n=203   47,3%            n=215   41,4%
+        #     fuerte       n=574   34,5%            n=711   31,8%
+        #
+        # El mismo orden en los dos: «media» la mejor, «fuerte» la PEOR. Fuera de muestra
+        # la separación es de 9,6 pp sobre un suelo de ruido de 8,61.
+        #
+        # Así que el número no solo no ordena las zonas por lo bien que aguantan: en el
+        # extremo las ordena AL REVÉS. Una zona que la pantalla llama «fuerte» aguanta
+        # limpiamente MENOS que una que llama «débil».
+        #
+        # CUÁNTO CREÉRSELO
+        #
+        # La réplica sobre símbolos independientes es lo que le da peso: el patrón no se
+        # eligió mirando estos datos. Pero el margen sobre el ruido es de un solo punto
+        # porcentual, y es la SEGUNDA métrica que se prueba sobre la misma idea — dos
+        # intentos dan el doble de oportunidades a que algo salga por azar. Es un
+        # resultado replicado y ajustado, no una certeza.
+        #
+        # UNA EXPLICACIÓN QUE NO SE HA PROBADO
+        #
+        # `strength` premia la confluencia, y las zonas con mucha confluencia son las
+        # OBVIAS —SMA200, fibos grandes, números redondos—: las que todo el mundo mira y
+        # por eso se perforan antes de rebotar. Eso explicaría que fallen justo en la
+        # métrica que exige no perder el nivel. Es una hipótesis, se le ocurrió a nadie
+        # después de ver el resultado, y no está medida.
+        #
+        # POR QUÉ NO SE TOCA NADA AÚN
+        #
+        # Porque quitar o invertir el score son decisiones de producto, no del
+        # laboratorio, y porque sustituir un número flojo por otro sin medir sería
+        # repetir el error con el signo cambiado. Lo que este bloque garantiza es que
+        # nadie toque estas líneas sin haber leído la medida.
         strength = int(min(100, round(raw / _STRENGTH_DIVISOR * 100)))
 
         prices_in_cl = [c[0] for c in cl]

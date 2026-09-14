@@ -95,6 +95,15 @@ test("el aguante enseña su suelo de ruido junto al resultado", () => {
   expect(VISTA).toContain("azar_p95_pp");
 });
 
+test("el desglose por metodología va marcado como DESCRIPTIVO", () => {
+  // `backtest` lo calculaba y nadie lo guardaba. Enseñarlo sin el aviso invitaría a
+  // elegir «la fuente buena» mirando la tabla, que es escoger al ganador viendo el
+  // marcador.
+  expect(VISTA).toContain("descriptivo, NO probado");
+  expect(VISTA).toContain("mirando el marcador");
+  expect(VISTA).toContain("e.por_fuente");
+});
+
 test("el corte temporal enseña si el patrón se repite AÑO A AÑO", () => {
   expect(VISTA).toContain("el_primer_tramo_es_el_PEOR");
   expect(VISTA).toContain("escalon_pp");
