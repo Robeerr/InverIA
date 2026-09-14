@@ -616,11 +616,17 @@ def ficha_distribucion(obs: list, universo: list, desde: str = None,
 AÑOS_MINIMOS = 3
 
 
-def por_periodo(obs: list, tramos=None) -> dict:
+def por_periodo(obs: list, tramos=None, creciente=None) -> dict:
     """Las medianas de cada tramo, año a año. Pura.
 
     Un año solo entra si TODOS sus tramos llegan a la muestra mínima. Un año a medias
     daría medianas calculadas sobre puñados y se leerían igual que las demás.
+
+    `creciente` es la dirección que la hipótesis fijó antes de mirar, si la tiene. Con
+    ella, cada año dice si esa dirección se cumplió DENTRO de él. Sin ella solo se
+    informa de si el primer tramo es el peor, que es una pregunta más pobre y la única
+    que esta función sabía hacer al principio — cuando solo existía una hipótesis y ese
+    primer tramo era «estar en máximos».
     """
     tramos = TRAMOS if tramos is None else tramos
     primera_clave = f"{tramos[0][0]}-{tramos[0][1]}%"
@@ -650,8 +656,19 @@ def por_periodo(obs: list, tramos=None) -> dict:
             "n": sum(len(v) for v in rs.values()),
             "medianas": medianas,
             # El escalón que hay que confirmar: ¿el tramo pegado al máximo es el peor?
-            "el_tramo_en_maximos_es_el_PEOR": primero < min(resto),
+            # Nombre GENÉRICO. Se llamaba `el_tramo_en_maximos_es_el_PEOR`, y al
+            # reutilizar esta función para la persistencia de la tendencia la pantalla
+            # acabó preguntando por «máximos» en una hipótesis que no habla de máximos.
+            # Es el mismo error que el veredicto reutilizado, una capa más abajo.
+            "el_primer_tramo_es_el_PEOR": primero < min(resto),
             "escalon_pp": round(min(resto) - primero, 2),
+            # Lo que de verdad interesa cuando la hipótesis declaró una dirección: ¿se
+            # cumple DENTRO de este año, o el resultado agregado era el promedio de
+            # años que iban cada uno por su lado?
+            "direccion_se_cumple": (
+                None if creciente is None
+                else list(medianas.values()) == sorted(medianas.values(),
+                                                       reverse=not creciente)),
         })
     return {"años": filas, "años_descartados": descartados,
             "años_con_muestra": len(filas)}
@@ -671,7 +688,7 @@ def veredicto_periodo(d: dict) -> dict:
                               f"cinco tramos; hacen falta {AÑOS_MINIMOS}. Los años "
                               "descartados y su reparto van en el resultado."}
 
-    repiten = [f["año"] for f in filas if f["el_tramo_en_maximos_es_el_PEOR"]]
+    repiten = [f["año"] for f in filas if f["el_primer_tramo_es_el_PEOR"]]
     base = {"años_con_muestra": len(filas), "años_que_repiten": repiten,
             "escalones_pp": {f["año"]: f["escalon_pp"] for f in filas}}
     if len(repiten) == len(filas):
@@ -891,7 +908,7 @@ def ficha_pendiente(obs: list, universo: list, desde: str = None,
     # vive en la cola. Reutilizar el otro etiquetó el primer resultado como NO
     # CONCLUYENTE cuando era un RECHAZO.
     v = veredicto_direccion(d, creciente=True)
-    periodo = por_periodo(obs, tramos=TRAMOS_PENDIENTE)
+    periodo = por_periodo(obs, tramos=TRAMOS_PENDIENTE, creciente=True)
     return {
         "hipotesis_id": "SMA200_PENDIENTE_SESIONES",
         "tipo": "primero",

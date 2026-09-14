@@ -81,8 +81,29 @@ test("se enseña TODO lo que el diagnóstico mide, no solo la mediana", () => {
 });
 
 test("el corte temporal enseña si el patrón se repite AÑO A AÑO", () => {
-  expect(VISTA).toContain("el_tramo_en_maximos_es_el_PEOR");
+  expect(VISTA).toContain("el_primer_tramo_es_el_PEOR");
   expect(VISTA).toContain("escalon_pp");
+  expect(VISTA).toContain("direccion_se_cumple");
+});
+
+test("la tabla por año NO pregunta por «máximos» en hipótesis que no hablan de máximos", () => {
+  // La etiqueta era «¿Peor el tramo en máximos?» y se reutilizó para la persistencia de
+  // la tendencia. Mismo error que el veredicto reutilizado, una capa más abajo.
+  expect(CODIGO).not.toContain("tramo en máximos");
+  expect(VISTA).toContain("¿El primer tramo es el peor?");
+});
+
+test("el corte por año se busca en los DOS sitios donde puede venir", () => {
+  // `resultado.años` cuando el experimento ES el corte; `resultado.por_periodo` cuando
+  // viaja dentro de otro. Buscarlo en uno solo ya dejó la tabla invisible una vez.
+  expect(VISTA).toContain("r.por_periodo?.años");
+  expect(VISTA).toContain("añosDe");
+});
+
+test("los años SIN muestra se dicen, no desaparecen", () => {
+  // Un año que falta de la tabla se lee como un año que no existió.
+  expect(VISTA).toContain("años_descartados");
+  expect(VISTA).toContain("Sin muestra suficiente");
 });
 
 test("la rejilla declara su columna de móvil", () => {

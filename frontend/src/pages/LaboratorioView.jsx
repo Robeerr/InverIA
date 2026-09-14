@@ -78,6 +78,13 @@ function Hipotesis({ h }) {
   );
 }
 
+/** El corte por año llega en `resultado.años` cuando el experimento ES el corte, y en
+ *  `resultado.por_periodo` cuando viaja dentro de otro. Buscarlo en un solo sitio ya
+ *  dejó la tabla invisible una vez. */
+const añosDe = (r) => (r.años || r.por_periodo?.años || []);
+const descartadosDe = (r) =>
+  (r.años_descartados || r.por_periodo?.años_descartados || []);
+
 function Experimento({ e }) {
   const r = e.resultado || {};
   return (
@@ -174,29 +181,50 @@ function Experimento({ e }) {
           cuando el corte viaja DENTRO de otro experimento, que es como llega desde que
           las lecciones vienen de serie. Se calculaba y quedaba enterrado un nivel más
           abajo, así que no se veía. */}
-      {!!((r.años || r.por_periodo?.años) || []).length && (
+      {!!añosDe(r).length && (
         <div className="mt-2 overflow-x-auto">
           <table className="text-xs w-full">
             <thead className="text-tinta-3">
+              {/* Etiqueta GENÉRICA. Decía «¿Peor el tramo en máximos?» y acabó
+                  preguntando por máximos en una hipótesis sobre la persistencia de la
+                  tendencia. La columna de dirección solo sale si la hipótesis declaró una. */}
               <tr><th className="text-left font-normal py-1">Año</th>
                   <th className="text-right font-normal">Muestra</th>
-                  <th className="text-right font-normal">¿Peor el tramo en máximos?</th>
+                  {añosDe(r).some((a) => a.direccion_se_cumple != null) && (
+                    <th className="text-right font-normal">¿Se cumple la dirección?</th>
+                  )}
+                  <th className="text-right font-normal">¿El primer tramo es el peor?</th>
                   <th className="text-right font-normal">Escalón</th></tr>
             </thead>
             <tbody className="iv-cifra">
-              {(r.años || r.por_periodo?.años || []).map((a) => (
+              {añosDe(r).map((a) => (
                 <tr key={a.año} className="border-t border-linea">
                   <td className="py-1 text-tinta-2">{a.año}</td>
                   <td className="text-right text-tinta-3">{a.n}</td>
-                  <td className={`text-right ${a.el_tramo_en_maximos_es_el_PEOR
+                  {añosDe(r).some((x) => x.direccion_se_cumple != null) && (
+                    <td className={`text-right ${a.direccion_se_cumple
+                                      ? "text-sube" : "text-tinta-3"}`}>
+                      {a.direccion_se_cumple == null
+                        ? "—" : a.direccion_se_cumple ? "sí" : "no"}
+                    </td>
+                  )}
+                  <td className={`text-right ${a.el_primer_tramo_es_el_PEOR
                                     ? "text-tinta" : "text-tinta-3"}`}>
-                    {a.el_tramo_en_maximos_es_el_PEOR ? "sí" : "no"}
+                    {a.el_primer_tramo_es_el_PEOR ? "sí" : "no"}
                   </td>
                   <td className="text-right text-tinta-3">{a.escalon_pp} pp</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          {/* Los años SIN muestra suficiente desaparecían de la tabla en silencio, y un
+              año que falta se lee como un año que no existió. */}
+          {!!descartadosDe(r).length && (
+            <p className="mt-2 text-xs text-tinta-3 max-w-[70ch] leading-relaxed">
+              Sin muestra suficiente en todos los tramos, así que no se evalúan:{" "}
+              {descartadosDe(r).map((x) => x.año).join(", ")}.
+            </p>
+          )}
         </div>
       )}
       {/* El método viaja con el resultado. Un «+14%» sin saber sobre qué universo, con
