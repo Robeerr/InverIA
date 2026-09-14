@@ -154,12 +154,23 @@ def _estado_de(valor, medible: bool, medido: Optional[str]) -> str:
     """
     if valor is not None:
         return VALIDADA
-    # Se busca la palabra CASTELLANA, no la constante: los docstrings de `calibracion`
-    # están escritos en castellano y `RECHAZADA` vale «REJECTED». Comparar la constante
-    # contra ese texto no casaba nunca, y el registro seguía anunciando como pendiente
-    # una hipótesis ya medida — que es exactamente lo que haría que se repitiera.
-    if medido and "RECHAZADA" in medido.upper():
+    # SOLO LA PRIMERA LÍNEA, que es donde la convención pone el veredicto.
+    #
+    # Antes se buscaba en la sección entera, y eso se rompió al corregir un resultado: el
+    # texto decía «NO CONCLUYENTE — se registró primero como RECHAZADA», y el registro
+    # leyó la segunda palabra. Una corrección que explica lo que corrige no puede
+    # clasificarse por las palabras que cita.
+    #
+    # Se buscan las CASTELLANAS y no las constantes: los docstrings de `calibracion` están
+    # en castellano y `RECHAZADA` vale «REJECTED». Comparar la constante contra ese texto
+    # no casaba nunca, y el registro anunciaba como pendiente una hipótesis ya medida.
+    cabecera = (medido or "").splitlines()[0].upper() if medido else ""
+    if "NO CONCLUYENTE" in cabecera:
+        return NO_CONCLUYENTE
+    if "RECHAZADA" in cabecera:
         return RECHAZADA
+    if "VALIDADA" in cabecera:
+        return VALIDADA
     return LISTA if medible else IDEA
 
 
@@ -475,9 +486,16 @@ def distribucion(obs: list, tramos=None) -> dict:
     return {"tramos": filas, "n": sum(f["n"] for f in filas)}
 
 
-#: Cuánto tienen que separarse las medianas para que el efecto esté en el CENTRO.
-#: Mismo listón que usó el primer experimento para su separación de medias: si allí
-#: 1 pp bastaba para afirmar algo, aquí tiene que bastar para negarlo.
+#: RESPALDO, y ya sabemos que es malo. Este número me lo inventé: salió de que un punto
+#: porcentual parecía razonable. La auditoría del 15-09-2026 lo midió barajando las
+#: etiquetas de tramo dentro de cada fecha, y el puro azar lo supera el 100% de las
+#: veces: con esta muestra el ruido alcanza 8,26 pp una vez de cada veinte.
+#:
+#: Solo se usa cuando no se ha medido el suelo de ruido de ese experimento concreto, y
+#: entonces el veredicto lo dice. Lo correcto es que cada experimento mida el suyo con
+#: `umbral_de_ruido`: el suelo depende del universo, del periodo, de la resolución y de
+#: cómo estén repartidas las observaciones entre tramos, así que no hay UN número bueno
+#: para todos.
 SEPARACION_MINIMA = 1.0
 
 
@@ -842,7 +860,8 @@ def observaciones_pendiente(barras: list, symbol: str = None) -> list:
     return fuera
 
 
-def veredicto_direccion(d: dict, creciente: bool = True) -> dict:
+def veredicto_direccion(d: dict, creciente: bool = True,
+                        umbral: Optional[float] = None) -> dict:
     """¿Se cumple la dirección que se fijó ANTES de mirar? Sobre la MEDIANA. Puro.
 
     POR QUÉ ESTA FUNCIÓN EXISTE Y NO SE REUTILIZÓ `veredicto_distribucion`
@@ -865,23 +884,36 @@ def veredicto_direccion(d: dict, creciente: bool = True) -> dict:
         return {"estado": SIN_DATOS,
                 "conclusion": "Tramos sin muestra suficiente: " + ", ".join(flacos)}
 
+    # El suelo MEDIDO manda sobre el inventado. Si no se midió, se usa el respaldo y el
+    # veredicto lo dice: un umbral que nadie ha comprobado no puede presentarse como si
+    # lo hubieran comprobado.
+    medido = umbral is not None
+    liston = umbral if medido else SEPARACION_MINIMA
+    aviso = "" if medido else (" AVISO: el umbral no se ha medido para esta muestra; se "
+                               f"usa el respaldo de {SEPARACION_MINIMA} pp, que la "
+                               "auditoría del método declaró insuficiente.")
+
     medianas = [f["mediana"] for f in filas]
     esperado = sorted(medianas) if creciente else sorted(medianas, reverse=True)
     separacion = round(max(medianas) - min(medianas), 2)
     mejor = filas[medianas.index(max(medianas))]["tramo"]
     peor = filas[medianas.index(min(medianas))]["tramo"]
     base = {"separacion_mediana_pp": separacion, "n": d.get("n"),
-            "mejor_tramo": mejor, "peor_tramo": peor,
+            "mejor_tramo": mejor, "peor_tramo": peor, "umbral_pp": liston,
+            "umbral_medido": medido,
             "medianas": {f["tramo"]: f["mediana"] for f in filas}}
 
-    if separacion < SEPARACION_MINIMA:
+    if separacion < liston:
         return {**base, "estado": NO_CONCLUYENTE,
-                "conclusion": f"Las medianas no se distinguen ({separacion} pp entre el "
-                              "mejor y el peor tramo). No hay diferencia que aprovechar."}
+                "conclusion": f"Las medianas se separan {separacion} pp, por DEBAJO del "
+                              f"suelo de ruido ({liston} pp): cabe entero dentro de lo "
+                              "que el azar produce solo con esta muestra. No hay nada que "
+                              "aprovechar, y tampoco nada que explicar." + aviso}
     if medianas == esperado:
         return {**base, "estado": VALIDADA,
                 "conclusion": f"Las medianas siguen la dirección fijada antes de mirar, "
-                              f"con {separacion} pp entre el mejor y el peor tramo."}
+                              f"con {separacion} pp — por encima del suelo de ruido "
+                              f"({liston} pp)." + aviso}
     return {**base, "estado": RECHAZADA,
             "conclusion": f"Las medianas se separan {separacion} pp pero NO en la "
                           f"dirección fijada antes de mirar: el mejor tramo es {mejor} y "
@@ -907,7 +939,10 @@ def ficha_pendiente(obs: list, universo: list, desde: str = None,
     # cumple la dirección que se fijó antes de mirar, no por si un gradiente ya conocido
     # vive en la cola. Reutilizar el otro etiquetó el primer resultado como NO
     # CONCLUYENTE cuando era un RECHAZO.
-    v = veredicto_direccion(d, creciente=True)
+    # El suelo de ruido de ESTE experimento, medido sobre sus propias observaciones. Sin
+    # él, el veredicto se apoyaría en un número inventado que la auditoría ya tumbó.
+    suelo = umbral_de_ruido(obs, tramos=TRAMOS_PENDIENTE)
+    v = veredicto_direccion(d, creciente=True, umbral=suelo)
     periodo = por_periodo(obs, tramos=TRAMOS_PENDIENTE, creciente=True)
     return {
         "hipotesis_id": "SMA200_PENDIENTE_SESIONES",
@@ -1051,6 +1086,18 @@ def azar(obs: list, tramos=None, vueltas: int = None) -> dict:
         "veces_que_el_azar_supera_el_liston_pct": round(
             sum(1 for s in simuladas if s >= SEPARACION_MINIMA) / len(simuladas) * 100, 1),
     }
+
+
+def umbral_de_ruido(obs: list, tramos=None, vueltas: int = None) -> Optional[float]:
+    """El suelo de ruido de ESTE experimento: lo que el azar alcanza una vez de cada
+    veinte con estas mismas observaciones. Puro y determinista.
+
+    Es el número que `SEPARACION_MINIMA` pretendía ser y no era. Depende del universo,
+    del periodo, de la resolución y de cómo estén repartidas las observaciones entre
+    tramos — por eso se mide por experimento y no se fija una vez para todos.
+    """
+    d = azar(obs, tramos=tramos, vueltas=vueltas)
+    return d.get("azar_p95")
 
 
 def veredicto_azar(d: dict) -> dict:

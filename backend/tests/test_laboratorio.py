@@ -748,3 +748,107 @@ def test_la_auditoria_declara_que_NO_es_un_p_valor():
 
 def test_sin_observaciones_la_auditoria_no_concluye():
     assert lab.ficha_azar([], universo=[])["estado"] == lab.SIN_DATOS
+
+
+# ── El suelo de ruido manda sobre el número inventado ───────────────────────
+#
+# La auditoría del 15-09-2026 midió que el azar supera `SEPARACION_MINIMA = 1.0` el 100%
+# de las veces: con nuestra muestra el ruido alcanza 8,26 pp una vez de cada veinte. Seis
+# de las siete separaciones que habíamos discutido caben ENTERAS dentro de ese ruido.
+
+def test_una_separacion_DENTRO_del_ruido_no_concluye_nada():
+    """7,91 pp parecían mucho hasta saber que el azar llega a 8,26."""
+    d = _medianas([2, 5, 8, 11, 14])              # 12 pp de separación
+    assert lab.veredicto_direccion(d, umbral=20.0)["estado"] == lab.NO_CONCLUYENTE
+
+
+def test_la_MISMA_separacion_concluye_o_no_segun_el_suelo():
+    """El umbral no es un detalle: es lo que decide si hay hallazgo."""
+    d = _medianas([2, 5, 8, 11, 14])
+    assert lab.veredicto_direccion(d, umbral=5.0)["estado"] == lab.VALIDADA
+    assert lab.veredicto_direccion(d, umbral=20.0)["estado"] == lab.NO_CONCLUYENTE
+
+
+def test_si_el_umbral_NO_se_ha_medido_el_veredicto_lo_DICE():
+    """Un umbral que nadie ha comprobado no puede presentarse como si lo hubieran
+    comprobado."""
+    v = lab.veredicto_direccion(_medianas([2, 5, 8, 11, 14]))
+    assert v["umbral_medido"] is False
+    assert "AVISO" in v["conclusion"] and "respaldo" in v["conclusion"]
+
+
+def test_con_umbral_MEDIDO_no_hay_aviso():
+    v = lab.veredicto_direccion(_medianas([2, 5, 8, 11, 14]), umbral=5.0)
+    assert v["umbral_medido"] is True and "AVISO" not in v["conclusion"]
+
+
+def test_el_suelo_de_ruido_se_MIDE_y_es_determinista():
+    obs = _ruido()
+    a = lab.umbral_de_ruido(obs, vueltas=30)
+    assert a == lab.umbral_de_ruido(obs, vueltas=30)
+    assert a > lab.SEPARACION_MINIMA, "sobre ruido puro el suelo tiene que superar el 1 pp"
+
+
+def test_la_hipotesis_de_la_PENDIENTE_mide_su_propio_suelo():
+    """Y no se apoya en el número inventado."""
+    import inspect
+    fuente = inspect.getsource(lab.ficha_pendiente)
+    assert "umbral_de_ruido" in fuente and "umbral=suelo" in fuente
+
+
+def test_el_respaldo_sigue_declarado_como_MALO():
+    """Si alguien borra el aviso del docstring, el número vuelve a parecer medido."""
+    import inspect
+    fuente = inspect.getsource(lab)
+    i = fuente.index("SEPARACION_MINIMA = 1.0")
+    assert "me lo inventé" in fuente[max(0, i - 900):i]
+    assert "8,26" in fuente[max(0, i - 900):i]
+
+
+def test_la_SEPARACION_se_comprueba_ANTES_que_la_direccion():
+    """Y cambia el veredicto de la segunda hipótesis, que es lo que importa aquí.
+
+    Sus medianas —10,29 / 9,56 / 10,30 / 13,70 / 5,79— se separan 7,91 pp, y el suelo de
+    ruido medido está en 8,26. Cabe entera dentro del azar.
+
+    Con el listón inventado de 1 pp el veredicto era RECHAZADA: las medianas no seguían
+    el orden fijado. Pero si la separación entera es ruido, ese «orden» no significa
+    nada — una ordenación al azar se ve exactamente así. NO CONCLUYENTE es más honesto:
+    no es que la hipótesis sea falsa, es que con esta muestra no se puede saber.
+    """
+    d = _medianas([10.29, 9.56, 10.30, 13.70, 5.79])
+    assert lab.veredicto_direccion(d, umbral=1.0)["estado"] == lab.RECHAZADA
+    assert lab.veredicto_direccion(d, umbral=8.26)["estado"] == lab.NO_CONCLUYENTE
+
+
+def test_por_encima_del_suelo_SI_se_juzga_la_direccion():
+    """La primera hipótesis: 16,08 pp de separación de MEDIAS, por encima de 8,26, y en
+    la dirección contraria a la fijada. Ese rechazo sí sobrevive."""
+    d = _medianas([8.66, 12.72, 12.87, 13.11, 24.74])
+    assert lab.veredicto_direccion(d, creciente=False, umbral=8.26)["estado"] == lab.RECHAZADA
+
+
+def test_el_veredicto_del_registro_sale_de_la_CABECERA_y_no_del_texto():
+    """Una corrección que explica lo que corrige no puede clasificarse por las palabras
+    que cita. El texto de la segunda hipótesis dice «NO CONCLUYENTE — se registró primero
+    como RECHAZADA», y buscando en todo el párrafo el registro leía la segunda."""
+    d = next(h for h in lab.hipotesis() if h["id"] == "SMA200_PENDIENTE_SESIONES")
+    assert d["estado"] == lab.NO_CONCLUYENTE
+    assert "RECHAZADA" in (d.get("medido") or "").upper(), \
+        "el texto TIENE que seguir mencionando la palabra, o este test no prueba nada"
+
+
+def test_la_primera_hipotesis_sigue_RECHAZADA():
+    """Su separación de medias (16,08 pp) supera el suelo de ruido de 8,26 y va en la
+    dirección contraria a la fijada. Ese rechazo sí se sostiene."""
+    d = next(h for h in lab.hipotesis() if h["id"] == "DISTANCIA_MAX_A_MAXIMO_52S")
+    assert d["estado"] == lab.RECHAZADA
+    assert "8,26" in (d.get("medido") or ""), "el suelo medido tiene que quedar escrito"
+
+
+def test_ninguna_hipotesis_MEDIDA_vuelve_a_la_cola_de_pendientes():
+    """Ni rechazada ni no concluyente: las dos están medidas y no hay que repetirlas a
+    ciegas."""
+    for cual in ("DISTANCIA_MAX_A_MAXIMO_52S", "SMA200_PENDIENTE_SESIONES"):
+        d = next(h for h in lab.hipotesis() if h["id"] == cual)
+        assert d["estado"] != lab.LISTA and d["valor_actual"] is None

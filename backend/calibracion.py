@@ -97,6 +97,23 @@ Porque un efecto que cambia de signo con el año no es un umbral: es el mercado 
 año. Poner aquí «comprar solo lo hundido» sería el error que este fichero existe para
 impedir, con el agravante de tener un experimento para justificarlo.
 
+CORRECCIÓN del 15-09-2026: casi todo lo de arriba era RUIDO
+
+La auditoría del método midió el suelo: con esta muestra el azar alcanza 8,26 pp de
+separación de medianas una vez de cada veinte. Puestas al lado:
+
+    medias                   16,08 pp   por encima del ruido
+    medianas                  5,37 pp   DENTRO
+    escalón 2023              4,39 pp   DENTRO
+    escalón 2024              5,35 pp   DENTRO
+    escalón 2025              1,69 pp   DENTRO
+    escalón 2026              7,68 pp   DENTRO
+
+Seis de siete caben enteras dentro del azar. Así que «las medianas también se separan» y
+«el escalón cambia de signo con el año» no eran hallazgos: eran ruido leído como si
+dijera algo. El rechazo se sostiene por la SEPARACIÓN DE MEDIAS, que sí supera el suelo y
+sí va en la dirección contraria a la fijada.
+
 OBSERVACIÓN NO PRE-REGISTRADA, que por eso NO cuenta como evidencia
 
 La amplitud intercuartílica sí es monótona con la distancia: 25,84 → 27,50 → 30,27 →
@@ -123,7 +140,19 @@ IMPORTANTE: mientras valga None, `tendencia.py` NO la aplica, y esa ausencia es 
 permite que ese módulo esté en producción sin backtest. Ponerle un número aquí obliga a
 medirlo antes, no después.
 
-MEDIDO el 15-09-2026. HIPÓTESIS RECHAZADA. SIGUE VALIENDO None.
+MEDIDO el 15-09-2026. NO CONCLUYENTE — corregido el 15-09-2026. SIGUE VALIENDO None.
+
+CORRECCIÓN: se registró primero como RECHAZADA. No lo es. La auditoría del método midió
+ese mismo día que el suelo de ruido de nuestra muestra está en 8,26 pp, y la separación
+de medianas de este experimento es de 7,91: cabe entera dentro del azar.
+
+Con el listón inventado de 1 pp parecía un rechazo, porque las medianas no seguían el
+orden fijado. Pero si la separación entera es ruido, ese «orden» no significa nada —una
+ordenación al azar se ve exactamente así—. Lo honesto es NO CONCLUYENTE: no sabemos si
+la hipótesis es falsa; sabemos que con esta muestra no se puede saber.
+
+Lo que NO cambia: `tendencia.py` sigue sin aplicar la condición, y sigue siendo lo
+correcto. Añadir un filtro cuyo efecto no somos capaces de medir es peor que no añadirlo.
 
 1.787 observaciones semanales sobre el universo vigilado, cinco años, horizonte de trece
 semanas, media de fondo de 40 barras semanales (≈200 sesiones). La dirección se fijó
