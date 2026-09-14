@@ -399,6 +399,13 @@ export default function LaboratorioView() {
               <FlaskIcon size={14} />
               {corriendo ? "Midiendo…" : "Medir: ¿aguantan las zonas fuertes?"}
             </button>
+            <button onClick={() => ejecutar("aguanteLimpio")} disabled={corriendo}
+                    className="iv-etiqueta flex items-center gap-2 border border-marca
+                               px-3 py-2 hover:text-tinta disabled:opacity-50"
+                    data-testid="lab-ejecutar-aguante-limpio">
+              <FlaskIcon size={14} />
+              {corriendo ? "Midiendo…" : "Réplica fuera de muestra: aguante limpio"}
+            </button>
             <button onClick={() => ejecutar("azar")} disabled={corriendo}
                     className="iv-etiqueta flex items-center gap-2 border border-marca
                                px-3 py-2 hover:text-tinta disabled:opacity-50"

@@ -81,6 +81,10 @@ export const api = {
     aguante: () =>
       client.post(`/laboratorio/experimento/aguante-zonas`, {}, { timeout: 600000 })
         .then((r) => r.data),
+    // Réplica fuera de muestra, sobre la métrica exigente.
+    aguanteLimpio: () =>
+      client.post(`/laboratorio/experimento/aguante-limpio`, {}, { timeout: 600000 })
+        .then((r) => r.data),
     // La auditoría del propio método: ¿cuánta separación produce el azar?
     azar: () =>
       client.post(`/laboratorio/experimento/azar`, {}, { timeout: 300000 })

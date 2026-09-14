@@ -1014,3 +1014,71 @@ def test_se_dice_que_la_metrica_LIMPIA_no_estaba_pre_registrada():
     fuente = inspect.getsource(levels_engine)
     assert "no estaba" in fuente and "pre-registrada" in fuente
     assert "Necesita su propio experimento" in fuente
+
+
+# ── La réplica fuera de muestra ─────────────────────────────────────────────
+#
+# Cambiar de métrica al ver que la primera no separaba es cómo se fabrica un hallazgo
+# falso. Por eso la segunda se mide sobre OTROS símbolos: dato nuevo para una pregunta
+# ya formulada, no el mismo dato mirado dos veces.
+
+def _toques_limpios(probs=(0.30, 0.45, 0.33), por_fecha=6, fechas=60, semilla=5):
+    import random
+    r = random.Random(semilla)
+    return [{"anchor": f"2024-{(d % 12) + 1:02d}-01", "bucket": c,
+             "held": True, "clean": r.random() < p}
+            for d in range(fechas) for c, p in zip(lab.CUBOS_FUERZA, probs)
+            for _ in range(por_fecha)]
+
+
+def test_la_metrica_LIMPIA_se_mide_de_verdad_y_no_la_de_aguantar():
+    """Con `held` a True en todos, la de aguantar no separaría nada. Si el experimento
+    mirara esa, saldría plano pase lo que pase."""
+    regs = _toques_limpios()
+    d = lab.aguante_por_cubo(regs, metrica="clean")
+    tasas = {c["cubo"]: c["aguante_pct"] for c in d["cubos"]}
+    assert tasas["media"] > tasas["fuerte"], "la muestra tiene que reproducir el patrón"
+    assert lab.aguante_por_cubo(regs, metrica="held")["cubos"][0]["aguante_pct"] == 100.0
+
+
+def test_la_columna_de_limpio_NO_se_duplica_cuando_ya_es_la_metrica():
+    """Repetir el mismo número en dos columnas los haría parecer dos medidas."""
+    d = lab.aguante_por_cubo(_toques_limpios(), metrica="clean")
+    assert all(c["aguante_limpio_pct"] is None for c in d["cubos"])
+    d2 = lab.aguante_por_cubo(_toques_limpios(), metrica="held")
+    assert all(c["aguante_limpio_pct"] is not None for c in d2["cubos"])
+
+
+def test_la_replica_prueba_la_direccion_DEL_SCORE_y_no_la_que_se_vio():
+    """Fijar como hipótesis lo que ya se ha visto es hacerse trampas al solitario."""
+    f = lab.ficha_aguante_limpio(_toques_limpios(), universo=["X"])
+    d = f["metodo"]["direccion_esperada"]
+    assert "débil < media < fuerte" in d
+    assert "NO «media es la mejor»" in d and "trampas" in d
+
+
+def test_la_replica_declara_que_es_la_SEGUNDA_metrica_probada():
+    """Dos intentos dan el doble de oportunidades a que algo salga por azar, y el
+    resultado hay que leerlo con esa cifra delante."""
+    c = lab.ficha_aguante_limpio(_toques_limpios(), universo=["X"])["controles"]
+    assert "hipotesis_probadas" in c and "SEGUNDA" in c["hipotesis_probadas"]
+    assert "fuera_de_muestra" in c and "dato nuevo" in c["fuera_de_muestra"]
+
+
+def test_la_replica_es_OTRO_intento_de_la_misma_hipotesis():
+    f = lab.ficha_aguante_limpio(_toques_limpios(), universo=["X"])
+    assert f["hipotesis_id"] == "FUERZA_DE_LAS_ZONAS"
+    assert f["tipo"] == "replica_fuera_de_muestra" and f["deriva_de"]
+
+
+def test_si_la_replica_reproduce_el_patron_se_RECHAZA():
+    """«Media es la mejor» no es la dirección del score, así que sale rechazada — y eso
+    SÍ sería una réplica del patrón, que es lo que merecería mirarse."""
+    f = lab.ficha_aguante_limpio(_toques_limpios(), universo=["X"])
+    assert f["estado"] == lab.RECHAZADA
+    assert f["resultado"]["ruido"]["observado_pp"] > f["resultado"]["ruido"]["azar_p95_pp"]
+
+
+def test_si_la_replica_sale_PLANA_no_se_concluye():
+    f = lab.ficha_aguante_limpio(_toques_limpios(probs=(0.35, 0.35, 0.35)), universo=["X"])
+    assert f["estado"] == lab.NO_CONCLUYENTE

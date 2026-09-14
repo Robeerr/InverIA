@@ -4658,6 +4658,43 @@ async def laboratorio_experimento_aguante(_user: str = Depends(auth.get_current_
     return {**doc, "guardado": guardado}
 
 
+@api_router.post("/laboratorio/experimento/aguante-limpio")
+async def laboratorio_experimento_aguante_limpio(
+        _user: str = Depends(auth.get_current_user)):
+    """Réplica FUERA DE MUESTRA sobre la métrica exigente.
+
+    El primer experimento pre-registró la tasa de «aguantó», que satura al 88% y no
+    separa nada. Al ver el resultado apareció que el aguante LIMPIO sí se repartía — pero
+    eso se vio después de tener los datos delante, y cambiar de métrica al ver que la
+    primera no separaba es cómo se fabrica un hallazgo falso.
+
+    Por eso este corre sobre OTROS símbolos: los del universo de oportunidades que NO
+    están en watchlist ni en cartera. Dato nuevo para una pregunta ya formulada.
+    """
+    mios = await _simbolos_que_te_importan()
+    universo = [s for s in opportunities.UNIVERSE if s not in mios][:TOPE_SIMBOLOS_AGUANTE]
+    if len(universo) < 10:
+        return {"estado": laboratorio.SIN_DATOS,
+                "conclusion": "Casi todo el universo de oportunidades está ya en tu "
+                              "watchlist o cartera: no queda muestra independiente."}
+
+    def _load(sym):
+        return market_data.get_full_indicator_history(sym)
+
+    crudo = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: backtest.backtest_universe(
+            _load, universo, forward_window=VENTANA_AGUANTE, devolver_registros=True))
+    mem.trim()
+
+    doc = laboratorio.ficha_aguante_limpio(
+        crudo.get("registros") or [],
+        universo=list((crudo.get("per_symbol") or {}).keys()) or universo,
+        ventana=VENTANA_AGUANTE)
+    doc["por_fuente"] = crudo.get("by_source")
+    guardado = await laboratorio.guardar_experimento(db, doc)
+    return {**doc, "guardado": guardado}
+
+
 @api_router.post("/laboratorio/experimento/azar")
 async def laboratorio_experimento_azar(_user: str = Depends(auth.get_current_user)):
     """Audita el INSTRUMENTO, no una hipótesis: ¿cuánta separación produce el azar?

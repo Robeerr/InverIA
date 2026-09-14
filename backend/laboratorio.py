@@ -1207,7 +1207,7 @@ def ficha_azar(obs: list, universo: list, desde: str = None, hasta: str = None) 
 CUBOS_FUERZA = ("debil", "media", "fuerte")
 
 
-def aguante_por_cubo(registros: list) -> dict:
+def aguante_por_cubo(registros: list, metrica: str = "held") -> dict:
     """Con qué frecuencia aguantó cada cubo de fuerza. Pura.
 
     Solo cuentan los toques RESUELTOS: un nivel que no llegó a tocarse no aguantó ni se
@@ -1216,8 +1216,8 @@ def aguante_por_cubo(registros: list) -> dict:
     filas = []
     for cubo in CUBOS_FUERZA:
         rs = [r for r in (registros or [])
-              if r.get("bucket") == cubo and r.get("held") is not None]
-        aguantan = sum(1 for r in rs if r["held"])
+              if r.get("bucket") == cubo and r.get(metrica) is not None]
+        aguantan = sum(1 for r in rs if r[metrica])
         limpios = [r for r in rs if r.get("clean") is not None]
         años = {}
         for r in rs:
@@ -1231,21 +1231,25 @@ def aguante_por_cubo(registros: list) -> dict:
             # «Limpio» es más exigente: aguantó Y no llegó a romperse en ningún momento
             # de la ventana. Un rebote que llega después de haber perdido el nivel no es
             # lo que promete una zona de compra.
+            # Solo tiene sentido como columna APARTE cuando la métrica principal es
+            # «aguantó». Si ya se está midiendo el limpio, repetirlo pondría el mismo
+            # número dos veces en la tabla y parecerían dos medidas distintas.
             "aguante_limpio_pct": (
                 round(sum(1 for r in limpios if r["clean"]) / len(limpios) * 100, 1)
-                if limpios else None),
+                if limpios and metrica == "held" else None),
             "por_año": dict(sorted(años.items())),
         })
     return {"cubos": filas, "n": sum(f["n"] for f in filas)}
 
 
-def _rango_de_aguante(registros: list) -> Optional[float]:
-    filas = aguante_por_cubo(registros)["cubos"]
+def _rango_de_aguante(registros: list, metrica: str = "held") -> Optional[float]:
+    filas = aguante_por_cubo(registros, metrica=metrica)["cubos"]
     tasas = [f["aguante_pct"] for f in filas if f["aguante_pct"] is not None]
     return round(max(tasas) - min(tasas), 2) if len(tasas) > 1 else None
 
 
-def azar_del_aguante(registros: list, vueltas: int = None) -> dict:
+def azar_del_aguante(registros: list, vueltas: int = None,
+                     metrica: str = "held") -> dict:
     """Qué diferencia de aguante produce el azar con ESTOS toques. Pura y determinista.
 
     Se barajan los cubos de fuerza DENTRO de cada fecha, por el mismo motivo que en el
@@ -1255,7 +1259,7 @@ def azar_del_aguante(registros: list, vueltas: int = None) -> dict:
     import random
     vueltas = VUELTAS_AZAR if vueltas is None else vueltas
     generador = random.Random(SEMILLA)
-    observado = _rango_de_aguante(registros)
+    observado = _rango_de_aguante(registros, metrica=metrica)
 
     por_fecha = {}
     for r in registros or []:
@@ -1268,7 +1272,7 @@ def azar_del_aguante(registros: list, vueltas: int = None) -> dict:
             cubos = [r["bucket"] for r in items]
             generador.shuffle(cubos)
             barajados += [{**r, "bucket": c} for r, c in zip(items, cubos)]
-        s = _rango_de_aguante(barajados)
+        s = _rango_de_aguante(barajados, metrica=metrica)
         if s is not None:
             simulados.append(s)
     simulados.sort()
@@ -1382,6 +1386,87 @@ def ficha_aguante(registros: list, universo: list, ventana: int = None) -> dict:
                                     "movido para este experimento.",
         },
         "resultado": {**d, **v, "ruido": ruido},
+        "estado": v["estado"],
+        "ejecutado_en": _ahora(),
+        "lab_v": 1,
+    }
+
+
+def ficha_aguante_limpio(registros: list, universo: list, ventana: int = None,
+                         fuera_de_muestra: bool = True) -> dict:
+    """El aguante LIMPIO, y fuera de la muestra donde se vio el patrón. Pura.
+
+    POR QUÉ HACE FALTA UN SEGUNDO EXPERIMENTO Y POR QUÉ NO SOBRE LOS MISMOS DATOS
+
+    El primero pre-registró la tasa de «aguantó» y salió plana: 88,0 / 87,2 / 87,8, ocho
+    décimas entre el mejor y el peor. El motivo no fue el score sino la métrica: el
+    criterio SATURA —casi todo lo cumple— y algo que aprueba al 88% no puede separar
+    nada. Eso fue un fallo de mi pre-registro.
+
+    Al mirar el resultado apareció que la tasa de aguante LIMPIO sí se repartía —36,2 /
+    47,3 / 34,5— y encima no era monótona: la mejor era «media». Pero eso se vio DESPUÉS
+    de tener los datos delante, y cambiar de métrica al ver que la primera no separaba es
+    exactamente cómo se fabrica un hallazgo falso.
+
+    Por eso este experimento corre sobre OTROS SÍMBOLOS: los del universo de
+    oportunidades que no están en tu watchlist ni en tu cartera. No es el mismo dato
+    mirado dos veces, son datos nuevos para una pregunta que ya estaba formulada.
+
+    LA DIRECCIÓN SIGUE SIENDO LA DEL SCORE, NO LA QUE VI
+
+    Se prueba «débil < media < fuerte», que es lo que el número afirma, y no «media es la
+    mejor», que es lo que vi. Si volviera a salir que la mejor es «media», ESO sí sería
+    una réplica y merecería mirarse. Fijar como hipótesis lo que ya se ha visto es
+    hacerse trampas al solitario.
+    """
+    d = aguante_por_cubo(registros, metrica="clean")
+    ruido = azar_del_aguante(registros, metrica="clean")
+    v = veredicto_aguante(d, ruido)
+    fechas = [str(r.get("anchor") or "")[:10] for r in (registros or []) if r.get("anchor")]
+    return {
+        "hipotesis_id": "FUERZA_DE_LAS_ZONAS",
+        "tipo": "replica_fuera_de_muestra",
+        "deriva_de": "El primero pre-registró la tasa de «aguantó», que satura al 88% y no "
+                     "separa. El aguante LIMPIO sí se repartía, pero eso se vio después.",
+        "titulo": "¿Aguantan LIMPIAMENTE más las zonas fuertes, en símbolos que no vigilas?",
+        "metodo": {
+            "que_pregunta": "De los soportes tocados, con qué frecuencia el precio rebotó "
+                            "SIN llegar a perder el nivel en ningún momento de la ventana.",
+            "universo": sorted(universo or []),
+            "simbolos": len(universo or []),
+            "fuera_de_muestra": fuera_de_muestra,
+            "desde": min(fechas) if fechas else None,
+            "hasta": max(fechas) if fechas else None,
+            "motor": "backtest.backtest_universe · walk-forward punto-en-el-tiempo",
+            "ventana_dias": ventana,
+            "cubos": list(CUBOS_FUERZA),
+            "muestra_minima_por_cubo": MUESTRA_MINIMA,
+            "direccion_esperada": "débil < media < fuerte, que es lo que el score afirma "
+                                  "— NO «media es la mejor», que es lo que se vio en la "
+                                  "muestra anterior. Fijar como hipótesis lo ya visto es "
+                                  "hacerse trampas.",
+        },
+        "controles": {
+            "leakage": "Cada zona se calcula con las velas ANTERIORES al ancla y se juzga "
+                       "con las posteriores, igual que el primero.",
+            "fuera_de_muestra": "Símbolos del universo de oportunidades que NO están en "
+                                "watchlist ni en cartera. No es el mismo dato mirado dos "
+                                "veces: es dato nuevo para una pregunta ya formulada.",
+            "hipotesis_probadas": "Esta es la SEGUNDA métrica que se prueba sobre la "
+                                  "misma idea. Aunque los datos sean otros, la cuenta "
+                                  "sube: dos intentos dan el doble de oportunidades a "
+                                  "que algo salga por azar, y el resultado hay que "
+                                  "leerlo con esa cifra delante.",
+            "metrica_mas_exigente": "«Limpio» pide rebotar SIN haber perdido el nivel en "
+                                    "ningún momento. Por eso reparte donde «aguantó» "
+                                    "saturaba: aprueba a un tercio, no al 88%.",
+            "supervivencia": "El universo de oportunidades es el de hoy. Pesa poco: se "
+                             "mide qué pasó al tocar un soporte, no qué acción sobrevivió.",
+            "costes": "Ninguno. No es una estrategia.",
+            "parametros_ajustados": "Ninguno. Cubos y tolerancias son los de "
+                                    "`backtest.py` en producción.",
+        },
+        "resultado": {**d, **v, "ruido": ruido, "metrica": "clean"},
         "estado": v["estado"],
         "ejecutado_en": _ahora(),
         "lab_v": 1,

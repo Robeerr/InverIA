@@ -34,7 +34,10 @@ import tesis_registro as tr
 
 RUTA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "server.py")
 with open(RUTA, encoding="utf-8") as f:
-    ARBOL = ast.parse(f.read())
+    # Se guarda el TEXTO además del árbol: `ast.get_source_segment` lo necesita para
+    # devolver el cuerpo de una función, y varios tests comprueban qué hay dentro.
+    FUENTE = f.read()
+ARBOL = ast.parse(FUENTE)
 
 
 def _funcion(nombre):
@@ -307,3 +310,28 @@ def test_los_TRES_experimentos_comparten_el_mismo_cuerpo():
         assert "_experimento_distancia" in llamadas, nombre
         # Y ninguno baja datos por su cuenta.
         assert "get_stock_data" not in _llamadas(fn, "market_data")
+
+
+def test_la_replica_corre_FUERA_de_tu_universo():
+    """Si corriera sobre los mismos símbolos, sería el mismo dato mirado dos veces con
+    otra métrica — justo lo que el experimento existe para no hacer."""
+    fn = _funcion("laboratorio_experimento_aguante_limpio")
+    cuerpo = ast.get_source_segment(FUENTE, fn)
+    assert "opportunities.UNIVERSE" in cuerpo
+    assert "not in mios" in cuerpo, "hay que EXCLUIR watchlist y cartera"
+    assert "_simbolos_que_te_importan" in cuerpo
+
+
+def test_la_replica_se_niega_si_no_queda_muestra_independiente():
+    cuerpo = ast.get_source_segment(FUENTE, _funcion("laboratorio_experimento_aguante_limpio"))
+    assert "len(universo) < 10" in cuerpo
+    assert "SIN_DATOS" in cuerpo
+
+
+def test_los_DOS_experimentos_de_aguante_usan_el_mismo_motor():
+    """Medir con motores distintos haría los resultados incomparables."""
+    for nombre in ("laboratorio_experimento_aguante",
+                   "laboratorio_experimento_aguante_limpio"):
+        cuerpo = ast.get_source_segment(FUENTE, _funcion(nombre))
+        assert "backtest.backtest_universe" in cuerpo
+        assert "VENTANA_AGUANTE" in cuerpo
