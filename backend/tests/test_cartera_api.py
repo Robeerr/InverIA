@@ -2237,3 +2237,27 @@ def test_incluir_csv_sigue_respetando_una_comision_ya_puesta():
                                                           incluir_csv=True))
     assert r["ventas"] == 0
     assert db.ventas.docs[0]["comision"] == 10.04
+
+
+def test_el_previo_dice_CUANTOS_vienen_del_csv_y_cuantos_a_mano():
+    """Con un único «8 apuntes, 16 €» delante, quien venía a arreglar 2 ventas no puede
+    saber qué está aprobando. Y los dos grupos ni siquiera merecen la misma confianza:
+    en el tecleado el cero es un hueco del formulario; en el del fichero puede ser una
+    comisión real de cero."""
+    db = _db_con_apuntes_a_cero()
+    db.ventas.docs[0]["huella"] = "h1"          # la venta viene del CSV
+    r = _correr(cartera_api.estimar_comisiones_pendientes(db, incluir_csv=True))
+    assert r["del_csv"]["n"] == 1 and r["del_csv"]["ventas"] == 1
+    assert r["a_mano"]["n"] == 1 and r["a_mano"]["compras"] == 1
+    # Los dos grupos suman el total: si no, el desglose escondería apuntes.
+    assert round(r["del_csv"]["eur"] + r["a_mano"]["eur"], 2) == r["total_eur"]
+
+
+def test_sin_incluir_csv_el_grupo_del_fichero_sale_vacio():
+    """No es que no haya: es que no se van a tocar. Enseñarlos ahí daría a entender lo
+    contrario."""
+    db = _db_con_apuntes_a_cero()
+    db.ventas.docs[0]["huella"] = "h1"
+    r = _correr(cartera_api.estimar_comisiones_pendientes(db))
+    assert r["del_csv"]["n"] == 0
+    assert r["a_mano"]["n"] == 1

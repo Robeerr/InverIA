@@ -28,10 +28,20 @@ test("el botón del CSV solo sale si QUEDA alguna del CSV", () => {
 });
 
 test("la pregunta avisa de que ahí el cero SÍ vino con el fichero", () => {
-  // Es la diferencia entera entre los dos botones: en el manual el cero es un hueco del
-  // formulario; en el del CSV puede ser una venta que de verdad fue gratis.
-  expect(VISTA).toContain("INCLUYE LAS QUE VINIERON DEL CSV");
-  expect(VISTA).toContain("le pone un coste que no tuvo");
+  // Es la diferencia entera entre los dos grupos: en el tecleado el cero es un hueco del
+  // formulario; en el del CSV puede ser una operación que de verdad fue gratis.
+  expect(VISTA).toContain("EN LAS DEL CSV EL CERO LLEGÓ CON EL FICHERO");
+  expect(VISTA).toContain("esto le pone un coste");
+});
+
+test("la pregunta desglosa por ORIGEN, no solo el total", () => {
+  // Salió «8 apuntes, 16 €» a quien venía a arreglar 2 ventas de 4,42 €. Sin saber
+  // cuántos vienen del fichero y cuántos están tecleados, eso es aprobar a ciegas ocho
+  // escrituras sobre apuntes propios.
+  expect(VISTA).toContain("previo.a_mano");
+  expect(VISTA).toContain("previo.del_csv");
+  expect(VISTA).toContain("tecleados a mano");
+  expect(VISTA).toContain("que vinieron del CSV");
 });
 
 test("reimportar sigue siendo lo primero que se ofrece", () => {

@@ -494,9 +494,14 @@ async def estimar_comisiones_pendientes(db, aplicar: bool = False,
                 continue
             en_eur = est["total"] / float(tasa) if tasa else None
             total_eur += en_eur or 0.0
+            # DE DÓNDE VIENE CADA UNO, no solo cuántos hay. Los dos grupos no merecen la
+            # misma confianza: en el tecleado el cero es un hueco del formulario, en el
+            # del fichero PUEDE ser una comisión real de cero. Juntarlos en un único «8
+            # apuntes» obliga a aprobar a ciegas, y es exactamente lo que pasó.
             cambios[clave].append({"id": d.get("id"), "symbol": d.get("symbol"),
                                    "fecha": str(d.get("fecha") or "")[:10],
                                    "acciones": d.get("acciones"),
+                                   "del_csv": bool(d.get("huella")),
                                    "comision": round(est["total"], 4),
                                    "eur": round(en_eur, 2) if en_eur is not None else None})
             if aplicar:
@@ -505,9 +510,21 @@ async def estimar_comisiones_pendientes(db, aplicar: bool = False,
                     {"$set": {"comision": round(est["total"], 4),
                               "comision_estimada": True,
                               "comision_detalle": est["detalle"]}})
+    todos = cambios["compras"] + cambios["ventas"]
+    del_csv = [c for c in todos if c["del_csv"]]
+    a_mano = [c for c in todos if not c["del_csv"]]
+
+    def _resumen(grupo):
+        return {"n": len(grupo),
+                "compras": sum(1 for c in grupo if c in cambios["compras"]),
+                "ventas": sum(1 for c in grupo if c in cambios["ventas"]),
+                "eur": round(sum(c["eur"] or 0 for c in grupo), 2)}
+
     return {"aplicado": aplicar, "incluir_csv": incluir_csv,
             "compras": len(cambios["compras"]), "ventas": len(cambios["ventas"]),
             "total_eur": round(total_eur, 2),
+            # Partido por origen: es lo que permite decidir sin aprobar a ciegas.
+            "del_csv": _resumen(del_csv), "a_mano": _resumen(a_mano),
             "detalle": cambios}
 
 

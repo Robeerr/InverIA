@@ -1648,16 +1648,25 @@ export default function VentasView() {
         toast.success("No hay nada que estimar: todo tiene ya su comisión.");
         return null;
       }
+      // EL DESGLOSE POR ORIGEN VA EN LA PREGUNTA, no solo el total. Con «8 apuntes, 16 €»
+      // y nada más, alguien que venía a arreglar 2 ventas no puede saber qué está
+      // aprobando — y los dos grupos ni siquiera merecen la misma confianza.
+      const linea = (g, que) =>
+        g.n ? `· ${g.n} ${que} (${g.compras} compra(s) y ${g.ventas} venta(s)), `
+              + `unos ${g.eur} €\n`
+            : "";
       const ok = window.confirm(
         `Se va a poner la comisión estimada (2 € + 0,25% de AutoFX) a ${n} apunte(s) `
-        + `que están a cero: ${previo.compras} compra(s) y `
-        + `${previo.ventas} venta(s).\n\nSuman unos ${previo.total_eur} €. Quedarán `
-        + "marcados como ESTIMADOS.\n\n"
-        + (incluirCsv
-            ? "INCLUYE LAS QUE VINIERON DEL CSV. Ahí el cero llegó con el fichero, así "
-              + "que solo tiene sentido si aquel CSV se importó sin reconocer las "
-              + "columnas de comisión. Si alguna de esas ventas de verdad fue gratis, "
-              + "esto le pone un coste que no tuvo."
+        + `que están a cero, por unos ${previo.total_eur} € en total:\n\n`
+        + linea(previo.a_mano, "tecleados a mano")
+        + linea(previo.del_csv, "que vinieron del CSV")
+        + "\nQuedarán marcados como ESTIMADOS.\n\n"
+        + (previo.del_csv?.n
+            ? "EN LAS DEL CSV EL CERO LLEGÓ CON EL FICHERO, así que solo tiene sentido "
+              + "si aquel CSV se importó sin reconocer las columnas de comisión. Si "
+              + "alguna de esas operaciones de verdad fue gratis, esto le pone un coste "
+              + "que no tuvo. Las tecleadas a mano son otra cosa: ahí el cero es un "
+              + "hueco que dejó el formulario, no algo que nadie afirmara."
             : "Lo que vino del CSV no se toca.")
         + "\n\n¿Continuar?");
       return ok ? api.cartera.estimarComisiones(true, incluirCsv) : null;
