@@ -137,15 +137,33 @@ def _walk_forward_records(
                 continue
 
             held = None
+            resuelto_en = None
             for t in range(touch_at, len(fwd_low)):
                 if fwd_close[t] <= L - break_amt:
-                    held = False
+                    held, resuelto_en = False, t
                     break
                 if fwd_high[t] >= L + bounce_amt:
-                    held = True
+                    held, resuelto_en = True, t
                     break
             if held is None:
                 continue
+
+            # EXCURSIÓN ADVERSA: cuánto llegó a bajar el precio por debajo del nivel,
+            # en ATR, mientras la operación estaba VIVA — desde el toque hasta que el
+            # nivel se resuelve.
+            #
+            # Con este único número se puede evaluar cualquier múltiplo de stop sin
+            # volver a recorrer las velas: un stop en L − m·ATR salta exactamente cuando
+            # esta cifra llega a `m`. Es lo que permite medir 1,0 / 1,6 / 2,4 —los que
+            # `_deterministic_levels` usa en producción sin haberse comprobado— sobre los
+            # mismos toques y sin otro backtest.
+            #
+            # Hasta la RESOLUCIÓN y no hasta el final de la ventana: si el nivel ya
+            # rebotó, una caída posterior no habría saltado ningún stop de esa operación,
+            # y contarla haría parecer peligrosos stops que nunca corrieron riesgo.
+            tramo_low = fwd_low[touch_at:resuelto_en + 1]
+            mae = (L - float(tramo_low.min())) if len(tramo_low) else 0.0
+            mae_atr = round(max(0.0, mae) / atr_val, 3) if atr_val else 0.0
 
             # Magnitud y durabilidad del rebote (aquí es donde la confluencia
             # debería pagar, aunque la tasa de rebote sea parecida):
@@ -168,6 +186,7 @@ def _walk_forward_records(
                 "tactical": bool(z.get("tactical", False)),
                 "held": held,
                 "bounce_atr": bounce_real,
+                "mae_atr": mae_atr,
                 "clean": (not broke_ever),
                 "sources": list(z.get("sources") or []),
             })

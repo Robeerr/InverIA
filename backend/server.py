@@ -4658,6 +4658,40 @@ async def laboratorio_experimento_aguante(_user: str = Depends(auth.get_current_
     return {**doc, "guardado": guardado}
 
 
+@api_router.post("/laboratorio/experimento/stops")
+async def laboratorio_experimento_stops(_user: str = Depends(auth.get_current_user)):
+    """Cuarta hipótesis: ¿los tres múltiplos de stop distinguen un corte bueno de uno en
+    falso?
+
+    `_deterministic_levels` usa 1,0 / 1,6 / 2,4 × ATR en producción sin haberse medido
+    nunca. Es el número donde equivocarse cuesta dinero de verdad: demasiado ajustado te
+    saca de operaciones que iban bien.
+
+    Reutiliza los MISMOS toques que los experimentos del aguante — un stop en L−m·ATR
+    salta exactamente cuando la excursión adversa llega a `m`, así que los tres múltiplos
+    se evalúan sin otro backtest.
+    """
+    universo = sorted(await _simbolos_que_te_importan())[:TOPE_SIMBOLOS_AGUANTE]
+    if not universo:
+        return {"estado": laboratorio.SIN_DATOS,
+                "conclusion": "No hay ningún símbolo en watchlist ni en cartera."}
+
+    def _load(sym):
+        return market_data.get_full_indicator_history(sym)
+
+    crudo = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: backtest.backtest_universe(
+            _load, universo, forward_window=VENTANA_AGUANTE, devolver_registros=True))
+    mem.trim()
+
+    doc = laboratorio.ficha_stops(
+        crudo.get("registros") or [],
+        universo=list((crudo.get("per_symbol") or {}).keys()) or universo,
+        ventana=VENTANA_AGUANTE)
+    guardado = await laboratorio.guardar_experimento(db, doc)
+    return {**doc, "guardado": guardado}
+
+
 @api_router.post("/laboratorio/experimento/aguante-limpio")
 async def laboratorio_experimento_aguante_limpio(
         _user: str = Depends(auth.get_current_user)):

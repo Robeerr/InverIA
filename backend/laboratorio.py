@@ -1473,6 +1473,230 @@ def ficha_aguante_limpio(registros: list, universo: list, ventana: int = None,
     }
 
 
+# ── Cuarta hipótesis: ¿dónde poner el stop? ─────────────────────────────────
+#
+# `_deterministic_levels` coloca los stops en 1,0 / 1,6 / 2,4 × ATR bajo la estructura.
+# Están en producción y nunca se han medido. Es el número donde equivocarse cuesta dinero
+# de verdad: demasiado ajustado te saca de operaciones que iban bien.
+#
+# POR QUÉ ESTA PREGUNTA TIENE POTENCIA
+#
+# Resultado binario —el stop saltó o no— y el mismo toque sirve para evaluar los TRES
+# múltiplos, porque un stop en L−m·ATR salta exactamente cuando la excursión adversa
+# llega a `m`. Miles de toques, sin backtest nuevo.
+#
+# QUÉ NO SE PUEDE PREGUNTAR AQUÍ, Y ES IMPORTANTE
+#
+# «Cuántas veces salta cada múltiplo» está determinado por aritmética: si el precio no
+# bajó 1,0 ATR, tampoco bajó 2,4. Un stop más ancho salta menos SIEMPRE, y comprobarlo no
+# sería evidencia de nada.
+#
+# Lo que no es aritmético es la calidad de esos saltos: de las veces que salta, ¿cuántas
+# eran ruido? Un stop ancho salta menos, pero cuando salta, ¿acierta más? Esa es la
+# pregunta, y la respuesta útil no es un orden sino un NIVEL — «el de 1,0 salta en falso
+# el X% de las veces» es lo que `calibracion` pide.
+#
+# EL CONTRASTE NO ES UNA PERMUTACIÓN, Y POR QUÉ
+#
+# En los experimentos anteriores cada observación tenía UNA etiqueta y barajarlas medía
+# el azar. Aquí cada toque se evalúa con los tres múltiplos a la vez: es una comparación
+# PAREADA y no hay etiqueta que barajar. Se usa un remuestreo por bloques de fecha sobre
+# la diferencia entre el más ajustado y el más ancho; si la banda incluye el cero, los
+# múltiplos no se distinguen.
+
+#: Los múltiplos que `_deterministic_levels` usa HOY en producción. No se eligen aquí:
+#: se miden los que ya están puestos.
+MULTIPLOS_STOP = (1.0, 1.6, 2.4)
+
+#: Remuestreos del bootstrap. Mismo orden que las vueltas del azar y por lo mismo: sitúa
+#: la banda sin que la medición tarde más que el experimento que audita.
+VUELTAS_BOOTSTRAP = 200
+
+
+def _falsos_de(registros: list, m: float) -> dict:
+    """Qué hace un stop a `m`×ATR sobre estos toques. Puro.
+
+    Solo cuentan los toques donde el stop LLEGÓ a saltar: de los que no saltan no se
+    puede decir si habrían sido un acierto o un error.
+    """
+    saltan = [r for r in (registros or [])
+              if r.get("mae_atr") is not None and r.get("held") is not None
+              and r["mae_atr"] >= m]
+    # FALSO = saltó y el nivel acabó aguantando. Te sacó de una operación que iba bien.
+    falsos = [r for r in saltan if r["held"]]
+    buenos = [r for r in saltan if not r["held"]]
+    ahorros = sorted(round(r["mae_atr"] - m, 3) for r in buenos)
+    evaluables = [r for r in (registros or [])
+                  if r.get("mae_atr") is not None and r.get("held") is not None]
+    return {
+        "multiplo": m,
+        "n_evaluables": len(evaluables),
+        "n_saltan": len(saltan),
+        "salta_pct": round(len(saltan) / len(evaluables) * 100, 1) if evaluables else None,
+        "falsos_pct": round(len(falsos) / len(saltan) * 100, 1) if saltan else None,
+        # Cuánto MÁS cayó el precio por debajo del stop cuando el corte fue acertado. Es
+        # lo que el stop te ahorró, medido en ATR. Mediana: unas pocas caídas enormes no
+        # pueden decidir dónde se pone un stop.
+        "ahorro_atr_mediana": _percentil(ahorros, 0.5),
+    }
+
+
+def stops(registros: list) -> dict:
+    """Los tres múltiplos, evaluados sobre los mismos toques. Puro."""
+    return {"multiplos": [_falsos_de(registros, m) for m in MULTIPLOS_STOP],
+            "n": len([r for r in (registros or [])
+                      if r.get("mae_atr") is not None and r.get("held") is not None])}
+
+
+def banda_de_la_diferencia(registros: list, vueltas: int = None) -> dict:
+    """Cuánto se distingue el más ajustado del más ancho, con su incertidumbre. Puro.
+
+    Remuestreo por BLOQUES DE FECHA, no por toques sueltos: los toques del mismo día
+    comparten mercado, y tratarlos como independientes estrecharía la banda y haría
+    parecer seguro lo que no lo es. Es el mismo motivo por el que las permutaciones de
+    los otros experimentos se hacen dentro de cada fecha.
+    """
+    import random
+    vueltas = VUELTAS_BOOTSTRAP if vueltas is None else vueltas
+    generador = random.Random(SEMILLA)
+
+    por_fecha = {}
+    for r in registros or []:
+        if r.get("mae_atr") is not None and r.get("held") is not None:
+            por_fecha.setdefault(r.get("anchor"), []).append(r)
+    fechas = list(por_fecha)
+    if len(fechas) < 3:
+        return {"vueltas": 0}
+
+    def _dif(regs):
+        a = _falsos_de(regs, MULTIPLOS_STOP[0])["falsos_pct"]
+        b = _falsos_de(regs, MULTIPLOS_STOP[-1])["falsos_pct"]
+        return None if a is None or b is None else round(a - b, 2)
+
+    observada = _dif([r for rs in por_fecha.values() for r in rs])
+    muestras = []
+    for _ in range(vueltas):
+        elegidas = [generador.choice(fechas) for _ in fechas]
+        regs = [r for f in elegidas for r in por_fecha[f]]
+        d = _dif(regs)
+        if d is not None:
+            muestras.append(d)
+    muestras.sort()
+    if not muestras:
+        return {"vueltas": 0, "observada_pp": observada}
+    return {
+        "observada_pp": observada,
+        "vueltas": len(muestras),
+        "banda_baja_pp": _percentil(muestras, 0.05),
+        "banda_alta_pp": _percentil(muestras, 0.95),
+        "bloques": len(fechas),
+    }
+
+
+def veredicto_stops(d: dict, banda: dict) -> dict:
+    """¿Distingue algo el múltiplo del stop? Puro.
+
+    La dirección se fijó antes de mirar y es la que justifica tener tres múltiplos: uno
+    más ajustado salta en falso MÁS a menudo que uno más ancho. Si no fuera así, los tres
+    números de producción estarían distinguiendo solo el tamaño de la pérdida, no la
+    calidad del corte.
+    """
+    filas = d.get("multiplos") or []
+    flacos = [f["multiplo"] for f in filas if (f["n_saltan"] or 0) < MUESTRA_MINIMA]
+    if flacos:
+        return {"estado": SIN_DATOS,
+                "conclusion": "Múltiplos con pocos saltos para juzgarlos: "
+                              + ", ".join(f"{m}×ATR" for m in flacos)}
+
+    falsos = [f["falsos_pct"] for f in filas]
+    base = {"falsos_pct": {f["multiplo"]: f["falsos_pct"] for f in filas},
+            "ahorro_atr": {f["multiplo"]: f["ahorro_atr_mediana"] for f in filas},
+            "banda": banda, "n": d.get("n")}
+
+    baja, alta = banda.get("banda_baja_pp"), banda.get("banda_alta_pp")
+    if baja is None or alta is None:
+        return {**base, "estado": SIN_DATOS,
+                "conclusion": "No se ha podido acotar la diferencia."}
+    if baja <= 0 <= alta:
+        return {**base, "estado": NO_CONCLUYENTE,
+                "conclusion": f"La diferencia entre {MULTIPLOS_STOP[0]}×ATR y "
+                              f"{MULTIPLOS_STOP[-1]}×ATR en saltos en falso es de "
+                              f"{banda.get('observada_pp')} pp, pero su banda va de "
+                              f"{baja} a {alta} pp e incluye el cero: no se distinguen. "
+                              "Los tres múltiplos de producción cortan con la misma "
+                              "calidad; lo único que cambia es cuánto pierdes cuando "
+                              "aciertan."}
+    if falsos == sorted(falsos, reverse=True):
+        return {**base, "estado": VALIDADA,
+                "conclusion": f"El stop más ajustado salta en falso más a menudo, en la "
+                              f"dirección fijada antes de mirar: {banda.get('observada_pp')} "
+                              f"pp de diferencia, banda de {baja} a {alta}. Los números "
+                              "de producción sí distinguen la calidad del corte."}
+    return {**base, "estado": RECHAZADA,
+            "conclusion": f"Los múltiplos se distinguen (banda de {baja} a {alta} pp) "
+                          "pero NO en la dirección esperada: el stop más ancho salta en "
+                          "falso MÁS que el ajustado. Eso invierte el motivo de tener "
+                          "tres."}
+
+
+def ficha_stops(registros: list, universo: list, ventana: int = None) -> dict:
+    """El experimento de los stops, listo para guardar. Puro."""
+    d = stops(registros)
+    banda = banda_de_la_diferencia(registros)
+    v = veredicto_stops(d, banda)
+    fechas = [str(r.get("anchor") or "")[:10] for r in (registros or []) if r.get("anchor")]
+    return {
+        "hipotesis_id": "ATR_MULTIPLO_STOP",
+        "tipo": "primero",
+        "titulo": "¿Los tres múltiplos de stop distinguen un corte bueno de uno en falso?",
+        "metodo": {
+            "que_pregunta": "De los toques donde el stop llegó a saltar, qué porcentaje "
+                            "eran ruido —el nivel acabó aguantando— para cada múltiplo.",
+            "universo": sorted(universo or []),
+            "simbolos": len(universo or []),
+            "desde": min(fechas) if fechas else None,
+            "hasta": max(fechas) if fechas else None,
+            "motor": "backtest.backtest_universe · walk-forward punto-en-el-tiempo",
+            "ventana_dias": ventana,
+            "multiplos": list(MULTIPLOS_STOP),
+            "muestra_minima_por_multiplo": MUESTRA_MINIMA,
+            "direccion_esperada": "El más ajustado salta en falso MÁS que el más ancho. "
+                                  "Fijada ANTES de ejecutar, y es lo que justifica tener "
+                                  "tres múltiplos distintos en producción.",
+        },
+        "controles": {
+            "leakage": "El stop se evalúa con las velas POSTERIORES al toque, y el nivel "
+                       "se calcula con las anteriores al ancla.",
+            "no_se_prueba_lo_aritmetico": "«Cuántas veces salta cada múltiplo» está "
+                                          "determinado: si el precio no bajó 1,0 ATR, "
+                                          "tampoco bajó 2,4. Eso se informa pero NO se "
+                                          "juzga — comprobar una identidad no es medir.",
+            "solo_hasta_la_resolucion": "La excursión adversa se mide mientras la "
+                                        "operación está viva. Una caída posterior al "
+                                        "rebote no habría saltado ningún stop, y "
+                                        "contarla haría parecer peligrosos stops que "
+                                        "nunca corrieron riesgo.",
+            "por_que_no_hay_permutacion": "Cada toque se evalúa con los TRES múltiplos a "
+                                          "la vez: es una comparación pareada y no hay "
+                                          "etiqueta que barajar. Se usa remuestreo por "
+                                          "bloques de fecha sobre la diferencia.",
+            "bloques_por_fecha": "Los toques del mismo día comparten mercado. "
+                                 "Remuestrear toques sueltos estrecharía la banda y "
+                                 "haría parecer seguro lo que no lo es.",
+            "lo_que_NO_mide": "No compara la ganancia perdida al salir en falso contra "
+                              "la pérdida evitada. Eso exige medir retornos, y con esta "
+                              "muestra los retornos están dominados por el ruido.",
+            "supervivencia": "El universo es el de hoy. Pesa poco: se mide qué pasó tras "
+                             "tocar un soporte.",
+            "parametros_ajustados": "Ninguno. Los tres múltiplos son los de producción.",
+        },
+        "resultado": {**d, **v},
+        "estado": v["estado"],
+        "ejecutado_en": _ahora(),
+        "lab_v": 1,
+    }
+
+
 # ── Persistencia. Todo queda, también lo que salió mal ───────────────────────
 
 async def guardar_experimento(db, doc: dict) -> dict:

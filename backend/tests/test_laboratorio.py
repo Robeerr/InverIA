@@ -1129,3 +1129,132 @@ def test_si_la_replica_reproduce_el_patron_se_RECHAZA():
 def test_si_la_replica_sale_PLANA_no_se_concluye():
     f = lab.ficha_aguante_limpio(_toques_limpios(probs=(0.35, 0.35, 0.35)), universo=["X"])
     assert f["estado"] == lab.NO_CONCLUYENTE
+
+
+# ── Cuarta hipótesis: dónde poner el stop ───────────────────────────────────
+#
+# `_deterministic_levels` usa 1,0 / 1,6 / 2,4 × ATR en producción sin haberse medido. Es
+# el número donde equivocarse cuesta dinero: demasiado ajustado te saca de operaciones
+# que iban bien.
+
+def _toques_con_mae(corte=1.8, n=8, dias=80, semilla=3):
+    """Toques con su excursión adversa. El nivel aguanta si la caída fue superficial."""
+    import random
+    r = random.Random(semilla)
+    regs = []
+    for d in range(dias):
+        for _ in range(n):
+            mae = abs(r.gauss(0, 1.4))
+            regs.append({"anchor": f"2024-{(d % 12) + 1:02d}-{(d % 28) + 1:02d}",
+                         "mae_atr": round(mae, 3), "held": mae < corte})
+    return regs
+
+
+def test_un_stop_salta_cuando_la_excursion_adversa_llega_al_MULTIPLO():
+    """La identidad que permite medir los tres múltiplos sin otro backtest."""
+    regs = [{"anchor": "2024-01-01", "mae_atr": 1.2, "held": True},
+            {"anchor": "2024-01-01", "mae_atr": 2.9, "held": False}]
+    assert lab._falsos_de(regs, 1.0)["n_saltan"] == 2
+    assert lab._falsos_de(regs, 1.6)["n_saltan"] == 1
+    assert lab._falsos_de(regs, 2.4)["n_saltan"] == 1
+    assert lab._falsos_de(regs, 3.0)["n_saltan"] == 0
+
+
+def test_FALSO_es_saltar_y_que_el_nivel_acabara_aguantando():
+    """Te sacó de una operación que iba bien. Es el único sentido útil de «falso»."""
+    regs = [{"anchor": "d", "mae_atr": 1.5, "held": True},    # saltó y aguantó → falso
+            {"anchor": "d", "mae_atr": 1.5, "held": False}]   # saltó y se rompió → bueno
+    assert lab._falsos_de(regs, 1.0)["falsos_pct"] == 50.0
+
+
+def test_los_que_NO_saltan_no_cuentan():
+    """De un stop que no llegó a saltar no se puede decir si habría acertado."""
+    regs = [{"anchor": "d", "mae_atr": 0.2, "held": True}] * 30
+    f = lab._falsos_de(regs, 1.0)
+    assert f["n_saltan"] == 0 and f["falsos_pct"] is None
+    assert f["n_evaluables"] == 30
+
+
+def test_el_AHORRO_es_cuanto_MAS_cayo_por_debajo_del_stop():
+    regs = [{"anchor": "d", "mae_atr": 3.0, "held": False}] * 25
+    assert lab._falsos_de(regs, 1.0)["ahorro_atr_mediana"] == 2.0
+
+
+def test_el_ahorro_usa_la_MEDIANA_y_no_la_media():
+    """Unas pocas caídas enormes no pueden decidir dónde se pone un stop."""
+    regs = ([{"anchor": "d", "mae_atr": 2.0, "held": False}] * 24
+            + [{"anchor": "d", "mae_atr": 500.0, "held": False}])
+    assert lab._falsos_de(regs, 1.0)["ahorro_atr_mediana"] == 1.0
+
+
+def test_si_el_AJUSTADO_falla_mas_se_VALIDA():
+    v = lab.veredicto_stops(lab.stops(_toques_con_mae()),
+                            lab.banda_de_la_diferencia(_toques_con_mae(), vueltas=40))
+    assert v["estado"] == lab.VALIDADA
+    assert v["falsos_pct"][1.0] > v["falsos_pct"][2.4]
+
+
+def test_si_la_BANDA_incluye_el_cero_no_se_concluye():
+    """Los tres cortarían con la misma calidad; solo cambiaría cuánto pierdes."""
+    import random
+    r = random.Random(9)
+    regs = [{"anchor": f"2024-{(d % 12) + 1:02d}-{(d % 28) + 1:02d}",
+             "mae_atr": round(abs(r.gauss(0, 1.4)), 3), "held": r.random() < 0.5}
+            for d in range(80) for _ in range(8)]
+    v = lab.veredicto_stops(lab.stops(regs), lab.banda_de_la_diferencia(regs, vueltas=40))
+    assert v["estado"] == lab.NO_CONCLUYENTE
+    assert "incluye el cero" in v["conclusion"]
+
+
+def test_si_el_ANCHO_falla_mas_se_RECHAZA():
+    """Invertiría el motivo de tener tres múltiplos."""
+    regs = _toques_con_mae()
+    regs = [{**x, "held": x["mae_atr"] > 1.8} for x in regs]   # al revés
+    v = lab.veredicto_stops(lab.stops(regs),
+                            lab.banda_de_la_diferencia(regs, vueltas=40))
+    assert v["estado"] == lab.RECHAZADA
+    assert "NO en la dirección esperada" in v["conclusion"]
+
+
+def test_sin_SALTOS_suficientes_no_se_concluye():
+    regs = [{"anchor": f"d{i}", "mae_atr": 0.1, "held": True} for i in range(100)]
+    v = lab.veredicto_stops(lab.stops(regs), lab.banda_de_la_diferencia(regs, vueltas=10))
+    assert v["estado"] == lab.SIN_DATOS
+
+
+def test_el_bootstrap_remuestrea_por_DIAS_y_no_por_toques():
+    """Los toques del mismo día comparten mercado. Tratarlos como independientes
+    estrecharía la banda y haría parecer seguro lo que no lo es."""
+    import inspect
+    fuente = inspect.getsource(lab.banda_de_la_diferencia)
+    assert 'por_fecha.setdefault(r.get("anchor")' in fuente
+    assert "generador.choice(fechas)" in fuente
+
+
+def test_la_banda_es_DETERMINISTA():
+    regs = _toques_con_mae()
+    assert (lab.banda_de_la_diferencia(regs, vueltas=25)
+            == lab.banda_de_la_diferencia(regs, vueltas=25))
+
+
+def test_se_declara_que_NO_se_prueba_lo_aritmetico():
+    """«Cuántas veces salta cada múltiplo» está determinado: si no bajó 1,0 ATR tampoco
+    bajó 2,4. Informarlo vale; juzgarlo sería comprobar una identidad."""
+    c = lab.ficha_stops(_toques_con_mae(), universo=["AAPL"])["controles"]
+    assert "no_se_prueba_lo_aritmetico" in c
+    assert "comprobar una identidad no es medir" in c["no_se_prueba_lo_aritmetico"]
+    assert "por_que_no_hay_permutacion" in c
+
+
+def test_se_declara_lo_que_el_experimento_NO_mide():
+    """No compara la ganancia perdida contra la pérdida evitada: eso exige retornos, y
+    con esta muestra los retornos están dominados por el ruido."""
+    c = lab.ficha_stops(_toques_con_mae(), universo=["AAPL"])["controles"]
+    assert "lo_que_NO_mide" in c and "retornos" in c["lo_que_NO_mide"]
+
+
+def test_los_multiplos_son_los_de_PRODUCCION():
+    f = lab.ficha_stops(_toques_con_mae(), universo=["AAPL"])
+    assert f["metodo"]["multiplos"] == [1.0, 1.6, 2.4]
+    assert f["hipotesis_id"] == "ATR_MULTIPLO_STOP"
+    assert "Ninguno" in f["controles"]["parametros_ajustados"]

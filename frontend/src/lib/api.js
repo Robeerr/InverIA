@@ -85,6 +85,10 @@ export const api = {
     aguanteLimpio: () =>
       client.post(`/laboratorio/experimento/aguante-limpio`, {}, { timeout: 600000 })
         .then((r) => r.data),
+    // Cuarta hipótesis: ¿dónde poner el stop?
+    stops: () =>
+      client.post(`/laboratorio/experimento/stops`, {}, { timeout: 600000 })
+        .then((r) => r.data),
     // La auditoría del propio método: ¿cuánta separación produce el azar?
     azar: () =>
       client.post(`/laboratorio/experimento/azar`, {}, { timeout: 300000 })

@@ -263,3 +263,13 @@ def test_los_DOS_consumidores_siguen_llamando_a_la_misma_puerta():
         # «/calendar/earnings» y buscar la cadena daba un falso positivo sobre su propia
         # URL. Lo que delata una descarga es llamar al cliente de Finnhub.
         assert "_finnhub_get" not in src, f"{fichero} baja el calendario por su cuenta"
+
+
+def test_la_EXCURSION_ADVERSA_se_mide_hasta_la_RESOLUCION():
+    """Una caída posterior al rebote no habría saltado ningún stop de esa operación.
+    Contarla haría parecer peligrosos stops que nunca corrieron riesgo."""
+    import inspect
+    import backtest
+    fuente = inspect.getsource(backtest)
+    assert "tramo_low = fwd_low[touch_at:resuelto_en + 1]" in fuente
+    assert '"mae_atr": mae_atr,' in fuente

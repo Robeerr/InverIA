@@ -97,6 +97,45 @@ function Experimento({ e }) {
       <p className="mt-1 text-xs text-tinta-3 max-w-[70ch] leading-relaxed">
         {r.conclusion}
       </p>
+      {!!(r.multiplos || []).length && (
+        <div className="mt-2 overflow-x-auto">
+          <table className="text-xs w-full">
+            <thead className="text-tinta-3">
+              <tr><th className="text-left font-normal py-1">Stop</th>
+                  <th className="text-right font-normal">Salta</th>
+                  <th className="text-right font-normal">Saltos</th>
+                  <th className="text-right font-normal">En falso</th>
+                  <th className="text-right font-normal">Ahorro (ATR)</th></tr>
+            </thead>
+            <tbody className="iv-cifra">
+              {r.multiplos.map((m) => (
+                <tr key={m.multiplo} className="border-t border-linea">
+                  <td className="py-1 text-tinta-2">{m.multiplo}×ATR</td>
+                  {/* «Salta» va apagado a propósito: está determinado por aritmética
+                      —si no bajó 1,0 ATR tampoco bajó 2,4— y no es evidencia de nada. */}
+                  <td className="text-right text-tinta-3">
+                    {m.salta_pct == null ? "—" : `${m.salta_pct}%`}
+                  </td>
+                  <td className="text-right text-tinta-3">{m.n_saltan}</td>
+                  <td className="text-right text-tinta">
+                    {m.falsos_pct == null ? "—" : `${m.falsos_pct}%`}
+                  </td>
+                  <td className="text-right text-tinta-3">
+                    {m.ahorro_atr_mediana == null ? "—" : m.ahorro_atr_mediana}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {r.banda && (
+            <p className="mt-2 text-xs text-tinta-3 max-w-[70ch] leading-relaxed">
+              Diferencia observada {r.banda.observada_pp} pp · banda de{" "}
+              {r.banda.banda_baja_pp} a {r.banda.banda_alta_pp} pp, por remuestreo de{" "}
+              {r.banda.bloques} días. Si incluye el cero, no se distinguen.
+            </p>
+          )}
+        </div>
+      )}
       {!!(r.cubos || []).length && (
         <div className="mt-2 overflow-x-auto">
           <table className="text-xs w-full">
@@ -438,6 +477,13 @@ export default function LaboratorioView() {
                     data-testid="lab-ejecutar-aguante">
               <FlaskIcon size={14} />
               {corriendo ? "Midiendo…" : "Medir: ¿aguantan las zonas fuertes?"}
+            </button>
+            <button onClick={() => ejecutar("stops")} disabled={corriendo}
+                    className="iv-etiqueta flex items-center gap-2 border border-marca
+                               px-3 py-2 hover:text-tinta disabled:opacity-50"
+                    data-testid="lab-ejecutar-stops">
+              <FlaskIcon size={14} />
+              {corriendo ? "Midiendo…" : "Medir: ¿dónde poner el stop?"}
             </button>
             <button onClick={() => ejecutar("aguanteLimpio")} disabled={corriendo}
                     className="iv-etiqueta flex items-center gap-2 border border-marca
