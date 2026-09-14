@@ -453,6 +453,13 @@ def distribucion(obs: list) -> dict:
             "mediana": _percentil(rs, 0.5),
             "p25": _percentil(rs, 0.25),
             "p75": _percentil(rs, 0.75),
+            # El ancho intercuartílico responde directamente a «¿es solo que el tramo
+            # hundido es más volátil?». Una acción que ha caído un 60% se mueve más en
+            # las dos direcciones, y eso infla la media sin ser ninguna ventaja. Se
+            # publica calculado y no restando cuartiles a mano: si hay que hacer una
+            # cuenta para ver el confundido, el confundido no se ve.
+            "amplitud_intercuartil": (
+                round(_percentil(rs, 0.75) - _percentil(rs, 0.25), 2) if rs else None),
             "peor": rs[0] if rs else None,
             "mejor": rs[-1] if rs else None,
             "positivos_pct": round(sum(1 for r in rs if r > 0) / len(rs) * 100, 1) if rs else None,
@@ -491,6 +498,16 @@ def veredicto_distribucion(d: dict) -> dict:
 
     base = {"rango_media_pp": rango_media, "rango_mediana_pp": rango_mediana,
             "n": d.get("n")}
+    # La dispersión de cada tramo viaja con el veredicto: si el tramo que más gana de
+    # media es también el más ancho, la explicación está ahí y no hace falta buscar más.
+    amplitudes = [f["amplitud_intercuartil"] for f in filas
+                  if f["amplitud_intercuartil"] is not None]
+    if amplitudes:
+        base["amplitud_min_pp"] = min(amplitudes)
+        base["amplitud_max_pp"] = max(amplitudes)
+        base["mas_ancho_es_el_de_mas_media"] = (
+            filas[medias.index(max(medias))]["amplitud_intercuartil"] == max(amplitudes))
+
     if rango_mediana < SEPARACION_MINIMA <= rango_media:
         return {**base, "estado": RECHAZADA,
                 "conclusion": f"El gradiente vive en la COLA, no en el centro: las medias "

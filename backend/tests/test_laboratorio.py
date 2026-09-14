@@ -415,3 +415,32 @@ def test_un_umbral_con_NUMERO_manda_sobre_el_texto(monkeypatch):
     monkeypatch.setattr(calibracion, "DISTANCIA_MAX_A_MAXIMO_52S", 25.0)
     d = next(h for h in lab.hipotesis() if h["id"] == "DISTANCIA_MAX_A_MAXIMO_52S")
     assert d["estado"] == lab.VALIDADA
+
+
+def test_se_publica_la_AMPLITUD_de_cada_tramo():
+    """Responde al confundido de volatilidad: una acción que ha caído un 60% se mueve
+    más en las dos direcciones, y eso infla la media sin ser ninguna ventaja."""
+    obs = []
+    for i, (bajo, alto) in enumerate(lab.TRAMOS):
+        ancho = 5 + i * 20                       # los tramos lejanos, más anchos
+        vals = [10 - ancho, 10, 10 + ancho] * 10
+        obs += [{"tramo": f"{bajo}-{alto}%", "retorno_pct": v, "fecha": "2022-01-01",
+                 "symbol": "X", "distancia_pct": 1} for v in vals]
+    d = lab.distribucion(obs)
+    amplitudes = [t["amplitud_intercuartil"] for t in d["tramos"]]
+    assert amplitudes == sorted(amplitudes), "la amplitud tiene que crecer con el tramo"
+    v = lab.veredicto_distribucion(d)
+    assert v["amplitud_max_pp"] > v["amplitud_min_pp"]
+
+
+def test_se_dice_si_el_tramo_que_MAS_GANA_es_tambien_el_MAS_ANCHO():
+    """Si lo es, la explicación está ahí y no hace falta buscar más lejos."""
+    obs = []
+    for i, (bajo, alto) in enumerate(lab.TRAMOS):
+        ancho = 5 + i * 20
+        media = 10 + i * 5                       # el último gana más Y es el más ancho
+        vals = [media - ancho, media, media + ancho] * 10
+        obs += [{"tramo": f"{bajo}-{alto}%", "retorno_pct": v, "fecha": "2022-01-01",
+                 "symbol": "X", "distancia_pct": 1} for v in vals]
+    v = lab.veredicto_distribucion(lab.distribucion(obs))
+    assert v["mas_ancho_es_el_de_mas_media"] is True
