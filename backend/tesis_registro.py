@@ -67,7 +67,22 @@ def _ahora() -> str:
 #: Esa tanda de versiones NO significa que sus tesis cambiaran: significa que cambiamos
 #: nosotros cómo las decimos. Sin este sello, dentro de seis meses ese salto masivo del
 #: mismo día parecería un giro de mercado.
-TESIS_V = 2
+#:
+#: v3 (16-09-2026): el SIGNO de un número dejó de entrar en la huella. Lo encontró la
+#: pantalla del historial el día que se encendió: ORCL tenía una v2 cuya única diferencia
+#: con la v1 era «(-1,74% hoy)» contra «(+2,44% hoy)». Ningún campo entraba ni salía, la
+#: conclusión era la misma frase — «por debajo de su media de 200 sesiones» — y aun así
+#: se guardó una versión nueva.
+#:
+#: El motivo: `_TOKEN` capturaba `1,74` pero no el `-` de delante, así que el signo
+#: sobrevivía a la normalización. Un signo pegado a un número es parte del número, y el
+#: diseño entero dice que se versionan CONCLUSIONES, no números. Con la regla vieja,
+#: cualquier acción que alternara días en verde y en rojo generaba una versión cada dos
+#: días: exactamente el redibujado tick a tick que este registro existe para evitar.
+#:
+#: Misma advertencia que en v2: habrá una tanda de versiones nuevas la primera vez que se
+#: reconstruya cada dashboard, y no significa que ninguna tesis cambiara.
+TESIS_V = 3
 
 #: Cuánto se conserva del SHA-256. 16 hex son 64 bits: de sobra para que dos tesis
 #: distintas no colisionen nunca en una colección de decenas de símbolos, y corto para
@@ -91,7 +106,17 @@ LARGO_HUELLA = 16
 #: Importa porque las razones que sostienen una zona de compra son nombres con dígitos
 #: pegados: que una zona deje de apoyarse en la media de 200 y pase a la de 50 es un
 #: cambio de tesis, y con la regla ingenua se perdía en silencio.
-_TOKEN = re.compile(r"[A-Za-z]*\d+(?:[.,]\d+)*")
+#: EL SIGNO ENTRA EN EL TOKEN, PERO SOLO CUANDO ES EL SIGNO DE UN NÚMERO
+#:
+#: `(?<=[\s(])` lo exige precedido de un espacio o de un paréntesis de apertura, que es
+#: donde aparece un signo — «(+2,44% hoy)», «cae -3,1 desde». Sin esa condición se comería
+#: también cualquier guion pegado a una palabra, que separa y no firma. Las etiquetas de
+#: `levels_engine` llevan hoy el dígito pegado (`SMA200`, `Camarilla S3`) y no pasan por
+#: este borde, pero la regla no puede depender de que eso siga siendo así.
+#:
+#: Se acepta tanto el guion normal como el menos tipográfico «−»: el primero sale de los
+#: literales del código y el segundo puede llegar de cualquier texto copiado.
+_TOKEN = re.compile(r"[A-Za-z]*\d+(?:[.,]\d+)*|(?<=[\s(])[+\-\u2212]\d+(?:[.,]\d+)*")
 
 
 def normalizar(texto: Optional[str]) -> str:

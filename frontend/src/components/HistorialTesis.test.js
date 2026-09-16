@@ -63,6 +63,16 @@ test("una lista vacía se explica, en vez de parecer un fallo", () => {
   expect(VISTA).toContain("no ha cambiado desde que se registró");
 });
 
+test("la primera versión no pinta los campos que «entran»", () => {
+  // En la v1 entran TODOS, porque antes no había ninguno. Nueve «+» ahí no informan y
+  // compiten con los cambios reales de las versiones de arriba.
+  expect(CODIGO).toContain("v.version > 1 && <Cambios");
+  expect(VISTA).toContain("Primera versión registrada");
+  // Y la condición mira el NÚMERO de versión, no la posición: la lista está topada y su
+  // última fila no tiene por qué ser la primera versión.
+  expect(CODIGO).not.toContain("i === versiones.length - 1");
+});
+
 test("el tope del backend se dice cuando se alcanza", () => {
   // Callarlo haría parecer completa una lista truncada.
   expect(CODIGO).toContain("versiones.length >= datos.techo");

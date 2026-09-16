@@ -604,3 +604,51 @@ def test_si_la_que_GANA_escribio_LA_MISMA_tesis_la_otra_solo_observa():
     assert sorted(r["accion"] for r in resultados) == ["creada", "observada"]
     assert next(d for d in db[tr.COLECCION].docs
                 if d["version"] == 2)["veces_observada"] == 2
+
+
+# ── El signo de un número no es una conclusión ───────────────────────────────
+
+def test_el_SIGNO_de_un_numero_no_crea_version():
+    """Lo encontró la pantalla del historial el día que se encendió.
+
+    ORCL tenía una v2 cuya única diferencia con la v1 era «(-1,74% hoy)» contra
+    «(+2,44% hoy)». Ningún campo entraba ni salía y la conclusión era la misma frase.
+    `_TOKEN` capturaba `1,74` pero no el `-` de delante, así que el signo sobrevivía.
+
+    Con la regla vieja, cualquier acción que alternara días en verde y en rojo generaba
+    una versión cada dos días — el redibujado tick a tick que este registro existe para
+    evitar.
+    """
+    a = "ORCL cotiza a 150.28 (-1.74% hoy), por debajo de su media de 200 sesiones."
+    b = "ORCL cotiza a 143.77 (+2.44% hoy), por debajo de su media de 200 sesiones."
+    assert tr.normalizar(a) == tr.normalizar(b)
+    assert "+" not in tr.normalizar(b)
+    assert "-" not in tr.normalizar(a)
+
+
+def test_el_menos_tipografico_tambien_se_absorbe():
+    """El guion sale de los literales del código; el «−» puede llegar de texto copiado.
+    Que dos signos que se leen igual produzcan huellas distintas es el mismo fallo que
+    la normalización NFC ya evita para los acentos."""
+    assert (tr.normalizar("cae -3,1 desde")
+            == tr.normalizar("cae −3,1 desde"))
+
+
+def test_un_guion_PEGADO_a_una_palabra_no_es_un_signo():
+    """Separa, no firma. Sin la condición del espacio, la regla se comería el guion de
+    cualquier nombre compuesto y fundiría cosas que no son la misma."""
+    assert "-" in tr.normalizar("sobre la SMA-200")
+
+
+def test_la_diferencia_que_SI_tiene_que_crear_version_sigue_creandola():
+    """El arreglo quita el signo, no la sensibilidad a las conclusiones. Que una zona
+    deje de apoyarse en una media y pase a otra sigue siendo un cambio de tesis."""
+    assert (tr.normalizar("Media móvil SMA200")
+            != tr.normalizar("Media móvil SMA50"))
+
+
+def test_el_sello_sube_a_3_porque_cambia_la_HUELLA():
+    """Sin subirlo, la tanda de versiones nuevas que produce este cambio parecería
+    dentro de seis meses un giro de mercado del mismo día. Es el mismo motivo por el que
+    existe el sello desde v2."""
+    assert tr.TESIS_V == 3

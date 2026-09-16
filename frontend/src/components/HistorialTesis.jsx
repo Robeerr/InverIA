@@ -70,7 +70,15 @@ function Version({ v, esUltima }) {
         </span>
       </div>
       <p className="text-[13px] text-tinta leading-snug mt-1">{v.titular || "—"}</p>
-      <Cambios cambios={v.cambios} />
+      {/* En la v1 ENTRAN todos los campos, porque antes no había ninguno. Pintar nueve
+          «+» ahí no informa de nada y compite con los cambios reales de las versiones de
+          arriba, que son los que se vienen a leer. La condición mira el número de
+          versión y no la posición en la lista: la lista está topada y su última fila no
+          tiene por qué ser la primera versión. */}
+      {v.version > 1 && <Cambios cambios={v.cambios} />}
+      {v.version === 1 && (
+        <p className="text-[11px] text-tinta-3 mt-1">Primera versión registrada.</p>
+      )}
       {/* Cuántas redacciones seguidas dieron esta misma huella. NO es un acierto, y la
           frase lo dice entera para que no se lea como tal aunque nadie pase el ratón. */}
       {v.veces_observada > 1 && (
