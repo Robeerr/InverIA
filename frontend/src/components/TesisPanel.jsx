@@ -2,6 +2,7 @@ import React from "react";
 import { Warning } from "@phosphor-icons/react";
 import { fmtHace } from "../lib/format";
 import { titularVivo } from "../lib/tesisVivo";
+import HistorialTesis from "./HistorialTesis";
 
 /* ── Superficie ──────────────────────────────────────────────────────────────
    Estos bloques usan `iv-panel` y no `iv-panel`, y conviene saber por qué sigue
@@ -36,6 +37,7 @@ import { titularVivo } from "../lib/tesisVivo";
  */
 export default function TesisPanel({
   tesis,
+  symbol,
   quote,
   generadoEn,
   onAnalizar,
@@ -110,6 +112,12 @@ export default function TesisPanel({
           <span>{limita.texto}</span>
         </p>
       )}
+
+      {/* El historial va DEBAJO de la tesis de hoy y cerrado: lo que se viene a ver al
+          abrir una acción es qué pasa ahora. Y va aquí dentro, no en un panel aparte,
+          porque es la misma tesis en otro momento — separarlo daría a entender que son
+          dos cosas distintas. */}
+      <HistorialTesis symbol={symbol || tesis.symbol} />
 
       {/* Acción secundaria: la IA amplía lo de arriba, no lo sustituye. */}
       {onAnalizar && (

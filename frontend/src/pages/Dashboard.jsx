@@ -428,6 +428,7 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
           dentro el aviso de fiabilidad y el botón de IA como acción secundaria. */}
       <TesisPanel
         tesis={tesis}
+        symbol={sym}
         quote={quote}
         generadoEn={generadoEn}
         onAnalizar={quote ? runAll : null}

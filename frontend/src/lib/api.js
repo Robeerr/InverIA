@@ -63,8 +63,18 @@ export const api = {
     armar: (symbol) => client.post(`/vigilancia-veto`, { symbol }).then((r) => r.data),
     retirar: (symbol) => client.delete(`/vigilancia-veto/${symbol}`).then((r) => r.data),
   },
-  // Inteligencia. Las tres son de LECTURA: la pantalla no dispara ciclos ni pide a
-  // ninguna fuente que salga a buscar nada. Lo que enseña es lo que el worker ya escribió.
+  // El historial de la tesis. Las dos SOLO LEEN, y ninguna se pide al abrir una acción:
+  // el histórico es un extra y no puede añadir una petición a la carga de cada pantalla.
+  tesis: {
+    // La lista NO trae la tesis entera de cada versión — son decenas. Trae el titular y
+    // qué campos entraron o salieron, que es lo que se ve de un vistazo.
+    versiones: (symbol, limite = 50) =>
+      client.get(`/tesis/${symbol}/versiones`, { params: { limite } })
+        .then((r) => r.data),
+    // Una versión concreta, entera y tal como se escribió.
+    version: (symbol, numero) =>
+      client.get(`/tesis/${symbol}/versiones/${numero}`).then((r) => r.data),
+  },
   // El laboratorio. Los dos primeros SOLO LEEN; el tercero ejecuta el experimento y
   // por eso es POST — descarga histórico de todo el universo y lo dispara una persona.
   laboratorio: {
@@ -106,6 +116,8 @@ export const api = {
       client.post(`/laboratorio/experimento/distancia-maximo/distribucion`, {},
                   { timeout: 300000 }).then((r) => r.data),
   },
+  // Inteligencia. Las tres son de LECTURA: la pantalla no dispara ciclos ni pide a
+  // ninguna fuente que salga a buscar nada. Lo que enseña es lo que el worker ya escribió.
   intelligence: {
     estado: () => client.get(`/intelligence/estado`).then((r) => r.data),
     eventos: (params = {}) =>
