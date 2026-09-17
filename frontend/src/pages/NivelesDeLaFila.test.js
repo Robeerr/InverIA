@@ -1,10 +1,13 @@
 /**
- * Un nivel que ya vendiste no puede pintarse igual que uno que tienes.
+ * Las etiquetas de nivel de una fila dicen en cuáles tienes posición AHORA.
  *
- * `niveles_comprados` recorre el historial entero de compras; `niveles_abiertos`, solo
- * los lotes vivos. La fila enseñaba únicamente la primera lista, y en el sitio donde el
- * ojo busca «qué tengo»: una posición con tres lotes abiertos enseñaba cuatro etiquetas
- * y no había forma de saber cuál sobraba.
+ * Se pintaba `niveles_comprados`, que recorre el historial entero de compras: una fila
+ * con tres lotes abiertos enseñaba cuatro etiquetas, y la cuarta era un nivel del que ya
+ * se había salido.
+ *
+ * El primer intento fue apagarla y escribirle «vendido». Estaba mal: afirma POR QUÉ no
+ * hay posición, y eso esta fila no lo sabe — un nivel puede no tener lote abierto porque
+ * se vendió o porque nunca se compró, y el chip no distingue los dos casos.
  *
  * Se comprueba sobre el código fuente: no hay `@testing-library/react` en el proyecto y
  * no se añade una dependencia por iniciativa propia.
@@ -18,35 +21,26 @@ const sinComentarios = (src) =>
      .replace(/(^|[^:])\/\/.*$/gm, "$1");
 const CODIGO = sinComentarios(VISTA);
 
-test("las dos listas se usan, no solo la de compras", () => {
+test("los chips salen de los niveles ABIERTOS, no del historial de compras", () => {
   expect(CODIGO).toContain("p.niveles_abiertos");
-  expect(CODIGO).toContain("abiertos.has(n)");
+  expect(CODIGO).toContain("niveles.map((n) =>");
 });
 
-test("el nivel vendido se APAGA, no se esconde", () => {
-  // Que entraras ahí y ya no estés es información: quitarlo obligaría a irse al
-  // histórico de ventas para saberlo.
-  expect(CODIGO).toContain('tono="nivelCerrado"');
-  expect(CODIGO).toContain("const comprados = p.niveles_comprados");
-  // Se recorre la lista COMPLETA de comprados: si se recorriera la de abiertos, el
-  // nivel vendido desaparecería en vez de apagarse.
-  expect(CODIGO).toContain("comprados.map((n) =>");
+test("la fila NO afirma por qué un nivel no tiene posición", () => {
+  // Un nivel sin lote abierto puede ser uno vendido o uno que nunca se compró, y desde
+  // aquí no se distinguen. Decir «vendido» es afirmar lo que no se sabe.
+  expect(CODIGO).not.toContain("· vendido");
+  expect(CODIGO).not.toContain("nivelCerrado");
 });
 
-test("«vendido» se lee sin pasar el ratón por encima", () => {
-  // En el móvil no hay ratón, y este mismo fichero ya documenta que ahí un texto que
-  // solo vive en `title=` es sencillamente inalcanzable.
-  expect(CODIGO).toContain("· vendido");
-});
-
-test("una respuesta sin el campo nuevo NO apaga nada", () => {
-  // Una respuesta cacheada de antes del despliegue no trae `niveles_abiertos`. Apagar
-  // por defecto diría que has vendido cosas que no has vendido.
-  expect(CODIGO).toContain("new Set(p.niveles_abiertos || comprados)");
+test("una respuesta sin el campo nuevo sigue enseñando algo", () => {
+  // Una respuesta cacheada de antes del despliegue no trae `niveles_abiertos`. Dejar la
+  // fila sin etiquetas haría parecer que la posición no tiene niveles.
+  expect(CODIGO).toContain("p.niveles_abiertos || p.niveles_comprados");
 });
 
 test("los dos sitios que pintaban los chips usan el mismo componente", () => {
   // Estaban duplicados y uno de los dos se habría quedado sin el arreglo.
   expect(CODIGO.match(/<NivelesDeLaFila p=\{p\} \/>/g) || []).toHaveLength(2);
-  expect(CODIGO).not.toContain('p.niveles_comprados.map((n) => (');
+  expect(CODIGO).not.toContain("p.niveles_comprados.map((n) => (");
 });

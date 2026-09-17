@@ -79,33 +79,31 @@ function datosPosicion(p, comoBroker) {
   };
 }
 
-/** Las etiquetas de nivel de una fila, separando lo que tienes de lo que tuviste.
+/** Las etiquetas de nivel de una fila: en cuáles tienes posición AHORA.
  *
- *  `niveles_comprados` recorre el historial entero; `niveles_abiertos`, solo los lotes
- *  vivos. Estaban pintados igual y en el sitio donde el ojo busca «qué tengo», así que
- *  una posición con tres lotes abiertos enseñaba cuatro etiquetas sin decir cuál sobraba.
+ *  Antes se pintaba `niveles_comprados`, que recorre el historial entero de compras. Una
+ *  fila con tres lotes abiertos enseñaba cuatro etiquetas, y la cuarta era un nivel del
+ *  que ya se había salido.
  *
- *  El nivel cerrado NO se esconde: que entraras ahí y ya no estés es información, y
- *  quitarlo obligaría a irse al histórico de ventas para saberlo. Se apaga. */
+ *  El primer intento fue apagarla y escribirle «vendido». Estaba mal por dos motivos.
+ *  Uno: afirma POR QUÉ no hay posición, y eso no lo sabe esta fila — un nivel puede no
+ *  tener lote abierto porque se vendió o porque nunca se compró, y el chip no distingue
+ *  los dos casos. Dos: aquí nadie viene a mirar en qué niveles estuvo alguna vez, sino en
+ *  cuáles está; lo otro está en el histórico de ventas, que es su sitio.
+ *
+ *  Así que se pintan los ABIERTOS y punto. Y sigue sirviendo de aviso: si apareciera un
+ *  nivel que no reconoces, es que hay un lote VIVO etiquetado ahí — un dato que revisar,
+ *  no una reliquia. */
 function NivelesDeLaFila({ p }) {
-  const comprados = p.niveles_comprados || [];
-  if (!comprados.length) return null;
-  // Sin el campo nuevo —una respuesta cacheada de antes del despliegue— se pintan todos
-  // encendidos, que es como estaban. Apagarlos por defecto diría que has vendido cosas
-  // que no has vendido.
-  const abiertos = new Set(p.niveles_abiertos || comprados);
+  // Sin el campo nuevo —una respuesta cacheada de antes del despliegue— se usa la lista
+  // vieja, que es lo que se pintaba hasta ahora. Enseñar nada haría parecer que la
+  // posición no tiene niveles.
+  const niveles = p.niveles_abiertos || p.niveles_comprados || [];
+  if (!niveles.length) return null;
   return (
     <span className="ml-2 inline-flex gap-1">
-      {comprados.map((n) => (
-        abiertos.has(n)
-          ? <Chip key={n} tono="nivel">{NIVEL_ETIQUETA[n] || n}</Chip>
-          : <Chip key={n} tono="nivelCerrado"
-                  title={`Compraste en el ${NIVEL_ETIQUETA[n] || n} y ya lo vendiste entero: hoy no te queda nada ahí. Por eso no sale en la lista de lotes al desplegar.`}>
-              {/* «vendido» va DENTRO de la etiqueta y no solo en el `title`: en el móvil
-                  no hay ratón que posar encima, y este fichero ya documenta que ahí un
-                  texto de ayuda es sencillamente inalcanzable. */}
-              {NIVEL_ETIQUETA[n] || n} · vendido
-            </Chip>
+      {niveles.map((n) => (
+        <Chip key={n} tono="nivel">{NIVEL_ETIQUETA[n] || n}</Chip>
       ))}
     </span>
   );
@@ -120,8 +118,6 @@ function Chip({ children, tono: t = "neutro", title }) {
   const estilos = {
     neutro: "bg-superficie-alt text-tinta-3",
     nivel: "bg-info/12 text-info",
-    // Un nivel en el que entraste y del que ya saliste. Apagado, no escondido.
-    nivelCerrado: "bg-superficie-alt text-tinta-3",
     aviso: "bg-aviso/15 text-aviso",
   }[t];
   return (
