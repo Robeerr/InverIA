@@ -2261,3 +2261,39 @@ def test_sin_incluir_csv_el_grupo_del_fichero_sale_vacio():
     r = _correr(cartera_api.estimar_comisiones_pendientes(db))
     assert r["del_csv"]["n"] == 0
     assert r["a_mano"]["n"] == 1
+
+
+# ── Qué niveles tienes vs. en cuáles entraste alguna vez ─────────────────────
+
+def test_un_nivel_vendido_entero_NO_cuenta_como_abierto():
+    """Son dos preguntas distintas y estaban contestadas con el mismo dato.
+
+    `niveles_comprados` recorre el historial entero. La fila enseñaba solo esa lista, y
+    en el sitio donde el ojo busca «qué tengo»: una posición con tres lotes abiertos
+    enseñaba cuatro etiquetas y no había forma de saber cuál sobraba.
+    """
+    db = _DB([{"symbol": "RDDT", "nivel1": 150.0, "nivel2": 145.0,
+               "nivel3": 140.0, "nivel4": 135.0}])
+    for i, precio in enumerate((150.0, 145.0, 140.0, 135.0), start=1):
+        _correr(cartera_api.registrar_compra(db, "RDDT", 5, precio,
+                                             fecha=f"2026-09-0{i}", comision=0))
+    # Se vende justo lo que entró por el último nivel. Con LIFO se consume ese lote.
+    _correr(cartera_api.registrar_venta(db, "RDDT", 5, 160.0, fecha="2026-09-10",
+                                        comision=0))
+    fila = _correr(cartera_api.resumen_cartera(db, {"RDDT": 160.0}))["posiciones"][0]
+    assert len(fila["niveles_comprados"]) == 4
+    assert len(fila["niveles_abiertos"]) == 3
+    # El que falta es justo el que se vendió, no uno cualquiera.
+    vendido = set(fila["niveles_comprados"]) - set(fila["niveles_abiertos"])
+    assert vendido == {"nivel4"}
+
+
+def test_los_niveles_abiertos_salen_de_los_LOTES_no_de_las_compras():
+    """Sin ninguna venta las dos listas coinciden: el arreglo separa dos preguntas, no
+    esconde niveles."""
+    db = _DB([{"symbol": "RDDT", "nivel1": 150.0, "nivel2": 145.0, "nivel3": 140.0}])
+    for i, precio in enumerate((150.0, 145.0, 140.0), start=1):
+        _correr(cartera_api.registrar_compra(db, "RDDT", 5, precio,
+                                             fecha=f"2026-09-0{i}", comision=0))
+    fila = _correr(cartera_api.resumen_cartera(db, {"RDDT": 160.0}))["posiciones"][0]
+    assert fila["niveles_abiertos"] == fila["niveles_comprados"]

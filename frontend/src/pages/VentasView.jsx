@@ -79,6 +79,38 @@ function datosPosicion(p, comoBroker) {
   };
 }
 
+/** Las etiquetas de nivel de una fila, separando lo que tienes de lo que tuviste.
+ *
+ *  `niveles_comprados` recorre el historial entero; `niveles_abiertos`, solo los lotes
+ *  vivos. Estaban pintados igual y en el sitio donde el ojo busca «qué tengo», así que
+ *  una posición con tres lotes abiertos enseñaba cuatro etiquetas sin decir cuál sobraba.
+ *
+ *  El nivel cerrado NO se esconde: que entraras ahí y ya no estés es información, y
+ *  quitarlo obligaría a irse al histórico de ventas para saberlo. Se apaga. */
+function NivelesDeLaFila({ p }) {
+  const comprados = p.niveles_comprados || [];
+  if (!comprados.length) return null;
+  // Sin el campo nuevo —una respuesta cacheada de antes del despliegue— se pintan todos
+  // encendidos, que es como estaban. Apagarlos por defecto diría que has vendido cosas
+  // que no has vendido.
+  const abiertos = new Set(p.niveles_abiertos || comprados);
+  return (
+    <span className="ml-2 inline-flex gap-1">
+      {comprados.map((n) => (
+        abiertos.has(n)
+          ? <Chip key={n} tono="nivel">{NIVEL_ETIQUETA[n] || n}</Chip>
+          : <Chip key={n} tono="nivelCerrado"
+                  title={`Compraste en el ${NIVEL_ETIQUETA[n] || n} y ya lo vendiste entero: hoy no te queda nada ahí. Por eso no sale en la lista de lotes al desplegar.`}>
+              {/* «vendido» va DENTRO de la etiqueta y no solo en el `title`: en el móvil
+                  no hay ratón que posar encima, y este fichero ya documenta que ahí un
+                  texto de ayuda es sencillamente inalcanzable. */}
+              {NIVEL_ETIQUETA[n] || n} · vendido
+            </Chip>
+      ))}
+    </span>
+  );
+}
+
 const NIVEL_ETIQUETA = {
   deseado: "Deseado", nivel1: "Nivel 1", nivel2: "Nivel 2",
   nivel3: "Nivel 3", nivel4: "Nivel 4", nivel5: "Nivel 5",
@@ -88,6 +120,8 @@ function Chip({ children, tono: t = "neutro", title }) {
   const estilos = {
     neutro: "bg-superficie-alt text-tinta-3",
     nivel: "bg-info/12 text-info",
+    // Un nivel en el que entraste y del que ya saliste. Apagado, no escondido.
+    nivelCerrado: "bg-superficie-alt text-tinta-3",
     aviso: "bg-aviso/15 text-aviso",
   }[t];
   return (
@@ -2365,9 +2399,7 @@ export default function VentasView() {
                             sin ponderada
                           </Chip>
                         )}
-                        {p.niveles_comprados?.map((n) => (
-                          <Chip key={n} tono="nivel">{NIVEL_ETIQUETA[n] || n}</Chip>
-                        ))}
+                        <NivelesDeLaFila p={p} />
                         {sinNiveles.has(p.symbol) && (
                           <Chip title="Esta acción está en la Cartera pero todavía no tiene niveles. Se creó sola al registrar la compra, para que coja precio de mercado; el precio al que compraste NO es un nivel. Ponle los niveles en la Cartera cuando los tengas.">
                             niveles pendientes
@@ -2519,13 +2551,7 @@ export default function VentasView() {
                           sin ponderada
                         </Chip>
                       )}
-                      {!!p.niveles_comprados?.length && (
-                        <span className="ml-2 inline-flex gap-1">
-                          {p.niveles_comprados.map((n) => (
-                            <Chip key={n} tono="nivel">{NIVEL_ETIQUETA[n] || n}</Chip>
-                          ))}
-                        </span>
-                      )}
+                      <NivelesDeLaFila p={p} />
                       {sinNiveles.has(p.symbol) && (
                         <Chip title="Esta acción está en la Cartera pero todavía no tiene niveles. Se creó sola al registrar la compra, para que coja precio de mercado; el precio al que compraste NO es un nivel. Ponle los niveles en la Cartera cuando los tengas.">
                           niveles pendientes

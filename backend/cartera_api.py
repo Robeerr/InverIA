@@ -1099,8 +1099,20 @@ async def resumen_cartera(db, precios: dict) -> dict:
             # de val para que no los pise cuando la posición no se puede valorar.
             "coste_divisa": estado["coste_abierto_divisa"],
             "coste_eur": estado["coste_abierto_eur"],
+            # DOS LISTAS, PORQUE SON DOS PREGUNTAS DISTINTAS
+            #
+            # `niveles_comprados` recorre el historial ENTERO: dice en qué niveles se
+            # entró alguna vez. `niveles_abiertos` mira los lotes que siguen vivos: dice
+            # dónde queda dinero dentro hoy.
+            #
+            # Se enseñaba solo la primera, y en la posición donde el ojo busca «qué
+            # tengo». Un nivel comprado y vendido entero seguía pintado igual que uno con
+            # posición abierta, así que una fila con tres lotes abiertos enseñaba cuatro
+            # etiquetas y no había forma de saber cuál sobraba.
             "niveles_comprados": sorted({c.get("nivel") for c in libro["compras"]
                                          if c.get("nivel")}),
+            "niveles_abiertos": sorted({a.get("nivel") for a in estado["abiertos"]
+                                        if a.get("nivel")}),
         })
     posiciones.sort(key=lambda p: p.get("pnl_eur") or 0, reverse=True)
 
