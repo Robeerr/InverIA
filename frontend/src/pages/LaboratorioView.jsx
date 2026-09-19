@@ -161,7 +161,10 @@ function Experimento({ e }) {
                   los dos diría que se midió algo que no se midió. */}
               <tr><th className="text-left font-normal py-1">{r.etiqueta_cubo || "Fuerza"}</th>
                   <th className="text-right font-normal">Toques resueltos</th>
-                  <th className="text-right font-normal">Aguantó</th>
+                  {/* El rótulo lo pone el experimento: con la métrica exigente, la
+                      tasa que llega a esta columna es la del aguante LIMPIO, y dejar
+                      «Aguantó» pondría el número estricto donde se espera el laxo. */}
+                  <th className="text-right font-normal">{r.etiqueta_metrica || "Aguantó"}</th>
                   <th className="text-right font-normal">Aguantó limpio</th></tr>
             </thead>
             <tbody className="iv-cifra">
@@ -528,6 +531,10 @@ export default function LaboratorioView() {
             <Boton cual="profundidad" activo={corriendo} on={ejecutar} acento
                    testid="lab-ejecutar-profundidad">
               Medir: ¿aguantan menos las zonas más hondas?
+            </Boton>
+            <Boton cual="profundidadLimpia" activo={corriendo} on={ejecutar} acento
+                   testid="lab-ejecutar-profundidad-limpia">
+              Réplica fuera de muestra: zonas hondas, aguante limpio
             </Boton>
             <Boton cual="stopsFuera" activo={corriendo} on={ejecutar} acento
                    testid="lab-ejecutar-stops-fuera">

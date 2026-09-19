@@ -1483,3 +1483,44 @@ def test_la_ficha_declara_que_NO_busca_el_corte_optimo():
     assert "no_es_una_recomendacion_de_umbral" in c
     assert "la_profundidad_es_la_de_produccion" in c
     assert "cortes_pre_registrados" in c
+
+
+def test_la_replica_de_la_profundidad_prueba_LA_MISMA_direccion():
+    """Fijar como hipótesis lo que ya se ha visto es hacerse trampas al solitario.
+
+    El intento 1 salió plano en «aguantó» y, al mirar la columna de al lado, el aguante
+    LIMPIO se repartía 32 pp EN LA DIRECCIÓN CONTRARIA a la que supone `MAX_PLAN_DEPTH`.
+    La réplica cambia la métrica —eso es lo que se vio— pero NO la dirección que se
+    prueba: sigue siendo la de producción.
+    """
+    regs = _toques_por_profundidad()
+    uno = lab.ficha_profundidad(regs, universo=["AAPL"])
+    dos = lab.ficha_profundidad_limpia(regs, universo=["AAPL"])
+    assert uno["hipotesis_id"] == dos["hipotesis_id"] == "PROFUNDIDAD_MAX_RETROCESO"
+    assert uno["metodo"]["tramos"] == dos["metodo"]["tramos"]
+    assert dos["metodo"]["direccion_esperada"].startswith("Cuanto MENOS profunda, MÁS")
+    assert dos["tipo"] == "replica_fuera_de_muestra"
+    for control in ("fuera_de_muestra", "por_que_cambia_la_metrica",
+                    "que_contaria_como_fallo", "lo_que_NO_descarta"):
+        assert control in dos["controles"]
+
+
+def test_la_replica_declara_lo_que_NO_puede_descartar():
+    """Para que una zona al 40% llegue a tocarse, el precio ha tenido que caer un 40%.
+    Cambiar de símbolos no distingue la profundidad de lo que hace falta para llegar
+    ahí, y callarlo haría pasar la réplica por más concluyente de lo que es."""
+    c = lab.ficha_profundidad_limpia(_toques_por_profundidad(),
+                                     universo=["AAPL"])["controles"]
+    assert "caer un 40%" in c["lo_que_NO_descarta"]
+    assert "NO distingue" in c["lo_que_NO_descarta"]
+
+
+def test_la_metrica_EXIGENTE_no_se_pinta_bajo_el_rotulo_del_laxo():
+    """Con `metrica="clean"` la tasa que va a la columna principal es la del aguante
+    LIMPIO. Dejarla bajo «Aguantó» pondría el número estricto donde se espera el laxo —
+    la misma confusión que costó un experimento entero deshacer."""
+    f = lab.ficha_profundidad_limpia(_toques_por_profundidad(), universo=["AAPL"])
+    assert f["resultado"]["etiqueta_metrica"] == "Aguantó limpio"
+    # Y el que ya existía, que llevaba desde siempre con el rótulo del otro.
+    g = lab.ficha_aguante_limpio(_toques_limpios(), universo=["AAPL"])
+    assert g["resultado"]["etiqueta_metrica"] == "Aguantó limpio"

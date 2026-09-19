@@ -210,3 +210,14 @@ test("la tabla de cubos NO pone «Fuerza» en un experimento de profundidad", ()
   // Dejar la cabecera fija diría que se midió algo que no se midió.
   expect(CODIGO).toContain('r.etiqueta_cubo || "Fuerza"');
 });
+
+test("la réplica de la profundidad tiene su botón y su endpoint", () => {
+  expect(VISTA).toContain('cual="profundidadLimpia"');
+  expect(API).toContain("/laboratorio/experimento/profundidad-limpia");
+});
+
+test("la columna NO pone «Aguantó» cuando se mide el aguante LIMPIO", () => {
+  // Con la métrica exigente, la tasa que llega a la columna principal es la limpia.
+  // Dejar el rótulo fijo pondría el número estricto donde se espera el laxo.
+  expect(CODIGO).toContain('r.etiqueta_metrica || "Aguantó"');
+});

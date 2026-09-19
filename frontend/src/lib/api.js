@@ -107,6 +107,10 @@ export const api = {
     profundidad: () =>
       client.post(`/laboratorio/experimento/profundidad`, {}, { timeout: 600000 })
         .then((r) => r.data),
+    // La réplica de la anterior: métrica exigente y símbolos que no vigilas.
+    profundidadLimpia: () =>
+      client.post(`/laboratorio/experimento/profundidad-limpia`, {}, { timeout: 600000 })
+        .then((r) => r.data),
     // La auditoría del propio método: ¿cuánta separación produce el azar?
     azar: () =>
       client.post(`/laboratorio/experimento/azar`, {}, { timeout: 300000 })

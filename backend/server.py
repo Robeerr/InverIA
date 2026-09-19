@@ -4802,6 +4802,42 @@ async def laboratorio_experimento_stops_fuera(
     return {**doc, "guardado": guardado}
 
 
+@api_router.post("/laboratorio/experimento/profundidad-limpia")
+async def laboratorio_experimento_profundidad_limpia(
+        _user: str = Depends(auth.get_current_user)):
+    """Réplica FUERA DE MUESTRA de la profundidad, sobre la métrica exigente.
+
+    El intento 1 pre-registró la tasa de «aguantó», que satura al 90% y no separa. Al ver
+    el resultado apareció que el aguante LIMPIO sí se repartía —32 pp y en la dirección
+    contraria a la que `MAX_PLAN_DEPTH` supone— pero eso se vio después de tener los
+    datos delante. Con la fuerza de las zonas pasó lo mismo y la réplica lo tumbó.
+
+    Por eso corre sobre OTROS símbolos: los del universo de oportunidades que NO están en
+    watchlist ni en cartera.
+    """
+    mios = await _simbolos_que_te_importan()
+    universo = [s for s in opportunities.UNIVERSE if s not in mios][:TOPE_SIMBOLOS_AGUANTE]
+    if len(universo) < 10:
+        return {"estado": laboratorio.SIN_DATOS,
+                "conclusion": "Casi todo el universo de oportunidades está ya en tu "
+                              "watchlist o cartera: no queda muestra independiente."}
+
+    def _load(sym):
+        return market_data.get_full_indicator_history(sym)
+
+    crudo = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: backtest.backtest_universe(
+            _load, universo, forward_window=VENTANA_AGUANTE, devolver_registros=True))
+    mem.trim()
+
+    doc = laboratorio.ficha_profundidad_limpia(
+        crudo.get("registros") or [],
+        universo=list((crudo.get("per_symbol") or {}).keys()) or universo,
+        ventana=VENTANA_AGUANTE)
+    guardado = await laboratorio.guardar_experimento(db, doc)
+    return {**doc, "guardado": guardado}
+
+
 @api_router.post("/laboratorio/experimento/azar")
 async def laboratorio_experimento_azar(_user: str = Depends(auth.get_current_user)):
     """Audita el INSTRUMENTO, no una hipótesis: ¿cuánta separación produce el azar?

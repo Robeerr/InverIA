@@ -1518,6 +1518,117 @@ def ficha_profundidad(registros: list, universo: list, ventana: int = None) -> d
     return ficha
 
 
+def ficha_profundidad_limpia(registros: list, universo: list,
+                             ventana: int = None) -> dict:
+    """La profundidad sobre la métrica EXIGENTE, y fuera de la muestra. Pura.
+
+    POR QUÉ HACE FALTA, Y POR QUÉ NO SOBRE LOS MISMOS DATOS
+
+    El intento 1 pre-registró la tasa de «aguantó» y salió plana: 87,9 / 91,0 / 86,7 /
+    92,2, cuatro cifras pegadas al 90%. El motivo no fue la profundidad sino la métrica,
+    que SATURA — casi todo la cumple, y algo que aprueba al 90% no separa nada. Es el
+    mismo fallo de pre-registro que ya cometí con la fuerza de las zonas.
+
+    Al mirar el resultado apareció que el aguante LIMPIO sí se repartía: 31,7 / 40,4 /
+    54,8 / 64,1. Treinta y dos puntos, monótonos, y en la dirección CONTRARIA a la que
+    `MAX_PLAN_DEPTH` da por supuesta. Pero eso se vio DESPUÉS de tener los datos delante,
+    y cambiar de métrica al ver que la primera no separa es cómo se fabrica un hallazgo
+    falso. Con la fuerza de las zonas pasó exactamente esto y la réplica lo tumbó.
+
+    Por eso corre sobre OTROS SÍMBOLOS: los del universo de oportunidades que no están en
+    watchlist ni en cartera. Dato nuevo para una pregunta ya formulada.
+
+    LA DIRECCIÓN QUE SE PRUEBA SIGUE SIENDO LA DE PRODUCCIÓN
+
+    Se prueba «cuanto menos profunda, más aguanta», que es lo que `MAX_PLAN_DEPTH`
+    afirma — NO «cuanto más honda, mejor», que es lo que vi. Fijar como hipótesis lo que
+    ya se ha visto es hacerse trampas al solitario. Si vuelve a salir invertido, ESO sí
+    sería una réplica, y entonces el 0,30 estaría escondiendo justo las zonas que mejor
+    se comportan.
+
+    QUÉ NO RESUELVE ESTA RÉPLICA
+
+    Queda una explicación mecánica en pie: para que una zona al 40% llegue a tocarse, el
+    precio ha tenido que caer un 40%. Esos toques ocurren en condiciones distintas, y
+    puede que lo que separa no sea la profundidad sino lo que hace falta para llegar
+    ahí. Cambiar de símbolos no distingue esas dos cosas; haría falta comparar dentro de
+    episodios parecidos, y eso es otro experimento.
+    """
+    regs = con_cubo_de_profundidad(registros)
+    d = aguante_por_cubo(regs, metrica="clean", campo="cubo_profundidad",
+                         cubos=CUBOS_PROFUNDIDAD)
+    ruido = azar_del_aguante(regs, metrica="clean", campo="cubo_profundidad",
+                             cubos=CUBOS_PROFUNDIDAD)
+    v = veredicto_profundidad(d, ruido)
+    # LA COLUMNA SE LLAMA COMO LO QUE MIDE. Con `metrica="clean"` la tasa que va a la
+    # columna principal es la del aguante LIMPIO, y dejarla bajo el rótulo «Aguantó»
+    # pondría el número exigente donde se espera el laxo — que es justo la confusión que
+    # hizo falta un experimento entero para deshacer.
+    v = {**v, "etiqueta_metrica": "Aguantó limpio"}
+    fechas = [str(r.get("anchor") or "")[:10] for r in regs if r.get("anchor")]
+    return {
+        "hipotesis_id": "PROFUNDIDAD_MAX_RETROCESO",
+        "tipo": "replica_fuera_de_muestra",
+        "deriva_de": "El intento 1 pre-registró la tasa de «aguantó», que satura al 90% y "
+                     "no separa. El aguante LIMPIO sí se repartía —32 pp y al revés de lo "
+                     "que supone el 0,30— pero eso se vio después de mirar.",
+        "titulo": "¿Aguantan LIMPIAMENTE menos las zonas hondas, en símbolos que no vigilas?",
+        "metodo": {
+            "que_pregunta": "De los soportes tocados, con qué frecuencia el precio rebotó "
+                            "SIN llegar a perder el nivel en ningún momento de la ventana, "
+                            "agrupados por lo lejos que estaba la zona bajo el precio.",
+            "universo": sorted(universo or []),
+            "simbolos": len(universo or []),
+            "desde": min(fechas) if fechas else None,
+            "hasta": max(fechas) if fechas else None,
+            "motor": "backtest.backtest_universe · walk-forward punto-en-el-tiempo",
+            "ventana_dias": ventana,
+            "tramos": list(CUBOS_PROFUNDIDAD),
+            "muestra_minima_por_tramo": MUESTRA_MINIMA,
+            "direccion_esperada": "Cuanto MENOS profunda, MÁS aguanta limpio — que es lo "
+                                  "que afirma `MAX_PLAN_DEPTH = 0,30`, y NO «cuanto más "
+                                  "honda mejor», que es lo que se vio en la muestra "
+                                  "anterior. Fijar como hipótesis lo ya visto es hacerse "
+                                  "trampas.",
+        },
+        "controles": {
+            "leakage": "Cada zona se calcula con las velas ANTERIORES al ancla y se juzga "
+                       "con las posteriores.",
+            "fuera_de_muestra": "Símbolos distintos de los del intento 1: ni watchlist ni "
+                                "cartera. Dato nuevo para una pregunta ya formulada, no el "
+                                "mismo dato mirado dos veces.",
+            "por_que_cambia_la_metrica": "El intento 1 salió plano porque «aguantó» satura "
+                                         "al 90%. El cambio se hizo DESPUÉS de ver el "
+                                         "resultado, y por eso corre sobre otros símbolos: "
+                                         "es la única forma de que el cambio no valga como "
+                                         "hallazgo por sí mismo.",
+            "que_contaria_como_fallo": "Que los tramos se separen por debajo del suelo de "
+                                       "ruido. Eso dejaría lo visto en el intento 1 en "
+                                       "«solo pasó allí», y `MAX_PLAN_DEPTH` seguiría sin "
+                                       "respaldo ni a favor ni en contra.",
+            "la_profundidad_es_la_de_produccion": "Se mide `(precio − nivel) / precio` en "
+                                                  "el ancla, la magnitud que "
+                                                  "`MAX_PLAN_DEPTH` gobierna.",
+            "cortes_pre_registrados": "Los mismos del intento 1, sin tocar. El 30% es el "
+                                      "de producción.",
+            "lo_que_NO_descarta": "Para que una zona al 40% llegue a tocarse, el precio ha "
+                                  "tenido que caer un 40%. Esos toques ocurren en "
+                                  "condiciones distintas, y puede que lo que separa no sea "
+                                  "la profundidad sino lo que hace falta para llegar ahí. "
+                                  "Cambiar de símbolos NO distingue esas dos cosas.",
+            "lo_que_NO_mide": "No dice cuánto se gana entrando en cada tramo, solo con qué "
+                              "frecuencia el nivel aguanta sin romperse.",
+            "supervivencia": "El universo es el de hoy. Pesa poco: se mide qué pasó tras "
+                             "tocar un soporte.",
+            "parametros_ajustados": "Ninguno.",
+        },
+        "resultado": {**d, **v},
+        "estado": v["estado"],
+        "ejecutado_en": _ahora(),
+        "lab_v": 1,
+    }
+
+
 def ficha_aguante(registros: list, universo: list, ventana: int = None) -> dict:
     """El experimento del aguante, listo para guardar. Puro."""
     d = aguante_por_cubo(registros)
@@ -1601,7 +1712,9 @@ def ficha_aguante_limpio(registros: list, universo: list, ventana: int = None,
     """
     d = aguante_por_cubo(registros, metrica="clean")
     ruido = azar_del_aguante(registros, metrica="clean")
-    v = veredicto_aguante(d, ruido)
+    # Mismo motivo: aquí la columna principal ya trae la tasa LIMPIA. Llevaba desde que
+    # existe este experimento con el rótulo del otro.
+    v = {**veredicto_aguante(d, ruido), "etiqueta_metrica": "Aguantó limpio"}
     fechas = [str(r.get("anchor") or "")[:10] for r in (registros or []) if r.get("anchor")]
     return {
         "hipotesis_id": "FUERZA_DE_LAS_ZONAS",
