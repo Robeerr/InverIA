@@ -103,6 +103,10 @@ export const api = {
     stopsFuera: () =>
       client.post(`/laboratorio/experimento/stops-fuera`, {}, { timeout: 600000 })
         .then((r) => r.data),
+    // Quinta hipótesis: ¿aguantan menos las zonas que están más abajo?
+    profundidad: () =>
+      client.post(`/laboratorio/experimento/profundidad`, {}, { timeout: 600000 })
+        .then((r) => r.data),
     // La auditoría del propio método: ¿cuánta separación produce el azar?
     azar: () =>
       client.post(`/laboratorio/experimento/azar`, {}, { timeout: 300000 })

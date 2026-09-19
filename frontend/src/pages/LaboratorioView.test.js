@@ -198,3 +198,15 @@ test("la banda dice lo que ha salido, no la regla general", () => {
   expect(VISTA).toContain("Incluye el cero: no se distinguen.");
   expect(VISTA).toContain("No incluye el cero: se distinguen.");
 });
+
+test("el experimento de la profundidad tiene su botón y su endpoint", () => {
+  expect(VISTA).toContain('cual="profundidad"');
+  expect(VISTA).toContain("¿aguantan menos las zonas más hondas?");
+  expect(API).toContain("/laboratorio/experimento/profundidad");
+});
+
+test("la tabla de cubos NO pone «Fuerza» en un experimento de profundidad", () => {
+  // La misma tabla sirve para los cubos de fuerza y para los tramos de profundidad.
+  // Dejar la cabecera fija diría que se midió algo que no se midió.
+  expect(CODIGO).toContain('r.etiqueta_cubo || "Fuerza"');
+});

@@ -4664,6 +4664,37 @@ async def laboratorio_experimento_aguante(_user: str = Depends(auth.get_current_
     return {**doc, "guardado": guardado}
 
 
+@api_router.post("/laboratorio/experimento/profundidad")
+async def laboratorio_experimento_profundidad(
+        _user: str = Depends(auth.get_current_user)):
+    """Quinta hipótesis: ¿aguantan menos las zonas de compra que están más abajo?
+
+    `MAX_PLAN_DEPTH = 0,30` decide ahora mismo qué zonas se enseñan como comprables, y
+    sale del rango que pedía un prompt. Ese corte solo tiene sentido si las zonas
+    profundas aguantan peor; esto lo comprueba sobre los mismos toques que el resto de
+    experimentos del aguante.
+    """
+    universo = sorted(await _simbolos_que_te_importan())[:TOPE_SIMBOLOS_AGUANTE]
+    if not universo:
+        return {"estado": laboratorio.SIN_DATOS,
+                "conclusion": "No hay ningún símbolo en watchlist ni en cartera."}
+
+    def _load(sym):
+        return market_data.get_full_indicator_history(sym)
+
+    crudo = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: backtest.backtest_universe(
+            _load, universo, forward_window=VENTANA_AGUANTE, devolver_registros=True))
+    mem.trim()
+
+    doc = laboratorio.ficha_profundidad(
+        crudo.get("registros") or [],
+        universo=list((crudo.get("per_symbol") or {}).keys()) or universo,
+        ventana=VENTANA_AGUANTE)
+    guardado = await laboratorio.guardar_experimento(db, doc)
+    return {**doc, "guardado": guardado}
+
+
 @api_router.post("/laboratorio/experimento/stops")
 async def laboratorio_experimento_stops(_user: str = Depends(auth.get_current_user)):
     """Cuarta hipótesis: ¿los tres múltiplos de stop distinguen un corte bueno de uno en

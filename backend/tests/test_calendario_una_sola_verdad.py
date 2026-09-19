@@ -273,3 +273,17 @@ def test_la_EXCURSION_ADVERSA_se_mide_hasta_la_RESOLUCION():
     fuente = inspect.getsource(backtest)
     assert "tramo_low = fwd_low[touch_at:resuelto_en + 1]" in fuente
     assert '"mae_atr": mae_atr,' in fuente
+
+
+def test_la_PROFUNDIDAD_se_mide_con_la_formula_de_produccion():
+    """`levels_engine.indices_del_plan_detallado` mete una zona en el plan si su precio
+    queda por encima de `precio × (1 − MAX_PLAN_DEPTH)`. La magnitud que ese 0,30
+    gobierna es ésta, y medir otra parecida daría un número que no se puede llevar al
+    parámetro — que es el único motivo de medirlo."""
+    import inspect
+    import backtest
+    import levels_engine
+    assert '"depth": round((current_price - L) / current_price, 4),' in \
+        inspect.getsource(backtest)
+    # Y el filtro de producción sigue comparando contra ese mismo suelo.
+    assert "suelo = precio * (1 - max_depth)" in inspect.getsource(levels_engine)

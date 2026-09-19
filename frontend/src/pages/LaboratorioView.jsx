@@ -156,7 +156,10 @@ function Experimento({ e }) {
         <div className="mt-2 overflow-x-auto">
           <table className="text-xs w-full">
             <thead className="text-tinta-3">
-              <tr><th className="text-left font-normal py-1">Fuerza</th>
+              {/* La cabecera la pone el experimento: esta misma tabla sirve para los
+                  cubos de fuerza y para los tramos de profundidad, y poner «Fuerza» en
+                  los dos diría que se midió algo que no se midió. */}
+              <tr><th className="text-left font-normal py-1">{r.etiqueta_cubo || "Fuerza"}</th>
                   <th className="text-right font-normal">Toques resueltos</th>
                   <th className="text-right font-normal">Aguantó</th>
                   <th className="text-right font-normal">Aguantó limpio</th></tr>
@@ -522,6 +525,10 @@ export default function LaboratorioView() {
                    testid="lab-ejecutar-aguante">Medir: ¿aguantan las zonas fuertes?</Boton>
             <Boton cual="stops" activo={corriendo} on={ejecutar} acento
                    testid="lab-ejecutar-stops">Medir: ¿dónde poner el stop?</Boton>
+            <Boton cual="profundidad" activo={corriendo} on={ejecutar} acento
+                   testid="lab-ejecutar-profundidad">
+              Medir: ¿aguantan menos las zonas más hondas?
+            </Boton>
             <Boton cual="stopsFuera" activo={corriendo} on={ejecutar} acento
                    testid="lab-ejecutar-stops-fuera">
               Réplica fuera de muestra: ¿dónde poner el stop?

@@ -92,8 +92,8 @@ PUEDE_MEDIRSE = {
         False, "Hoy `relative_strength` es un diferencial contra SPY, no un percentil. "
                "Sin un universo con el que comparar, «percentil 70» no existe."),
     "PROFUNDIDAD_MAX_RETROCESO": (
-        True, "Solo necesita precios. Sustituiría al 0,30 de `MAX_PLAN_DEPTH`, que hoy "
-              "está en producción sin haberse medido."),
+        True, "MEDIDO: `backtest` guarda la profundidad de cada zona con la fórmula de "
+              "producción y `ficha_profundidad` la juzga contra el suelo de ruido."),
     "RIESGO_MAX_POR_OPERACION": (
         False, "No es un parámetro estadístico: es tu tolerancia al riesgo. Se pregunta, "
                "no se calcula."),
@@ -1207,16 +1207,23 @@ def ficha_azar(obs: list, universo: list, desde: str = None, hasta: str = None) 
 CUBOS_FUERZA = ("debil", "media", "fuerte")
 
 
-def aguante_por_cubo(registros: list, metrica: str = "held") -> dict:
-    """Con qué frecuencia aguantó cada cubo de fuerza. Pura.
+def aguante_por_cubo(registros: list, metrica: str = "held",
+                     campo: str = "bucket", cubos: tuple = None) -> dict:
+    """Con qué frecuencia aguantó cada cubo. Pura.
 
     Solo cuentan los toques RESUELTOS: un nivel que no llegó a tocarse no aguantó ni se
     rompió, y contarlo como cualquiera de las dos cosas sería inventar el dato.
+
+    `campo` y `cubos` existen porque la pregunta «¿aguantan más unas zonas que otras?» se
+    hace sobre más de un criterio: la fuerza que el motor puntúa, y la profundidad a la
+    que está el nivel. La cuenta es la misma y el suelo de ruido se mide igual; lo único
+    que cambia es por qué columna se agrupa. Copiar la función para cambiar una cadena
+    dejaría dos sitios donde arreglar el mismo fallo.
     """
     filas = []
-    for cubo in CUBOS_FUERZA:
+    for cubo in (cubos or CUBOS_FUERZA):
         rs = [r for r in (registros or [])
-              if r.get("bucket") == cubo and r.get(metrica) is not None]
+              if r.get(campo) == cubo and r.get(metrica) is not None]
         aguantan = sum(1 for r in rs if r[metrica])
         limpios = [r for r in rs if r.get("clean") is not None]
         años = {}
@@ -1242,14 +1249,16 @@ def aguante_por_cubo(registros: list, metrica: str = "held") -> dict:
     return {"cubos": filas, "n": sum(f["n"] for f in filas)}
 
 
-def _rango_de_aguante(registros: list, metrica: str = "held") -> Optional[float]:
-    filas = aguante_por_cubo(registros, metrica=metrica)["cubos"]
+def _rango_de_aguante(registros: list, metrica: str = "held",
+                      campo: str = "bucket", cubos: tuple = None) -> Optional[float]:
+    filas = aguante_por_cubo(registros, metrica=metrica, campo=campo, cubos=cubos)["cubos"]
     tasas = [f["aguante_pct"] for f in filas if f["aguante_pct"] is not None]
     return round(max(tasas) - min(tasas), 2) if len(tasas) > 1 else None
 
 
 def azar_del_aguante(registros: list, vueltas: int = None,
-                     metrica: str = "held") -> dict:
+                     metrica: str = "held", campo: str = "bucket",
+                     cubos: tuple = None) -> dict:
     """Qué diferencia de aguante produce el azar con ESTOS toques. Pura y determinista.
 
     Se barajan los cubos de fuerza DENTRO de cada fecha, por el mismo motivo que en el
@@ -1259,7 +1268,7 @@ def azar_del_aguante(registros: list, vueltas: int = None,
     import random
     vueltas = VUELTAS_AZAR if vueltas is None else vueltas
     generador = random.Random(SEMILLA)
-    observado = _rango_de_aguante(registros, metrica=metrica)
+    observado = _rango_de_aguante(registros, metrica=metrica, campo=campo, cubos=cubos)
 
     por_fecha = {}
     for r in registros or []:
@@ -1269,10 +1278,10 @@ def azar_del_aguante(registros: list, vueltas: int = None,
     for _ in range(vueltas):
         barajados = []
         for items in por_fecha.values():
-            cubos = [r["bucket"] for r in items]
-            generador.shuffle(cubos)
-            barajados += [{**r, "bucket": c} for r, c in zip(items, cubos)]
-        s = _rango_de_aguante(barajados, metrica=metrica)
+            etiquetas = [r.get(campo) for r in items]
+            generador.shuffle(etiquetas)
+            barajados += [{**r, campo: c} for r, c in zip(items, etiquetas)]
+        s = _rango_de_aguante(barajados, metrica=metrica, campo=campo, cubos=cubos)
         if s is not None:
             simulados.append(s)
     simulados.sort()
@@ -1336,6 +1345,177 @@ def veredicto_aguante(d: dict, ruido: dict) -> dict:
                           f"({suelo} pp), pero NO en el orden que la puntuación afirma. "
                           "El número que la pantalla enseña como «fuerza» no ordena las "
                           "zonas por lo bien que aguantan."}
+
+
+# ── La profundidad del retroceso, que gobierna MAX_PLAN_DEPTH ────────────────
+
+#: Los tramos de profundidad. EL CORTE DE 0,30 NO ES MÍO: es el `MAX_PLAN_DEPTH` que está
+#: en producción decidiendo qué zonas se te enseñan como comprables. Los otros dos parten
+#: el interior del suelo en tercios iguales, que es la división más sosa posible.
+#:
+#: Elegir los cortes después de mirar los datos —«aquí se separa bien»— es la forma más
+#: cómoda de fabricar un hallazgo. Por eso quedan escritos antes, y anclados a un número
+#: que ya existía.
+CUBOS_PROFUNDIDAD = ("0-10%", "10-20%", "20-30%", ">30%")
+CORTE_DEL_PLAN = 0.30
+
+
+def cubo_de_profundidad(depth) -> Optional[str]:
+    """En qué tramo cae una zona. Puro. `None` si no se puede saber."""
+    try:
+        d = float(depth)
+    except (TypeError, ValueError):
+        return None
+    if d < 0:
+        return None
+    if d <= 0.10:
+        return CUBOS_PROFUNDIDAD[0]
+    if d <= 0.20:
+        return CUBOS_PROFUNDIDAD[1]
+    if d <= CORTE_DEL_PLAN:
+        return CUBOS_PROFUNDIDAD[2]
+    return CUBOS_PROFUNDIDAD[3]
+
+
+def con_cubo_de_profundidad(registros: list) -> list:
+    """Los mismos registros con su tramo de profundidad puesto. Puro.
+
+    Se añade un campo en vez de tocar `bucket`: `bucket` es la fuerza y hay experimentos
+    vivos que la usan. Dos criterios distintos no pueden compartir columna.
+    """
+    salida = []
+    for r in registros or []:
+        cubo = cubo_de_profundidad(r.get("depth"))
+        if cubo:
+            salida.append({**r, "cubo_profundidad": cubo})
+    return salida
+
+
+def veredicto_profundidad(d: dict, ruido: dict) -> dict:
+    """¿Aguantan menos las zonas más profundas? Puro.
+
+    LA DIRECCIÓN LA FIJA EL NÚMERO QUE YA ESTÁ EN PRODUCCIÓN, NO YO
+
+    `MAX_PLAN_DEPTH = 0,30` afirma que una zona a más del 30% bajo el precio no merece
+    enseñarse como zona de compra. Eso solo tiene sentido si las zonas profundas aguantan
+    PEOR. Así que se prueba exactamente eso: cuanto menos profunda, más aguanta.
+
+    Si sale al revés —las profundas aguantan igual o mejor—, el 0,30 no está protegiendo
+    de nada y está escondiendo zonas por ninguna razón medida.
+    """
+    filas = d.get("cubos") or []
+    flacos = [f["cubo"] for f in filas if f["n"] < MUESTRA_MINIMA]
+    if flacos:
+        return {"estado": SIN_DATOS,
+                "conclusion": "Tramos sin muestra suficiente: " + ", ".join(flacos)
+                              + ". Sin ellos no hay comparación que hacer."}
+
+    tasas = [f["aguante_pct"] for f in filas]
+    observado = ruido.get("observado_pp")
+    suelo = ruido.get("azar_p95_pp")
+    base = {"aguantes": {f["cubo"]: f["aguante_pct"] for f in filas},
+            "rango_pp": observado, "suelo_de_ruido_pp": suelo, "n": d.get("n"),
+            "corte_del_plan": CORTE_DEL_PLAN,
+            # Cómo se llama la columna en la tabla. La comparte con el experimento de la
+            # fuerza, y una tabla de profundidades con «Fuerza» de cabecera estaría
+            # diciendo que se midió otra cosa.
+            "etiqueta_cubo": "Profundidad"}
+
+    if suelo is None or observado is None:
+        return {**base, "estado": SIN_DATOS,
+                "conclusion": "No se ha podido medir el suelo de ruido."}
+    if observado < suelo:
+        n = d.get("n") or 0
+        cota = (f" Con {n} toques resueltos, un efecto real mayor que {suelo} pp se "
+                "habría visto: si existe algo, es más pequeño que eso."
+                if n >= MUESTRA_MINIMA * 10 else
+                " La muestra es corta, así que tampoco se puede acotar cuánto.")
+        return {**base, "estado": NO_CONCLUYENTE, "cota_superior_pp": suelo,
+                "conclusion": f"Los tramos se separan {observado} pp, por debajo del "
+                              f"suelo de ruido ({suelo} pp): cabe dentro de lo que el "
+                              "azar produce solo. La profundidad NO ordena las zonas por "
+                              f"lo bien que aguantan, y el {CORTE_DEL_PLAN:.0%} de "
+                              "`MAX_PLAN_DEPTH` sigue sin respaldo." + cota}
+    # `tasas` va de menos profundo a más profundo. Que la lista sea DECRECIENTE es que
+    # cuanto más hondo, peor — que es lo que el corte de producción da por supuesto.
+    if tasas == sorted(tasas, reverse=True):
+        return {**base, "estado": VALIDADA,
+                "conclusion": f"Cuanto más profunda la zona, menos aguanta: {observado} "
+                              f"pp entre el tramo menos hondo y el más hondo, por encima "
+                              f"del suelo de ruido ({suelo} pp). El corte del "
+                              f"{CORTE_DEL_PLAN:.0%} protege de algo real."}
+    return {**base, "estado": RECHAZADA,
+            "conclusion": f"Los tramos se separan {observado} pp, por encima del ruido "
+                          f"({suelo} pp), pero NO en el orden que el corte da por "
+                          f"supuesto: las zonas más profundas no aguantan menos. El "
+                          f"{CORTE_DEL_PLAN:.0%} de `MAX_PLAN_DEPTH` está escondiendo "
+                          "zonas sin una razón medida."}
+
+
+def ficha_profundidad(registros: list, universo: list, ventana: int = None) -> dict:
+    """El experimento de la profundidad, listo para guardar. Puro."""
+    regs = con_cubo_de_profundidad(registros)
+    d = aguante_por_cubo(regs, campo="cubo_profundidad", cubos=CUBOS_PROFUNDIDAD)
+    ruido = azar_del_aguante(regs, campo="cubo_profundidad", cubos=CUBOS_PROFUNDIDAD)
+    v = veredicto_profundidad(d, ruido)
+    fechas = [str(r.get("anchor") or "")[:10] for r in regs if r.get("anchor")]
+    ficha = {
+        "hipotesis_id": "PROFUNDIDAD_MAX_RETROCESO",
+        "tipo": "primero",
+        "titulo": "¿Aguantan menos las zonas de compra que están más abajo?",
+        "metodo": {
+            "que_pregunta": "De los soportes tocados, con qué frecuencia el precio rebotó "
+                            "sin perder el nivel, agrupados por lo lejos que estaba la "
+                            "zona bajo el precio del día.",
+            "universo": sorted(universo or []),
+            "simbolos": len(universo or []),
+            "desde": min(fechas) if fechas else None,
+            "hasta": max(fechas) if fechas else None,
+            "motor": "backtest.backtest_universe · walk-forward punto-en-el-tiempo",
+            "ventana_dias": ventana,
+            "tramos": list(CUBOS_PROFUNDIDAD),
+            "muestra_minima_por_tramo": MUESTRA_MINIMA,
+            "direccion_esperada": "Cuanto MENOS profunda, MÁS aguanta. Fijada ANTES de "
+                                  "ejecutar, y no la elegí yo: es lo que da por supuesto "
+                                  "`MAX_PLAN_DEPTH = 0,30`, que hoy esconde las zonas a "
+                                  "más del 30% bajo el precio.",
+        },
+        "controles": {
+            "leakage": "Cada zona se calcula con las velas ANTERIORES al ancla y se juzga "
+                       "con las posteriores.",
+            "la_profundidad_es_la_de_produccion": "Se mide `(precio − nivel) / precio` en "
+                                                  "el ancla, que es exactamente la "
+                                                  "magnitud que `MAX_PLAN_DEPTH` "
+                                                  "gobierna. Medir otra parecida daría un "
+                                                  "número que no se podría llevar a ese "
+                                                  "parámetro, que es el único motivo de "
+                                                  "medirlo.",
+            "cortes_pre_registrados": "El 30% es el de producción; los otros dos parten "
+                                      "el interior en tercios. Elegir los cortes después "
+                                      "de ver dónde separan es la forma más cómoda de "
+                                      "fabricar un hallazgo.",
+            "suelo_de_ruido": "Se barajan los tramos DENTRO de cada fecha y se toma el "
+                              "p95. En un mismo día el mercado entero empuja igual, y "
+                              "barajar sin respetar la fecha haría parecer manso al azar.",
+            "lo_que_NO_mide": "No dice cuánto se gana entrando en cada tramo, solo con "
+                              "qué frecuencia el nivel aguanta. Una zona honda que "
+                              "aguanta menos veces puede compensar si paga más cuando "
+                              "acierta, y eso exige medir retornos.",
+            "no_es_una_recomendacion_de_umbral": "Aunque salga validado, esto NO dice que "
+                                                 "0,30 sea el mejor corte: dice que la "
+                                                 "profundidad ordena. Buscar el corte "
+                                                 "óptimo sobre estos mismos datos sería "
+                                                 "ajustarlo a la muestra.",
+            "supervivencia": "El universo es el de hoy. Pesa poco: se mide qué pasó tras "
+                             "tocar un soporte.",
+            "parametros_ajustados": "Ninguno.",
+        },
+        "resultado": {**d, **v},
+        "estado": v["estado"],
+        "ejecutado_en": _ahora(),
+        "lab_v": 1,
+    }
+    return ficha
 
 
 def ficha_aguante(registros: list, universo: list, ventana: int = None) -> dict:

@@ -1403,3 +1403,83 @@ def test_la_muestra_efectiva_son_los_BLOQUES_y_se_dice():
     aviso = f["controles"].get("muestra_efectiva", "")
     assert "bloques de fecha" in aviso
     assert str(f["resultado"]["banda"]["bloques"]) in aviso
+
+
+# ── La profundidad del retroceso, que gobierna MAX_PLAN_DEPTH ────────────────
+
+def _toques_por_profundidad(probs=(0.70, 0.55, 0.40, 0.25), por_fecha=6, fechas=60,
+                            semilla=7):
+    """Toques repartidos por tramo de profundidad, con el centro de cada tramo."""
+    import random
+    r = random.Random(semilla)
+    centros = (0.05, 0.15, 0.25, 0.40)
+    regs = []
+    for d in range(fechas):
+        for depth, p in zip(centros, probs):
+            for _ in range(por_fecha):
+                regs.append({"anchor": f"2024-{(d % 12) + 1:02d}-01", "depth": depth,
+                             "held": r.random() < p, "clean": r.random() < p})
+    return regs
+
+
+def test_el_corte_de_los_tramos_es_el_de_PRODUCCION():
+    """El 0,30 no lo elegí yo: es `MAX_PLAN_DEPTH`. Elegir los cortes después de ver
+    dónde separan es la forma más cómoda de fabricar un hallazgo."""
+    assert lab.CORTE_DEL_PLAN == 0.30
+    assert lab.cubo_de_profundidad(0.30) == "20-30%"
+    assert lab.cubo_de_profundidad(0.3001) == ">30%"
+    # Los bordes de los otros dos, que también son fijos.
+    assert lab.cubo_de_profundidad(0.10) == "0-10%"
+    assert lab.cubo_de_profundidad(0.1001) == "10-20%"
+
+
+def test_una_profundidad_que_no_se_puede_leer_NO_entra():
+    """Inventarle un tramo a un registro sin dato lo metería en la cuenta de un cubo que
+    no le corresponde, y ese cubo decide el veredicto."""
+    assert lab.cubo_de_profundidad(None) is None
+    assert lab.cubo_de_profundidad("ocho") is None
+    assert lab.cubo_de_profundidad(-0.1) is None
+    regs = lab.con_cubo_de_profundidad([{"depth": None}, {"depth": 0.05}])
+    assert len(regs) == 1
+
+
+def test_el_tramo_NO_pisa_el_cubo_de_fuerza():
+    """`bucket` es la fuerza y hay experimentos vivos que la usan. Dos criterios
+    distintos no pueden compartir columna."""
+    regs = lab.con_cubo_de_profundidad([{"depth": 0.05, "bucket": "fuerte"}])
+    assert regs[0]["bucket"] == "fuerte"
+    assert regs[0]["cubo_profundidad"] == "0-10%"
+
+
+def test_si_lo_MENOS_hondo_aguanta_mas_se_valida():
+    """Es la dirección que da por supuesta `MAX_PLAN_DEPTH`, fijada antes de mirar."""
+    f = lab.ficha_profundidad(_toques_por_profundidad(), universo=["AAPL"])
+    assert f["estado"] == lab.VALIDADA
+    assert "menos aguanta" in f["resultado"]["conclusion"]
+
+
+def test_si_la_direccion_se_INVIERTE_se_rechaza():
+    """Si las zonas hondas aguantan MÁS, el 0,30 está escondiendo zonas sin una razón
+    medida. Eso es un resultado, no un fallo del experimento."""
+    f = lab.ficha_profundidad(_toques_por_profundidad(probs=(0.25, 0.40, 0.55, 0.70)),
+                              universo=["AAPL"])
+    assert f["estado"] == lab.RECHAZADA
+    assert "sin una razón medida" in f["resultado"]["conclusion"]
+
+
+def test_sin_separacion_por_encima_del_RUIDO_no_se_concluye():
+    """El suelo de ruido se mide barajando los tramos dentro de cada fecha. Sin pasarlo,
+    lo observado cabe en lo que el azar produce solo."""
+    f = lab.ficha_profundidad(_toques_por_profundidad(probs=(0.5, 0.5, 0.5, 0.5)),
+                              universo=["AAPL"])
+    assert f["estado"] == lab.NO_CONCLUYENTE
+    assert "sigue sin respaldo" in f["resultado"]["conclusion"]
+
+
+def test_la_ficha_declara_que_NO_busca_el_corte_optimo():
+    """Salir validado dice que la profundidad ordena, no que 0,30 sea el mejor número.
+    Buscar el óptimo sobre estos mismos datos sería ajustarlo a la muestra."""
+    c = lab.ficha_profundidad(_toques_por_profundidad(), universo=["AAPL"])["controles"]
+    assert "no_es_una_recomendacion_de_umbral" in c
+    assert "la_profundidad_es_la_de_produccion" in c
+    assert "cortes_pre_registrados" in c

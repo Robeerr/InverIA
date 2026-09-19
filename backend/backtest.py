@@ -181,6 +181,18 @@ def _walk_forward_records(
                 # observado produce el azar. Barajar sin respetar la fecha rompería que
                 # en un mismo día todo el mercado se mueve a la vez.
                 "anchor": _fecha_de(df, i),
+                # LA PROFUNDIDAD DE LA ZONA, calculada EXACTAMENTE como en producción.
+                #
+                # `levels_engine.indices_del_plan_detallado` mete una zona en el plan si
+                # su precio queda por encima de `precio × (1 − MAX_PLAN_DEPTH)`. O sea
+                # que la magnitud que ese 0,30 gobierna es ésta: cuánto por debajo del
+                # precio del ancla está el nivel, en tanto por uno.
+                #
+                # Se calcula aquí y no en el laboratorio porque aquí están las dos
+                # cifras. Y con la fórmula de producción y no con una parecida: medir
+                # otra magnitud y llamarla igual daría un número que no se puede llevar
+                # a `MAX_PLAN_DEPTH`, que es el único motivo de medirla.
+                "depth": round((current_price - L) / current_price, 4),
                 "strength": int(z.get("strength", 0)),
                 "bucket": _bucket(int(z.get("strength", 0))),
                 "tactical": bool(z.get("tactical", False)),
