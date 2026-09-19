@@ -188,8 +188,49 @@ los que acabaron mal.
 
 RELACIÓN CON LO QUE HAY: `server.MAX_PLAN_DEPTH` vale 0,30 y está en producción. No
 viene de ningún dato — sale del rango que pedía un prompt. Se deja intacto a propósito:
-cambiarlo por otro número sin medir sería inventarlo dos veces. Cuando este experimento
-dé un resultado, ese 0,30 se sustituye o se elimina.
+cambiarlo por otro número sin medir sería inventarlo dos veces.
+
+MEDIDO el 19-09-2026, dos veces. NO CONCLUYENTE. SIGUE VALIENDO None, y `MAX_PLAN_DEPTH`
+SIGUE EN 0,30.
+
+1 · LA MÉTRICA PRE-REGISTRADA NO SEPARA
+
+Tasa de «aguantó», 1.200 toques resueltos del universo vigilado: 87,9 / 91,0 / 86,7 /
+92,2 por tramo de profundidad. 5,5 pp de separación contra un suelo de ruido de 9,4.
+Cabe dentro del azar.
+
+El fallo fue mío y es el mismo que con la fuerza de las zonas: «aguantó» SATURA. Cuatro
+cifras pegadas al 90% no pueden ordenar nada, y elegí esa métrica antes de darme cuenta.
+
+2 · LA COLUMNA DE AL LADO SEPARABA 32 pp, Y AL REPLICAR SE CAYÓ
+
+En esos mismos datos el aguante LIMPIO iba 31,7 / 40,4 / 54,8 / 64,1: monótono, 32 pp, y
+EN LA DIRECCIÓN CONTRARIA a la que el 0,30 da por supuesta —las zonas hondas aguantaban
+MEJOR—. Pero eso se vio después de mirar, así que se llevó fuera de muestra con la
+métrica fijada de antemano.
+
+1.537 toques de símbolos que no están en watchlist ni cartera: 32,7 / 38,8 / 43,4 /
+48,1. La dirección se mantiene, pero la separación baja de 32 a 15,4 pp y el suelo de
+ruido sube a 21,9. No replica.
+
+POR QUÉ SUBE EL SUELO: los tramos están muy desiguales —988 / 423 / 99 / 27—. Para que
+una zona al 40% llegue a tocarse el precio ha tenido que caer un 40%, y eso pasa poco.
+Con 27 casos en el tramo hondo, barajar produce rangos grandes por sí solo. Ese problema
+NO se arregla con más símbolos: los toques profundos son raros de verdad.
+
+3 · LO QUE SÍ SE SABE, QUE NO ES NADA
+
+Con 1.537 toques, un efecto mayor de 21,9 pp se habría visto. Si la profundidad ordena
+el aguante, ordena menos que eso. Es una cota superior y es información.
+
+LO QUE QUEDA ANOTADO Y NO SE PERSIGUE: la dirección salió invertida en las DOS muestras.
+Eso no es un hallazgo —el contraste se hace sobre la separación, no sobre el orden, y
+fijarse en el orden después de ver los datos es inventar un test nuevo—. Pero si algún
+día hay muestra para el tramo hondo, la pregunta que merece hacerse es si el 0,30 está
+escondiendo las zonas que mejor se comportan, no si las protege.
+
+NO SE MIDE UNA TERCERA VEZ sobre los mismos datos. Tres tiros a la misma pregunta y
+quedarse con el que brilla es lo contrario de medir.
 """
 
 VOLUMEN_CONTRACCION_RETROCESO: Optional[float] = None
