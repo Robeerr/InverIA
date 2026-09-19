@@ -43,12 +43,25 @@ def test_cada_hipotesis_trae_QUE_MEDIR():
 
 
 def test_un_umbral_SIN_numero_y_SIN_medir_sigue_siendo_una_hipotesis():
-    """Se cambió de `DISTANCIA_MAX_A_MAXIMO_52S` a otro umbral porque aquel YA se midió
-    el 14-09-2026 y salió rechazado: usarlo aquí habría convertido este test en una
-    comprobación de que el rechazo no se registra."""
-    d = next(h for h in lab.hipotesis() if h["id"] == "ATR_MULTIPLO_STOP")
-    assert d["valor_actual"] is None
-    assert d["estado"] == lab.LISTA          # medible, pero todavía sin medir
+    """YA NO SE FIJA UN ID CONCRETO, y esa es la corrección.
+
+    Este test apuntó primero a `DISTANCIA_MAX_A_MAXIMO_52S` y se movió a
+    `ATR_MULTIPLO_STOP` cuando aquel se midió. Luego se midió el segundo y volvió a
+    romperse. Un test que hay que reescribir cada vez que el laboratorio hace su trabajo
+    está atado a lo accidental y no a la regla que quiere proteger.
+
+    La regla es: si no tiene número y no tiene sección MEDIDO, sale como medible. Vale
+    para cualquiera que esté en ese estado, y el día que no quede ninguno el test lo
+    dice — porque eso también sería una noticia.
+    """
+    lista = lab.hipotesis()
+    lista = lista if isinstance(lista, list) else lista.get("lista")
+    sin_medir = [h for h in lista
+                 if h["valor_actual"] is None and not h.get("medido")
+                 and lab.PUEDE_MEDIRSE.get(h["id"], (False, ""))[0]]
+    assert sin_medir, "no queda ninguna hipótesis medible sin medir: revisa el registro"
+    for h in sin_medir:
+        assert h["estado"] == lab.LISTA, h["id"]
 
 
 def test_ponerle_un_numero_lo_convierte_en_REGLA_EN_VIGOR(monkeypatch):
@@ -1524,3 +1537,42 @@ def test_la_metrica_EXIGENTE_no_se_pinta_bajo_el_rotulo_del_laxo():
     # Y el que ya existía, que llevaba desde siempre con el rótulo del otro.
     g = lab.ficha_aguante_limpio(_toques_limpios(), universo=["AAPL"])
     assert g["resultado"]["etiqueta_metrica"] == "Aguantó limpio"
+
+
+def test_el_veredicto_se_lee_en_MASCULINO_y_en_femenino():
+    """Se buscaba «VALIDADA» y una ficha escrita «VALIDADO Y REPLICADO» no casaba.
+
+    El resultado positivo del laboratorio se quedó semanas anunciándose como pendiente de
+    medir, sin que nada fallara ni saltara ningún aviso. Un fallo silencioso aquí tiene el
+    peor efecto posible: una hipótesis ya cerrada reaparece como medible y alguien la
+    vuelve a medir.
+    """
+    for cabecera, esperado in (
+            ("MEDIDO el 1-1-2026. VALIDADA.", lab.VALIDADA),
+            ("MEDIDO el 1-1-2026. VALIDADO Y REPLICADO FUERA DE MUESTRA.", lab.VALIDADA),
+            ("MEDIDO el 1-1-2026. RECHAZADA.", lab.RECHAZADA),
+            ("MEDIDO el 1-1-2026. RECHAZADO.", lab.RECHAZADA),
+            ("MEDIDO el 1-1-2026. NO CONCLUYENTE.", lab.NO_CONCLUYENTE)):
+        assert lab._estado_de(None, True, cabecera) == esperado, cabecera
+
+
+def test_una_correccion_sigue_clasificandose_por_su_PRIMERA_palabra():
+    """El veredicto vive en la primera línea. Una corrección que explica lo que corrige
+    cita la palabra vieja, y leerla clasificaría la ficha por lo que ya NO es."""
+    assert lab._estado_de(
+        None, True,
+        "MEDIDO el 1-1-2026. NO CONCLUYENTE — se registró primero como RECHAZADA.\n"
+        "Aquí abajo se explica por qué, citando otra vez RECHAZADA y VALIDADA."
+    ) == lab.NO_CONCLUYENTE
+
+
+def test_el_resultado_POSITIVO_del_laboratorio_esta_en_el_registro():
+    """Los múltiplos de stop se midieron y replicaron, y `calibracion` seguía diciendo en
+    futuro «este experimento los valida o los sustituye». El panel los anunciaba como
+    medibles, que es la invitación a repetirlos."""
+    lista = lab.hipotesis()
+    lista = lista if isinstance(lista, list) else lista.get("lista")
+    h = next(x for x in lista if x["id"] == "ATR_MULTIPLO_STOP")
+    assert h["estado"] == lab.VALIDADA
+    # Y con el límite delante: sin él, «validado» se lee como «ya se puede cambiar».
+    assert "NO AUTORIZA" in (h.get("medido") or "")

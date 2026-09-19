@@ -274,6 +274,52 @@ evita cuando la tesis falla de verdad.
 
 RELACIÓN CON LO QUE HAY: `_deterministic_levels` ya usa 1,0 / 1,6 / 2,4×ATR. Están en
 producción y tampoco se han medido; este experimento los valida o los sustituye.
+
+MEDIDO el 14 y el 19-09-2026. VALIDADO Y REPLICADO FUERA DE MUESTRA. SIGUE VALIENDO None,
+y los tres múltiplos de producción SIGUEN COMO ESTÁN.
+
+Es el único resultado positivo que ha dado el laboratorio, y por eso conviene ser preciso
+sobre qué dice y qué no.
+
+1 · LOS TRES MÚLTIPLOS SÍ DISTINGUEN UN CORTE BUENO DE UNO EN FALSO
+
+Sobre el universo vigilado: 1,0×ATR salta en falso el 22,9% de las veces (166 saltos),
+1,6× el 5,6% (71) y 2,4× el 0% (16, excluido por muestra). 17,3 pp de diferencia entre
+los dos juzgables, banda de 12,48 a 21,8 pp por remuestreo de 23 bloques de fecha. No
+toca el cero.
+
+2 · Y REPLICA EN SÍMBOLOS QUE EL USUARIO NO ELIGIÓ
+
+Universo de oportunidades fuera de watchlist y cartera: 20,5% / 7,3% / 4,1%. Esta vez los
+tres tramos tuvieron muestra (220 / 123 / 49) y el más ancho entró en la comparación por
+derecho. 16,4 pp, banda de 11,09 a 22,31, tampoco toca el cero. Misma dirección, fijada
+antes de mirar las dos veces.
+
+3 · LO QUE ESTO NO AUTORIZA A HACER
+
+No dice que haya que cambiar el stop a 1,6. Sabemos que 1,0 saca de operaciones que iban
+a aguantar tres veces más a menudo; NO sabemos cuánto se pierde las veces que 1,6 deja
+correr una caída que 1,0 habría cortado. Eso exige medir retornos, y con esta muestra los
+retornos están dominados por el ruido. Falta la mitad de la ecuación.
+
+Por eso este umbral sigue en None: la pregunta «qué múltiplo usar» no está respondida. Lo
+que está respondido es que los tres que hay separan calidad de corte, que es lo que
+justifica tener tres y no uno.
+
+4 · EL PUNTO FLOJO, QUE NO SE DISIMULA
+
+El remuestreo es por BLOQUES DE FECHA porque los toques del mismo día comparten mercado.
+Eso deja 23 bloques en el primero y 9 en la réplica. Las bandas son honestas, pero
+descansan sobre pocas unidades independientes. Dos muestras distintas coincidiendo pesa
+más que cualquiera de las dos por separado, y aun así es lo más frágil del resultado.
+
+5 · UN CAMBIO QUE SE HIZO DESPUÉS DE VER EL PRIMER RESULTADO
+
+El intento 1 salió SIN MUESTRA porque 2,4×ATR solo saltó 16 veces y el veredicto se
+rendía entero, tirando la comparación válida entre 1,0 y 1,6. Se cambió para juzgar los
+múltiplos con muestra y nombrar los excluidos. La exclusión es por muestra y nunca por
+resultado, la dirección no se tocó, y el excluido tenía 0% de falsos — el dato MÁS
+favorable a la hipótesis. Dejarlo fuera jugaba en contra de lo que se quería demostrar.
 """
 
 RIESGO_MAX_POR_OPERACION: Optional[float] = None

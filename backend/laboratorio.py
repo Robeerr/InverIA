@@ -164,12 +164,19 @@ def _estado_de(valor, medible: bool, medido: Optional[str]) -> str:
     # Se buscan las CASTELLANAS y no las constantes: los docstrings de `calibracion` están
     # en castellano y `RECHAZADA` vale «REJECTED». Comparar la constante contra ese texto
     # no casaba nunca, y el registro anunciaba como pendiente una hipótesis ya medida.
+    # Y por la RAÍZ, sin la última letra. Se buscaba «VALIDADA» y una ficha escrita en
+    # masculino —«VALIDADO Y REPLICADO»— no casaba: el resultado positivo del laboratorio
+    # se quedó semanas anunciándose como pendiente de medir, sin que nada fallara.
+    #
+    # Un fallo silencioso aquí tiene el peor efecto posible: una hipótesis ya cerrada
+    # reaparece como medible y alguien la vuelve a medir. Más vale aceptar las dos formas
+    # que confiar en que nadie escriba la otra.
     cabecera = (medido or "").splitlines()[0].upper() if medido else ""
     if "NO CONCLUYENTE" in cabecera:
         return NO_CONCLUYENTE
-    if "RECHAZADA" in cabecera:
+    if "RECHAZAD" in cabecera:
         return RECHAZADA
-    if "VALIDADA" in cabecera:
+    if "VALIDAD" in cabecera:
         return VALIDADA
     return LISTA if medible else IDEA
 
