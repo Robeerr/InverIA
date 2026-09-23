@@ -1089,4 +1089,7 @@ def test_los_anexos_se_miden_sobre_el_texto_ENTERO_no_sobre_el_recorte():
     cuerpo = inspect.getsource(inv.investigar)
     linea = next(l for l in cuerpo.splitlines() if "anexos_citados(" in l)
     assert "anexos_citados(texto)" in linea          # `texto`, no `enviado`
-    assert cuerpo.index("anexos_citados(") < cuerpo.index("enviado = texto[")
+    # El recorte vive ahora en `ensamblar_envio`, que es quien arma lo que se envía. La
+    # regla no cambia: las citas se miden ANTES de llegar a él, sobre el texto entero.
+    assert cuerpo.index("anexos_citados(") < cuerpo.index("ensamblar_envio(texto")
+    assert "principal[:MAX_CARACTERES]" in inspect.getsource(inv.ensamblar_envio)

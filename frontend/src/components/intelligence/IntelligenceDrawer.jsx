@@ -3,6 +3,7 @@ import { X, ArrowSquareOut, FileText } from "@phosphor-icons/react";
 import { api } from "../../lib/api";
 import { nivelDe, tieneAnalisis, ETAPAS } from "../../lib/intelligence";
 import { fmtHace, fmtDateTime } from "../../lib/format";
+import DocumentosEnviados from "./DocumentosEnviados";
 
 /**
  * El detalle de un evento. Un panel lateral, no un modal a pantalla completa: el radar se
@@ -182,6 +183,8 @@ export default function IntelligenceDrawer({ evento, onCerrar }) {
                 sigue ahí abajo para mirarlo.
               </p>
             )}
+            <DocumentosEnviados documentos={evento.documentos_enviados}
+                                anexos={evento.anexos_ex99} anterior />
           </div>
         )}
 

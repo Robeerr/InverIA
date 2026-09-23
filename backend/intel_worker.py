@@ -370,6 +370,11 @@ async def investigar_eventos(db, ids: list = None, tope: int = None) -> dict:
             # de la descarga, que son cosa de quien tiene la conexión.
             actualizado["posicion_t0"] = await _posicion_en_t0(db, evento.get("symbol"))
             actualizado["anexos_citados"] = r["auditoria"].get("anexos_citados")
+            # Qué documentos vio el modelo, exactamente, y qué pasó con los EX-99. Sin
+            # textos: solo URL, tipo, caracteres y recorte. Las investigaciones 1–8 no
+            # lo tienen, y esa ausencia ES el dato: se hicieron leyendo solo la carátula.
+            actualizado["documentos_enviados"] = r["auditoria"].get("documentos_enviados")
+            actualizado["anexos_ex99"] = r["auditoria"].get("anexos_ex99")
             if await _guardar_investigacion(db, actualizado):
                 guardados += 1
         resultados.append({
@@ -455,6 +460,8 @@ async def _guardar_investigacion(db, evento: dict) -> bool:
                       # investigación: se anota para poder interpretarla después.
                       "posicion_t0": evento.get("posicion_t0"),
                       "anexos_citados": evento.get("anexos_citados"),
+                      "documentos_enviados": evento.get("documentos_enviados"),
+                      "anexos_ex99": evento.get("anexos_ex99"),
                       "historial": evento.get("historial") or []}})
         return True
     except Exception as e:

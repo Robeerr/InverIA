@@ -383,6 +383,276 @@ def anexos_citados(texto: str) -> list:
     return sorted(vistos, key=_clave)
 
 
+# ── Los anexos EX-99 ─────────────────────────────────────────────────────────
+#
+# POR QUÉ EXISTE ESTO
+#
+# El evento apunta al `primaryDocument` del registro, y en EDGAR cada documento de un
+# filing es un FICHERO APARTE dentro de la misma carpeta. Se leía solo la carátula: en
+# TXN el 8-K decía «incorporado como anexo 99» y el importe del dividendo, la fecha de
+# registro y la de pago estaban en ese anexo, que nunca se descargaba.
+#
+# POR QUÉ SOLO EX-99
+#
+# Los EX-99 son las notas de prensa, cartas y presentaciones: donde van las cifras de la
+# noticia. Los demás —1.1 colocación, 4.x instrumentos, 5.1 opinión legal, 10.x
+# contratos, 101/104 XBRL— son contrato o trámite, y el 8-K ya resume en su cuerpo los
+# términos que importan (AAOI lo demostró). Bajarlos se comería el presupuesto y
+# enterraría los hechos.
+#
+# LO QUE NO CAMBIA, Y ES LO PRINCIPAL
+#
+# El documento principal se envía EXACTAMENTE igual que antes: los mismos 12.000
+# caracteres. Los anexos van DESPUÉS, delimitados, con su propio presupuesto. Una
+# investigación sin EX-99 produce la misma entrada, carácter a carácter, que antes de
+# este cambio. El prompt no se toca: `PROMPT_V = 2` sigue significando lo mismo.
+
+#: Cuántos EX-99 se añaden como mucho. Un 8-K de resultados trae 99.1 (nota) y a veces
+#: 99.2 (presentación); más allá de dos, cada anexo aporta menos y cuesta lo mismo.
+MAX_ANEXOS = 2
+
+#: Presupuesto de CADA anexo, aparte de los 12.000 del principal. Aparte a propósito: si
+#: compartieran bolsa, un 8-K largo dejaría sin sitio al anexo, y uno corto cambiaría el
+#: recorte del principal respecto a lo que se enviaba antes.
+MAX_CARACTERES_ANEXO = 8000
+
+#: Solo se buscan anexos en estos formularios. Un Form 4 no lleva notas de prensa, y
+#: pedir su índice sería una petición a la SEC para no encontrar nada.
+FORMULARIOS_CON_ANEXOS = ("8-K",)
+
+#: La carpeta del registro, sacada de la URL que YA se descargó. Se exige la forma exacta
+#: de EDGAR —CIK numérico y número de registro de 18 dígitos— y todo lo demás se rechaza:
+#: sin carpeta conocida no hay forma de garantizar que no se sale de ella.
+_CARPETA = re.compile(r"^(https://www\.sec\.gov/Archives/edgar/data/(\d+)/(\d{18})/)")
+
+_FILA = re.compile(r"<tr[^>]*>(.*?)</tr>", re.S | re.I)
+_CELDA = re.compile(r"<t[dh][^>]*>(.*?)</t[dh]>", re.S | re.I)
+_HREF = re.compile(r"""href\s*=\s*["']([^"']+)["']""", re.I)
+_TIPO_EX99 = re.compile(r"^EX-99(?:\.\d+)*$", re.I)
+
+#: Un nombre de fichero que no puede salir de la carpeta: sin barras, sin `..`, sin
+#: esquema ni consulta, y con extensión de texto. Las URLs de los anexos se CONSTRUYEN con
+#: la carpeta conocida y este nombre; el `href` del índice nunca se usa como URL.
+_NOMBRE_SEGURO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:htm|html|txt)$", re.I)
+
+
+def carpeta_del_registro(url: str, accession: str) -> Optional[str]:
+    """La carpeta de EDGAR del registro, o None si no se puede garantizar. Pura.
+
+    Sale de la URL que ya se descargó y se coteja con el número de registro del evento.
+    Si no coinciden, no se busca ningún anexo: seguir enlaces desde una carpeta que no es
+    la del registro es exactamente lo que no puede pasar.
+    """
+    m = _CARPETA.match((url or "").strip())
+    if not m:
+        return None
+    if m.group(3) != (accession or ""):
+        return None
+    return m.group(1)
+
+
+def accession_con_guiones(accession: str) -> Optional[str]:
+    """`000095010326014118` → `0000950103-26-014118`. None si no tiene la forma. Pura.
+
+    El número se guarda canonizado a solo dígitos (`intel_sec.canonizar_accession`), pero
+    el índice del registro se nombra con guiones. EDGAR usa siempre 10-2-6; si no son 18
+    dígitos no se adivina nada.
+    """
+    a = accession or ""
+    if not re.fullmatch(r"\d{18}", a):
+        return None
+    return f"{a[:10]}-{a[10:12]}-{a[12:]}"
+
+
+def url_del_indice(carpeta: str, accession: str) -> Optional[str]:
+    """La URL del índice oficial del registro. Pura."""
+    guiones = accession_con_guiones(accession)
+    return f"{carpeta}{guiones}-index.htm" if (carpeta and guiones) else None
+
+
+def _nombre_dentro_de_la_carpeta(href: str, carpeta: str) -> Optional[str]:
+    """El nombre del fichero si el `href` apunta DENTRO de la carpeta. Si no, None. Pura.
+
+    El índice de EDGAR enlaza con ruta absoluta (`/Archives/edgar/data/…/fichero.htm`) y
+    a veces pasando por el visor (`/ix?doc=/Archives/…`). Se aceptan esas dos formas y el
+    nombre suelto, y en las tres se exige que la carpeta sea la del registro. Cualquier
+    otra cosa —otro dominio, otra carpeta, otro registro— se descarta.
+    """
+    h = (href or "").strip()
+    if h.startswith("/ix?doc="):
+        h = h[len("/ix?doc="):]
+    ruta_carpeta = carpeta[len("https://www.sec.gov"):]          # /Archives/edgar/data/…/
+    if h.startswith("https://www.sec.gov/"):
+        h = h[len("https://www.sec.gov"):]
+    if h.startswith("/"):
+        if not h.startswith(ruta_carpeta):
+            return None
+        h = h[len(ruta_carpeta):]
+    return h if _NOMBRE_SEGURO.match(h) else None
+
+
+def _texto_de_celda(celda: str) -> str:
+    return _ESPACIOS.sub(" ", html.unescape(_ETIQUETAS.sub(" ", celda or ""))).strip()
+
+
+def _clave_de_tipo(tipo: str) -> tuple:
+    """`EX-99.2` antes que `EX-99.10`: orden numérico, no alfabético."""
+    return tuple(int(p) for p in re.findall(r"\d+", tipo or ""))
+
+
+def ex99_del_indice(html_indice: str, carpeta: str, accession: str) -> dict:
+    """Los EX-99 que lista el índice oficial, ya validados. Pura y no lanza.
+
+    Devuelve `{"estado", "motivo", "anexos"}`. `estado` distingue tres casos que se ven
+    igual desde fuera y no lo son:
+
+      · `formato_inesperado` — no se reconoce la tabla o el índice no es de este registro;
+      · `sin_ex99`           — el índice se lee bien y no hay notas de prensa;
+      · `con_ex99`           — hay al menos una, dentro de la carpeta y con nombre seguro.
+
+    Las filas cuyo enlace se sale de la carpeta NO se siguen, y se cuentan en `descartados`
+    para que un índice raro no pase desapercibido.
+    """
+    texto = html_indice or ""
+    guiones = accession_con_guiones(accession) or ""
+    # El índice tiene que ser el de ESTE registro. Un 200 con otra página —un error, un
+    # registro distinto— no puede convertirse en anexos que el modelo lea como propios.
+    #
+    # Se acepta el número con guiones (la cabecera) o sin ellos (la ruta de cada enlace):
+    # no se ha podido mirar un índice real desde el entorno donde se escribió esto, y
+    # depender de cómo formatea EDGAR su cabecera dejaría la corrección sin efecto por
+    # un detalle de presentación.
+    if not guiones or (guiones not in texto and f"/{accession}/" not in texto):
+        return {"estado": "formato_inesperado", "anexos": [], "descartados": 0,
+                "motivo": "el índice no menciona el número de registro de este filing"}
+    filas = _FILA.findall(texto)
+    tabulares = [f for f in filas if len(_CELDA.findall(f)) >= 4]
+    if not tabulares:
+        return {"estado": "formato_inesperado", "anexos": [], "descartados": 0,
+                "motivo": "el índice no tiene la tabla de documentos esperada"}
+
+    vistos, anexos, descartados = set(), [], 0
+    for fila in tabulares:
+        celdas = [_texto_de_celda(c) for c in _CELDA.findall(fila)]
+        tipo = next((c.upper() for c in celdas if _TIPO_EX99.match(c)), None)
+        if not tipo:
+            continue
+        nombre = None
+        for href in _HREF.findall(fila):
+            nombre = _nombre_dentro_de_la_carpeta(href, carpeta)
+            if nombre:
+                break
+        if not nombre:
+            descartados += 1
+            continue
+        if nombre in vistos:
+            continue
+        vistos.add(nombre)
+        anexos.append({"tipo": tipo, "documento": nombre, "url": carpeta + nombre})
+
+    anexos.sort(key=lambda a: _clave_de_tipo(a["tipo"]))
+    if not anexos:
+        return {"estado": "sin_ex99", "anexos": [], "descartados": descartados,
+                "motivo": ("hay EX-99 en el índice pero ninguno dentro de la carpeta "
+                           "del registro" if descartados else None)}
+    return {"estado": "con_ex99", "anexos": anexos[:MAX_ANEXOS],
+            "descartados": descartados, "omitidos_por_tope": max(0, len(anexos) - MAX_ANEXOS),
+            "motivo": None}
+
+
+async def anexos_ex99(evento: dict) -> dict:
+    """Localiza y descarga los EX-99 del registro. NUNCA lanza y nunca bloquea.
+
+    Reutiliza `descargar_documento` tal cual —mismo User-Agent, mismo timeout, mismo tope
+    de bytes, misma auditoría— para el índice y para cada anexo. No hay otro camino de
+    descarga.
+
+    Cualquier cosa rara —URL que no es de EDGAR, índice que no baja o no se entiende,
+    anexo que falla— devuelve lo que haya (quizá nada) con su motivo. Quien llama sigue
+    con el documento principal exactamente como antes.
+    """
+    evento = evento or {}
+    crudo = evento.get("crudo") or {}
+    salida = {"estado": "no_aplica", "motivo": None, "indice_url": None,
+              "anexos": [], "fallos": []}
+    try:
+        forma = str(crudo.get("formulario") or crudo.get("suceso") or "").upper()
+        if forma not in FORMULARIOS_CON_ANEXOS:
+            salida["motivo"] = f"el formulario {forma or '—'} no lleva notas de prensa"
+            return salida
+        accession = str(crudo.get("accession") or "")
+        carpeta = carpeta_del_registro(evento.get("url"), accession)
+        indice = url_del_indice(carpeta, accession) if carpeta else None
+        if not indice:
+            salida.update(estado="sin_indice",
+                          motivo="la URL del evento no es la carpeta de EDGAR de este registro")
+            return salida
+        salida["indice_url"] = indice
+
+        bajada = await descargar_documento(indice)
+        if not bajada.get("ok"):
+            salida.update(estado="indice_no_disponible",
+                          motivo=f"no se pudo leer el índice: {bajada.get('error')}")
+            return salida
+        leido = ex99_del_indice(bajada.get("html"), carpeta, accession)
+        salida.update(estado=leido["estado"], motivo=leido.get("motivo"))
+        if leido.get("omitidos_por_tope"):
+            salida["omitidos_por_tope"] = leido["omitidos_por_tope"]
+
+        for anexo in leido["anexos"]:
+            doc = await descargar_documento(anexo["url"])
+            if not doc.get("ok"):
+                salida["fallos"].append({**anexo, "http": doc.get("http"),
+                                         "error": doc.get("error")})
+                continue
+            texto = texto_del_documento(doc.get("html"), maximo=MAX_BYTES)
+            if not texto.strip():
+                salida["fallos"].append({**anexo, "http": doc.get("http"),
+                                         "error": "el anexo no tenía texto extraíble"})
+                continue
+            salida["anexos"].append({**anexo, "texto": texto})
+    except Exception as e:                       # red, parseo, lo que sea: nunca bloquea
+        salida.update(estado="error", motivo=f"{type(e).__name__}: {str(e)[:200]}")
+    return salida
+
+
+def ensamblar_envio(principal: str, evento: dict, anexos: list = None) -> dict:
+    """El texto que va al modelo y la lista de documentos que lo forman. Pura.
+
+    EL PRINCIPAL PRIMERO Y SIN TOCAR
+
+    `principal[:MAX_CARACTERES]` es exactamente lo que se enviaba antes de existir esto.
+    Sin anexos, `texto` es eso y nada más: la misma entrada, carácter a carácter.
+
+    Cada anexo va detrás, con un delimitador que dice qué es, recortado a
+    `MAX_CARACTERES_ANEXO` y con el recorte anotado.
+    """
+    principal = principal or ""
+    enviado = principal[:MAX_CARACTERES]
+    url = (evento or {}).get("url") or ""
+    crudo = (evento or {}).get("crudo") or {}
+    documentos = [{
+        "url": url,
+        "tipo": str(crudo.get("formulario") or crudo.get("suceso") or ""),
+        "documento": url.rstrip("/").rsplit("/", 1)[-1] if url else None,
+        "caracteres_extraidos": len(principal),
+        "caracteres_enviados": len(enviado),
+        "recortado": len(principal) > MAX_CARACTERES,
+    }]
+    bloques = []
+    for a in anexos or []:
+        texto = a.get("texto") or ""
+        parte = texto[:MAX_CARACTERES_ANEXO]
+        bloques.append(f"\n\n=== ANEXO {a.get('tipo')} ===\n{parte}")
+        documentos.append({
+            "url": a.get("url"), "tipo": a.get("tipo"), "documento": a.get("documento"),
+            "caracteres_extraidos": len(texto),
+            "caracteres_enviados": len(parte),
+            "recortado": len(texto) > MAX_CARACTERES_ANEXO,
+        })
+    return {"texto": enviado + "".join(bloques), "documentos": documentos}
+
+
 def parece_el_filing(texto: str, evento: dict) -> dict:
     """¿Lo descargado es de verdad el documento de ESTE evento?
 
@@ -624,8 +894,20 @@ async def investigar(evento: dict) -> dict:
         return {"ok": False, "fase": "extraccion", "llamada_al_modelo": False,
                 "auditoria": auditoria, "investigacion": None}
 
-    enviado = texto[:MAX_CARACTERES]
-    auditoria["caracteres_enviados"] = len(enviado)
+    # Los EX-99, si los hay. NO puede fallar la investigación: si algo sale mal, `anexos`
+    # vuelve vacío con su motivo y se sigue exactamente como antes de existir esto.
+    ex99 = await anexos_ex99(evento)
+    envio = ensamblar_envio(texto, evento, ex99.get("anexos"))
+    enviado = envio["texto"]
+    # `caracteres_enviados` sigue siendo el del documento PRINCIPAL, como en las
+    # investigaciones 1–8: cambiarle el significado haría incomparable el histórico. El
+    # total va aparte, y el desglose exacto en `documentos_enviados`.
+    auditoria["caracteres_enviados"] = envio["documentos"][0]["caracteres_enviados"]
+    auditoria["caracteres_enviados_total"] = len(enviado)
+    auditoria["documentos_enviados"] = envio["documentos"]
+    # Qué pasó con los anexos, sin su texto: el índice consultado, el motivo si no hubo
+    # y los que fallaron. Es lo que permite distinguir «no había EX-99» de «no se pudo».
+    auditoria["anexos_ex99"] = {k: v for k, v in ex99.items() if k != "anexos"}
     # La evidencia. Se guarda con la investigación porque después ya no se puede
     # reconstruir: el evento pasa a `investigado` y no se vuelve a descargar.
     auditoria["muestra_del_texto"] = enviado[:MUESTRA_TEXTO]

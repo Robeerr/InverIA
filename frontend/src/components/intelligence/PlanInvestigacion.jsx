@@ -3,6 +3,7 @@ import { Eye, Brain } from "@phosphor-icons/react";
 import { api } from "../../lib/api";
 import { nivelDe } from "../../lib/intelligence";
 import { fmtHace } from "../../lib/format";
+import DocumentosEnviados from "./DocumentosEnviados";
 
 /**
  * Qué se investigaría si se encendiera la fase de IA. Sin encenderla.
@@ -124,6 +125,7 @@ function Resultado({ caso }) {
           Ver el documento que se descargó
         </a>
       )}
+      <DocumentosEnviados documentos={a.documentos_enviados} anexos={a.anexos_ex99} />
       {a.error && <p className="mt-2 text-xs text-baja">{a.error}</p>}
 
       {/* El texto que recibió el modelo. Es lo que permite juzgar su lectura: un «no
