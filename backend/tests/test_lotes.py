@@ -976,3 +976,50 @@ def test_recuperar_mas_de_lo_puesto_deja_el_coste_en_negativo():
                "comision": 0.0}]
     r = lotes.metodo_degiro(compras, ventas)
     assert r["coste_libro"] == -500.0 and r["precio_medio"] == -100.0
+
+
+def test_al_REABRIR_una_posicion_cerrada_el_precio_medio_empieza_de_cero():
+    """RDDT, comprobado en la pantalla de DEGIRO.
+
+    137 acciones compradas y vendidas antes del 17-09 —posición a cero— y 15 nuevas a
+    150,565 $. El libro arrastraba lo ingresado en aquellas ventas y enseñaba 38,76 $ de
+    precio medio. DEGIRO enseñaba 150,57 $: al cerrar la posición entera, empieza de cero.
+    """
+    compras = [
+        {"id": "c1", "fecha": "2026-03-01", "acciones": 137, "precio": 100.0, "comision": 0.0},
+        {"id": "c2", "fecha": "2026-09-17", "acciones": 15, "precio": 150.565, "comision": 0.0},
+    ]
+    ventas = [{"id": "v1", "fecha": "2026-06-01", "acciones": 137, "precio": 112.24,
+               "comision": 0.0}]
+    r = lotes.metodo_degiro(compras, ventas)
+    assert r["acciones"] == 15
+    assert r["precio_medio"] == pytest.approx(150.565)
+    assert r["coste_libro"] == pytest.approx(15 * 150.565, abs=0.01)   # se redondea a 2
+
+
+def test_reabrir_TAMBIEN_rehace_la_media_en_euros():
+    """Si a una compra de la posición vieja le faltaba el cambio, la media en euros dejaba
+    de existir para siempre. La posición nueva no depende de aquella."""
+    compras = [
+        {"id": "c1", "fecha": "2026-03-01", "acciones": 10, "precio": 100.0, "comision": 0.0},
+        {"id": "c2", "fecha": "2026-09-17", "acciones": 5, "precio": 150.0, "comision": 0.0,
+         "tasa": 1.15},
+    ]
+    ventas = [{"id": "v1", "fecha": "2026-06-01", "acciones": 10, "precio": 120.0,
+               "comision": 0.0, "tasa": 1.10}]
+    r = lotes.metodo_degiro(compras, ventas)
+    assert r["precio_medio_eur"] == pytest.approx(150.0 / 1.15)
+
+
+def test_vender_PARTE_sigue_moviendo_el_precio_medio_como_antes():
+    """El arreglo solo actúa al llegar a cero. Mientras la posición sigue abierta, lo
+    ingresado se sigue restando: es lo que reproduce la pantalla de DEGIRO con FN."""
+    compras = [{"id": "c1", "fecha": "2026-01-10", "acciones": 10, "precio": 100.0,
+                "comision": 0.0},
+               {"id": "c2", "fecha": "2026-07-01", "acciones": 5, "precio": 100.0,
+                "comision": 0.0}]
+    ventas = [{"id": "v1", "fecha": "2026-06-01", "acciones": 5, "precio": 300.0,
+               "comision": 0.0}]
+    r = lotes.metodo_degiro(compras, ventas)
+    # (1.000 − 1.500 + 500) / 10 = 0: lo ingresado de la venta parcial sigue contando.
+    assert r["precio_medio"] == pytest.approx(0.0)

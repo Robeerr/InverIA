@@ -791,6 +791,20 @@ def metodo_degiro(compras: list, ventas: list) -> dict:
                                          if medio_despues is not None else None),
                 "acciones_despues": round(acciones, 6),
             })
+            # AL CERRAR LA POSICIÓN ENTERA, EL LIBRO EMPIEZA DE CERO.
+            #
+            # Sin esto, lo ingresado en ventas de una posición YA CERRADA se restaba del
+            # coste de la siguiente. RDDT: 137 acciones compradas y vendidas antes del
+            # 17-09, posición a cero, y luego 15 nuevas a 150,565 $. El libro arrastraba
+            # ~1.680 $ de aquellas ventas y enseñaba 38,76 $ de precio medio, mientras
+            # DEGIRO enseñaba 150,57 $ — comprobado en su pantalla. Mientras la posición
+            # sigue abierta el coste sí puede quedar negativo (FN, y el test que lo fija);
+            # lo que no puede es sobrevivir a que la posición deje de existir.
+            #
+            # La media en euros vuelve a estar completa: la posición nueva no depende de
+            # que a una compra de la vieja le faltara el cambio.
+            if acciones <= 1e-9:
+                coste, coste_eur, eur_completo = 0.0, 0.0, True
     return {
         "acciones": round(acciones, 6),
         "coste_libro": round(coste, 2),
