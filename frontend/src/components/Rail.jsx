@@ -2,6 +2,7 @@ import React from "react";
 import { createPortal } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
 import {
+  ChartBar,
   House, Lightning, MagnifyingGlass, Bell, Coins, CalendarBlank,
   ChartLineUp, Brain, Broadcast, Stethoscope, TelegramLogo, Palette, X, Flask,
 } from "@phosphor-icons/react";
@@ -24,10 +25,11 @@ import {
  * Y las herramientas —diagnóstico, Telegram, la guía de estilos— bajan al pie, que es
  * donde deben estar: antes solo se llegaba a ellas escribiendo la URL a mano.
  *
- * LEY 1 · EL ÁMBAR NO DECORA
+ * LEY 1 · EL NARANJA NO DECORA
  *
- * Aparece exactamente una vez en todo el rail: el ítem activo. Ni el logo, ni los
- * grupos, ni el hover. Si el ámbar señalara varias cosas dejaría de señalar ninguna.
+ * En el rail aparece en dos sitios y nada más: el icono del logotipo y el ítem activo.
+ * Ni los grupos ni el hover. Si el naranja señalara muchas cosas dejaría de señalar
+ * ninguna.
  */
 
 const GRUPOS = [
@@ -72,14 +74,12 @@ function Item({ n, activo, onNavigate }) {
       data-testid={n.testId}
       onClick={onNavigate}
       aria-current={activo ? "page" : undefined}
-      /* El activo se marca con un filete champán a la izquierda y la superficie
-         apenas levantada. Sin relleno de color ni negrita: en una terminal, lo que
-         señala es la línea, no el peso de la letra. */
-      className={`flex items-center gap-2.5 pl-2.5 pr-2.5 py-[7px] text-apoyo transition-colors
-                  border-l-2 ${
+      /* El activo es una píldora tintada de naranja, con el icono en naranja. Las
+         demás no tienen caja hasta que pasas por encima. */
+      className={`flex items-center gap-2.5 mx-1.5 px-2.5 py-[7px] text-apoyo rounded-iv transition-colors ${
         activo
-          ? "border-marca bg-superficie-alt text-tinta"
-          : "border-transparent text-tinta-2 hover:bg-superficie-alt hover:text-tinta"
+          ? "bg-marca/10 text-tinta font-medium ring-1 ring-inset ring-marca/25"
+          : "text-tinta-2 hover:bg-superficie-alt hover:text-tinta"
       }`}
     >
       <Icon size={15} weight="regular"
@@ -98,19 +98,21 @@ export function RailContenido({ onNavigate }) {
 
   return (
     <>
-      {/* El logotipo es tipográfico. El cuadrado relleno de color de marca con un
-          icono dentro es el gesto de identidad más genérico que existe; una serif
-          de display con las dos letras del acento en champán dice más y ocupa menos. */}
+      {/* El logotipo: el icono naranja con brillo y la palabra en degradado, el mismo
+          gesto que la pantalla de entrada. Así la marca se reconoce igual dentro y fuera. */}
       <Link
         to="/"
         onClick={onNavigate}
-        className="block px-2.5 pt-1 pb-4 shrink-0 border-b border-linea mb-1"
+        className="flex items-center gap-2.5 px-2.5 pt-1 pb-4 shrink-0 border-b border-linea mb-2"
       >
-        <span className="font-heading text-[21px] leading-none text-tinta">
-          Inver<b className="font-semibold text-marca">IA</b>
+        <span className="w-8 h-8 rounded-[10px] iv-boton-brillo flex items-center justify-center shrink-0">
+          <ChartBar size={16} weight="bold" />
         </span>
-        <span className="iv-etiqueta block mt-2 text-[9px] tracking-[0.22em] text-tinta-3">
-          Terminal privada
+        <span className="min-w-0">
+          <span className="iv-marca-palabra block text-[21px] leading-none pb-0.5">InverIA</span>
+          <span className="iv-etiqueta block mt-1 text-[9px] tracking-[0.14em] text-tinta-3 whitespace-nowrap">
+            Terminal privada
+          </span>
         </span>
       </Link>
 

@@ -212,17 +212,20 @@ function usePnlEnEuros() {
    funcionar en los dos sin cambiar.
 
    Se retira el par de morados (#7c3aed, #9333ea) y el azul de aviso (#2563eb):
-   eran de la rampa por defecto y desentonaban con todo lo demas. Y el verde y el
-   oro de la marca vieja se sustituyen por los de la nueva. */
+   eran de la rampa por defecto y desentonaban con todo lo demas.
+
+   Con el rediseño dark fintech la paleta se rehace sobre la marca nueva —naranja,
+   verde neón, azul, rosa-rojo— en tonos medios que siguen viéndose en los dos temas.
+   `CarteraCabecera` usa los siete primeros: tienen que coincidir. */
 const SECTOR_COLORS = [
-  "#c9b37e",  // champan
-  "#5bb77c",  // verde
-  "#7fb2d9",  // azul acero
-  "#e07a5f",  // terracota
-  "#6e9e9e",  // teal apagado
-  "#a9946b",  // oliva dorado, mas oscuro que el champan
-  "#8fa89e",  // salvia
-  "#c97b8e",  // rosa apagado
+  "#f08c1a",  // naranja de la marca
+  "#2fbf8a",  // verde
+  "#4f8ff0",  // azul
+  "#ef5a7a",  // rosa-rojo
+  "#2bb3e6",  // celeste
+  "#9b7bf0",  // violeta
+  "#8a8fa3",  // pizarra
+  "#e06aa8",  // rosa
 ];
 /* `PortfolioSummary` se ha retirado: lo sustituye `CarteraCabecera`, que dice lo
    mismo mejor y con datos del servidor en vez de recalculados en el navegador.

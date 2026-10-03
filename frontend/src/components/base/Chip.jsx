@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
    Si hace falta un cuarto eje, casi siempre es que ese sitio no quería un chip. */
 
 const chipVariants = cva(
-  "inline-flex items-center gap-1 font-mono font-semibold whitespace-nowrap rounded-iv-sm border",
+  "inline-flex items-center gap-1 font-mono font-semibold whitespace-nowrap rounded-full border",
   {
     variants: {
       tono: {
@@ -34,8 +34,8 @@ const chipVariants = cva(
       },
       tamano: {
         // 11px es el suelo de la escala. No hay un tamaño menor a propósito.
-        sm: "text-etiqueta px-1.5 py-0.5",
-        md: "text-apoyo px-2 py-1",
+        sm: "text-etiqueta px-2 py-0.5",
+        md: "text-apoyo px-2.5 py-1",
       },
     },
     defaultVariants: { tono: "neutro", variante: "suave", tamano: "sm" },

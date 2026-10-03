@@ -8,6 +8,10 @@ module.exports = {
   theme: {
     extend: {
       borderRadius: {
+        // `rounded` a secas: estaba en el 0,25rem de Tailwind y hay decenas de botones y
+        // cajas escritos a mano con él. Con el rediseño se lee como esquina viva entre
+        // tarjetas redondeadas, así que pasa al radio pequeño de la casa (8 px).
+        DEFAULT: 'var(--iv-radio-sm)',
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',

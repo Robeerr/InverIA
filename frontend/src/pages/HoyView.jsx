@@ -128,7 +128,7 @@ export default function HoyView() {
 
         <div className="flex items-center gap-3 shrink-0 flex-wrap">
           {!isLoading && !error && mercado?.label && mercado.light !== "desconocido" && (
-            <span className="flex items-center gap-2 border border-linea px-2.5 py-1.5">
+            <span className="flex items-center gap-2 border border-linea rounded-full bg-superficie/70 pl-3 pr-4 py-1.5">
               <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${
                 {verde: "bg-sube", amarillo: "bg-aviso", rojo: "bg-baja"}[mercado.light] || "bg-linea-marcada"}`} />
               <span className="min-w-0">
@@ -220,10 +220,9 @@ export default function HoyView() {
             </div>
           ) : (
             <>
-              {/* Sin separación entre filas: cada una trae su filete inferior, así que
-                  los bordes se encadenan y la lista se lee como una sola tabla. El
-                  filete de arriba cierra la primera. */}
-              <div className="border-t border-linea">
+              {/* Una tarjeta por decisión, separadas. El orden de urgencia lo dicen el
+                  ordinal de cada una y el halo de la primera. */}
+              <div className="space-y-3">
                 {importa.map((t, i) => (
                   <TarjetaAtencion key={`${t.symbol}-${t.tipo}`} tarjeta={t} orden={i + 1} />
                 ))}

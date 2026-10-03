@@ -36,7 +36,7 @@ const N_SECTOR = 6;   // sectores con nombre propio; el resto cae en «Otros»
 
 /* Paleta categórica: la MISMA de la tabla de sectores de abajo, para que un sector
    no cambie de color entre dos bloques de la misma pantalla. */
-const COLORES = ["#c9b37e", "#5bb77c", "#7fb2d9", "#e07a5f", "#6e9e9e", "#a9946b", "#8fa89e"];
+const COLORES = ["#f08c1a", "#2fbf8a", "#4f8ff0", "#ef5a7a", "#2bb3e6", "#9b7bf0", "#8a8fa3"];
 
 const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
 

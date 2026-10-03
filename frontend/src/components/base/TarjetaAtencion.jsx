@@ -111,7 +111,7 @@ function Lectura({ etiqueta, valor, tono, num, barra }) {
           <span className="iv-cifra text-apoyo font-semibold text-tinta-2">{valor}</span>
         </span>
       ) : (
-        <p className={cn("iv-cifra text-apoyo font-semibold mt-0.5 truncate",
+        <p className={cn("iv-cifra text-apoyo font-semibold mt-0.5 leading-tight break-words",
           vacio ? "text-tinta-3" : CLASES_TONO[clave] || CLASES_TONO.neutro)}>
           {valor ?? "—"}
         </p>
@@ -157,45 +157,36 @@ export default function TarjetaAtencion({ tarjeta, orden }) {
   return (
     <article
       className={cn(
-        // Fila rayada, no tarjeta. Antes cada decisión iba en su caja con borde
-        // completo; cinco cajas seguidas leen como cinco objetos sueltos y no como
-        // UNA lista ordenada por urgencia, que es lo que esto es. Con un filete
-        // inferior y el filo de tipo a la izquierda, la lista se lee de arriba abajo.
-        "relative border-b border-linea transition-colors border-l-[3px] hover:bg-superficie",
-        // El filo dice el TIPO, y por eso hay varios colores en pantalla. La #1 se
-        // distingue por el fondo, no por el color: si el champán señalara a la vez «esta
-        // es la primera» y «esto es un nivel», dejaría de señalar cualquiera de las dos.
-        meta.filo || "border-l-linea-fuerte",
-        destacada && "bg-superficie/60"
+        // Tarjeta, no fila. La etapa anterior las encadenaba como una tabla rayada; el
+        // rediseño las separa en piezas con cuerpo, y la urgencia la siguen diciendo el
+        // ordinal y el orden. El TIPO lo dice el chip de color. La #1 lleva el halo
+        // naranja: es la única que brilla, y por eso se ve primero.
+        "iv-panel overflow-hidden transition-colors",
+        destacada ? "iv-halo-marca" : "hover:border-linea-fuerte"
       )}
       data-testid={`tarjeta-hoy-${tarjeta.symbol}`}
     >
       <div className="flex flex-col md:flex-row">
         {/* El ordinal, en su propia columna. Fuera del texto se lee como índice —01, 02,
             03— y no compite con el ticker, que es lo que se busca al barrer la lista. */}
-        {orden != null && (
-          <div className="hidden md:flex w-12 shrink-0 items-start justify-center pt-3">
-            {/* En la serif de display y en champán. El orden ES un dato —la lista va
-                por urgencia— y merece leerse como cifra editorial, no como un índice
-                gris de tres píxeles. Sin el cero delante: «01» es una referencia de
-                catálogo, «1» es un puesto. */}
-            <span className="font-heading text-[26px] leading-none text-marca tabular-nums">
-              {orden}
-            </span>
-          </div>
-        )}
-
         {/* ── Relato ─────────────────────────────────────────────── */}
-        <div className="flex-1 min-w-0 px-4 py-3 md:pl-0">
-          <div className="flex items-baseline gap-2 min-w-0">
+        <div className="flex-1 min-w-0 px-5 py-4">
+          <div className="flex items-center gap-2.5 min-w-0">
+            {/* El ordinal en su cajita, como índice de la lista: la lista va por urgencia
+                y el número lo dice. En naranja solo el primero. */}
             {orden != null && (
-              <span className="font-heading text-[19px] leading-none text-marca tabular-nums shrink-0 md:hidden">
-                {orden}
+              <span className={cn(
+                "iv-cifra text-etiqueta font-semibold leading-none tabular-nums shrink-0",
+                "rounded-iv-sm border px-1.5 py-1",
+                destacada ? "text-marca border-marca/40 bg-marca/10" : "text-tinta-3 border-linea"
+              )}>
+                {String(orden).padStart(2, "0")}
               </span>
             )}
             <Link
               to={tarjeta.ruta}
-              className="iv-cifra font-bold text-cuerpo text-tinta hover:text-marca transition-colors shrink-0"
+              className={cn("font-heading text-titulo leading-none transition-colors shrink-0",
+                destacada ? "text-marca hover:brightness-110" : "text-tinta hover:text-marca")}
             >
               {tarjeta.symbol}
             </Link>
@@ -249,15 +240,20 @@ export default function TarjetaAtencion({ tarjeta, orden }) {
             separa del relato; en móvil baja debajo con un filo superior. Es lo
             que convierte la tarjeta de prosa en una fila de terminal. */}
         {lecturas.length > 0 && (
-          <div className="grid grid-cols-2 md:grid-cols-1 gap-x-4 gap-y-2 px-4 py-3 border-t md:border-t-0 md:border-l border-linea
-                          md:w-[172px] md:shrink-0 content-start bg-superficie-alt/30">
-            {lecturas.map((l) => (
-              <Lectura key={l.etiqueta} {...l} />
-            ))}
+          <div className="border-t md:border-t-0 md:border-l border-linea md:w-[264px] md:shrink-0 flex flex-col">
+            {/* Rejilla de 2×2 con filetes de un píxel: el fondo de la rejilla es la línea
+                y cada celda tapa su hueco, así las separaciones salen siempre iguales. */}
+            <div className="grid grid-cols-2 gap-px bg-linea flex-1">
+              {lecturas.map((l) => (
+                <div key={l.etiqueta} className="bg-superficie px-4 py-3">
+                  <Lectura {...l} />
+                </div>
+              ))}
+            </div>
             {/* El enlace vive con las cifras y no con el relato: es adonde se va DESPUÉS
                 de mirarlas, cuando el resumen no basta. */}
             <Link to={tarjeta.ruta}
-                  className="col-span-2 md:col-span-1 text-etiqueta text-marca hover:underline mt-0.5">
+                  className="text-etiqueta text-marca hover:underline px-4 py-2 border-t border-linea">
               Ver análisis →
             </Link>
           </div>

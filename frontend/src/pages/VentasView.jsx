@@ -1852,21 +1852,23 @@ export default function VentasView() {
             Lo que llevas ganado de verdad, en euros, con el tipo de cambio de cada operación.
           </p>
         </div>
+        {/* Píldoras, como el resto de botones de la app. Los dos que mueven dinero
+            —importar y vender— llevan el naranja con brillo; los otros dos, contorno. */}
         <div className="flex gap-2">
           <button onClick={() => setForm("degiro")}
-                  className="bg-marca text-marca-tinta rounded px-3 py-1.5 text-sm font-semibold">
+                  className="iv-boton-brillo rounded-full px-4 py-1.5 text-sm font-semibold hover:brightness-110 transition">
             Importar CSV de DEGIRO
           </button>
           <button onClick={() => setForm("niveles")}
-                  className="border border-linea rounded px-3 py-1.5 text-sm font-semibold">
+                  className="border border-linea-fuerte rounded-full px-4 py-1.5 text-sm font-semibold hover:bg-superficie-alt transition-colors">
             + Compras por niveles
           </button>
           <button onClick={() => setForm("compra")}
-                  className="border border-linea rounded px-3 py-1.5 text-sm font-semibold">
+                  className="border border-linea-fuerte rounded-full px-4 py-1.5 text-sm font-semibold hover:bg-superficie-alt transition-colors">
             + Compra suelta
           </button>
           <button onClick={() => setForm("venta")}
-                  className="bg-marca text-marca-tinta rounded px-3 py-1.5 text-sm font-semibold">
+                  className="iv-boton-brillo rounded-full px-4 py-1.5 text-sm font-semibold hover:brightness-110 transition">
             + Venta
           </button>
         </div>

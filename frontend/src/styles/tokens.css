@@ -35,12 +35,13 @@
 
    Todos los roles de texto llegan a 4.5:1 sobre las tres superficies de su tema
    (comprobado, no estimado: lo verifica styles/tokens.test.js en cada ejecución).
-   Con la paleta actual el peor caso es 5.45:1 en oscuro y 5.13:1 en claro, y en
-   los dos es `--iv-baja`, que es el que más cuesta: un rojo legible sobre fondo
-   claro Y sobre fondo oscuro tiene poco margen por arriba y por abajo.
+   Con la paleta del rediseño el peor caso es 5.35:1 en oscuro (`--iv-tinta-3` sobre
+   la superficie alterna) y 4.59:1 en claro (`--iv-alerta` sobre la superficie
+   alterna): el claro es el que tiene poco margen, porque los colores vivos de la
+   marca hay que oscurecerlos mucho para que se lean sobre papel.
 
    `--iv-linea-marcada` llega a 3:1 sobre su superficie para cuando un límite tiene
-   que percibirse de verdad (3.40:1 en claro, 4.40:1 en oscuro); `--iv-linea` es
+   que percibirse de verdad (3.90:1 en claro, 3.86:1 en oscuro); `--iv-linea` es
    deliberadamente sutil, para separar sin dibujar rejas.
    ───────────────────────────────────────────────────────────────────────────── */
 
@@ -49,99 +50,104 @@
    existe en un tema es justo el fallo que esta capa viene a corregir, así que
    no hay ni un valor que se herede a medias.
 
-   POR QUÉ AQUÍ NO HAY CHAMPÁN
+   POR QUÉ EL NARANJA DE DÍA ES MÁS OSCURO
 
-   El acento de InverIA es champán (#c9b37e), y sobre papel claro no llega ni de
-   lejos a 4,5:1 — como el pan de oro, necesita fondo oscuro para leerse. En vez
-   de falsear un champán apagado que ya no sería el color de la marca, el tema
-   claro usa el verde profundo como `--iv-marca` y reserva el bronce para
-   `--iv-aviso`. Es la misma identidad a la luz del día, no otra paleta. */
+   El naranja de marca (#ff9f1c) brilla sobre negro y sobre blanco no llega ni a
+   2,5:1. En vez de falsear un naranja apagado, el tema claro usa un ámbar tostado
+   (#ac4e08) que sí pasa 4,5:1 y se reconoce como el mismo color de la marca. Lo
+   mismo con el verde, el rojo y el azul: son los mismos tonos, un escalón más
+   profundos para leerse sobre papel. */
 :root {
     /* Superficies */
-    --iv-fondo:          242 239 231;   /* #f2efe7 · marfil de papel */
+    --iv-fondo:          246 246 248;   /* #f6f6f8 */
     --iv-superficie:     255 255 255;   /* #ffffff */
-    --iv-superficie-2:   248 245 237;   /* #f8f5ed */
+    --iv-superficie-2:   241 241 244;   /* #f1f1f4 */
 
     /* Líneas */
-    --iv-linea:          226 220 207;   /* #e2dccf · separación sutil */
-    --iv-linea-fuerte:   176 165 143;   /* #b0a58f · borde con presencia */
-    --iv-linea-marcada:  150 138 116;   /* #968a74 · 3,40:1, límite que significa algo */
+    --iv-linea:          228 228 233;   /* #e4e4e9 · separación sutil */
+    --iv-linea-fuerte:   206 206 214;   /* #ceced6 · borde con presencia */
+    --iv-linea-marcada:  128 128 140;   /* #80808c · límite que significa algo */
 
     /* Tinta */
-    --iv-tinta:           15  30  26;   /* #0f1e1a · lectura principal */
-    --iv-tinta-2:         62  79  72;   /* #3e4f48 · secundario */
-    --iv-tinta-3:         88 103  97;   /* #586761 · etiquetas y apoyo */
+    --iv-tinta:           17  17  20;   /* #111114 */
+    --iv-tinta-2:         63  63  72;   /* #3f3f48 */
+    --iv-tinta-3:         92  92 104;   /* #5c5c68 */
 
     /* Marca */
-    --iv-marca:           20  51  43;   /* #14332b · verde profundo */
-    --iv-marca-tinta:    242 239 231;   /* #f2efe7 · texto sobre marca */
+    --iv-marca:          172  78   8;   /* #ac4e08 · ámbar tostado, 4,84:1 en el peor caso */
+    --iv-marca-tinta:    255 255 255;   /* texto sobre marca */
+    --iv-acento-2:         2 132 199;   /* #0284c7 · final del degradado de las cifras */
 
     /* Semánticos financieros */
-    --iv-sube:            42 100  64;   /* #2a6440 */
-    --iv-baja:           176  62  38;   /* #b03e26 */
-    --iv-aviso:          122  90  18;   /* #7a5a12 · bronce */
-    --iv-alerta:         154  74  16;   /* #9a4a10 · naranja quemado, 6,25:1 sobre blanco.
-                                           Cuarto peldaño del termómetro: entre `baja` y
-                                           `aviso`. Sin él, los tramos 25-45 y 45-55 salían
-                                           del mismo color y la escala perdía resolución. */
-    --iv-info:            24  98 138;   /* #18628a */
-    --iv-neutro:          88 103  97;   /* #586761 */
+    --iv-sube:             4 120  87;   /* #047857 */
+    --iv-baja:           190  18  60;   /* #be123c */
+    --iv-aviso:          146  92   6;   /* #925c06 */
+    --iv-alerta:         194  65  12;   /* #c2410c · cuarto peldaño del termómetro,
+                                           entre `baja` y `aviso`. Sin él, los tramos
+                                           25-45 y 45-55 salían del mismo color. */
+    --iv-info:            29  78 216;   /* #1d4ed8 */
+    --iv-neutro:          92  92 104;   /* #5c5c68 */
 
     /* Foco visible — mismo token en los dos temas para que nunca falte */
-    --iv-foco:            20  51  43;
+    --iv-foco:           172  78   8;
 
-    /* Radio y densidad.
-       Bajan de 6/4/10 px a 2/1/3 px. No es un ajuste fino: el radio es lo que
-       hacía que todo pareciera una tarjeta, y el encargo pide precisamente lo
-       contrario. Con un filete recto, lo que separa las cosas es el espacio y
-       la línea, no la esquina. */
-    --iv-radio:        2px;
-    --iv-radio-sm:     1px;
-    --iv-radio-lg:     3px;
+    /* Radio. Tarjetas con cuerpo: el diseño pasa de la terminal plana (2 px) a
+       superficies redondeadas que se leen como piezas. `lg` es el de las tarjetas,
+       el normal el de controles y campos, `sm` el de los detalles pequeños. */
+    --iv-radio:        12px;
+    --iv-radio-sm:      8px;
+    --iv-radio-lg:     18px;
+
+    /* Sombras y halos. No son tokens de color —no entran en el test de contraste—,
+       así que llevan otro prefijo: el test lee todo lo que empiece por `--iv-`. */
+    --sombra-panel: 0 1px 2px rgb(17 17 20 / 0.04), 0 8px 24px -12px rgb(17 17 20 / 0.12);
+    --brillo-panel: rgb(255 255 255 / 0);
 }
 
 /* ── Tema oscuro · la identidad de InverIA ──────────────────────────────────
    Este es el tema de referencia: el que define la marca y sobre el que se
    diseña primero.
 
-   QUÉ CAMBIA RESPECTO DE LA VERSIÓN ANTERIOR
+   LA DIRECCIÓN: DARK FINTECH CON BRILLO
 
-   El fondo baja de #0e1f1a a #0a1210: verde-negro profundo en vez de verde
-   oscuro. Y las superficies, que antes SUBÍAN a #1e2c28 —tarjetas más claras
-   que el fondo—, ahora se quedan casi a su altura (#0f1a17). Es el cambio que
-   más se nota: sin ese escalón de luminosidad, una superficie deja de leerse
-   como una tarjeta flotando y pasa a leerse como una zona del mismo lienzo,
-   separada por un filete. Es lo que distingue una terminal de un dashboard.
+   Negro casi puro y neutro (#09090b) en vez del verde-negro de la terminal. Las
+   tarjetas SUBEN un escalón de luz (#131316) y llevan un brillo sutil arriba:
+   vuelven a leerse como piezas que flotan sobre el lienzo, con su borde fino. Es
+   lo contrario de la etapa anterior —superficies a ras de fondo separadas por un
+   filete—, y es una decisión deliberada, no una deriva.
 
-   Y el ámbar #f59e0b pasa a champán #c9b37e. El ámbar era el color de un aviso
-   usado como marca: saturado, caliente y compitiendo con `--iv-aviso`, que es
-   casi el mismo color. El champán está desaturado, así que puede recorrer toda
-   la interfaz —filetes de sección, navegación activa, cifras destacadas— sin
-   gritar, y deja el ámbar libre para lo que de verdad avisa. */
+   El color hace el trabajo de jerarquía: naranja para la marca y la acción
+   principal, verde neón para lo que sube, rosa-rojo para lo que baja, azul para
+   la información. Los halos (`.iv-halo-*`) tiñen el borde y el entorno de una
+   tarjeta para decir qué es antes de leerla. */
 .dark {
-    --iv-fondo:           10  18  16;   /* #0a1210 · verde-negro profundo */
-    --iv-superficie:      15  26  23;   /* #0f1a17 · apenas por encima del fondo */
-    --iv-superficie-2:    22  36  31;   /* #16241f */
+    --iv-fondo:            9   9  11;   /* #09090b · negro neutro */
+    --iv-superficie:      19  19  22;   /* #131316 · tarjeta */
+    --iv-superficie-2:    26  26  31;   /* #1a1a1f · tarjeta dentro de tarjeta, campos */
 
-    --iv-linea:           31  46  41;   /* #1f2e29 */
-    --iv-linea-fuerte:    44  64  58;   /* #2c403a */
-    --iv-linea-marcada:  110 131 123;   /* #6e837b · 4,37:1 */
+    --iv-linea:           39  39  46;   /* #27272e */
+    --iv-linea-fuerte:    52  52  61;   /* #34343d */
+    --iv-linea-marcada:  113 113 128;   /* #717180 */
 
-    --iv-tinta:          234 227 212;   /* #eae3d4 · marfil, no blanco */
-    --iv-tinta-2:        168 181 174;   /* #a8b5ae */
-    --iv-tinta-3:        138 154 147;   /* #8a9a93 */
+    --iv-tinta:          244 244 245;   /* #f4f4f5 */
+    --iv-tinta-2:        180 180 190;   /* #b4b4be */
+    --iv-tinta-3:        142 142 154;   /* #8e8e9a */
 
-    --iv-marca:          201 179 126;   /* #c9b37e · champán */
-    --iv-marca-tinta:     10  18  16;   /* #0a1210 */
+    --iv-marca:          255 159  28;   /* #ff9f1c · naranja */
+    --iv-marca-tinta:     12  12  14;   /* #0c0c0e · texto sobre naranja */
+    --iv-acento-2:        56 189 248;   /* #38bdf8 · final del degradado de las cifras */
 
-    --iv-sube:            91 183 124;   /* #5bb77c */
-    --iv-baja:           224 122  95;   /* #e07a5f */
-    --iv-aviso:          217 164  65;   /* #d9a441 */
-    --iv-alerta:         232 148  90;   /* #e8945a · 6,75:1 sobre la superficie alterna */
-    --iv-info:           127 178 217;   /* #7fb2d9 */
-    --iv-neutro:         138 154 147;   /* #8a9a93 */
+    --iv-sube:            52 211 153;   /* #34d399 · verde neón */
+    --iv-baja:           255  99 132;   /* #ff6384 · rosa-rojo */
+    --iv-aviso:          250 204  21;   /* #facc15 · amarillo */
+    --iv-alerta:         255 138  76;   /* #ff8a4c · coral, entre baja y marca */
+    --iv-info:            96 165 250;   /* #60a5fa */
+    --iv-neutro:         142 142 154;   /* #8e8e9a */
 
-    --iv-foco:           201 179 126;
+    --iv-foco:           255 159  28;
+
+    --sombra-panel: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 12px 32px -16px rgb(0 0 0 / 0.75);
+    --brillo-panel: rgb(255 255 255 / 0.025);
 }
 
 /* ── Superficie SIEMPRE oscura ───────────────────────────────────────────────
@@ -166,24 +172,27 @@
    vigila con un test que compara los dos bloques.
    ────────────────────────────────────────────────────────────────────────── */
 .iv-oscuro {
-    --iv-fondo: 10  18  16;
-    --iv-superficie: 15  26  23;
-    --iv-superficie-2: 22  36  31;
-    --iv-linea: 31  46  41;
-    --iv-linea-fuerte: 44  64  58;
-    --iv-linea-marcada: 110 131 123;
-    --iv-tinta: 234 227 212;
-    --iv-tinta-2: 168 181 174;
-    --iv-tinta-3: 138 154 147;
-    --iv-marca: 201 179 126;
-    --iv-marca-tinta: 10  18  16;
-    --iv-sube: 91 183 124;
-    --iv-baja: 224 122  95;
-    --iv-aviso: 217 164  65;
-    --iv-alerta: 232 148  90;
-    --iv-info: 127 178 217;
-    --iv-neutro: 138 154 147;
-    --iv-foco: 201 179 126;
+    --iv-fondo: 9   9  11;
+    --iv-superficie: 19  19  22;
+    --iv-superficie-2: 26  26  31;
+    --iv-linea: 39  39  46;
+    --iv-linea-fuerte: 52  52  61;
+    --iv-linea-marcada: 113 113 128;
+    --iv-tinta: 244 244 245;
+    --iv-tinta-2: 180 180 190;
+    --iv-tinta-3: 142 142 154;
+    --iv-marca: 255 159  28;
+    --iv-marca-tinta: 12  12  14;
+    --iv-acento-2: 56 189 248;
+    --iv-sube: 52 211 153;
+    --iv-baja: 255  99 132;
+    --iv-aviso: 250 204  21;
+    --iv-alerta: 255 138  76;
+    --iv-info: 96 165 250;
+    --iv-neutro: 142 142 154;
+    --iv-foco: 255 159  28;
+    --sombra-panel: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 12px 32px -16px rgb(0 0 0 / 0.75);
+    --brillo-panel: rgb(255 255 255 / 0.025);
 }
 
 
@@ -198,28 +207,101 @@
 }
 
 /* ── Superficies base ───────────────────────────────────────────────────────
-   Tres densidades, no cinco anatomías de tarjeta. El Brief lo pide literalmente:
-   «no convertir todo en una card».
+   Tres densidades, y ahora con cuerpo.
 
-   `.iv-panel`    → contenedor de sección: agrupa, no reclama atención.
-   `.iv-destacada` → decisión: lo que el usuario tiene que leer sí o sí.
-   `.iv-fila`     → fila compacta: densidad de tabla sin caja alrededor. */
+   `.iv-panel`    → la tarjeta: borde fino, un brillo arriba que la despega del
+                    lienzo y una sombra larga y suave debajo.
+   `.iv-destacada` → lo que el usuario tiene que leer sí o sí: la misma tarjeta con
+                    halo naranja.
+   `.iv-fila`     → fila compacta: densidad de tabla sin caja alrededor.
+
+   El brillo es un degradado de `--brillo-panel` a nada, encima del color de la
+   superficie: en oscuro es lo que da la sensación de cristal; en claro vale
+   transparente y la tarjeta es blanca y limpia. */
 .iv-panel {
-    background: rgb(var(--iv-superficie));
+    background:
+        linear-gradient(180deg, var(--brillo-panel), transparent 40%),
+        rgb(var(--iv-superficie));
     border: 1px solid rgb(var(--iv-linea));
-    border-radius: var(--iv-radio);
+    border-radius: var(--iv-radio-lg);
+    box-shadow: var(--sombra-panel);
 }
 
 .iv-destacada {
-    background: rgb(var(--iv-superficie));
-    border: 1px solid rgb(var(--iv-linea-fuerte));
-    border-left: 3px solid rgb(var(--iv-marca));
-    border-radius: var(--iv-radio);
+    background:
+        linear-gradient(180deg, rgb(var(--iv-marca) / 0.06), transparent 55%),
+        rgb(var(--iv-superficie));
+    border: 1px solid rgb(var(--iv-marca) / 0.45);
+    border-radius: var(--iv-radio-lg);
+    box-shadow: 0 0 0 1px rgb(var(--iv-marca) / 0.08), 0 0 32px -10px rgb(var(--iv-marca) / 0.45),
+                var(--sombra-panel);
 }
 
 .iv-fila {
     background: transparent;
     border-bottom: 1px solid rgb(var(--iv-linea));
+}
+
+/* ── Halos ──────────────────────────────────────────────────────────────────
+   Una tarjeta que dice qué es antes de leerla: el borde y el entorno se tiñen del
+   color de lo que contiene. Se combinan con `.iv-panel` («iv-panel iv-halo-sube»)
+   y solo cambian borde, fondo y sombra.
+
+   Con moderación: el halo funciona porque hay pocos. Si todas las tarjetas
+   brillaran, no destacaría ninguna. Cartera en verde, la primera decisión del día
+   en naranja, lo que está en pérdidas en rojo — y poco más. */
+.iv-halo-sube, .iv-halo-baja, .iv-halo-marca, .iv-halo-info {
+    border-color: rgb(var(--h) / 0.4);
+    background:
+        linear-gradient(180deg, rgb(var(--h) / 0.07), transparent 60%),
+        rgb(var(--iv-superficie));
+    box-shadow: 0 0 0 1px rgb(var(--h) / 0.06), 0 0 36px -12px rgb(var(--h) / 0.5),
+                var(--sombra-panel);
+}
+.iv-halo-sube  { --h: var(--iv-sube); }
+.iv-halo-baja  { --h: var(--iv-baja); }
+.iv-halo-marca { --h: var(--iv-marca); }
+.iv-halo-info  { --h: var(--iv-info); }
+
+/* ── La cifra protagonista ──────────────────────────────────────────────────
+   El número que se abre a mirar —el valor de la cartera— en la letra de display y
+   con el degradado de verde a azul. Una por pantalla como mucho: es lo que la hace
+   protagonista. Lleva cifras tabulares para que no baile al actualizarse. */
+.iv-cifra-hero {
+    font-family: 'Archivo', ui-sans-serif, system-ui, sans-serif;
+    font-weight: 800;
+    font-stretch: 108%;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.035em;
+    line-height: 1;
+    background: linear-gradient(90deg, rgb(var(--iv-sube)), rgb(var(--iv-acento-2)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+/* El nombre de la marca en la barra lateral y en la entrada, con el mismo gesto. */
+.iv-marca-palabra {
+    font-family: 'Archivo', ui-sans-serif, system-ui, sans-serif;
+    font-weight: 900;
+    font-stretch: 112%;
+    letter-spacing: -0.04em;
+    background: linear-gradient(90deg, rgb(var(--iv-sube)), rgb(var(--iv-acento-2)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+/* El botón principal: píldora con degradado naranja y un resplandor que la separa
+   del resto. Es el único elemento de la interfaz que brilla por sí mismo. */
+.iv-boton-brillo {
+    background: linear-gradient(180deg, rgb(255 184 77), rgb(var(--iv-marca)) 55%, rgb(245 124 0));
+    color: rgb(var(--iv-marca-tinta));
+    box-shadow: 0 0 0 1px rgb(var(--iv-marca) / 0.35), 0 8px 24px -8px rgb(var(--iv-marca) / 0.6);
+}
+:root:not(.dark) .iv-boton-brillo {
+    background: rgb(var(--iv-marca));
+    box-shadow: 0 6px 16px -8px rgb(var(--iv-marca) / 0.55);
 }
 
 /* ── Cabecera de sección ────────────────────────────────────────────────────
@@ -242,7 +324,7 @@
     height: 1px;
     background: rgb(var(--iv-linea));
 }
-/* Variante con acento: el filete arranca en champán y se apaga. Se reserva para
+/* Variante con acento: el filete arranca en naranja y se apaga. Se reserva para
    la sección PRINCIPAL de cada pantalla — si lo llevaran todas, no distinguiría
    ninguna. */
 .iv-seccion-acento::after {
@@ -250,20 +332,23 @@
 }
 
 /* ── Veredicto ──────────────────────────────────────────────────────────────
-   La cabecera editorial que abre cada pantalla: filete champán arriba y el verbo
-   —COMPRAR, ESPERAR, REDUCIR RIESGO— en la serif de display a tamaño grande.
-   Deliberadamente NO es una tarjeta: va a sangre sobre el lienzo, porque es lo
-   único que el usuario tiene que leer antes que nada. */
+   La cabecera que abre cada pantalla: una etiqueta pequeña y, debajo, el titular en
+   la letra de display a tamaño grande. Va a sangre sobre el lienzo, sin caja: es lo
+   primero que se lee.
+
+   La letra pasa de la serif (Fraunces) a Archivo en su peso más grueso y algo más
+   ancha. Es la misma familia que el texto, así que no se carga ninguna fuente nueva:
+   solo se piden sus pesos altos. */
 .iv-veredicto {
-    border-top: 1px solid rgb(var(--iv-marca));
-    padding-top: 20px;
+    padding-top: 4px;
 }
 .iv-verbo {
-    font-family: 'Fraunces', 'Iowan Old Style', Georgia, serif;
-    font-weight: 300;
-    font-size: clamp(40px, 5.6vw, 68px);
-    line-height: 0.94;
-    letter-spacing: -0.022em;
+    font-family: 'Archivo', ui-sans-serif, system-ui, sans-serif;
+    font-weight: 800;
+    font-stretch: 108%;
+    font-size: clamp(30px, 4.2vw, 52px);
+    line-height: 1.02;
+    letter-spacing: -0.035em;
     display: block;
 }
 

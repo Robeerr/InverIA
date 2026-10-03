@@ -30,8 +30,16 @@ body {
     transition: background-color 0.25s ease, color 0.25s ease;
 }
 
+/* El lienzo oscuro no es un negro plano: dos brillos muy suaves —verde arriba a la
+   izquierda, azul abajo a la derecha— le dan profundidad sin competir con nada.
+   `fixed` para que no se desplacen con el contenido: son el fondo de la sala, no
+   parte de la página. */
 .dark body {
-    background-color: rgb(var(--iv-fondo));
+    background:
+        radial-gradient(900px 520px at 8% -8%, rgb(var(--iv-sube) / 0.07), transparent 60%),
+        radial-gradient(800px 480px at 100% 105%, rgb(var(--iv-acento-2) / 0.05), transparent 60%),
+        rgb(var(--iv-fondo));
+    background-attachment: fixed;
     color: rgb(var(--iv-tinta));
 }
 
@@ -56,6 +64,19 @@ body {
     color: rgb(var(--iv-tinta)) !important;
     border-color: rgb(var(--iv-linea)) !important;
 }
+/* Botones escritos a mano. Hay decenas de `<button className="…">` que no pasan por
+   `Boton`, y con tarjetas redondeadas su esquina viva desentonaba en todas las
+   pantallas. Esta regla les da el radio de la casa SOLO si no declaran uno propio:
+   los que ya llevan `rounded-*` (pestañas, píldoras, segmentos) no se tocan. Con
+   `:where` su especificidad es cero, así que cualquier utilidad la pisa. */
+:where(button:not([class*="rounded"])) {
+    border-radius: var(--iv-radio);
+}
+
+/* Campos redondeados como las tarjetas, salvo casillas y botones de opción. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea {
+    border-radius: var(--iv-radio);
+}
 .dark input::placeholder, .dark textarea::placeholder { color: rgb(var(--iv-tinta-3)) !important; }
 .dark ::-webkit-scrollbar-thumb {
     background: rgb(var(--iv-linea-fuerte)) !important;
@@ -64,12 +85,13 @@ body {
     background: rgb(var(--iv-linea-marcada)) !important;
 }
 /* `font-heading` está en decenas de sitios ya escritos. En vez de tocarlos todos,
-   la clase cambia de cara aquí: donde antes salía una sans compacta ahora sale la
-   serif de display, y toda la app hereda la jerarquía nueva de una vez. */
+   la clase cambia de cara aquí y toda la app hereda la jerarquía nueva de una vez:
+   Archivo gruesa y algo ancha, la misma familia que el texto en su peso de display. */
 .font-heading {
-    font-family: 'Fraunces', 'Iowan Old Style', Georgia, serif;
-    font-weight: 400;
-    letter-spacing: -0.015em;
+    font-family: 'Archivo', ui-sans-serif, system-ui, sans-serif;
+    font-weight: 750;
+    font-stretch: 106%;
+    letter-spacing: -0.025em;
 }
 
 .font-mono {
@@ -78,61 +100,60 @@ body {
 
 @layer base {
     :root {
-        --background: 41 27% 93%;
-        --foreground: 158 33% 9%;
-        --card: 0 0% 100%;
-        --card-foreground: 158 33% 9%;
+        --background: 240 12% 97%;      /* #f6f6f8 */
+        --foreground: 240 8% 7%;      /* #111114 */
+        --card: 0 0% 100%;      /* #ffffff */
+        --card-foreground: 240 8% 7%;
         --popover: 0 0% 100%;
-        --popover-foreground: 158 33% 9%;
-        --primary: 164 44% 14%;
-        --primary-foreground: 41 27% 93%;
-        --secondary: 41 25% 88%;
-        --secondary-foreground: 158 33% 9%;
-        --muted: 41 25% 92%;
-        --muted-foreground: 158 8% 37%;
-        --accent: 41 25% 88%;
-        --accent-foreground: 158 33% 9%;
-        --destructive: 11 64% 55%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 41 25% 85%;
-        --input: 41 25% 85%;
-        --ring: 164 44% 14%;
-        --chart-1: 138 25% 39%;
-        --chart-2: 11 64% 55%;
-        --chart-3: 164 35% 16%;
-        --chart-4: 39 24% 70%;
-        --chart-5: 162 8% 39%;
-        --radius: 0.125rem;
+        --popover-foreground: 240 8% 7%;
+        --primary: 26 91% 35%;      /* #ac4e08 naranja de marca */
+        --primary-foreground: 0 0% 100%;
+        --secondary: 240 12% 95%;      /* #f1f1f4 */
+        --secondary-foreground: 240 8% 7%;
+        --muted: 240 12% 95%;
+        --muted-foreground: 240 6% 38%;      /* #5c5c68 */
+        --accent: 240 10% 90%;      /* #e4e4e9 */
+        --accent-foreground: 240 8% 7%;
+        --destructive: 345 83% 41%;      /* #be123c */
+        --destructive-foreground: 0 0% 100%;
+        --border: 240 10% 90%;
+        --input: 240 10% 90%;
+        --ring: 26 91% 35%;
+        --chart-1: 163 94% 24%;
+        --chart-2: 345 83% 41%;
+        --chart-3: 224 76% 48%;
+        --chart-4: 26 91% 35%;
+        --chart-5: 240 6% 38%;
+        --radius: 0.75rem;      /* 12px: rounded-lg/md/sm de shadcn, en línea con --iv-radio */
     }
 
-    /* Los tokens de shadcn, en los MISMOS colores que la capa `--iv-*`.
-       Estaban en tono 215 —azul de pizarra—, heredado de la plantilla. Como los
-       consumen `ui/input`, `ui/button` y `ui/tabs`, el buscador de la cabecera
-       salia azulado en medio de una interfaz verde-negra: la fuga de color mas
-       visible de toda la app. Aqui se traducen a HSL los mismos hex del tema
-       oscuro, para que no haya dos paletas conviviendo. */
+    /* Los tokens de shadcn, en los MISMOS colores que la capa `--iv-*`, traducidos a
+       HSL. Los consumen `ui/input`, `ui/button` y `ui/tabs`: si se quedaran con otra
+       paleta, el buscador de la cabecera saldría de otro color en medio de la
+       interfaz, que fue la fuga de color más visible de la etapa anterior. Se
+       calculan desde los tripletes de `tokens.css`, no a ojo. */
     .dark {
-        --bg: #0a1210;
-        --surface: #0f1a17;
-        --background: 165 29% 6%;      /* #0a1210 */
-        --foreground: 41 34% 87%;      /* #eae3d4 */
-        --card: 164 27% 8%;            /* #0f1a17 */
-        --card-foreground: 41 34% 87%;
-        --popover: 164 27% 8%;
-        --popover-foreground: 41 34% 87%;
-        --primary: 42 41% 64%;         /* #c9b37e champan */
-        --primary-foreground: 165 29% 6%;
-        --secondary: 160 24% 11%;      /* #16241f */
-        --secondary-foreground: 41 34% 87%;
-        --muted: 160 24% 11%;
-        --muted-foreground: 154 7% 57%; /* #8a9a93 */
-        --accent: 160 20% 15%;         /* #1f2e29 */
-        --accent-foreground: 41 34% 87%;
-        --destructive: 13 68% 63%;     /* #e07a5f */
-        --destructive-foreground: 165 29% 6%;
-        --border: 160 20% 15%;
-        --input: 160 20% 15%;
-        --ring: 42 41% 64%;
+        --bg: #09090b;
+        --surface: #131316;
+        --background: 240 10% 4%;      /* #09090b */
+        --foreground: 240 5% 96%;      /* #f4f4f5 */
+        --card: 240 7% 8%;      /* #131316 */
+        --card-foreground: 240 5% 96%;
+        --popover: 240 7% 8%;
+        --popover-foreground: 240 5% 96%;
+        --primary: 35 100% 55%;      /* #ff9f1c naranja de marca */
+        --primary-foreground: 240 8% 5%;
+        --secondary: 240 9% 11%;      /* #1a1a1f */
+        --secondary-foreground: 240 5% 96%;
+        --muted: 240 9% 11%;
+        --muted-foreground: 240 6% 58%;      /* #8e8e9a */
+        --accent: 240 8% 17%;      /* #27272e */
+        --accent-foreground: 240 5% 96%;
+        --destructive: 347 100% 69%;      /* #ff6384 */
+        --destructive-foreground: 240 8% 5%;
+        --border: 240 8% 17%;
+        --input: 240 8% 17%;
+        --ring: 35 100% 55%;
     }
 }
 

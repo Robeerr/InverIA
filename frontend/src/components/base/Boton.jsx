@@ -21,13 +21,16 @@ import { cn } from "@/lib/utils";
      · Altura mínima de 32px, que es el mínimo cómodo para tocar en móvil. */
 
 const botonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-iv font-medium " +
-    "transition-colors disabled:pointer-events-none disabled:opacity-50 " +
+  // Píldora en todas las variantes: con tarjetas redondeadas, un botón de esquina
+  // viva parece de otra aplicación. El principal lleva además el degradado naranja
+  // con brillo (`.iv-boton-brillo`): es lo único de la interfaz que brilla solo.
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full font-semibold " +
+    "transition-[colors,filter,box-shadow] disabled:pointer-events-none disabled:opacity-50 " +
     "[&_svg]:shrink-0",
   {
     variants: {
       variante: {
-        primario: "bg-marca text-marca-tinta hover:bg-marca/90",
+        primario: "iv-boton-brillo hover:brightness-110",
         secundario: "bg-superficie-alt text-tinta border border-linea-fuerte hover:bg-linea/40",
         contorno: "bg-transparent text-tinta border border-linea-fuerte hover:bg-superficie-alt",
         fantasma: "bg-transparent text-tinta-2 hover:bg-superficie-alt hover:text-tinta",
