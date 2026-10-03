@@ -759,8 +759,40 @@ MAX_LISTA = 8
 MAX_ITEM = 300
 
 
+#: Por debajo de esta fracción del tope no se busca un espacio para cortar: una palabra
+#: kilométrica sin espacios (una URL, un identificador) dejaría el texto en casi nada.
+_MINIMO_CORTE_LIMPIO = 0.6
+
+
+def _recortar(texto: str, maximo: int) -> str:
+    """El texto dentro de `maximo` caracteres, cortado por una palabra y no por la mitad.
+
+    POR QUÉ HACE FALTA
+
+    Se cortaba con `texto[:maximo]`, caiga donde caiga. SNOW salió con el resumen
+    terminado en «…por acción respectivamen»: la palabra a medias se lee como un fallo de
+    la pantalla, o peor, como un dato truncado sin aviso.
+
+    Se corta por el último espacio que quepa y se marca con «…», así queda claro que hay
+    más y no se confunde con el final de la frase. El resultado nunca pasa de `maximo`.
+    Si el último espacio queda demasiado atrás, se corta en seco (con «…» igualmente):
+    vale más un corte feo que tirar la mitad del texto.
+
+    No cambia NADA de lo que se le pide al modelo: es la limpieza de su respuesta. El
+    texto que cabe entero sale exactamente igual que antes.
+    """
+    texto = texto or ""
+    if len(texto) <= maximo:
+        return texto
+    corte = texto[:maximo - 1]                  # deja sitio para «…»
+    espacio = corte.rfind(" ")
+    if espacio >= maximo * _MINIMO_CORTE_LIMPIO:
+        corte = corte[:espacio]
+    return corte.rstrip(" ,;:·—-") + "…"
+
+
 def _lista(valor) -> list:
-    return [str(x).strip()[:MAX_ITEM] for x in (valor or [])
+    return [_recortar(str(x).strip(), MAX_ITEM) for x in (valor or [])
             if str(x or "").strip()][:MAX_LISTA]
 
 
@@ -806,11 +838,11 @@ def validar(bruto) -> dict:
         confianza = 0
     return {"ok": True, "motivo": None, "investigacion": {
         "hay_informacion": hay,
-        "resumen": resumen[:MAX_RESUMEN] or None,
+        "resumen": _recortar(resumen, MAX_RESUMEN) or None,
         "hechos": hechos,
         "implicaciones": implicaciones,
         "incertidumbres": incertidumbres,
-        "fuente": str(bruto.get("fuente") or "").strip()[:MAX_ITEM] or None,
+        "fuente": _recortar(str(bruto.get("fuente") or "").strip(), MAX_ITEM) or None,
         "confianza": confianza,
         "modelo": MODELO,
         # Con qué prompt se leyó. Va JUNTO al modelo y por la misma razón: las dos cosas

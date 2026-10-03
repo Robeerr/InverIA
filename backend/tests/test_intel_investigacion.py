@@ -1093,3 +1093,52 @@ def test_los_anexos_se_miden_sobre_el_texto_ENTERO_no_sobre_el_recorte():
     # regla no cambia: las citas se miden ANTES de llegar a él, sobre el texto entero.
     assert cuerpo.index("anexos_citados(") < cuerpo.index("ensamblar_envio(texto")
     assert "principal[:MAX_CARACTERES]" in inspect.getsource(inv.ensamblar_envio)
+
+
+# ── El recorte del resumen, por una palabra y no por la mitad ────────────────
+
+SNOW = ("Snowflake cerró y fijó el precio de una colocación privada ampliada de 3.750 "
+        "millones de dólares en pagarés preferentes convertibles al 0,00%, divididos en "
+        "2.000 millones con vencimiento en 2029 y 1.750 millones con vencimiento en 2031. "
+        "Los fondos netos estimados ascienden a 3.700 millones de dólares y se emplearán "
+        "principalmente en transacciones 'capped call' (383,5 millones), en recomprar parte "
+        "de sus notas convertibles con vencimiento en 2027 (548,3 millones) y en fines "
+        "corporativos generales. Los precios de conversión iniciales se fijaron en 500,38 y "
+        "483,98 dólares por acción respectivamente, con primas del 52,5% y del 47,5%.")
+
+
+def test_el_resumen_NO_se_corta_a_mitad_de_palabra():
+    """SNOW salió terminado en «…por acción respectivamen». Una palabra a medias se lee
+    como un fallo de la pantalla o como un dato truncado sin aviso."""
+    assert len(SNOW) > inv.MAX_RESUMEN
+    r = inv.validar({"hay_informacion": True, "resumen": SNOW})["investigacion"]["resumen"]
+    assert len(r) <= inv.MAX_RESUMEN
+    assert r.endswith("…"), "el recorte tiene que verse"
+    # La última palabra que queda es una palabra ENTERA del original.
+    ultima = r[:-1].split()[-1]
+    assert ultima in SNOW.split()
+    assert "respectivamen…" not in r
+
+
+def test_un_resumen_que_CABE_sale_exactamente_igual():
+    """El arreglo solo actúa al pasarse del tope. Lo que cabe no se toca."""
+    texto = "TI sube su dividendo trimestral un 4%."
+    r = inv.validar({"hay_informacion": True, "resumen": texto})
+    assert r["investigacion"]["resumen"] == texto
+
+
+def test_los_HECHOS_tambien_se_cortan_por_una_palabra():
+    """Mismo tope de siempre (`MAX_ITEM`) y mismo arreglo: un hecho largo tampoco puede
+    quedar con la última palabra a medias."""
+    largo = "La tasa de conversión inicial es de 1,9985 acciones por cada 1.000 dólares " * 8
+    hecho = inv.validar({"hay_informacion": True, "resumen": "x",
+                         "hechos": [largo]})["investigacion"]["hechos"][0]
+    assert len(hecho) <= inv.MAX_ITEM and hecho.endswith("…")
+    assert hecho[:-1].split()[-1] in largo.split()
+
+
+def test_una_palabra_sin_espacios_se_corta_en_seco_y_se_dice():
+    """Si no hay espacio razonablemente cerca del tope, se corta en seco: vale más un
+    corte feo que tirar la mitad del texto. Pero con «…», para que se vea."""
+    r = inv.validar({"hay_informacion": True, "resumen": "x" * 5000})["investigacion"]["resumen"]
+    assert len(r) == inv.MAX_RESUMEN and r.endswith("…")
