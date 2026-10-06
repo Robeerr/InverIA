@@ -2297,3 +2297,53 @@ def test_los_niveles_abiertos_salen_de_los_LOTES_no_de_las_compras():
                                              fecha=f"2026-09-0{i}", comision=0))
     fila = _correr(cartera_api.resumen_cartera(db, {"RDDT": 160.0}))["posiciones"][0]
     assert fila["niveles_abiertos"] == fila["niveles_comprados"]
+
+
+# ── La portada y Operaciones, con el mismo método, dan las mismas cifras ─────
+
+def _db_con_historia():
+    """Dos valores: uno cerrado entero con ganancia y otro abierto con ventas parciales,
+    todo con tipo de cambio para que la media ponderada tenga cifra en euros."""
+    db = _DB([{"symbol": "FN", "nivel1": 500.0}, {"symbol": "RH", "nivel1": 160.0}])
+    for fecha, n, precio in (("2026-06-08", 2, 642.03), ("2026-06-26", 3, 535.12),
+                             ("2026-08-18", 3, 505.60)):
+        _correr(cartera_api.registrar_compra(db, "FN", n, precio, fecha=fecha,
+                                             divisa="USD", tasa=1.16, comision=6.0))
+    _correr(cartera_api.registrar_venta(db, "FN", 3, 568.97, fecha="2026-08-12",
+                                        divisa="USD", tasa=1.17, comision=6.5))
+    _correr(cartera_api.registrar_compra(db, "RH", 10, 150.0, fecha="2026-03-01",
+                                         divisa="USD", tasa=1.08, comision=5.0))
+    _correr(cartera_api.registrar_venta(db, "RH", 10, 190.0, fecha="2026-05-01",
+                                        divisa="USD", tasa=1.12, comision=5.0))
+    return db
+
+
+def test_el_realizado_PONDERADO_de_la_portada_es_el_de_Operaciones():
+    """La portada enseñaba LIFO mientras Operaciones tenía puesto «Como en DEGIRO», y los
+    números parecían no cuadrar. Ahora la portada puede seguir el mismo interruptor, y
+    para eso su cifra tiene que ser LA MISMA que la de Operaciones, no una parecida."""
+    db = _db_con_historia()
+    res = _correr(cartera_api.resumen_cartera(db, {"FN": 490.0}))
+    hist = _correr(cartera_api.historial(db))
+    assert res["realizado_ponderada_eur"] is not None
+    assert res["realizado_ponderada_eur"] == hist["resumen"]["ponderada"]["ganancia_eur"]
+
+
+def test_los_dos_metodos_suman_LO_MISMO_en_la_portada():
+    """Realizado + latente no depende del método: lo que uno se apunta en lo realizado,
+    el otro se lo guarda en el latente. Si algún día no coincidiera, es un fallo."""
+    res = _correr(cartera_api.resumen_cartera(_db_con_historia(), {"FN": 490.0}))
+    por_metodo = res["realizado_eur"] + res["latente_eur"]
+    ponderado = res["realizado_ponderada_eur"] + res["latente_ponderada_eur"]
+    assert abs(por_metodo - ponderado) < 0.05
+
+
+def test_un_valor_CERRADO_entero_sigue_contando_en_el_realizado_ponderado():
+    """RH se vendió entero: no tiene posición abierta, pero su ganancia es realizado."""
+    db = _DB([{"symbol": "RH", "nivel1": 160.0}])
+    _correr(cartera_api.registrar_compra(db, "RH", 10, 150.0, fecha="2026-03-01",
+                                         divisa="USD", tasa=1.08, comision=0))
+    _correr(cartera_api.registrar_venta(db, "RH", 10, 190.0, fecha="2026-05-01",
+                                        divisa="USD", tasa=1.12, comision=0))
+    res = _correr(cartera_api.resumen_cartera(db, {}))
+    assert res["realizado_ponderada_eur"] == pytest.approx(10 * 190 / 1.12 - 10 * 150 / 1.08, abs=0.01)

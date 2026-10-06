@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import { aNumero } from "../lib/format";
 import RiesgoVenta from "../components/RiesgoVenta";
 import ExtractoMargen from "../components/ExtractoMargen";
+import { leerComoBroker, guardarComoBroker } from "../lib/preferencias";
 import { useSignals } from "../hooks/useSignals";
 
 // Símbolos que están en la Cartera pero todavía SIN ningún nivel definido.
@@ -1728,11 +1729,10 @@ export default function VentasView() {
   // Valorar lo abierto como el bróker (media ponderada) o por tu método (FIFO/LIFO). No es
   // que una esté mal: lo que FIFO/LIFO se apuntan de más en el latente ya se lo apuntaron
   // en lo realizado. Se recuerda porque es una preferencia, no un vistazo puntual.
-  const [comoBroker, setComoBroker] = React.useState(() => {
-    try { return window.localStorage.getItem("ventas.comoBroker") === "1"; } catch { return false; }
-  });
+  // La preferencia la comparte la portada: ver `lib/preferencias`.
+  const [comoBroker, setComoBroker] = React.useState(leerComoBroker);
   const alternarBroker = () => setComoBroker((v) => {
-    try { window.localStorage.setItem("ventas.comoBroker", v ? "0" : "1"); } catch { /* privado */ }
+    guardarComoBroker(!v);
     return !v;
   });
   const [verExplicacion, setVerExplicacion] = React.useState(false);   // texto del método

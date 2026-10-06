@@ -6902,6 +6902,15 @@ async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_PO
             "latente_eur": resumen.get("latente_eur"),
             "realizado_eur": resumen.get("realizado_eur"),
             "invertido_eur": resumen.get("invertido_eur"),
+            "metodo_gestion": resumen.get("metodo_gestion"),
+            # Las cifras como las enseña el bróker. La portada elige entre las dos con el
+            # MISMO interruptor que Operaciones, para que las dos pantallas no enseñen
+            # métodos distintos a la vez sin decirlo.
+            "ponderada": {
+                "latente_eur": resumen.get("latente_ponderada_eur"),
+                "realizado_eur": resumen.get("realizado_ponderada_eur"),
+                "invertido_eur": resumen.get("invertido_ponderada_eur"),
+            },
             "posiciones_sin_valorar": resumen.get("posiciones_sin_valorar"),
             "atencion": atencion[:4],
         },

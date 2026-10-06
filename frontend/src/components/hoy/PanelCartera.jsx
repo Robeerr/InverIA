@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { fmtEur, fmtPct } from "@/lib/format";
+import { leerComoBroker } from "@/lib/preferencias";
 
 /* PanelCartera · el estado de tu dinero, de un vistazo
    ─────────────────────────────────────────────────────────────────────────────
@@ -27,8 +28,28 @@ function Fila({ etiqueta, valor, num, tono = "ninguno", ayuda }) {
   );
 }
 
+/** Las cifras en el método que el usuario tiene elegido en Operaciones.
+ *
+ *  Con «Como en DEGIRO» puesto, Operaciones enseña media ponderada; la portada enseñaba
+ *  LIFO al lado y parecía que los números no cuadraban. Ahora siguen el mismo interruptor.
+ *  Si la respuesta no trae las cifras ponderadas —una portada cacheada de antes del
+ *  despliegue— se usan las del método de gestión, que es lo que se enseñaba hasta ahora,
+ *  y la etiqueta lo dice. */
+function cifrasSegunMetodo(c, comoBroker) {
+  const pond = c.ponderada || {};
+  const usaPmp = comoBroker && pond.latente_eur != null && pond.realizado_eur != null;
+  return usaPmp
+    ? { latente_eur: pond.latente_eur, realizado_eur: pond.realizado_eur,
+        invertido_eur: pond.invertido_eur ?? c.invertido_eur, metodo: "media ponderada · como DEGIRO" }
+    : { latente_eur: c.latente_eur, realizado_eur: c.realizado_eur, invertido_eur: c.invertido_eur,
+        metodo: c.metodo_gestion ? `por ${c.metodo_gestion.toUpperCase()}` : null };
+}
+
 export default function PanelCartera({ cartera }) {
-  const c = cartera || {};
+  const base = cartera || {};
+  const [comoBroker] = React.useState(leerComoBroker);
+  // El valor de hoy no depende del método; lo demás, sí.
+  const c = { ...base, ...cifrasSegunMetodo(base, comoBroker) };
   return (
     <>
       {/* Halo verde: es la tarjeta del dinero, y la única de la columna que brilla. */}
@@ -57,6 +78,14 @@ export default function PanelCartera({ cartera }) {
         </div>
 
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-4 pt-4 border-t border-linea">
+          {/* En qué método van las cifras. Sin esto, comparar con Operaciones o con el
+              bróker era adivinar por qué el realizado no coincidía. */}
+          {c.metodo && (
+            <p className="col-span-2 iv-etiqueta normal-case tracking-normal text-tinta-3 -mt-1 mb-1"
+               title="Cambia con el interruptor «Ver como en DEGIRO» de Operaciones">
+              Cifras {c.metodo}
+            </p>
+          )}
           <Fila etiqueta="Realizado" valor={c.realizado_eur != null ? fmtEur(c.realizado_eur) : "—"} num={c.realizado_eur} tono="auto"
                 ayuda="Ganancia ya materializada en ventas" />
           <Fila etiqueta="Invertido" valor={c.invertido_eur != null ? fmtEur(c.invertido_eur) : "—"} />

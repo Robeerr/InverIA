@@ -1030,11 +1030,23 @@ async def resumen_cartera(db, precios: dict) -> dict:
     # de las dos colecciones y el libro reproducido otra vez por los DOS métodos, más la
     # media ponderada, para quedarse con un único float que ya estaba calculado.
     realizado_eur, hay_realizado = 0.0, False
+    # El realizado por MEDIA PONDERADA, el método del bróker, sumado igual que lo suma
+    # `historial` para Operaciones: venta a venta y solo las que tienen tipo de cambio. Va
+    # aquí para que la portada pueda enseñar las mismas cifras que Operaciones cuando el
+    # interruptor «Como en DEGIRO» está puesto; sin él, una pantalla decía LIFO y la otra
+    # media ponderada, y parecía que los números no cuadraban. Se cuentan TODOS los
+    # símbolos, también los cerrados: su realizado sigue siendo realizado.
+    realizado_pmp_eur, hay_realizado_pmp = 0.0, False
     for sym, libro in por_symbol.items():
         estado = lotes.reproducir(libro["compras"], libro["ventas"], gestion)
         if estado["ganancia_realizada_eur"] is not None:
             realizado_eur += estado["ganancia_realizada_eur"]
             hay_realizado = True
+        pmp = lotes.media_ponderada(libro["compras"], libro["ventas"])
+        for v in pmp["ventas"]:
+            if v.get("id") and v.get("ganancia_eur") is not None:
+                realizado_pmp_eur += v["ganancia_eur"]
+                hay_realizado_pmp = True
         if estado["acciones_abiertas"] <= 1e-9:
             continue
         divisa = (libro["compras"] or libro["ventas"])[0].get("divisa", "USD")
@@ -1051,7 +1063,6 @@ async def resumen_cartera(db, precios: dict) -> dict:
         # euros. El coste, en cambio, sigue saliendo del cambio propio de cada lote.
         divisa_cot = cotiza.get(sym, divisa)
         val = lotes.valorar_abierto(estado, precios.get(sym), tasas.get(divisa_cot))
-        pmp = lotes.media_ponderada(libro["compras"], libro["ventas"])
         deg = lotes.metodo_degiro(libro["compras"], libro["ventas"])
         posiciones.append({
             "symbol": sym, "divisa": divisa, "divisas_mezcladas": mezcla,
@@ -1131,6 +1142,13 @@ async def resumen_cartera(db, precios: dict) -> dict:
         "valor_eur": round(sum(p["valor_eur"] for p in posiciones
                                if p.get("valor_eur") is not None), 2) or None,
         "realizado_eur": round(realizado_eur, 2) if hay_realizado else None,
+        # Las mismas tres cifras por media ponderada, para la portada con el interruptor
+        # «Como en DEGIRO». El valor de hoy no cambia con el método; lo invertido y el
+        # reparto entre realizado y latente, sí.
+        "realizado_ponderada_eur": round(realizado_pmp_eur, 2) if hay_realizado_pmp else None,
+        "invertido_ponderada_eur": round(sum(
+            p["ponderada"]["coste_eur"] for p in posiciones
+            if (p.get("ponderada") or {}).get("coste_eur") is not None), 2) or None,
         "metodo_gestion": gestion.lower(),
         "posiciones_sin_valorar": sum(1 for p in posiciones if p.get("pnl_eur") is None),
         # Separadas: decir "sin precio" cuando lo que falta es el tipo de cambio manda a
