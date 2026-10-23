@@ -12,6 +12,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import logs_sin_secretos
 import uuid
 import certifi
 from pathlib import Path
@@ -318,6 +319,7 @@ async def _chartist_vigilante(sym: str, result: dict):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ----- Startup -----
+    logs_sin_secretos.instalar(*LOGGERS_DE_UVICORN)
     # Diagnóstico de memoria opcional: con MEM_TRACE=1 arranca tracemalloc desde el
     # principio para que /api/debug/memory pueda mostrar las líneas que más asignan.
     if os.environ.get("MEM_TRACE") == "1":
@@ -900,6 +902,11 @@ api_router = APIRouter(prefix="/api")
 
 logger = logging.getLogger("inveria")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+# Las claves que viajan en URLs (Polygon, Finnhub, FMP, el bot de Telegram) no se escriben
+# en el log aunque un error cite la URL entera. Se repite al arrancar, por si uvicorn
+# montara sus handlers después de importar este módulo.
+LOGGERS_DE_UVICORN = ("uvicorn", "uvicorn.error", "uvicorn.access")
+logs_sin_secretos.instalar(*LOGGERS_DE_UVICORN)
 
 # Referencias fuertes a tareas en segundo plano (si no, el GC puede cancelarlas).
 _bg_tasks: set = set()
