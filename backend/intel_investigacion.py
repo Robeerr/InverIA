@@ -44,6 +44,7 @@ Igual que `intel_pipeline`: aquí no hay red ni Mongo. Recibe un evento y un tex
 devuelve qué preguntar y cómo interpretar la respuesta. Eso permite probar la puerta, el
 prompt y la validación sin gastar un céntimo ni una llamada.
 """
+import asyncio
 import html
 import os
 import re
@@ -68,6 +69,20 @@ MAX_CARACTERES = int(os.environ.get("INTEL_INVESTIGACION_MAX_CHARS", 12000))
 #: Modelo. La clave enruta por `ai_analysis.MODEL_MAP`, que ya prueba la key GRATIS de
 #: Gemini primero y solo cae a la de pago si esa se agota.
 MODELO = os.environ.get("INTEL_INVESTIGACION_MODELO", "gemini-2.5-flash")
+
+#: Cuánto se espera al modelo, en segundos, contando sus reintentos internos.
+#:
+#: POR QUÉ HACE FALTA
+#:
+#: El cliente de Gemini no trae tiempo máximo: si Google acepta la conexión y no contesta,
+#: la llamada se queda colgada sin fin. El 23-10-2026 pasó: la petición del botón se quedó
+#: abierta más de ocho minutos, la pantalla se rindió a los 180 s y el segundo evento ni
+#: empezó. Las lecturas reales tardan de 4 a 8 s; 60 es un techo holgado, no una meta.
+#:
+#: Pasado el tiempo, la investigación falla como cualquier otro fallo del modelo: el evento
+#: sigue pendiente y no cuenta contra el presupuesto. Si la respuesta llega después, se
+#: descarta: `investigar` ya ha devuelto y nadie la guarda.
+TIMEOUT_MODELO = int(os.environ.get("INTEL_INVESTIGACION_TIMEOUT_MODELO", 60))
 
 #: Versión del PROMPT, no del modelo. Misma convención que `RELEVANCIA_V` y `SEC_ID_V`:
 #: dos lecturas hechas con prompts distintos no son comparables, y sin esto la única
@@ -948,8 +963,15 @@ async def investigar(evento: dict) -> dict:
     import ai_analysis
     t0 = time.perf_counter()
     try:
-        bruto = await ai_analysis._run_model(
-            peticion["modelo"], peticion["sistema"], peticion["usuario"], max_tokens=1200)
+        bruto = await asyncio.wait_for(
+            ai_analysis._run_model(peticion["modelo"], peticion["sistema"],
+                                   peticion["usuario"], max_tokens=1200),
+            timeout=TIMEOUT_MODELO)
+    except asyncio.TimeoutError:
+        auditoria["ms_modelo"] = round((time.perf_counter() - t0) * 1000)
+        auditoria["error"] = f"el modelo no contestó en {TIMEOUT_MODELO} s"
+        return {"ok": False, "fase": "modelo", "llamada_al_modelo": False,
+                "auditoria": auditoria, "investigacion": None}
     except Exception as e:
         auditoria["ms_modelo"] = round((time.perf_counter() - t0) * 1000)
         auditoria["error"] = f"{type(e).__name__}: {str(e)[:200]}"

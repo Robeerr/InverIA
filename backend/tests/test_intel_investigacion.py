@@ -719,6 +719,27 @@ def test_si_el_MODELO_falla_la_llamada_NO_cuenta(monkeypatch):
     assert r["llamada_al_modelo"] is False and "429" in r["auditoria"]["error"]
 
 
+def test_si_el_MODELO_se_CUELGA_la_investigacion_falla_A_TIEMPO(monkeypatch):
+    """El 23-10-2026 una llamada a Gemini se quedó colgada más de ocho minutos: el cliente
+    no trae tiempo máximo. Pasado `TIMEOUT_MODELO`, falla como cualquier fallo del modelo:
+    el evento sigue pendiente y no se gasta presupuesto."""
+    import asyncio
+    import time
+    import ai_analysis
+    _con_cliente(monkeypatch, _Cliente(_Respuesta(200, b"<p>FORM 8-K algo</p>")))
+    monkeypatch.setattr(inv, "TIMEOUT_MODELO", 0.05)
+
+    async def colgado(*a, **k):
+        await asyncio.sleep(30)
+    monkeypatch.setattr(ai_analysis, "_run_model", colgado)
+    t0 = time.perf_counter()
+    r = asyncio.run(inv.investigar(_evento()))
+    assert time.perf_counter() - t0 < 5
+    assert r["ok"] is False and r["fase"] == "modelo"
+    assert r["llamada_al_modelo"] is False and r["investigacion"] is None
+    assert r["auditoria"]["error"] == "el modelo no contestó en 0.05 s"
+
+
 def test_una_respuesta_ROTA_si_cuenta_como_llamada(monkeypatch):
     """El modelo respondió y eso ya se pagó. Que la respuesta no valga no devuelve la
     cuota — y el evento NO se marca investigado."""
@@ -755,15 +776,15 @@ def test_se_usa_EXCLUSIVAMENTE_run_model(monkeypatch):
     for prohibido in ("genai", "google.generativeai", "openai", "anthropic",
                       "groq", "GEMINI_API_KEY"):
         assert prohibido not in src, f"cliente o dependencia nueva: {prohibido}"
-    # Y los únicos módulos que se importan son los que ya estaban. `html`, `os`, `re` y
-    # `time` son biblioteca ESTÁNDAR: no son dependencias, vienen con Python. Los otros
-    # tres ya estaban en el proyecto. Cualquier otro nombre hace fallar este test, que es
-    # el punto — ya cazó `html` al añadirlo, y así se decidió a propósito en vez de que
-    # se colara.
+    # Y los únicos módulos que se importan son los que ya estaban. `asyncio`, `html`, `os`,
+    # `re` y `time` son biblioteca ESTÁNDAR: no son dependencias, vienen con Python. Los
+    # otros tres ya estaban en el proyecto. Cualquier otro nombre hace fallar este test,
+    # que es el punto — ya cazó `html` al añadirlo, y después `asyncio` para el tiempo
+    # máximo del modelo, y así se decidió a propósito en vez de que se colara.
     arbol = ast.parse(src)
     externos = {n.names[0].name.split(".")[0] for n in ast.walk(arbol)
                 if isinstance(n, ast.Import)}
-    estandar = {"html", "os", "re", "time"}
+    estandar = {"asyncio", "html", "os", "re", "time"}
     # `httpx` no es de la estándar, pero ya estaba en el proyecto: lo usa el connector
     # de SEC desde el principio. No es una dependencia nueva.
     del_proyecto = {"ai_analysis", "intel_eventos", "intel_sec", "httpx"}

@@ -1308,6 +1308,54 @@ def test_un_FALLO_no_convierte_el_evento_en_investigado(monkeypatch):
     assert inv.estado_de_investigacion(guardado) == inv.PENDIENTE
 
 
+def test_un_modelo_COLGADO_no_para_la_vuelta_ni_guarda_nada_tarde(monkeypatch):
+    """El caso real del 23-10-2026: la llamada a Gemini del primer evento se quedó colgada
+    y la petición entera con ella; el segundo ni empezó. Ahora el colgado falla a tiempo,
+    el siguiente se investiga, y la respuesta que llega tarde no se guarda."""
+    import threading
+    import time
+    import ai_analysis
+    db = _DB()
+    _significativo(db, id_="colgado", nivel=ev.CRITICAL, relevancia=95, symbol="COLG")
+    _significativo(db, id_="normal")
+
+    async def sec_falsa(url):
+        return {"ok": True, "http": 200, "bytes": 30, "ms": 1, "error": None,
+                "html": "<p>FORM 8-K Item 8.01 algo</p>"}
+    monkeypatch.setattr(inv, "descargar_documento", sec_falsa)
+    monkeypatch.setattr(inv, "TIMEOUT_MODELO", 0.2)
+    liberar = threading.Event()
+    lectura = {"hay_informacion": True, "resumen": "Dice X.", "hechos": ["X"],
+               "implicaciones": ["Y"], "incertidumbres": ["Z"],
+               "fuente": "Form 8-K", "confianza": 80}
+
+    async def modelo(m, sistema, usuario, max_tokens=None):
+        if "Valor: COLG" in usuario:
+            # Como el SDK de Gemini: una llamada BLOQUEANTE en un hilo, que no se cancela.
+            await asyncio.to_thread(liberar.wait, 10)
+        return lectura
+    monkeypatch.setattr(ai_analysis, "_run_model", modelo)
+
+    async def escena():
+        t0 = time.perf_counter()
+        r = await w.investigar_eventos(db, ids=["colgado", "normal"])
+        dura = time.perf_counter() - t0
+        liberar.set()                    # la respuesta colgada llega por fin...
+        await asyncio.sleep(0.2)         # ...y nadie la recoge
+        return r, dura
+
+    r, dura = asyncio.run(escena())
+    assert dura < 5
+    por_id = {x["id"]: x for x in r["resultados"]}
+    assert por_id["colgado"]["ok"] is False and por_id["colgado"]["fase"] == "modelo"
+    assert por_id["normal"]["ok"] is True
+    assert r["investigados"] == 1 and r["llamadas_al_modelo"] == 1
+    docs = {d["id"]: d for d in db[w.COL_EVENTOS].docs}
+    assert docs["colgado"]["etapa"] == ev.SIGNIFICATIVO and docs["colgado"]["resumen"] is None
+    assert docs["normal"]["etapa"] == ev.INVESTIGADO
+    assert asyncio.run(w.uso_ia_de_hoy(db)) == 1
+
+
 def test_PULSAR_DOS_VECES_no_gasta_dos_veces(monkeypatch):
     """La idempotencia que se pidió por escrito. La puerta se comprueba sobre el
     documento recién leído de Mongo, así que la segunda vez ya está en `investigado`."""
