@@ -372,11 +372,22 @@ def test_la_trazabilidad_dice_EXACTAMENTE_que_documentos_vio_el_modelo(monkeypat
     assert r["auditoria"]["anexos_ex99"]["indice_url"] == INDICE
 
 
-def test_la_auditoria_de_anexos_NO_lleva_el_texto():
-    """No se guarda el HTML ni el texto de los anexos: solo lo necesario para trazar."""
-    import inspect
-    fuente = inspect.getsource(inv.investigar)
-    assert 'if k != "anexos"' in fuente
+def test_la_auditoria_de_anexos_NO_lleva_el_texto(monkeypatch):
+    """No se guarda el HTML ni el texto de los anexos: solo lo necesario para trazar. Y
+    el campo conserva la forma de siempre: las descargas y el inventario del índice van a
+    la traza, no aquí."""
+    anexo = CARPETA + "dp1_ex9901.htm"
+    _con(monkeypatch, {
+        PRINCIPAL: _html(CARATULA),
+        INDICE: _indice(_fila("EX-99.1", f"/Archives/edgar/data/{CIK}/{ACC}/dp1_ex9901.htm")),
+        anexo: _html("nota de prensa"),
+    })
+    r = asyncio.run(inv.investigar(_evento()))
+    guardado = r["auditoria"]["anexos_ex99"]
+    assert set(guardado) <= {"estado", "motivo", "indice_url", "fallos", "omitidos_por_tope"}
+    assert "nota de prensa" not in str(guardado)
+    # Y la traza tampoco lleva el texto del anexo: solo cómo fue cada descarga.
+    assert "nota de prensa" not in str(r["traza"]["anexos"])
 
 
 def test_el_worker_PERSISTE_la_trazabilidad_sin_textos():

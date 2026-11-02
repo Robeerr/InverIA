@@ -375,8 +375,15 @@ async def investigar_eventos(db, ids: list = None, tope: int = None) -> dict:
             # lo tienen, y esa ausencia ES el dato: se hicieron leyendo solo la carátula.
             actualizado["documentos_enviados"] = r["auditoria"].get("documentos_enviados")
             actualizado["anexos_ex99"] = r["auditoria"].get("anexos_ex99")
+            # Trazabilidad: del documento a la ficha, y los HECHOS contra el texto enviado.
+            # Van al lado de la lectura, sin tocarla.
+            actualizado["traza"] = r.get("traza")
+            actualizado["verificacion_hechos"] = r.get("verificacion_hechos")
             if await _guardar_investigacion(db, actualizado):
                 guardados += 1
+        # Cada intento, salga bien o mal. Los fallos no tocan el evento —sigue pendiente—,
+        # y sin este registro un timeout o un 503 no dejaban más rastro que el log.
+        await _anotar_intento(db, evento, r)
         resultados.append({
             "id": evento.get("id"), "symbol": evento.get("symbol"),
             "titulo": evento.get("titulo"), "ok": r["ok"], "fase": r["fase"],
@@ -462,12 +469,38 @@ async def _guardar_investigacion(db, evento: dict) -> bool:
                       "anexos_citados": evento.get("anexos_citados"),
                       "documentos_enviados": evento.get("documentos_enviados"),
                       "anexos_ex99": evento.get("anexos_ex99"),
+                      "traza": evento.get("traza"),
+                      "verificacion_hechos": evento.get("verificacion_hechos"),
                       "historial": evento.get("historial") or []}})
         return True
     except Exception as e:
         logger.warning("intel: no se pudo guardar la investigación de %s: %s",
                        evento.get("id"), str(e)[:120])
         return False
+
+
+#: Un documento por intento de investigación, bueno o malo. Solo se añade: nunca se
+#: modifica ni se borra, y no decide nada.
+COL_INTENTOS = "intel_intentos"
+
+
+async def _anotar_intento(db, evento: dict, r: dict) -> None:
+    """Apunta el intento. NUNCA lanza: un registro que falla no puede tumbar la vuelta."""
+    try:
+        await db[COL_INTENTOS].insert_one({
+            "evento_id": (evento or {}).get("id"),
+            "symbol": (evento or {}).get("symbol"),
+            "en": ev._ahora(),
+            "ok": bool(r.get("ok")),
+            "fase": r.get("fase"),
+            "llamada_al_modelo": bool(r.get("llamada_al_modelo")),
+            "error": (r.get("auditoria") or {}).get("error"),
+            "traza": r.get("traza"),
+            "verificacion_hechos": r.get("verificacion_hechos"),
+        })
+    except Exception as e:
+        logger.warning("intel: no se pudo anotar el intento de %s: %s",
+                       (evento or {}).get("id"), str(e)[:120])
 
 
 # ── Migración de identificadores ─────────────────────────────────────────────

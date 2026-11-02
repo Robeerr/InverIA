@@ -156,6 +156,25 @@ export const api = {
     investigar: (ids) =>
       client.post(`/intelligence/investigar`, { ids }, { timeout: 180000 })
         .then((r) => r.data),
+    // Auditoría. Las de exportar y ver son de LECTURA. Congelar el banco escribe solo en
+    // su colección y ejecutarlo gasta llamadas al modelo, pero ninguna de las dos toca
+    // las investigaciones ni el presupuesto diario.
+    exportarInvestigaciones: (promptV) =>
+      client.get(`/intelligence/investigaciones/exportar`,
+                 { params: { prompt_v: promptV ?? undefined }, timeout: 120000 })
+        .then((r) => r.data),
+    intentos: (soloFallos = false) =>
+      client.get(`/intelligence/intentos`, { params: { solo_fallos: soloFallos || undefined } })
+        .then((r) => r.data),
+    banco: () => client.get(`/intelligence/banco`).then((r) => r.data),
+    congelarBanco: () =>
+      client.post(`/intelligence/banco/congelar`, {}, { timeout: 300000 }).then((r) => r.data),
+    exportarBanco: () =>
+      client.get(`/intelligence/banco/exportar`, { timeout: 120000 }).then((r) => r.data),
+    ejecutarBanco: (version = "produccion") =>
+      client.post(`/intelligence/banco/ejecutar`, { version }).then((r) => r.data),
+    ejecucionesBanco: () =>
+      client.get(`/intelligence/banco/ejecuciones`).then((r) => r.data),
   },
   indicators: (symbol) => client.get(`/indicators/${symbol}`).then((r) => r.data),
   news: (symbol) => client.get(`/news/${symbol}`).then((r) => r.data),

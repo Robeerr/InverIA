@@ -1,5 +1,6 @@
 """AI analysis service supporting Groq + Google Gemini (both free) + premium via emergentintegrations."""
 import asyncio
+import contextvars
 import json
 import logging
 import os
@@ -7,6 +8,71 @@ import uuid
 from groq import AsyncGroq
 
 logger = logging.getLogger("ai_analysis")
+
+
+# ── Registro PASIVO de una llamada ───────────────────────────────────────────
+#
+# Quien quiera auditar una llamada —hoy, solo la investigación— pone aquí un dict
+# vacío antes de llamar a `_run_model` y lo lee después. Las funciones de abajo apuntan
+# en él el modelo real, la respuesta original, el motivo de parada, los tokens y cómo se
+# interpretó el JSON.
+#
+# NO CAMBIA NADA DE LO QUE HACE LA LLAMADA: ni la petición, ni el parseo, ni lo que se
+# devuelve. Sin registro puesto —el resto de la web— cada `_anotar` es un no-op, y si
+# apuntar fallara se ignora: auditar no puede romper lo que audita.
+REGISTRO_LLAMADA: contextvars.ContextVar = contextvars.ContextVar(
+    "registro_llamada", default=None)
+
+
+def _anotar(**campos) -> None:
+    try:
+        registro = REGISTRO_LLAMADA.get()
+        if isinstance(registro, dict):
+            registro.update(campos)
+    except Exception:
+        pass
+
+
+def _anotar_intento(**campos) -> None:
+    try:
+        registro = REGISTRO_LLAMADA.get()
+        if isinstance(registro, dict):
+            registro.setdefault("intentos", []).append(campos)
+    except Exception:
+        pass
+
+
+def _nombre_de(valor):
+    """`FinishReason.MAX_TOKENS` → "MAX_TOKENS". Lo que no tenga nombre, en texto."""
+    if valor is None:
+        return None
+    return getattr(valor, "name", None) or str(valor)
+
+
+def _uso_de(resp) -> dict:
+    um = getattr(resp, "usage_metadata", None)
+    return {
+        "entrada": getattr(um, "prompt_token_count", None),
+        "salida": getattr(um, "candidates_token_count", None),
+        "pensamiento": getattr(um, "thoughts_token_count", None),
+        "total": getattr(um, "total_token_count", None),
+    }
+
+
+def _parada_de(resp):
+    cands = getattr(resp, "candidates", None) or []
+    return _nombre_de(getattr(cands[0], "finish_reason", None)) if cands else None
+
+
+def _saneado(error) -> str:
+    """El error en texto, corto y sin claves: el registro acaba guardado en Mongo, que no
+    pasa por el filtro de los logs."""
+    texto = f"{type(error).__name__}: {str(error)[:300]}"
+    try:
+        import logs_sin_secretos
+        return logs_sin_secretos.tapar(texto)
+    except Exception:
+        return texto
 
 try:
     from emergentintegrations.llm.chat import LlmChat, UserMessage
@@ -592,9 +658,13 @@ def _parse_model_json(content: str) -> dict:
     # los meten a menudo en textos largos (veredicto/explicación multilínea en español) y con
     # strict=True (por defecto) json.loads peta con "Invalid control character" aunque el JSON
     # esté COMPLETO. Era la causa real del falso "se cortó a mitad".
+    # Cada salida apunta POR DÓNDE se interpretó. «reparado» quiere decir que el JSON venía
+    # cortado y se cerró a mano: lo que se devuelve es lo que quedó, no la respuesta entera.
     # 1) Direct parse
     try:
-        return json.loads(text, strict=False)
+        datos = json.loads(text, strict=False)
+        _anotar(parseo="directo")
+        return datos
     except json.JSONDecodeError:
         pass
     # 2) Substring between first { and last }
@@ -602,14 +672,18 @@ def _parse_model_json(content: str) -> dict:
     end = text.rfind("}")
     if start != -1 and end != -1 and end > start:
         try:
-            return json.loads(text[start: end + 1], strict=False)
+            datos = json.loads(text[start: end + 1], strict=False)
+            _anotar(parseo="subcadena")
+            return datos
         except json.JSONDecodeError:
             pass
     # 3) Repair truncated JSON (token limit hit mid-output)
     repaired = _repair_truncated_json(text)
     if repaired:
         try:
-            return json.loads(repaired, strict=False)
+            datos = json.loads(repaired, strict=False)
+            _anotar(parseo="reparado")
+            return datos
         except json.JSONDecodeError:
             pass
     # Log del inicio del texto crudo para diagnosticar si vuelve a fallar (no es truncado
@@ -650,6 +724,16 @@ async def _analyze_with_groq(model_id: str, user_msg: str,
         completion = await _call(use_json_format=False)
 
     content = completion.choices[0].message.content or ""
+    try:
+        uso = getattr(completion, "usage", None)
+        _anotar(respuesta_bruta=content,
+                finish_reason=_nombre_de(getattr(completion.choices[0], "finish_reason", None)),
+                tokens={"entrada": getattr(uso, "prompt_tokens", None),
+                        "salida": getattr(uso, "completion_tokens", None),
+                        "pensamiento": None,
+                        "total": getattr(uso, "total_tokens", None)})
+    except Exception:
+        pass
     return _parse_model_json(content)
 
 
@@ -798,11 +882,13 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
             except Exception as e:
                 last_err = e
                 if _is_transient_error(e) and not _is_quota_error(e) and attempt < 1:
+                    _anotar_intento(clave=tier, resultado="transitorio", error=_saneado(e))
                     logger.warning("Gemini key #%d (%s) transitorio (%s); 1 reintento en 1.5s",
                                    i + 1, tier, str(e)[:120].replace("\n", " "))
                     await asyncio.sleep(1.5)
                     continue
                 # No transitorio (o agotado el reintento): registra y decide fallback de key.
+                _anotar_intento(clave=tier, resultado="error", error=_saneado(e))
                 logger.warning("Gemini key #%d (%s) falló: %s", i + 1, tier,
                                str(e)[:300].replace("\n", " "))
                 break
@@ -813,6 +899,11 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
             raise last_err
         _log_usage(response)
         text = getattr(response, "text", "") or ""
+        _anotar_intento(clave=tier, resultado="respuesta", finish_reason=_parada_de(response),
+                        caracteres=len(text))
+        _anotar(modelo_real=model_id, clave=tier, respuesta_bruta=text,
+                finish_reason=_parada_de(response), tokens=_uso_de(response),
+                reintento_sin_thinking=False)
         # Intento de parseo; si falla por truncado/ilegible, reintenta UNA vez con la misma
         # key pero SIN thinking (budget=0), que libera todo el presupuesto para la respuesta.
         data = None
@@ -824,6 +915,7 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
         if data is None:
             logger.warning("Gemini key #%d: respuesta truncada/ilegible; reintento SIN thinking",
                            i + 1)
+            _anotar(reintento_sin_thinking=True, respuesta_bruta_descartada=text)
             try:
                 response = await asyncio.to_thread(
                     client.models.generate_content,
@@ -833,7 +925,12 @@ async def _analyze_with_gemini_free(model_id: str, user_msg: str,
                 )
                 _log_usage(response)
                 text = getattr(response, "text", "") or ""
+                _anotar_intento(clave=tier, resultado="respuesta_sin_thinking",
+                                finish_reason=_parada_de(response), caracteres=len(text))
+                _anotar(respuesta_bruta=text, finish_reason=_parada_de(response),
+                        tokens=_uso_de(response))
             except Exception as e:
+                _anotar_intento(clave=tier, resultado="error_sin_thinking", error=_saneado(e))
                 last_err = e
                 if i < len(keys) - 1:
                     tier = "GRATIS" if api_key == _free else "PAGO"
@@ -1023,6 +1120,8 @@ async def _run_model(model_key: str, system_prompt: str, user_msg: str,
     `model_key`, using a custom system prompt. Shared by the full analysis and
     the lightweight '¿por qué se mueve hoy?' explainer."""
     provider, model_id, _is_free = MODEL_MAP.get(model_key, MODEL_MAP[DEFAULT_MODEL])
+    _anotar(clave_de_routing=model_key, proveedor=provider, modelo_real=model_id,
+            max_tokens=max_tokens)
     if provider == "groq":
         # Groq free tier: 8000 TPM contando entrada + salida, y max_tokens cuenta como
         # "solicitado" aunque no se use. El cap fijo de 3000 daba por buena una estimación de

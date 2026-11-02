@@ -292,7 +292,9 @@ def para_api(evento: dict) -> dict:
     """
     if not isinstance(evento, dict):
         return {}
-    fuera = {"crudo", "historial", "_id"}
+    # La traza y la verificación de hechos tampoco: son para auditar, pesan (la traza lleva
+    # la respuesta original del modelo) y la pantalla no las usa. Salen por la exportación.
+    fuera = {"crudo", "historial", "_id", "traza", "verificacion_hechos"}
     salida = {k: v for k, v in evento.items() if k not in fuera}
     crudo = evento.get("crudo") or {}
     detalle = {k: crudo[k] for k in _DETALLE_PUBLICO if crudo.get(k) is not None}

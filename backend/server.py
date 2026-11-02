@@ -65,6 +65,7 @@ import intel_eventos
 import intel_investigacion
 import intel_pipeline
 import intel_worker
+import banco_inteligencia
 import auth
 
 ROOT_DIR = Path(__file__).parent
@@ -5057,6 +5058,151 @@ async def intelligence_eventos(etapa: str = None, symbol: str = None,
     # `para_api` quita el crudo (puede ser un filing entero) y el historial. Los dos siguen
     # en Mongo: lo que se ahorra es ancho de banda, no trazabilidad.
     return {"eventos": [intel_eventos.para_api(d) for d in docs]}
+
+
+#: Cuántas investigaciones o intentos sirve una exportación como mucho.
+TECHO_EXPORTACION = 1000
+
+
+def _exportable(doc: dict) -> dict:
+    """Un evento investigado entero, menos lo que no es suyo publicar.
+
+    `crudo` puede ser un filing completo: sale solo su lista blanca, como en la API. El
+    resto —lectura, traza, verificación, historial— sale tal cual está en Mongo.
+    """
+    salida = {k: v for k, v in (doc or {}).items() if k not in ("_id", "crudo")}
+    salida["detalle"] = intel_eventos.para_api(doc).get("detalle")
+    return salida
+
+
+@api_router.get("/intelligence/investigaciones/exportar")
+async def intelligence_exportar_investigaciones(prompt_v: Optional[int] = None,
+                                                limite: int = TECHO_EXPORTACION,
+                                                _user: str = Depends(auth.get_current_user)):
+    """Todas las investigaciones, para auditarlas fuera. SOLO LECTURA.
+
+    Cada una con su lectura, los documentos que vio el modelo, la traza (desde la
+    descarga hasta la respuesta original del modelo) y la verificación de sus hechos. Las
+    anteriores a la trazabilidad no tienen traza: salen sin ella, tal como se guardaron, y
+    no se rellena nada.
+    """
+    filtro = {"investigacion": {"$ne": None}}
+    if prompt_v is not None:
+        filtro["investigacion.prompt_v"] = prompt_v
+    docs = await db.intel_eventos.find(filtro, {"_id": 0}).sort(
+        "investigado_en", 1).to_list(max(1, min(limite, TECHO_EXPORTACION)))
+    docs = [d for d in docs if d.get("investigacion")]
+    return {"generado_en": datetime.now(timezone.utc).isoformat(),
+            "filtro": {"prompt_v": prompt_v},
+            "total": len(docs),
+            "con_traza": sum(1 for d in docs if d.get("traza")),
+            "investigaciones": [_exportable(d) for d in docs]}
+
+
+@api_router.get("/intelligence/intentos")
+async def intelligence_intentos(limite: int = 200, solo_fallos: bool = False,
+                                _user: str = Depends(auth.get_current_user)):
+    """Los intentos de investigación, buenos y malos, del más reciente al más antiguo.
+    SOLO LECTURA. Un intento fallido no deja rastro en el evento —sigue pendiente—: este
+    es el único sitio donde se ve que hubo un timeout o un 503."""
+    filtro = {"ok": False} if solo_fallos else {}
+    docs = await db[intel_worker.COL_INTENTOS].find(filtro, {"_id": 0}).sort(
+        "en", -1).to_list(max(1, min(limite, TECHO_EXPORTACION)))
+    return {"total": len(docs), "intentos": docs}
+
+
+# ── Banco de pruebas de la Inteligencia ──────────────────────────────────────
+#
+# Los 20 casos de PROMPT_V = 2, congelados para comparar versiones sin tocar producción.
+# Nada de esto escribe en `intel_eventos` ni gasta del presupuesto diario de la
+# investigación: el banco vive en sus propias colecciones.
+
+class CongelarBancoPeticion(BaseModel):
+    #: Opcional. Sin ids se toman las investigaciones con PROMPT_V = 2 y se exige que
+    #: sean exactamente 20.
+    ids: Optional[List[str]] = None
+
+
+class EjecutarBancoPeticion(BaseModel):
+    version: str = "produccion"
+
+
+_banco_en_curso = {"activo": False}
+
+
+@api_router.get("/intelligence/banco")
+async def intelligence_banco(_user: str = Depends(auth.get_current_user)):
+    """El banco congelado, sin los textos. Si no está congelado, los candidatos."""
+    man = await banco_inteligencia.manifiesto(db)
+    if not man:
+        cands = await banco_inteligencia.candidatos(db)
+        return {"congelado": False, "esperados": banco_inteligencia.CASOS_ESPERADOS,
+                "candidatos": [banco_inteligencia._resumen_candidato(e) for e in cands]}
+    return {"congelado": True, "manifiesto": man,
+            "casos": await banco_inteligencia.casos(db, con_textos=False)}
+
+
+@api_router.post("/intelligence/banco/congelar")
+async def intelligence_banco_congelar(peticion: CongelarBancoPeticion = None,
+                                      _user: str = Depends(auth.get_current_user)):
+    """Congela el banco UNA vez. Re-descarga los documentos de la SEC; no toca los
+    eventos. Si ya está congelado, no sobrescribe nada."""
+    return await banco_inteligencia.congelar(db, ids=(peticion.ids if peticion else None))
+
+
+@api_router.get("/intelligence/banco/exportar")
+async def intelligence_banco_exportar(_user: str = Depends(auth.get_current_user)):
+    """El banco entero, con los textos de los documentos y de la entrada. SOLO LECTURA."""
+    man = await banco_inteligencia.manifiesto(db)
+    if not man:
+        raise HTTPException(404, "El banco no está congelado")
+    return {"manifiesto": man, "casos": await banco_inteligencia.casos(db, con_textos=True)}
+
+
+@api_router.post("/intelligence/banco/ejecutar")
+async def intelligence_banco_ejecutar(peticion: EjecutarBancoPeticion,
+                                      _user: str = Depends(auth.get_current_user)):
+    """Pasa una versión por los 20 casos, en segundo plano. Gasta hasta 20 llamadas al
+    modelo; no toca producción ni su contador. El resultado sale en `ejecuciones`."""
+    if peticion.version not in banco_inteligencia.VERSIONES:
+        raise HTTPException(400, f"Versión desconocida: {peticion.version}")
+    if not await banco_inteligencia.manifiesto(db):
+        raise HTTPException(409, "El banco no está congelado")
+    if _banco_en_curso["activo"]:
+        raise HTTPException(409, "Ya hay una ejecución del banco en marcha")
+
+    async def _correr():
+        _banco_en_curso["activo"] = True
+        try:
+            await banco_inteligencia.ejecutar(db, peticion.version)
+        except Exception as e:
+            logger.warning("banco: la ejecución falló: %s", str(e)[:200])
+        finally:
+            _banco_en_curso["activo"] = False
+
+    tarea = asyncio.create_task(_correr())
+    _bg_tasks.add(tarea)
+    tarea.add_done_callback(_bg_tasks.discard)
+    return {"lanzada": True, "version": peticion.version,
+            "casos": banco_inteligencia.CASOS_ESPERADOS}
+
+
+@api_router.get("/intelligence/banco/ejecuciones")
+async def intelligence_banco_ejecuciones(_user: str = Depends(auth.get_current_user)):
+    """Las ejecuciones del banco, con su comparación y sin los resultados caso a caso."""
+    docs = await db[banco_inteligencia.COL_EJECUCIONES].find(
+        {}, {"_id": 0, "resultados": 0}).sort("inicio", -1).to_list(100)
+    return {"en_curso": _banco_en_curso["activo"], "ejecuciones": docs}
+
+
+@api_router.get("/intelligence/banco/ejecuciones/{ejecucion_id}")
+async def intelligence_banco_ejecucion(ejecucion_id: str,
+                                       _user: str = Depends(auth.get_current_user)):
+    doc = await db[banco_inteligencia.COL_EJECUCIONES].find_one(
+        {"id": ejecucion_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Ejecución no encontrada")
+    return doc
 
 
 @api_router.get("/intelligence/diagnostico")

@@ -58,6 +58,10 @@ class _Col:
     def find(self, filtro=None, proyeccion=None):
         return _Cursor([d for d in self.docs if _casa(d, filtro)])
 
+    async def insert_one(self, doc):
+        self.escrituras += 1
+        self.docs.append(dict(doc))
+
     async def count_documents(self, filtro=None):
         return len([d for d in self.docs if _casa(d, filtro)])
 
@@ -1354,6 +1358,49 @@ def test_un_modelo_COLGADO_no_para_la_vuelta_ni_guarda_nada_tarde(monkeypatch):
     assert docs["colgado"]["etapa"] == ev.SIGNIFICATIVO and docs["colgado"]["resumen"] is None
     assert docs["normal"]["etapa"] == ev.INVESTIGADO
     assert asyncio.run(w.uso_ia_de_hoy(db)) == 1
+
+
+def test_la_TRAZA_y_la_VERIFICACION_se_guardan_junto_a_la_lectura(monkeypatch):
+    db = _DB()
+    _significativo(db)
+
+    async def con_traza(evento):
+        return {"ok": True, "fase": "completa", "llamada_al_modelo": True,
+                "auditoria": {"http": 200}, "traza": {"version": 1, "fase": "completa"},
+                "verificacion_hechos": {"hechos": 0, "recuento": {}},
+                "investigacion": {"hay_informacion": True, "resumen": "Dice X.",
+                                  "hechos": [], "implicaciones": [], "incertidumbres": [],
+                                  "confianza": 80}}
+    monkeypatch.setattr(inv, "investigar", con_traza)
+    asyncio.run(w.investigar_eventos(db, ids=["sec:8-K:1"]))
+    guardado = db[w.COL_EVENTOS].docs[0]
+    assert guardado["traza"] == {"version": 1, "fase": "completa"}
+    assert guardado["verificacion_hechos"] == {"hechos": 0, "recuento": {}}
+    assert guardado["investigacion"]["confianza"] == 80        # la lectura, intacta
+
+
+def test_cada_INTENTO_queda_apuntado_tambien_los_fallidos(monkeypatch):
+    """Un fallo no toca el evento —sigue pendiente—, pero ya no se pierde sin rastro."""
+    db = _DB()
+    _significativo(db)
+    _investigacion(monkeypatch, ok=False, llamada=False, fase="modelo")
+    asyncio.run(w.investigar_eventos(db, ids=["sec:8-K:1"]))
+    intento = db[w.COL_INTENTOS].docs[0]
+    assert intento["evento_id"] == "sec:8-K:1" and intento["ok"] is False
+    assert intento["fase"] == "modelo" and intento["en"]
+    assert db[w.COL_EVENTOS].docs[0]["etapa"] == ev.SIGNIFICATIVO
+
+
+def test_si_apuntar_el_intento_falla_la_vuelta_sigue(monkeypatch):
+    db = _DB()
+    _significativo(db)
+    _investigacion(monkeypatch, ok=True)
+
+    async def revienta(_doc):
+        raise RuntimeError("Mongo caído")
+    db[w.COL_INTENTOS].insert_one = revienta
+    r = asyncio.run(w.investigar_eventos(db, ids=["sec:8-K:1"]))
+    assert r["investigados"] == 1
 
 
 def test_PULSAR_DOS_VECES_no_gasta_dos_veces(monkeypatch):

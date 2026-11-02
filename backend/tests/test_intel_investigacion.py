@@ -776,18 +776,21 @@ def test_se_usa_EXCLUSIVAMENTE_run_model(monkeypatch):
     for prohibido in ("genai", "google.generativeai", "openai", "anthropic",
                       "groq", "GEMINI_API_KEY"):
         assert prohibido not in src, f"cliente o dependencia nueva: {prohibido}"
-    # Y los únicos módulos que se importan son los que ya estaban. `asyncio`, `html`, `os`,
-    # `re` y `time` son biblioteca ESTÁNDAR: no son dependencias, vienen con Python. Los
-    # otros tres ya estaban en el proyecto. Cualquier otro nombre hace fallar este test,
-    # que es el punto — ya cazó `html` al añadirlo, y después `asyncio` para el tiempo
-    # máximo del modelo, y así se decidió a propósito en vez de que se colara.
+    # Y los únicos módulos que se importan son los que ya estaban. `asyncio`, `hashlib`,
+    # `html`, `logging`, `os`, `re` y `time` son biblioteca ESTÁNDAR: no son dependencias,
+    # vienen con Python. Cualquier otro nombre hace fallar este test, que es el punto — ya
+    # cazó `html` al añadirlo, después `asyncio` para el tiempo máximo del modelo, y
+    # `hashlib` y `logging` para la traza (huella del texto enviado y aviso de respuestas
+    # incompletas); así se decidió a propósito en vez de que se colara.
     arbol = ast.parse(src)
     externos = {n.names[0].name.split(".")[0] for n in ast.walk(arbol)
                 if isinstance(n, ast.Import)}
-    estandar = {"asyncio", "html", "os", "re", "time"}
+    estandar = {"asyncio", "hashlib", "html", "logging", "os", "re", "time"}
     # `httpx` no es de la estándar, pero ya estaba en el proyecto: lo usa el connector
-    # de SEC desde el principio. No es una dependencia nueva.
-    del_proyecto = {"ai_analysis", "intel_eventos", "intel_sec", "httpx"}
+    # de SEC desde el principio. No es una dependencia nueva. `verificador_hechos` es un
+    # módulo del propio proyecto, sin dependencias: solo `re` y `unicodedata`.
+    del_proyecto = {"ai_analysis", "intel_eventos", "intel_sec", "httpx",
+                    "verificador_hechos"}
     assert externos <= estandar | del_proyecto, externos
     # Y que sigan siendo de verdad de la estándar, no un paquete con el mismo nombre.
     import importlib.util

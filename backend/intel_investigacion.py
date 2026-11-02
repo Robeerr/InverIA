@@ -45,13 +45,17 @@ devuelve qué preguntar y cómo interpretar la respuesta. Eso permite probar la 
 prompt y la validación sin gastar un céntimo ni una llamada.
 """
 import asyncio
+import hashlib
 import html
+import logging
 import os
 import re
 import time
 from typing import Optional
 
 import intel_eventos as ev
+
+logger = logging.getLogger("intel_investigacion")
 
 # ── La puerta ────────────────────────────────────────────────────────────────
 
@@ -83,6 +87,15 @@ MODELO = os.environ.get("INTEL_INVESTIGACION_MODELO", "gemini-2.5-flash")
 #: sigue pendiente y no cuenta contra el presupuesto. Si la respuesta llega después, se
 #: descarta: `investigar` ya ha devuelto y nadie la guarda.
 TIMEOUT_MODELO = int(os.environ.get("INTEL_INVESTIGACION_TIMEOUT_MODELO", 60))
+
+#: Cuántos tokens puede escribir el modelo, contando los que gasta en pensar. Es el mismo
+#: 1.200 que se pasaba en la llamada desde el principio; tener nombre permite apuntarlo en
+#: la traza y fijarlo en un test. NO es un ajuste: cambiarlo cambia la investigación.
+MAX_TOKENS_SALIDA = 1200
+
+#: Versión de la TRAZA, no de la investigación. Sube si cambia lo que se apunta, para que
+#: una auditoría sepa qué campos puede esperar de cada investigación.
+TRAZA_V = 1
 
 #: Versión del PROMPT, no del modelo. Misma convención que `RELEVANCIA_V` y `SEC_ID_V`:
 #: dos lecturas hechas con prompts distintos no son comparables, y sin esto la única
@@ -575,6 +588,79 @@ def ex99_del_indice(html_indice: str, carpeta: str, accession: str) -> dict:
             "motivo": None}
 
 
+def inventario_del_indice(html_indice: str, carpeta: str, url_principal: str = None,
+                          seleccionados=()) -> list:
+    """TODOS los documentos que lista el índice y qué se hizo con cada uno. Pura; no lanza.
+
+    SOLO CUENTA, NO DECIDE
+
+    La selección la hace `ex99_del_indice` y aquí no se toca: esta función la LEE
+    (`seleccionados`) para poder decir, de cada fila del índice, si se leyó, si se quedó
+    fuera por el tope, si su enlace salía de la carpeta o si no es de un tipo que se lea.
+    Sin esto, «el modelo no vio el contrato de fusión» es invisible: el contrato está en un
+    EX-2.1, y de los anexos que no son EX-99 no quedaba rastro.
+
+    Las columnas se buscan por su cabecera (Type, Document, Description). Un índice sin esa
+    cabecera devuelve lista vacía: mejor no inventariar que inventariar mal.
+    """
+    try:
+        elegidos = {a.get("documento") for a in (seleccionados or [])}
+        principal = (url_principal or "").rstrip("/").rsplit("/", 1)[-1] or None
+        columnas, vistos, inventario = None, set(), []
+        for fila in _FILA.findall(html_indice or ""):
+            celdas = [_texto_de_celda(c) for c in _CELDA.findall(fila)]
+            cabecera = [c.lower() for c in celdas]
+            if "type" in cabecera and "document" in cabecera:
+                columnas = {"tipo": cabecera.index("type"),
+                            "documento": cabecera.index("document"),
+                            "descripcion": (cabecera.index("description")
+                                            if "description" in cabecera else None)}
+                continue
+            if columnas is None or len(celdas) <= max(columnas["tipo"], columnas["documento"]):
+                continue
+            tipo = celdas[columnas["tipo"]].upper()
+            nombre = None
+            for href in _HREF.findall(fila):
+                nombre = _nombre_dentro_de_la_carpeta(href, carpeta)
+                if nombre:
+                    break
+            entrada = {
+                "tipo": tipo or None,
+                "documento": nombre or (celdas[columnas["documento"]].split(" ")[0] or None),
+                "descripcion": (celdas[columnas["descripcion"]] or None
+                                if columnas["descripcion"] is not None else None),
+            }
+            if _TIPO_EX99.match(tipo):
+                if not nombre:
+                    entrada.update(decision="descartado",
+                                   motivo="el enlace sale de la carpeta del registro")
+                elif nombre in vistos:
+                    entrada.update(decision="duplicado", motivo="ya listado en otra fila")
+                elif nombre in elegidos:
+                    entrada.update(decision="seleccionado", motivo=None)
+                else:
+                    entrada.update(decision="omitido_por_tope",
+                                   motivo=f"solo se leen {MAX_ANEXOS} EX-99 por registro")
+                if nombre:
+                    vistos.add(nombre)
+            elif nombre and nombre == principal:
+                entrada.update(decision="documento_principal", motivo=None)
+            else:
+                entrada.update(decision="no_leido", motivo="solo se leen anexos EX-99")
+            inventario.append(entrada)
+        return inventario
+    except Exception:
+        return []
+
+
+def _registro_de_descarga(papel: str, url: str, bajada: dict) -> dict:
+    """Lo que se apunta de una descarga: sin el HTML, solo cómo fue."""
+    bajada = bajada or {}
+    return {"papel": papel, "url": url, "ok": bool(bajada.get("ok")),
+            "http": bajada.get("http"), "bytes": bajada.get("bytes", 0),
+            "ms": bajada.get("ms", 0), "error": bajada.get("error")}
+
+
 async def anexos_ex99(evento: dict) -> dict:
     """Localiza y descarga los EX-99 del registro. NUNCA lanza y nunca bloquea.
 
@@ -588,8 +674,11 @@ async def anexos_ex99(evento: dict) -> dict:
     """
     evento = evento or {}
     crudo = evento.get("crudo") or {}
+    # `descargas` e `inventario` son trazabilidad: cómo fue cada petición y qué listaba el
+    # índice. No deciden nada, y `investigar` los saca del `anexos_ex99` que se guarda para
+    # que ese campo siga teniendo la misma forma que en las investigaciones anteriores.
     salida = {"estado": "no_aplica", "motivo": None, "indice_url": None,
-              "anexos": [], "fallos": []}
+              "anexos": [], "fallos": [], "descargas": [], "inventario": []}
     try:
         forma = str(crudo.get("formulario") or crudo.get("suceso") or "").upper()
         if forma not in FORMULARIOS_CON_ANEXOS:
@@ -605,6 +694,7 @@ async def anexos_ex99(evento: dict) -> dict:
         salida["indice_url"] = indice
 
         bajada = await descargar_documento(indice)
+        salida["descargas"].append(_registro_de_descarga("indice", indice, bajada))
         if not bajada.get("ok"):
             salida.update(estado="indice_no_disponible",
                           motivo=f"no se pudo leer el índice: {bajada.get('error')}")
@@ -613,14 +703,20 @@ async def anexos_ex99(evento: dict) -> dict:
         salida.update(estado=leido["estado"], motivo=leido.get("motivo"))
         if leido.get("omitidos_por_tope"):
             salida["omitidos_por_tope"] = leido["omitidos_por_tope"]
+        salida["inventario"] = inventario_del_indice(
+            bajada.get("html"), carpeta, evento.get("url"), leido["anexos"])
 
         for anexo in leido["anexos"]:
             doc = await descargar_documento(anexo["url"])
+            registro = _registro_de_descarga(anexo["tipo"], anexo["url"], doc)
+            salida["descargas"].append(registro)
             if not doc.get("ok"):
                 salida["fallos"].append({**anexo, "http": doc.get("http"),
                                          "error": doc.get("error")})
                 continue
+            t0 = time.perf_counter()
             texto = texto_del_documento(doc.get("html"), maximo=MAX_BYTES)
+            registro["ms_extraccion"] = round((time.perf_counter() - t0) * 1000)
             if not texto.strip():
                 salida["fallos"].append({**anexo, "http": doc.get("http"),
                                          "error": "el anexo no tenía texto extraíble"})
@@ -867,6 +963,99 @@ def validar(bruto) -> dict:
     }}
 
 
+# ── ¿La respuesta llegó entera? ──────────────────────────────────────────────
+
+#: Los campos que el contrato pide, en el orden en que el modelo los escribe. El orden
+#: importa: si la respuesta se corta, lo que falta es lo del final.
+CAMPOS_DEL_CONTRATO = ("hay_informacion", "resumen", "hechos", "implicaciones",
+                       "incertidumbres", "fuente", "confianza")
+
+COMPLETA = "completa"
+TRUNCADA_PROVEEDOR = "truncada_por_el_proveedor"
+RECORTADA_POR_LIMITES = "recortada_por_limites_propios"
+TRUNCADA_Y_RECORTADA = "truncada_y_recortada"
+
+#: Motivos de parada que significan «se acabó el espacio», según el proveedor.
+_PARADAS_POR_LIMITE = {"MAX_TOKENS", "LENGTH"}
+
+
+def confianza_declarada(bruto) -> Optional[int]:
+    """La confianza que ESCRIBIÓ el modelo, o None si no la escribió o no es un número.
+
+    `validar` —congelada— guarda 0 cuando falta, para que la duda cueste algo. Esto no
+    la sustituye: dice qué declaró de verdad el modelo, para que nadie lea ese 0 como un
+    «confío nada».
+    """
+    if not isinstance(bruto, dict) or "confianza" not in bruto:
+        return None
+    try:
+        return max(0, min(100, int(float(bruto.get("confianza")))))
+    except (TypeError, ValueError):
+        return None
+
+
+def estado_de_respuesta(bruto, llamada: dict = None) -> dict:
+    """Si la respuesta llegó entera, la cortó el proveedor o la recortamos nosotros. Pura.
+
+    Tres cosas distintas que hasta ahora se veían igual:
+
+      · el PROVEEDOR la cortó: paró por límite de tokens, o el JSON llegó a medias y hubo
+        que repararlo para leerlo (`llamada["parseo"] == "reparado"`);
+      · NOSOTROS la recortamos: el resumen, algún elemento o alguna lista pasaban de los
+        topes de `validar`, que se quedan con lo que cabe;
+      · llegó COMPLETA.
+
+    No cambia la investigación ni la validación: describe. Una respuesta reparada se sigue
+    aceptando como hasta ahora —eso es `validar`, congelada—, pero ya no en silencio.
+    """
+    bruto = bruto if isinstance(bruto, dict) else {}
+    llamada = llamada or {}
+    parada = (llamada.get("finish_reason") or "")
+    reparada = llamada.get("parseo") == "reparado"
+    motivos_proveedor = []
+    if parada.upper() in _PARADAS_POR_LIMITE:
+        motivos_proveedor.append(f"el modelo paró por límite de tokens ({parada})")
+    if reparada:
+        motivos_proveedor.append("el JSON llegó cortado y se reparó para poder leerlo")
+
+    recortes = {}
+    resumen = str(bruto.get("resumen") or "").strip()
+    if len(resumen) > MAX_RESUMEN:
+        recortes["resumen"] = {"caracteres": len(resumen), "tope": MAX_RESUMEN}
+    for campo in ("hechos", "implicaciones", "incertidumbres"):
+        elementos = [str(x).strip() for x in (bruto.get(campo) or []) if str(x or "").strip()]
+        largos = [i for i, x in enumerate(elementos[:MAX_LISTA]) if len(x) > MAX_ITEM]
+        if len(elementos) > MAX_LISTA or largos:
+            recortes[campo] = {"elementos": len(elementos), "tope_lista": MAX_LISTA,
+                               "descartados": max(0, len(elementos) - MAX_LISTA),
+                               "recortados_a_300": largos}
+    fuente = str(bruto.get("fuente") or "").strip()
+    if len(fuente) > MAX_ITEM:
+        recortes["fuente"] = {"caracteres": len(fuente), "tope": MAX_ITEM}
+
+    if motivos_proveedor and recortes:
+        estado = TRUNCADA_Y_RECORTADA
+    elif motivos_proveedor:
+        estado = TRUNCADA_PROVEEDOR
+    elif recortes:
+        estado = RECORTADA_POR_LIMITES
+    else:
+        estado = COMPLETA
+    return {
+        "estado": estado,
+        "finish_reason": llamada.get("finish_reason"),
+        "parseo": llamada.get("parseo"),
+        "reintento_sin_thinking": bool(llamada.get("reintento_sin_thinking")),
+        "motivos_del_proveedor": motivos_proveedor,
+        "recortes_propios": recortes,
+        "campos_ausentes": [c for c in CAMPOS_DEL_CONTRATO if c not in bruto],
+        "confianza_declarada": confianza_declarada(bruto),
+        # Escrita pero no numérica («alta», «95%»): tampoco es un 0.
+        "confianza_no_numerica": ("confianza" in bruto
+                                  and confianza_declarada(bruto) is None),
+    }
+
+
 def aplicar(evento: dict, investigacion: dict, cuando: str = None) -> dict:
     """Deja la lectura sobre el evento y lo avanza a `investigado`. Objeto NUEVO.
 
@@ -919,18 +1108,29 @@ async def investigar(evento: dict) -> dict:
         "caracteres_extraidos": 0, "caracteres_enviados": 0,
         "verificacion": None, "ms_modelo": 0, "error": None,
     }
+    # La TRAZA va aparte de la auditoría y no cambia nada de lo que se hace: apunta cada
+    # paso para que la investigación se pueda reconstruir desde el documento hasta la
+    # ficha. La auditoría conserva exactamente sus campos de siempre.
+    t_inicio = time.perf_counter()
+    traza = nueva_traza()
+
     descarga = await descargar_documento((evento or {}).get("url"))
     auditoria.update(http=descarga.get("http"), bytes_descargados=descarga.get("bytes", 0),
                      ms_descarga=descarga.get("ms", 0))
+    traza["tiempos_ms"]["descarga_principal"] = descarga.get("ms", 0)
+    traza["principal"] = _registro_de_descarga("principal", (evento or {}).get("url"),
+                                               descarga)
     if not descarga.get("ok"):
         auditoria["error"] = descarga.get("error")
-        return {"ok": False, "fase": "descarga", "llamada_al_modelo": False,
-                "auditoria": auditoria, "investigacion": None}
+        return _con_traza({"ok": False, "fase": "descarga", "llamada_al_modelo": False,
+                           "auditoria": auditoria, "investigacion": None}, traza, t_inicio)
 
     # Sin recortar todavía: primero se mide CUÁNTO texto tenía el documento, y luego se
     # manda solo lo que cabe. Recortar antes de contar haría que la auditoría dijera
     # siempre 12.000 caracteres y no se pudiera ver si un filing venía corto o vacío.
+    t = time.perf_counter()
     texto = texto_del_documento(descarga.get("html"), maximo=MAX_BYTES)
+    traza["tiempos_ms"]["extraccion_principal"] = round((time.perf_counter() - t) * 1000)
     auditoria["caracteres_extraidos"] = len(texto)
     auditoria["verificacion"] = parece_el_filing(texto, evento)
     # Se mide sobre el texto ENTERO, no sobre el recorte que va al modelo: el índice de
@@ -938,12 +1138,19 @@ async def investigar(evento: dict) -> dict:
     auditoria["anexos_citados"] = anexos_citados(texto)
     if not texto.strip():
         auditoria["error"] = "el documento no tenía texto extraíble"
-        return {"ok": False, "fase": "extraccion", "llamada_al_modelo": False,
-                "auditoria": auditoria, "investigacion": None}
+        return _con_traza({"ok": False, "fase": "extraccion", "llamada_al_modelo": False,
+                           "auditoria": auditoria, "investigacion": None}, traza, t_inicio)
 
     # Los EX-99, si los hay. NO puede fallar la investigación: si algo sale mal, `anexos`
     # vuelve vacío con su motivo y se sigue exactamente como antes de existir esto.
+    t = time.perf_counter()
     ex99 = await anexos_ex99(evento)
+    traza["tiempos_ms"]["anexos"] = round((time.perf_counter() - t) * 1000)
+    traza["anexos"] = {"estado": ex99.get("estado"), "motivo": ex99.get("motivo"),
+                       "indice_url": ex99.get("indice_url"),
+                       "inventario": ex99.get("inventario") or [],
+                       "descargas": ex99.get("descargas") or [],
+                       "fallos": ex99.get("fallos") or []}
     envio = ensamblar_envio(texto, evento, ex99.get("anexos"))
     enviado = envio["texto"]
     # `caracteres_enviados` sigue siendo el del documento PRINCIPAL, como en las
@@ -954,42 +1161,143 @@ async def investigar(evento: dict) -> dict:
     auditoria["documentos_enviados"] = envio["documentos"]
     # Qué pasó con los anexos, sin su texto: el índice consultado, el motivo si no hubo
     # y los que fallaron. Es lo que permite distinguir «no había EX-99» de «no se pudo».
-    auditoria["anexos_ex99"] = {k: v for k, v in ex99.items() if k != "anexos"}
+    # `descargas` e `inventario` van a la traza: aquí el campo conserva su forma de siempre.
+    auditoria["anexos_ex99"] = {k: v for k, v in ex99.items()
+                                if k not in ("anexos", "descargas", "inventario")}
     # La evidencia. Se guarda con la investigación porque después ya no se puede
     # reconstruir: el evento pasa a `investigado` y no se vuelve a descargar.
     auditoria["muestra_del_texto"] = enviado[:MUESTRA_TEXTO]
     peticion = construir_peticion(evento, enviado)
+    traza["envio"] = cobertura_del_envio(envio["documentos"], enviado, peticion)
 
     import ai_analysis
+    # El registro PASIVO de la llamada: `ai_analysis` apunta en él el modelo real, la
+    # respuesta original, el motivo de parada y los tokens. La llamada es la de siempre.
+    registro = {}
+    marca = ai_analysis.REGISTRO_LLAMADA.set(registro)
     t0 = time.perf_counter()
     try:
         bruto = await asyncio.wait_for(
             ai_analysis._run_model(peticion["modelo"], peticion["sistema"],
-                                   peticion["usuario"], max_tokens=1200),
+                                   peticion["usuario"], max_tokens=MAX_TOKENS_SALIDA),
             timeout=TIMEOUT_MODELO)
     except asyncio.TimeoutError:
         auditoria["ms_modelo"] = round((time.perf_counter() - t0) * 1000)
         auditoria["error"] = f"el modelo no contestó en {TIMEOUT_MODELO} s"
-        return {"ok": False, "fase": "modelo", "llamada_al_modelo": False,
-                "auditoria": auditoria, "investigacion": None}
+        traza["llamada"] = _llamada_de(registro)
+        return _con_traza({"ok": False, "fase": "modelo", "llamada_al_modelo": False,
+                           "auditoria": auditoria, "investigacion": None}, traza, t_inicio)
     except Exception as e:
         auditoria["ms_modelo"] = round((time.perf_counter() - t0) * 1000)
         auditoria["error"] = f"{type(e).__name__}: {str(e)[:200]}"
+        traza["llamada"] = _llamada_de(registro)
         # La llamada no llegó a completarse, así que no cuenta contra el presupuesto: un
         # 429 o un corte de red no consumen tokens.
-        return {"ok": False, "fase": "modelo", "llamada_al_modelo": False,
-                "auditoria": auditoria, "investigacion": None}
+        return _con_traza({"ok": False, "fase": "modelo", "llamada_al_modelo": False,
+                           "auditoria": auditoria, "investigacion": None}, traza, t_inicio)
+    finally:
+        ai_analysis.REGISTRO_LLAMADA.reset(marca)
     auditoria["ms_modelo"] = round((time.perf_counter() - t0) * 1000)
+    traza["llamada"] = _llamada_de(registro)
+    traza["respuesta"] = {"original": registro.get("respuesta_bruta"),
+                          "original_descartada": registro.get("respuesta_bruta_descartada"),
+                          **estado_de_respuesta(bruto, registro)}
 
+    t = time.perf_counter()
     r = validar(bruto)
+    traza["tiempos_ms"]["validacion"] = round((time.perf_counter() - t) * 1000)
     if not r["ok"]:
         auditoria["error"] = f"la respuesta no cumple el contrato: {r['motivo']}"
         # Sí cuenta: el modelo respondió, y eso ya se pagó. Que la respuesta no valga no
         # devuelve la cuota.
-        return {"ok": False, "fase": "validacion", "llamada_al_modelo": True,
-                "auditoria": auditoria, "investigacion": None, "respuesta_bruta": bruto}
-    return {"ok": True, "fase": "completa", "llamada_al_modelo": True,
-            "auditoria": auditoria, "investigacion": r["investigacion"]}
+        return _con_traza({"ok": False, "fase": "validacion", "llamada_al_modelo": True,
+                           "auditoria": auditoria, "investigacion": None,
+                           "respuesta_bruta": bruto}, traza, t_inicio)
+    if traza["respuesta"]["estado"] != COMPLETA:
+        # Se acepta igual —eso lo decide `validar`, que está congelada—, pero no en silencio.
+        logger.warning("intel: respuesta %s en %s (%s)", traza["respuesta"]["estado"],
+                       (evento or {}).get("id"),
+                       "; ".join(traza["respuesta"]["motivos_del_proveedor"])
+                       or ", ".join(traza["respuesta"]["recortes_propios"]))
+
+    # Los HECHOS contra el texto que de verdad recibió el modelo. Independiente de la
+    # confianza y sin tocar la lectura: se guarda al lado.
+    t = time.perf_counter()
+    verificacion = verificar_hechos(r["investigacion"].get("hechos"), peticion["usuario"])
+    traza["tiempos_ms"]["verificacion"] = round((time.perf_counter() - t) * 1000)
+    return _con_traza({"ok": True, "fase": "completa", "llamada_al_modelo": True,
+                       "auditoria": auditoria, "investigacion": r["investigacion"],
+                       "verificacion_hechos": verificacion}, traza, t_inicio)
+
+
+# ── La traza ─────────────────────────────────────────────────────────────────
+
+def nueva_traza() -> dict:
+    """La traza vacía de una investigación, con lo que se sabe antes de empezar."""
+    return {
+        "version": TRAZA_V,
+        "inicio": ev._ahora(),
+        "prompt_v": PROMPT_V,
+        "modelo_pedido": MODELO,
+        "limites": {"principal": MAX_CARACTERES, "anexo": MAX_CARACTERES_ANEXO,
+                    "anexos": MAX_ANEXOS, "resumen": MAX_RESUMEN, "elemento": MAX_ITEM,
+                    "lista": MAX_LISTA, "tokens_salida": MAX_TOKENS_SALIDA,
+                    "segundos_modelo": TIMEOUT_MODELO},
+        "tiempos_ms": {},
+        "principal": None, "anexos": None, "envio": None,
+        "llamada": None, "respuesta": None,
+    }
+
+
+def _con_traza(resultado: dict, traza: dict, t_inicio: float) -> dict:
+    traza["fin"] = ev._ahora()
+    traza["tiempos_ms"]["total"] = round((time.perf_counter() - t_inicio) * 1000)
+    traza["tiempos_ms"]["modelo"] = (resultado.get("auditoria") or {}).get("ms_modelo", 0)
+    traza["fase"] = resultado.get("fase")
+    traza["error"] = (resultado.get("auditoria") or {}).get("error")
+    resultado["traza"] = traza
+    return resultado
+
+
+def _llamada_de(registro: dict) -> dict:
+    """Lo que apuntó `ai_analysis`, sin los textos largos (van en `respuesta`)."""
+    return {k: v for k, v in (registro or {}).items()
+            if k not in ("respuesta_bruta", "respuesta_bruta_descartada")}
+
+
+def _huella(texto: str) -> str:
+    return hashlib.sha256((texto or "").encode("utf-8")).hexdigest()
+
+
+def cobertura_del_envio(documentos: list, enviado: str, peticion: dict) -> dict:
+    """Cuánto había, cuánto se envió y la huella exacta de lo enviado. Pura.
+
+    La huella (sha256) permite comprobar más tarde, re-descargando los documentos, que
+    se reconstruye EXACTAMENTE el mismo texto sin guardarlo entero.
+    """
+    disponibles = sum(d.get("caracteres_extraidos") or 0 for d in documentos or [])
+    enviados = sum(d.get("caracteres_enviados") or 0 for d in documentos or [])
+    return {
+        "documentos": len(documentos or []),
+        "recortados": sum(1 for d in documentos or [] if d.get("recortado")),
+        "caracteres_disponibles": disponibles,
+        "caracteres_enviados": enviados,
+        "caracteres_texto_enviado": len(enviado or ""),
+        "cobertura": round(enviados / disponibles, 4) if disponibles else None,
+        "sha256_texto_enviado": _huella(enviado),
+        "sha256_sistema": _huella((peticion or {}).get("sistema")),
+        "sha256_usuario": _huella((peticion or {}).get("usuario")),
+    }
+
+
+def verificar_hechos(hechos, texto: str) -> dict:
+    """El verificador, sin que un fallo suyo pueda tumbar la investigación."""
+    try:
+        import verificador_hechos
+        return verificador_hechos.verificar(hechos, texto)
+    except Exception as e:
+        logger.warning("intel: el verificador de hechos falló: %s", str(e)[:200])
+        return {"error": f"{type(e).__name__}: {str(e)[:200]}"}
 
 
 # ── El panorama: qué se investigaría, sin investigar nada ────────────────────

@@ -171,6 +171,98 @@ function MantenimientoCerebro() {
   );
 }
 
+/** Guarda `datos` como un fichero JSON en el ordenador. */
+function descargarJSON(datos, nombre) {
+  const blob = new Blob([JSON.stringify(datos, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* Auditoría de la Inteligencia. Está AQUÍ, entre las herramientas, y no en la pantalla de
+   investigación, que no cambia. Exportar y ver no escriben nada. Congelar el banco guarda
+   los 20 casos en su propia colección una sola vez; ejecutarlo gasta llamadas al modelo.
+   Ninguna de las dos toca las investigaciones ni el presupuesto diario. */
+function AuditoriaInteligencia() {
+  const [ocupada, setOcupada] = React.useState(null);
+  const [resultado, setResultado] = React.useState(null);
+  const [fallo, setFallo] = React.useState(null);
+  const hoy = () => new Date().toISOString().slice(0, 10);
+
+  const ACCIONES = [
+    { id: "exportar", texto: "Exportar investigaciones (JSON)",
+      fn: async () => {
+        const d = await api.intelligence.exportarInvestigaciones();
+        descargarJSON(d, `inveria-investigaciones-${hoy()}.json`);
+        return { descargado: true, total: d.total, con_traza: d.con_traza };
+      } },
+    { id: "fallos", texto: "Ver intentos fallidos", fn: () => api.intelligence.intentos(true) },
+    { id: "banco", texto: "Ver el banco de pruebas", fn: api.intelligence.banco },
+    { id: "congelar", texto: "Congelar el banco (20 casos)", fn: api.intelligence.congelarBanco,
+      confirmar: "Re-descargará de la SEC los documentos de los 20 casos y los guardará aparte. "
+        + "No toca las investigaciones y solo se hace una vez. ¿Seguir?" },
+    { id: "exportar-banco", texto: "Exportar el banco (JSON)",
+      fn: async () => {
+        const d = await api.intelligence.exportarBanco();
+        descargarJSON(d, `inveria-banco-${hoy()}.json`);
+        return { descargado: true, casos: d.casos?.length };
+      } },
+    { id: "ejecutar", texto: "Ejecutar el banco con la versión de producción",
+      fn: () => api.intelligence.ejecutarBanco("produccion"),
+      confirmar: "Hará hasta 20 llamadas al modelo con los 20 casos. No toca las "
+        + "investigaciones ni el presupuesto diario. El resultado sale en «Ver ejecuciones». ¿Seguir?" },
+    { id: "ejecuciones", texto: "Ver ejecuciones del banco", fn: api.intelligence.ejecucionesBanco },
+  ];
+
+  const lanzar = async (accion) => {
+    if (accion.confirmar && !window.confirm(accion.confirmar)) return;
+    setOcupada(accion.id); setFallo(null); setResultado(null);
+    try {
+      setResultado({ accion: accion.texto, datos: await accion.fn() });
+    } catch (e) {
+      setFallo(e?.response?.data?.detail || e?.message || "Error desconocido");
+    } finally {
+      setOcupada(null);
+    }
+  };
+
+  return (
+    <section className="iv-panel p-4" data-testid="auditoria-inteligencia">
+      <h2 className="font-heading font-semibold text-lg text-tinta mb-1">Auditoría de la Inteligencia</h2>
+      <p className="text-xs text-tinta-3 mb-3">
+        Exporta las investigaciones con su traza y gestiona el banco de pruebas de 20 casos.
+        Nada de esto cambia cómo se investiga.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {ACCIONES.map((a) => (
+          <button
+            key={a.id}
+            onClick={() => lanzar(a)}
+            disabled={ocupada !== null}
+            className="px-3 py-1.5 rounded border border-linea text-xs font-mono text-marca disabled:opacity-50"
+          >
+            {ocupada === a.id ? "Ejecutando…" : a.texto}
+          </button>
+        ))}
+      </div>
+      {fallo && <p className="text-xs text-baja mt-3">{String(fallo)}</p>}
+      {resultado && (
+        <div className="mt-3">
+          <p className="text-xs text-tinta-3 mb-1">{resultado.accion}</p>
+          <pre className="text-etiqueta bg-fondo p-2 rounded overflow-x-auto max-h-64">
+            {JSON.stringify(resultado.datos, null, 2)}
+          </pre>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function DiagnosticoView() {
   const [ticker, setTicker] = React.useState("AAPL");
   const [carga, setCarga] = React.useState(null);
@@ -359,6 +451,8 @@ export default function DiagnosticoView() {
       </section>
 
       <MantenimientoCerebro />
+
+      <AuditoriaInteligencia />
 
       {error && <p className="text-sm text-baja">{error}</p>}
     </div>
