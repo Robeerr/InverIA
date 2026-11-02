@@ -123,9 +123,12 @@ def _html(t):
     return f"<html><body><p>{t}</p></body></html>"
 
 
-def _caso(i, con_anexos, prompt_v=2, confianza=95):
+def _caso(i, con_anexos, prompt_v=2, confianza=95, accession=None, symbol=None,
+          investigado_en=None):
+    """Un caso con su web. `prompt_v=None` deja la investigación SIN el campo, como las
+    anteriores al 13-09-2026."""
     cik = str(1000 + i)
-    acc = f"{i:018d}"
+    acc = accession or f"{i:018d}"
     carpeta = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc}/"
     principal = carpeta + "doc8k.htm"
     guiones = inv.accession_con_guiones(acc)
@@ -140,9 +143,9 @@ def _caso(i, con_anexos, prompt_v=2, confianza=95):
            carpeta + guiones + "-index.htm": indice,
            carpeta + "ex991.htm": _html(f"Press release {i}: dividend of $0.{i:02d} per share."),
            carpeta + "ex21.htm": _html(f"AGREEMENT AND PLAN OF MERGER number {i}.")}
-    evento = {"id": f"sec:8-K:{acc}", "symbol": f"S{i}", "titulo": f"8-K · caso {i}",
-              "url": principal, "recibido_en": f"2026-10-{i + 1:02d}T10:00:00+00:00",
-              "investigado_en": f"2026-10-{i + 1:02d}T11:00:00+00:00",
+    evento = {"id": f"sec:8-K:{acc}", "symbol": symbol or f"S{i}", "titulo": f"8-K · caso {i}",
+              "url": principal, "recibido_en": f"2026-10-{i % 28 + 1:02d}T10:00:00+00:00",
+              "investigado_en": investigado_en or f"2026-10-{i + 1:02d}T11:00:00+00:00",
               "etapa": ev.INVESTIGADO,
               "crudo": {"formulario": "8-K", "suceso": "8-K", "accession": acc, "cik": cik,
                         "fecha_registro": "2026-10-01"},
@@ -151,6 +154,8 @@ def _caso(i, con_anexos, prompt_v=2, confianza=95):
                                 "implicaciones": [], "incertidumbres": [], "fuente": "8-K",
                                 "confianza": confianza, "modelo": "gemini-2.5-flash",
                                 "prompt_v": prompt_v}}
+    if prompt_v is None:
+        del evento["investigacion"]["prompt_v"]
     if con_anexos:
         # Lo que se registró en su día, calculado con las funciones de producción.
         texto = inv.texto_del_documento(web[principal], maximo=inv.MAX_BYTES)
@@ -161,11 +166,34 @@ def _caso(i, con_anexos, prompt_v=2, confianza=95):
     return evento, web
 
 
+RH, AAOI, ORCL = list(banco.ATRIBUIDOS_V2)          # los tres atribuidos, en su orden
+ANTIGUOS_V1 = list(banco.EXCLUIDOS_V1)              # SEDG, AMZN y TTAN del 10-09
+REGISTRADOS = [f"sec:8-K:{i:018d}" for i in range(4, 21)]
+ESPERADOS = {RH, AAOI, ORCL, *REGISTRADOS}
+
+
 @pytest.fixture
 def mundo(monkeypatch):
+    """La forma real de la base de datos: 17 casos con PROMPT_V = 2 guardado (4-20), los
+    tres del 11-09 sin versión y atribuidos, las tres del 10-09 con el prompt v1 y sin
+    versión, y una con PROMPT_V = 1 guardado."""
     db, web = _DB(), {}
-    for i in range(1, 21):
+    for k, ident in enumerate((RH, AAOI, ORCL), start=1):
+        evento, paginas = _caso(100 + k, con_anexos=False, prompt_v=None,
+                                accession=ident.split(":")[-1],
+                                symbol=banco.ATRIBUIDOS_V2[ident],
+                                investigado_en=f"2026-09-11T11:2{k}:00+00:00")
+        db.intel_eventos.docs.append(evento)
+        web.update(paginas)
+    for i in range(4, 21):
         evento, paginas = _caso(i, con_anexos=i > 8, confianza=0 if i == 20 else 95)
+        db.intel_eventos.docs.append(evento)
+        web.update(paginas)
+    for k, ident in enumerate(ANTIGUOS_V1, start=1):
+        evento, paginas = _caso(200 + k, con_anexos=False, prompt_v=None,
+                                accession=ident.split(":")[-1],
+                                symbol=banco.EXCLUIDOS_V1[ident],
+                                investigado_en=f"2026-09-10T1{k}:00:00+00:00")
         db.intel_eventos.docs.append(evento)
         web.update(paginas)
     viejo, paginas = _caso(30, con_anexos=False, prompt_v=1)     # PROMPT_V = 1: fuera
@@ -198,7 +226,8 @@ def test_congela_los_20_y_NO_toca_los_eventos(mundo):
 
 def test_si_no_son_20_no_congela_nada(mundo):
     db, _, _ = mundo
-    db.intel_eventos.docs.pop(0)
+    db.intel_eventos.docs = [e for e in db.intel_eventos.docs
+                             if e["id"] != "sec:8-K:000000000000000010"]
     r = asyncio.run(banco.congelar(db))
     assert r["ok"] is False and "20" in r["motivo"] and len(r["candidatos"]) == 19
     assert db[banco.COL_BANCO].escrituras == 0
@@ -230,7 +259,7 @@ def _casos(db):
 def test_lo_no_registrado_queda_AUSENTE(mundo):
     db, _, _ = mundo
     asyncio.run(banco.congelar(db))
-    c = _casos(db)["sec:8-K:000000000000000001"]
+    c = _casos(db)[RH]
     assert c["respuesta_original"] is None and c["tiempos_ms"] is None
     assert c["modelo"]["real"] is None and c["modelo"]["nota"] == banco.NO_REGISTRADO
     assert {"respuesta_original", "modelo_real", "tiempos", "errores",
@@ -244,7 +273,7 @@ def test_una_confianza_guardada_de_0_NO_se_da_por_declarada(mundo):
     cero = casos["sec:8-K:000000000000000020"]["salida"]
     assert cero["confianza_guardada"] == 0 and cero["confianza_declarada"] is None
     assert cero["nota_confianza"]
-    normal = casos["sec:8-K:000000000000000002"]["salida"]
+    normal = casos["sec:8-K:000000000000000004"]["salida"]
     assert normal["confianza_declarada"] == 95
 
 
@@ -254,7 +283,7 @@ def test_la_reconstruccion_se_contrasta_con_lo_registrado(mundo):
     db, _, _ = mundo
     r = asyncio.run(banco.congelar(db))
     casos = _casos(db)
-    antiguo = casos["sec:8-K:000000000000000001"]["entrada_historica"]["reconstruccion"]
+    antiguo = casos[RH]["entrada_historica"]["reconstruccion"]
     assert antiguo["metodo"] == "ninguno" and antiguo["coincide"] is None
     con = casos["sec:8-K:000000000000000012"]["entrada_historica"]["reconstruccion"]
     assert con == {"metodo": "longitudes", "coincide": True, "diferencias": []}
@@ -273,7 +302,7 @@ def test_una_reconstruccion_que_no_cuadra_se_DICE(mundo):
 def test_los_antiguos_reconstruyen_solo_el_principal(mundo):
     db, _, _ = mundo
     asyncio.run(banco.congelar(db))
-    c = _casos(db)["sec:8-K:000000000000000003"]
+    c = _casos(db)["sec:8-K:000000000000000004"]
     assert c["era"] == banco.SOLO_PRINCIPAL
     assert "=== ANEXO" not in c["entrada_historica"]["texto"]
 
@@ -360,12 +389,12 @@ def test_la_exportacion_es_de_SOLO_LECTURA_y_sin_crudo(mundo, monkeypatch):
     monkeypatch.setattr(server, "db", db)
     antes = copy.deepcopy(db.intel_eventos.docs)
     r = asyncio.run(server.intelligence_exportar_investigaciones(prompt_v=2, _user="rober"))
-    assert r["total"] == 20 and r["con_traza"] == 0
+    assert r["total"] == 17 and r["con_traza"] == 0       # la versión GUARDADA, sin más
     assert all("crudo" not in i for i in r["investigaciones"])
     assert all(i["detalle"]["accession"] for i in r["investigaciones"])
     assert db.intel_eventos.docs == antes and db.intel_eventos.escrituras == 0
     todas = asyncio.run(server.intelligence_exportar_investigaciones(_user="rober"))
-    assert todas["total"] == 21                            # también la de PROMPT_V = 1
+    assert todas["total"] == 24          # también las 6 sin versión y la de PROMPT_V = 1
 
 
 def test_el_endpoint_del_banco_sin_congelar_enseña_los_candidatos(mundo, monkeypatch):
@@ -374,3 +403,104 @@ def test_el_endpoint_del_banco_sin_congelar_enseña_los_candidatos(mundo, monkey
     monkeypatch.setattr(server, "db", db)
     r = asyncio.run(server.intelligence_banco(_user="rober"))
     assert r["congelado"] is False and len(r["candidatos"]) == 20
+
+
+# ── 6 · Los 20 de la muestra, exactamente ────────────────────────────────────
+
+def test_aparecen_EXACTAMENTE_los_20_casos_esperados(mundo):
+    db, _, _ = mundo
+    ids = [e["id"] for e in asyncio.run(banco.candidatos(db))]
+    assert len(ids) == 20 and set(ids) == ESPERADOS
+    r = asyncio.run(banco.congelar(db))
+    assert r["ok"] is True and set(r["manifiesto"]["ids"]) == ESPERADOS
+
+
+def test_se_incorporan_los_TRES_autorizados(mundo):
+    db, _, _ = mundo
+    r = asyncio.run(banco.congelar(db))
+    assert {RH, AAOI, ORCL} <= set(r["manifiesto"]["ids"])
+    simbolos = {c["evento_id"]: c["symbol"] for c in asyncio.run(banco.casos(db))}
+    assert (simbolos[RH], simbolos[AAOI], simbolos[ORCL]) == ("RH", "AAOI", "ORCL")
+
+
+def test_NO_entran_SEDG_TTAN_ni_AMZN_antiguos(mundo):
+    db, _, _ = mundo
+    candidatos = {e["id"] for e in asyncio.run(banco.candidatos(db))}
+    r = asyncio.run(banco.congelar(db))
+    for ident in ANTIGUOS_V1:
+        assert ident not in candidatos and ident not in r["manifiesto"]["ids"]
+
+
+def test_una_investigacion_sin_version_que_NO_esta_en_la_lista_no_entra(mundo):
+    """La lista es explícita: estar sin versión y del mismo día no basta."""
+    db, web, _ = mundo
+    intrusa, paginas = _caso(150, con_anexos=False, prompt_v=None,
+                             investigado_en="2026-09-11T11:30:00+00:00")
+    db.intel_eventos.docs.append(intrusa)
+    web.update(paginas)
+    assert intrusa["id"] not in {e["id"] for e in asyncio.run(banco.candidatos(db))}
+
+
+def test_no_hay_ids_DUPLICADOS(mundo):
+    db, _, _ = mundo
+    # Aunque un registro saliera dos veces de la base de datos.
+    db.intel_eventos.docs.append(copy.deepcopy(db.intel_eventos.docs[5]))
+    ids = [e["id"] for e in asyncio.run(banco.candidatos(db))]
+    assert len(ids) == len(set(ids)) == 20
+    r = asyncio.run(banco.congelar(db))
+    assert len(r["manifiesto"]["ids"]) == len(set(r["manifiesto"]["ids"])) == 20
+
+
+def test_ids_repetidos_a_mano_se_rechazan(mundo):
+    db, _, _ = mundo
+    r = asyncio.run(banco.congelar(db, ids=[RH, RH]))
+    assert r["ok"] is False and "repetidos" in r["motivo"]
+    assert db[banco.COL_BANCO].escrituras == 0
+
+
+def test_los_tres_mantienen_la_version_ATRIBUIDA(mundo):
+    db, _, _ = mundo
+    candidatos = {e["id"]: banco._resumen_candidato(e)
+                  for e in asyncio.run(banco.candidatos(db))}
+    r = asyncio.run(banco.congelar(db))
+    casos = _casos(db)
+    for ident in (RH, AAOI, ORCL):
+        assert candidatos[ident]["verificacion_version"] == \
+            "atribuida, no verificada individualmente"
+        c = casos[ident]
+        assert c["prompt_v"] is None                         # el registro, tal cual
+        assert c["procedencia_version"] == banco.PROCEDENCIA_ATRIBUIDA
+        assert c["procedencia_version"]["version"] == 2
+        assert "130727c" in c["procedencia_version"]["evidencia"]
+    otro = casos["sec:8-K:000000000000000004"]["procedencia_version"]
+    assert otro["verificacion"] == "registrada en la investigación"
+    assert r["manifiesto"]["version_registrada"] == 17
+    assert set(r["manifiesto"]["version_atribuida"]) == {RH, AAOI, ORCL}
+
+
+def test_ninguna_investigacion_ORIGINAL_se_modifica(mundo):
+    db, _, _ = mundo
+    antes = copy.deepcopy(db.intel_eventos.docs)
+    asyncio.run(banco.candidatos(db))
+    asyncio.run(banco.congelar(db))
+    assert db.intel_eventos.docs == antes and db.intel_eventos.escrituras == 0
+    for e in db.intel_eventos.docs:
+        if e["id"] in (RH, AAOI, ORCL):
+            assert "prompt_v" not in e["investigacion"]     # NO se estampa hacia atrás
+
+
+def test_si_falta_UNO_de_los_autorizados_no_se_congela_a_medias(mundo):
+    db, _, _ = mundo
+    db.intel_eventos.docs = [e for e in db.intel_eventos.docs if e["id"] != AAOI]
+    r = asyncio.run(banco.congelar(db))
+    assert r["ok"] is False and AAOI in r["motivo"]
+    assert db[banco.COL_BANCO].escrituras == 0
+
+
+def test_un_autorizado_que_ya_tuviera_OTRA_version_guardada_no_se_atribuye(mundo):
+    """Si el registro dijera otra cosa, manda el registro: no se le atribuye v2."""
+    db, _, _ = mundo
+    next(e for e in db.intel_eventos.docs if e["id"] == ORCL)["investigacion"]["prompt_v"] = 1
+    r = asyncio.run(banco.congelar(db))
+    assert r["ok"] is False and ORCL in r["motivo"]
+    assert db[banco.COL_BANCO].escrituras == 0

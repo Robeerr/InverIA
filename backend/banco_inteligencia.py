@@ -71,13 +71,71 @@ def _huella(texto: str) -> str:
 
 # ── Qué casos son ────────────────────────────────────────────────────────────
 
+#: Las TRES investigaciones de la muestra hechas con el prompt v2 antes de que la versión
+#: se guardara en cada investigación (commit 130727c, 13-09-2026 14:34 UTC). Se leyeron el
+#: 11-09-2026 hacia las 11:25 UTC. Su versión no está en el registro: la ATRIBUYE el
+#: mensaje de ese commit («RH, AAOI y ORCL con el que las separa»). Los ids los localizó
+#: el usuario en la exportación del 02-11-2026.
+#:
+#: Es una lista EXPLÍCITA, a propósito. Una regla del tipo «las que no tienen versión»
+#: metería también las tres leídas con el prompt v1 (abajo), que no son de la muestra.
+ATRIBUIDOS_V2 = {
+    "sec:8-K:000110465926106743": "RH",
+    "sec:8-K:000168316826007057": "AAOI",
+    "sec:8-K:000119312526387905": "ORCL",
+}
+
+#: Las tres investigaciones antiguas SIN versión que NO son de la muestra: se leyeron el
+#: 10-09-2026 con el prompt v1 (commits f09bcf3 y 8bed99e). Nunca entran en el banco.
+EXCLUIDOS_V1 = {
+    "sec:8-K:000117891326004477": "SEDG",
+    "sec:8-K:000101872426000036": "AMZN",
+    "sec:8-K:000163882626000093": "TTAN",
+}
+
+PROCEDENCIA_REGISTRADA = {
+    "version": PROMPT_V_DEL_BANCO,
+    "verificacion": "registrada en la investigación",
+    "evidencia": "investigacion.prompt_v",
+}
+PROCEDENCIA_ATRIBUIDA = {
+    "version": PROMPT_V_DEL_BANCO,
+    "verificacion": "atribuida, no verificada individualmente",
+    "evidencia": ("commit 130727c: «RH, AAOI y ORCL con el [prompt] que las separa»; "
+                  "el campo prompt_v no se guardó en la investigación"),
+}
+
+
+def procedencia_de(evento: dict):
+    """De dónde sale que el caso es v2. None si no es de la muestra."""
+    i = (evento or {}).get("investigacion") or {}
+    if i.get("prompt_v") == PROMPT_V_DEL_BANCO:
+        return dict(PROCEDENCIA_REGISTRADA)
+    if evento.get("id") in ATRIBUIDOS_V2 and "prompt_v" not in i:
+        return dict(PROCEDENCIA_ATRIBUIDA)
+    return None
+
+
 async def candidatos(db) -> list:
-    """Los eventos investigados con PROMPT_V = 2, en el orden en que se investigaron."""
-    docs = await db.intel_eventos.find(
+    """Los casos de la muestra, en el orden en que se investigaron.
+
+    Los que tienen guardado PROMPT_V = 2, más los tres de `ATRIBUIDOS_V2` si existen,
+    están investigados y siguen SIN versión guardada. Solo se lee: ningún registro se toca.
+    """
+    registrados = await db.intel_eventos.find(
         {"investigacion.prompt_v": PROMPT_V_DEL_BANCO}, {"_id": 0}
-    ).sort("investigado_en", 1).to_list(1000)
-    return [d for d in docs if (d.get("investigacion") or {}).get("prompt_v")
-            == PROMPT_V_DEL_BANCO]
+    ).to_list(1000)
+    atribuidos = await db.intel_eventos.find(
+        {"id": {"$in": list(ATRIBUIDOS_V2)}}, {"_id": 0}
+    ).to_list(len(ATRIBUIDOS_V2))
+    vistos, docs = set(), []
+    for d in registrados + atribuidos:
+        if d.get("id") in vistos or d.get("id") in EXCLUIDOS_V1:
+            continue
+        if d.get("investigacion") and procedencia_de(d):
+            vistos.add(d.get("id"))
+            docs.append(d)
+    return sorted(docs, key=lambda d: str(d.get("investigado_en") or ""))
 
 
 def era_de(evento: dict) -> str:
@@ -271,7 +329,10 @@ def construir_caso(evento: dict, orden: int, rec: dict) -> dict:
         "recibido_en": evento.get("recibido_en"),
         "investigado_en": evento.get("investigado_en"),
         "era": era_de(evento),
+        # Lo que dice el registro, tal cual (None en los tres atribuidos), y aparte de
+        # dónde sale la versión. El registro original no se toca.
         "prompt_v": (evento.get("investigacion") or {}).get("prompt_v"),
+        "procedencia_version": procedencia_de(evento),
         "modelo": {"clave": (evento.get("investigacion") or {}).get("modelo"),
                    "real": (traza.get("llamada") or {}).get("modelo_real"),
                    "nota": None if traza else NO_REGISTRADO},
@@ -311,8 +372,9 @@ async def manifiesto(db):
 async def congelar(db, ids: list = None) -> dict:
     """Construye el banco y lo guarda UNA vez. No toca `intel_eventos`.
 
-    Sin `ids`, toma las investigaciones con PROMPT_V = 2 y exige que sean exactamente 20:
-    si hay otro número no congela nada y devuelve la lista para revisarla. Con `ids`, usa
+    Sin `ids`, toma los casos de la muestra —los que tienen PROMPT_V = 2 guardado y los
+    tres de `ATRIBUIDOS_V2`— y exige que estén los tres atribuidos y que sean exactamente
+    20: si no, no congela nada y devuelve la lista para revisarla. Con `ids`, usa
     exactamente esos. Si algún documento que se envió no se puede re-descargar, tampoco
     congela: un banco incompleto no serviría para comparar.
     """
@@ -321,17 +383,29 @@ async def congelar(db, ids: list = None) -> dict:
         return {"ok": False, "motivo": "el banco ya está congelado y no se sobrescribe",
                 "manifiesto": ya}
     todos = await candidatos(db)
+    resumen = [_resumen_candidato(e) for e in todos]
     if ids:
+        if len(ids) != len(set(ids)):
+            return {"ok": False, "motivo": "hay ids repetidos", "candidatos": resumen}
         elegidos = [e for e in todos if e.get("id") in set(ids)]
         if len(elegidos) != len(set(ids)):
-            return {"ok": False, "motivo": "algún id no es una investigación con PROMPT_V = 2",
-                    "candidatos": [_resumen_candidato(e) for e in todos]}
+            return {"ok": False, "motivo": "algún id no es un caso de la muestra (PROMPT_V = 2)",
+                    "candidatos": resumen}
     else:
         elegidos = todos
+        # Los tres atribuidos, TODOS: sin alguno, el banco no se congela a medias.
+        presentes = {e.get("id") for e in todos}
+        faltan = [i for i in ATRIBUIDOS_V2 if i not in presentes]
+        if faltan:
+            return {"ok": False,
+                    "motivo": f"faltan investigaciones autorizadas de la muestra: {faltan}",
+                    "candidatos": resumen}
         if len(elegidos) != CASOS_ESPERADOS:
             return {"ok": False,
                     "motivo": f"se esperaban {CASOS_ESPERADOS} casos y hay {len(elegidos)}",
-                    "candidatos": [_resumen_candidato(e) for e in todos]}
+                    "candidatos": resumen}
+    if len({e.get("id") for e in elegidos}) != len(elegidos):
+        return {"ok": False, "motivo": "hay casos repetidos", "candidatos": resumen}
 
     casos, errores = [], []
     for orden, evento in enumerate(elegidos, start=1):
@@ -349,6 +423,11 @@ async def congelar(db, ids: list = None) -> dict:
         "tipo": "manifiesto", "banco": BANCO, "congelado_en": ev._ahora(),
         "casos": len(casos), "ids": [c["evento_id"] for c in casos],
         "prompt_v": PROMPT_V_DEL_BANCO,
+        "version_registrada": sum(1 for c in casos if c["procedencia_version"]["verificacion"]
+                                  == PROCEDENCIA_REGISTRADA["verificacion"]),
+        "version_atribuida": [c["evento_id"] for c in casos
+                              if c["procedencia_version"]["verificacion"]
+                              == PROCEDENCIA_ATRIBUIDA["verificacion"]],
         "sistema_sha256": _huella(inv.SISTEMA),
         "limites": inv.nueva_traza()["limites"],
         "reconstruccion": {
@@ -366,8 +445,11 @@ async def congelar(db, ids: list = None) -> dict:
 
 
 def _resumen_candidato(e: dict) -> dict:
+    procedencia = procedencia_de(e) or {}
     return {"evento_id": e.get("id"), "symbol": e.get("symbol"),
-            "investigado_en": e.get("investigado_en"), "era": era_de(e)}
+            "investigado_en": e.get("investigado_en"), "era": era_de(e),
+            "version": procedencia.get("version"),
+            "verificacion_version": procedencia.get("verificacion")}
 
 
 async def casos(db, con_textos: bool = False) -> list:
