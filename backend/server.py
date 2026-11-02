@@ -4542,6 +4542,22 @@ async def retirar_vigilancia_veto(symbol: str, _user: str = Depends(auth.get_cur
 #: Cuántos eventos sirve la lista como máximo. Lo que no cabe se pide con `desde`.
 TECHO_EVENTOS = 200
 
+#: Cuántos días se sigue sirviendo un evento que interrumpe —Importante o Crítico— aunque
+#: ya no esté entre los `limite` más recientes.
+#:
+#: POR QUÉ
+#:
+#: La lista pedía solo los 50 últimos. En una semana entran más de 50 avisos de nivel
+#: Atención —operaciones de directivos, cambios de fecha de resultados—, y el 02-11-2026
+#: el 8-K de AVGO, Importante y recién investigado, dejó de verse: estaba en Mongo, pero
+#: cinco días y medio centenar de avisos menores lo habían empujado fuera. Lo grave no
+#: puede quedar tapado por lo leve.
+#:
+#: Catorce días y no «todos»: la pantalla enseña SIEMPRE las filas que interrumpen —no
+#: entran en el recorte de doce—, así que servir las de hace meses llenaría la lista de
+#: asuntos ya digeridos.
+DIAS_GRAVES_EN_LISTA = 14
+
 
 # ── Histórico de la tesis ────────────────────────────────────────────────────
 #
@@ -5008,6 +5024,9 @@ async def intelligence_eventos(etapa: str = None, symbol: str = None,
                                _user: str = Depends(auth.get_current_user)):
     """Los eventos, del más reciente al más antiguo.
 
+    Los `limite` más recientes y, además, los Importantes y Críticos de los últimos
+    `DIAS_GRAVES_EN_LISTA` días que no hayan cabido entre ellos.
+
     Por defecto solo los que llegaron a significativo: es lo que la pantalla enseña. Los
     descartados se piden a propósito con `etapa=descartado`, porque su sitio es el
     diagnóstico —auditar el filtro— y no la lista de lo que te importa.
@@ -5024,6 +5043,17 @@ async def intelligence_eventos(etapa: str = None, symbol: str = None,
 
     docs = await db.intel_eventos.find(filtro, {"_id": 0}).sort(
         "recibido_en", -1).to_list(max(1, min(limite, TECHO_EVENTOS)))
+    if not etapa:
+        # Más los que interrumpen de los últimos días, aunque no hayan cabido entre los
+        # `limite` más recientes. Con `etapa` se pide una auditoría concreta y se sirve
+        # exactamente lo pedido.
+        desde = (datetime.now(timezone.utc)
+                 - timedelta(days=DIAS_GRAVES_EN_LISTA)).isoformat()
+        graves = await db.intel_eventos.find(
+            {**filtro, "nivel_alerta": {"$in": list(intel_eventos.INTERRUMPEN)},
+             "recibido_en": {"$gte": desde}},
+            {"_id": 0}).sort("recibido_en", -1).to_list(TECHO_EVENTOS)
+        docs = intel_eventos.juntar_con_graves(docs, graves)
     # `para_api` quita el crudo (puede ser un filing entero) y el historial. Los dos siguen
     # en Mongo: lo que se ahorra es ancho de banda, no trazabilidad.
     return {"eventos": [intel_eventos.para_api(d) for d in docs]}

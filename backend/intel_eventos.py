@@ -246,6 +246,24 @@ def interrumpe(evento: dict) -> bool:
     return evento.get("nivel_alerta") in INTERRUMPEN
 
 
+def juntar_con_graves(recientes: list, graves: list) -> list:
+    """Los eventos más recientes más los que interrumpen y no estaban ya. Pura.
+
+    Sin repetidos —un evento grave y reciente llega por las dos consultas— y del más
+    reciente al más antiguo, que es el orden en que la lista los espera.
+    """
+    vistos, juntos = set(), []
+    for evento in list(recientes or []) + list(graves or []):
+        clave = (evento or {}).get("id")
+        if clave is not None:
+            if clave in vistos:
+                continue
+            vistos.add(clave)
+        juntos.append(evento)
+    return sorted(juntos, key=lambda e: str((e or {}).get("recibido_en") or ""),
+                  reverse=True)
+
+
 # Qué campos de `crudo` puede ver el navegador. Lista BLANCA, no negra: `crudo` guarda
 # lo que dijo la fuente tal cual, y una fuente futura puede meter ahí un documento entero
 # o un identificador que no queremos publicar. Con lista negra, cada fuente nueva sería
