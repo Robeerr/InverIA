@@ -2,7 +2,8 @@
 // v3: al añadir los iconos cambió el index.html. Subir la versión invalida la caché vieja
 // (el handler de activate borra las que no coincidan) para que la pestaña coja el favicon
 // sin esperar a que caduque el HTML cacheado.
-const CACHE = 'inveria-v3';
+// v4: los scripts de arranque pasan a /inicio.js (sin hash: cambiarlo exige subir esto).
+const CACHE = 'inveria-v4';
 
 self.addEventListener('install', () => self.skipWaiting());
 
