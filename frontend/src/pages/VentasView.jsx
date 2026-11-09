@@ -7,6 +7,7 @@ import { aNumero } from "../lib/format";
 import RiesgoVenta from "../components/RiesgoVenta";
 import ExtractoMargen from "../components/ExtractoMargen";
 import { leerComoBroker, guardarComoBroker } from "../lib/preferencias";
+import { datosPosicion, totalesAbiertas } from "../lib/operaciones";
 import { useSignals } from "../hooks/useSignals";
 
 // Símbolos que están en la Cartera pero todavía SIN ningún nivel definido.
@@ -47,38 +48,7 @@ const tono = (v) => (v == null ? "text-tinta-3" : v >= 0 ? "text-sube" : "text-b
    bróker vive aquí y no duplicada en cada una. Si un día cambia qué se considera
    precio medio o de dónde sale la ganancia, cambia en un solo sitio; con la regla
    copiada, la versión de móvil se quedaría atrás sin que nadie lo notara. */
-function datosPosicion(p, comoBroker) {
-  // La media ponderada se enseña ENTERA o no se enseña. Antes cada cifra caía por su
-  // cuenta: bastaba con que faltara el coste en euros —lo que ocurre en cuanto UNA compra
-  // de la historia no tiene tipo de cambio— para que la fila mezclara el precio medio del
-  // bróker con el coste y la ganancia de FIFO/LIFO, debajo de un botón que dice "✓ Como en
-  // DEGIRO". Esa fila no cuadra con ninguna de las dos pantallas, y lo peor es que no lo
-  // dice: parece la cifra del bróker y es otra cosa.
-  const pmpCompleta = p.ponderada?.pnl_eur != null && p.ponderada?.coste_eur != null
-    && p.precio_medio_ponderado != null;
-  const usaPmp = comoBroker && pmpCompleta;
-  return {
-    g: usaPmp ? p.ponderada : p,
-    // Con el interruptor puesto se enseña el precio SIN comisiones, que es el que sale en
-    // la pantalla del bróker: su "precio medio" es un precio, no un coste. Con comisiones
-    // el nuestro se pasaba un 0,42% —medido contra los 515,376875 $ de FN— y esa diferencia
-    // no es un error de ninguno de los dos: es lo que te ha costado operar, por acción.
-    // El precio medio del bróker es el SUYO, no la media ponderada: DEGIRO resta del coste
-    // lo INGRESADO al vender, y por eso su medio se mueve cuando vendes —sube si vendes por
-    // debajo de tu media, baja si vendes por encima—. Con media ponderada no se movería
-    // nunca, y moverse es justo lo que se observa en su pantalla todos los días.
-    precioMedio: usaPmp
-      ? (p.precio_medio_degiro ?? p.precio_medio_ponderado)
-      : p.precio_medio,
-    invertido: usaPmp ? p.ponderada.coste_eur : p.coste_eur,
-    // Para poder decirlo en la fila en vez de dejar que el número mienta en silencio.
-    sinPmp: comoBroker && !pmpCompleta,
-    // Solo se enseña el otro precio medio cuando difiere de verdad; por debajo de un
-    // céntimo, dos cifras iguales una encima de otra parecen un fallo de la pantalla.
-    hayOtroMedio: p.precio_medio_ponderado != null
-      && Math.abs(p.precio_medio_ponderado - (p.precio_medio ?? 0)) > 0.01,
-  };
-}
+/* La regla vive en lib/operaciones.js, con sus tests: el Total de abajo la usa también. */
 
 /** Las etiquetas de nivel de una fila: en cuáles tienes posición AHORA.
  *
@@ -1830,6 +1800,8 @@ export default function VentasView() {
   const usaPmp = comoBroker && latenteBroker != null
     && hist?.resumen?.ponderada?.ganancia_eur != null;
   const latente = usaPmp ? latenteBroker : resumen?.latente_eur;
+  // El Total de «Lo que tienes abierto», sumado fila a fila con el mismo método que ellas.
+  const totales = totalesAbiertas(resumen?.posiciones, comoBroker);
   // Los dividendos entran en el TOTAL —son dinero cobrado— pero se enseñan en su propia
   // cifra y nunca dentro de "Realizado". Fiscalmente son rendimientos del capital
   // mobiliario, no ganancias patrimoniales: van a casillas distintas de la declaración, y
@@ -2453,18 +2425,15 @@ export default function VentasView() {
             <li className="px-4 py-3 border-t-2 border-linea">
               <div className="flex items-start justify-between gap-3">
                 <span className="font-semibold text-sm">Total</span>
-                {(() => {
-                  const lat = comoBroker && latenteBroker != null ? latenteBroker : latente;
-                  const base = resumen.invertido_eur;
-                  return (
-                    <div className="text-right shrink-0">
-                      <div className={`font-mono font-semibold text-sm ${tono(lat)}`}>{eur(lat)}</div>
-                      {base ? (
-                        <div className={`font-mono text-[10px] ${tono(lat)}`}>{pct((lat / base) * 100)}</div>
-                      ) : null}
-                    </div>
-                  );
-                })()}
+                <div className="text-right shrink-0">
+                  <div className={`font-mono font-semibold text-sm ${tono(totales.ganancia)}`}>{eur(totales.ganancia)}</div>
+                  {totales.pct != null ? (
+                    <div className={`font-mono text-[10px] ${tono(totales.ganancia)}`}>{pct(totales.pct)}</div>
+                  ) : null}
+                  {totales.sinValorar > 0 && (
+                    <div className="text-[10px] text-tinta-3">{totales.sinValorar} sin valorar, fuera del total</div>
+                  )}
+                </div>
               </div>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-2.5 text-[11px]">
                 <div className="flex items-baseline justify-between gap-2">
@@ -2473,11 +2442,11 @@ export default function VentasView() {
                 </div>
                 <div className="flex items-baseline justify-between gap-2">
                   <dt className="text-tinta-3">Invertido <span className="opacity-60">(€)</span></dt>
-                  <dd className="font-mono">{eur(resumen.invertido_eur)}</dd>
+                  <dd className="font-mono">{eur(totales.invertido)}</dd>
                 </div>
                 <div className="flex items-baseline justify-between gap-2 col-span-2">
                   <dt className="text-tinta-3">Valor hoy <span className="opacity-60">(€)</span></dt>
-                  <dd className="font-mono">{eur(resumen.valor_eur)}</dd>
+                  <dd className="font-mono">{eur(totales.valor)}</dd>
                 </div>
               </dl>
             </li>
@@ -2600,23 +2569,20 @@ export default function VentasView() {
                     {resumen.posiciones.length} pos.
                   </td>
                   <td />
-                  <td className="py-2 text-right font-mono">{eur(resumen.invertido_eur)}</td>
-                  <td className="py-2 text-right font-mono">{eur(resumen.valor_eur)}</td>
+                  {/* El Total suma las MISMAS cifras que enseñan las filas: invertido y
+                      ganancia en el mismo método, así valor − invertido = ganancia. */}
+                  <td className="py-2 text-right font-mono">{eur(totales.invertido)}</td>
+                  <td className="py-2 text-right font-mono">{eur(totales.valor)}</td>
                   <td className="px-4 py-2 text-right">
-                    {(() => {
-                      const lat = comoBroker && latenteBroker != null ? latenteBroker : latente;
-                      const base = resumen.invertido_eur;
-                      return (
-                        <>
-                          <span className={`font-mono ${tono(lat)}`}>{eur(lat)}</span>
-                          {base ? (
-                            <span className={`font-mono text-[10px] ml-1 ${tono(lat)}`}>
-                              {pct((lat / base) * 100)}
-                            </span>
-                          ) : null}
-                        </>
-                      );
-                    })()}
+                    <span className={`font-mono ${tono(totales.ganancia)}`}>{eur(totales.ganancia)}</span>
+                    {totales.pct != null ? (
+                      <span className={`font-mono text-[10px] ml-1 ${tono(totales.ganancia)}`}>
+                        {pct(totales.pct)}
+                      </span>
+                    ) : null}
+                    {totales.sinValorar > 0 && (
+                      <div className="text-[10px] text-tinta-3">{totales.sinValorar} sin valorar, fuera del total</div>
+                    )}
                   </td>
                 </tr>
               </tfoot>

@@ -452,3 +452,53 @@ def resumen_de_saludo(tarjetas, cerebro=None):
         )
 
     return {"piezas": piezas, "conteo": conteo, "total": len(tarjetas)}
+
+
+#: Pérdida, en % sobre lo invertido, a partir de la cual una posición pide atención en Hoy.
+UMBRAL_PERDIDAS_PCT = -8.0
+
+
+def _pct_de(p: dict):
+    """Rendimiento de la acción en su divisa; el de euros solo si falta el otro.
+
+    `pct` y no `pct_eur`: lo que dice si una tesis va mal es cómo se comporta la acción,
+    no cuánto se ha movido el dólar. El euro se enseña aparte, en el importe.
+    """
+    return p.get("pct") if p.get("pct") is not None else p.get("pct_eur")
+
+
+def posiciones_en_perdidas(posiciones: dict, maximo: int = 4) -> list:
+    """Las posiciones abiertas que pierden al menos un 8 %, con las cifras de los DOS métodos.
+
+    La portada elige entre el método de gestión y la media ponderada con el interruptor
+    «Como en DEGIRO», que vive en el navegador. Si aquí solo viajara una de las dos, la
+    lista de pérdidas enseñaría un método debajo de una tarjeta que dice usar el otro. Por
+    eso entra la posición si pierde lo bastante en CUALQUIERA de los dos, y la pantalla
+    vuelve a filtrar con el que tiene elegido.
+
+    El tope se aplica POR MÉTODO: las `maximo` peores de cada uno. Recortar la lista
+    conjunta por la peor de las dos cifras podía dejar fuera una posición que, con el
+    método elegido, sí está en pérdidas.
+    """
+    filas = []
+    for sym, p in posiciones.items():
+        if not (p.get("acciones") or 0) > 0:
+            continue
+        pct = _pct_de(p)
+        pond = p.get("ponderada") or None
+        pct_pond = _pct_de(pond) if pond else None
+        if not any(v is not None and v <= UMBRAL_PERDIDAS_PCT for v in (pct, pct_pond)):
+            continue
+        filas.append({
+            "symbol": sym, "motivo": "en pérdidas", "pct": pct, "pnl_eur": p.get("pnl_eur"),
+            "ponderada": ({"pct": pct_pond, "pnl_eur": pond.get("pnl_eur")} if pond else None),
+        })
+
+    def _peores(pct_de):
+        cumplen = [f for f in filas if pct_de(f) is not None and pct_de(f) <= UMBRAL_PERDIDAS_PCT]
+        return [f["symbol"] for f in sorted(cumplen, key=pct_de)[:maximo]]
+
+    elegidas = set(_peores(lambda f: f["pct"])) | set(
+        _peores(lambda f: (f["ponderada"] or {}).get("pct")))
+    peor = lambda f: min(v for v in (f["pct"], (f["ponderada"] or {}).get("pct"), 0) if v is not None)  # noqa: E731
+    return sorted((f for f in filas if f["symbol"] in elegidas), key=peor)

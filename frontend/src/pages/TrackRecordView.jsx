@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { ChartLineUp, ArrowClockwise, CheckCircle, XCircle, Clock } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
+import { lecturaBenchmark, notaCostes } from "../lib/trackRecord";
 
 // Auto-examen honesto del sistema: ¿funcionaron las señales de COMPRA del motor?
 // Lee /track-record (evalúa qué hizo el precio tras cada análisis) y lo muestra sin
@@ -38,6 +39,8 @@ export default function TrackRecordView() {
   useEffect(() => { load(days); }, [load, days]);
 
   const s = data || {};
+  // Qué se ha descontado y qué se ha quitado: un supuesto escondido se lee como un dato.
+  const nota = notaCostes(s.costes, s.duplicadas_descartadas);
   const señales = s["señales"] || s.senales || [];
 
   return (
@@ -100,27 +103,34 @@ export default function TrackRecordView() {
           </div>
 
           {/* Benchmark: ¿bate el motor a comprar y mantener el índice? */}
-          {s.benchmark && (
-            <div className="iv-panel p-4" style={{ borderLeft: `3px solid ${s.benchmark.alpha >= 0 ? "rgb(var(--iv-sube))" : "rgb(var(--iv-baja))"}` }}>
-              <p className="text-etiqueta uppercase tracking-[0.15em] text-tinta-3 font-mono mb-3">
-                ¿Bate al índice? (vs comprar S&P 500)
-              </p>
-              <div className="grid grid-cols-3 gap-2.5">
-                <Stat label="Tu motor" value={`${s.benchmark.sistema_medio > 0 ? "+" : ""}${s.benchmark.sistema_medio}%`}
-                  sub="retorno medio" color={s.benchmark.sistema_medio >= 0 ? "rgb(var(--iv-sube))" : "rgb(var(--iv-baja))"} />
-                <Stat label="S&P 500" value={`${s.benchmark.spy_medio > 0 ? "+" : ""}${s.benchmark.spy_medio}%`}
-                  sub="misma ventana" color={s.benchmark.spy_medio >= 0 ? "rgb(var(--iv-sube))" : "rgb(var(--iv-baja))"} />
-                <Stat label="Alpha" value={`${s.benchmark.alpha > 0 ? "+" : ""}${s.benchmark.alpha}%`}
-                  sub={s.benchmark.alpha >= 0 ? "de más" : "de menos"}
-                  color={s.benchmark.alpha >= 0 ? "rgb(var(--iv-sube))" : "rgb(var(--iv-baja))"} />
+          {s.benchmark && (() => {
+            // Verde solo si gana dinero Y bate al índice: perder menos que el mercado no
+            // es «aportar valor».
+            const l = lecturaBenchmark(s.benchmark);
+            const color = `rgb(var(--iv-${l.tono}))`;
+            const signo = (x) => `${x > 0 ? "+" : ""}${x}%`;
+            return (
+              <div className="iv-panel p-4" style={{ borderLeft: `3px solid ${color}` }}>
+                <p className="text-etiqueta uppercase tracking-[0.15em] text-tinta-3 font-mono mb-3">
+                  ¿Gana dinero y bate al índice? (vs comprar S&P 500)
+                </p>
+                <div className="grid grid-cols-3 gap-2.5">
+                  <Stat label="Tu motor" value={signo(s.benchmark.sistema_medio)}
+                    sub="retorno medio, neto" color={s.benchmark.sistema_medio > 0 ? "rgb(var(--iv-sube))" : "rgb(var(--iv-baja))"} />
+                  <Stat label="S&P 500" value={signo(s.benchmark.spy_medio)}
+                    sub="misma ventana" color={s.benchmark.spy_medio > 0 ? "rgb(var(--iv-sube))" : "rgb(var(--iv-baja))"} />
+                  <Stat label="Diferencia" value={signo(s.benchmark.alpha)}
+                    sub={s.benchmark.alpha >= 0 ? "a favor del motor" : "a favor del índice"}
+                    color={s.benchmark.alpha >= 0 ? "rgb(var(--iv-tinta-2))" : "rgb(var(--iv-baja))"} />
+                </div>
+                <p className="text-etiqueta text-tinta-2 leading-relaxed mt-3">{l.texto}</p>
+                <p className="text-etiqueta text-tinta-3 leading-relaxed mt-1">{l.metodo}</p>
               </div>
-              <p className="text-etiqueta text-tinta-3 leading-relaxed mt-3">
-                {s.benchmark.alpha >= 0
-                  ? `Tu motor bate al índice por ${s.benchmark.alpha}% de media. ${s.benchmark.baten_spy_pct}% de las señales lo superan. Todo esto aporta valor sobre comprar SPY y esperar.`
-                  : `Tu motor rinde ${Math.abs(s.benchmark.alpha)}% MENOS que comprar el índice y esperar. Solo ${s.benchmark.baten_spy_pct}% de las señales lo baten. Dato honesto a vigilar.`}
-                {" "}Cada señal comparada con SPY desde su fecha hasta hoy ({s.benchmark.muestra} señales).
-              </p>
-            </div>
+            );
+          })()}
+
+          {nota && (
+            <p className="text-etiqueta text-tinta-3 leading-relaxed px-1">{nota}</p>
           )}
 
           {/* Escenario TP2: qué pasa si aguantas hasta el objetivo mayor */}

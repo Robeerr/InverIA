@@ -5,6 +5,8 @@ import { ArrowUpRight, CaretRight, Warning } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import { fmtEur, fmtPct } from "../lib/format";
+import { leerComoBroker } from "../lib/preferencias";
+import { cifrasResumen } from "../lib/operaciones";
 
 /* Cabecera de Cartera · la lectura antes del detalle
    ─────────────────────────────────────────────────────────────────────────────
@@ -168,8 +170,12 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
   }, [resumen, entries]);
 
   const totalValor = posiciones.reduce((s, p) => s + (p.valor_eur || 0), 0);
-  const invertido = num(resumen?.invertido_eur);
-  const latente = num(resumen?.latente_eur);
+  // Las tres cifras en el método del interruptor «Como en DEGIRO», como Hoy y Operaciones.
+  // Antes esta cabecera leía siempre el método de gestión y no cuadraba con las otras dos.
+  const [comoBroker] = React.useState(leerComoBroker);
+  const cifras = cifrasResumen(resumen, comoBroker);
+  const invertido = num(cifras.invertido);
+  const latente = num(cifras.latente);
   const latentePct = invertido && latente !== null ? (latente / invertido) * 100 : null;
 
   /* Distribución POR VALOR, no por número de acciones: cien acciones de 2 € pesan
@@ -313,10 +319,15 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
             </div>
             <div className="flex justify-between text-apoyo">
               <span className="text-tinta-3">Ya cobrado al vender</span>
-              <span className={`iv-cifra ${resumen?.realizado_eur > 0 ? "text-sube" : ""}`}>
-                {num(resumen?.realizado_eur) !== null ? fmtEur(resumen.realizado_eur) : "—"}
+              <span className={`iv-cifra ${cifras.realizado > 0 ? "text-sube" : ""}`}>
+                {num(cifras.realizado) !== null ? fmtEur(cifras.realizado) : "—"}
               </span>
             </div>
+            {cifras.metodo && (
+              <p className="text-etiqueta text-tinta-3" title="Cambia con el interruptor «Como en DEGIRO» de Operaciones">
+                Cifras {cifras.metodo}
+              </p>
+            )}
           </div>
         </div>
 

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { fmtEur, fmtPct } from "@/lib/format";
 import { leerComoBroker } from "@/lib/preferencias";
+import { perdidasSegunMetodo } from "@/lib/operaciones";
 
 /* PanelCartera · el estado de tu dinero, de un vistazo
    ─────────────────────────────────────────────────────────────────────────────
@@ -50,6 +51,9 @@ export default function PanelCartera({ cartera }) {
   const [comoBroker] = React.useState(leerComoBroker);
   // El valor de hoy no depende del método; lo demás, sí.
   const c = { ...base, ...cifrasSegunMetodo(base, comoBroker) };
+  // Las pérdidas, en el MISMO método que las cifras de arriba. Antes iban siempre por el
+  // de gestión y AAOI salía con un importe aquí y otro en Operaciones.
+  const enPerdidas = perdidasSegunMetodo(base.atencion, comoBroker);
   return (
     <>
       {/* Halo verde: es la tarjeta del dinero, y la única de la columna que brilla. */}
@@ -101,11 +105,11 @@ export default function PanelCartera({ cartera }) {
       {/* Las posiciones en pérdidas, en su propia tarjeta con halo rojo: son lo único de
           la cartera que puede pedir una decisión hoy, y separarlas hace que se vean
           antes que el desglose. Solo aparece si hay alguna. */}
-      {c.atencion?.length > 0 && (
+      {enPerdidas.length > 0 && (
         <section className="iv-panel iv-halo-baja p-5" aria-label="Posiciones en pérdidas">
           <p className="iv-etiqueta text-baja mb-2.5">⚠ En pérdidas</p>
           <div className="space-y-2.5">
-            {c.atencion.map((p) => (
+            {enPerdidas.map((p) => (
               <div key={p.symbol} className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <Link to={`/accion/${p.symbol}`} className="font-heading text-cuerpo text-tinta hover:text-marca">

@@ -7053,21 +7053,9 @@ async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_PO
         logger.warning("Portada «Hoy»: novedades del Cerebro no disponibles: %s", e)
 
     # Posiciones que piden atención: las que están en pérdidas o han roto algo. No
-    # las diez: solo las que tienen algo que decir hoy.
-    # `pct` (rendimiento de la acción en su divisa) y no `pct_eur`: lo que dice si una
-    # tesis va mal es cómo se comporta la acción, no cuánto se ha movido el dólar. El
-    # euro se enseña aparte, en el importe.
-    atencion = []
-    for sym, p in posiciones.items():
-        if not (p.get("acciones") or 0) > 0:
-            continue
-        pct = p.get("pct")
-        if pct is None:
-            pct = p.get("pct_eur")
-        if pct is not None and pct <= -8:
-            atencion.append({"symbol": sym, "motivo": "en pérdidas",
-                             "pct": pct, "pnl_eur": p.get("pnl_eur")})
-    atencion.sort(key=lambda x: x.get("pct") or 0)
+    # las diez: solo las que tienen algo que decir hoy. Llevan las cifras de los dos
+    # métodos; la portada elige con el interruptor «Como en DEGIRO».
+    atencion = hoy.posiciones_en_perdidas(posiciones)
 
     regimen = None
     try:
@@ -7095,7 +7083,9 @@ async def dashboard_hoy(desde: Optional[str] = None, limite: int = hoy.LIMITE_PO
                 "invertido_eur": resumen.get("invertido_ponderada_eur"),
             },
             "posiciones_sin_valorar": resumen.get("posiciones_sin_valorar"),
-            "atencion": atencion[:4],
+            # Las 4 peores de CADA método (hasta 8); la pantalla se queda con las de
+            # el método elegido.
+            "atencion": atencion,
         },
         "mercado": regimen,
         "cerebro": cerebro,

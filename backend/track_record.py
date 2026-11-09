@@ -35,43 +35,169 @@ def evaluate_signal(entry, tp1, sl, future):
     (acierto). Si no se toca ninguno, queda 'abierta'. Devuelve (resultado, retorno_%).
     El retorno es el del punto de cierre (TP/stop) o el actual si sigue abierta.
     """
+    ev = evaluar_con_cierre(entry, tp1, sl, future, etiqueta="tp1")
+    return ev[:2] if ev else None
+
+
+def evaluar_con_cierre(entry, objetivo, sl, future, etiqueta="tp1"):
+    """Como evaluate_signal, pero dice además EN QUÉ VELA se cerró la señal.
+
+    Devuelve (resultado, retorno_%, índice_de_cierre) — el índice es None si sigue
+    abierta. Hace falta para comparar con el índice en la misma ventana que la señal:
+    una operación cerrada en tres días no puede medirse contra lo que hizo el S&P en tres
+    meses.
+    """
     entry = _num(entry)
     if not entry:
         return None
-    tp1, sl = _num(tp1), _num(sl)
+    objetivo, sl = _num(objetivo), _num(sl)
     if not future:
         return None
-    for hi, lo, _close in future:
+    for i, (hi, lo, _close) in enumerate(future):
         hi, lo = _num(hi), _num(lo)
         # El stop se comprueba primero (criterio conservador: ante la duda, cuenta el peor caso).
         if sl and lo is not None and lo <= sl:
-            return ("stop", round((sl - entry) / entry * 100, 1))
-        if tp1 and hi is not None and hi >= tp1:
-            return ("tp1", round((tp1 - entry) / entry * 100, 1))
+            return ("stop", round((sl - entry) / entry * 100, 1), i)
+        if objetivo and hi is not None and hi >= objetivo:
+            return (etiqueta, round((objetivo - entry) / entry * 100, 1), i)
     last_close = _num(future[-1][2])
     cur = round((last_close - entry) / entry * 100, 1) if last_close else None
-    return ("abierta", cur)
+    return ("abierta", cur, None)
 
 
 def evaluate_signal_tp2(entry, tp2, sl, future):
     """Igual que evaluate_signal pero contra el SEGUNDO objetivo (TP2): refleja el
     resultado si aguantas la posición hasta el objetivo mayor en vez de cerrar en TP1.
     Devuelve (resultado, retorno_%) con resultado en {'tp2','stop','abierta'}."""
-    entry = _num(entry)
-    if not entry:
+    ev = evaluar_con_cierre(entry, tp2, sl, future, etiqueta="tp2")
+    return ev[:2] if ev else None
+
+
+#: Tamaño de operación con el que se calculan los costes. El Track record no sabe cuánto
+#: habrías metido en cada señal, y los 2 € fijos de DEGIRO pesan muy distinto en 300 € que
+#: en 3.000 €. Se fija uno explícito, y se enseña en pantalla, en vez de ignorar los costes.
+IMPORTE_REFERENCIA_EUR = 1000.0
+
+
+def coste_ida_vuelta_pct(importe_eur: float = IMPORTE_REFERENCIA_EUR) -> float:
+    """Lo que cuesta comprar Y vender una acción de EE.UU. en DEGIRO, en % del importe.
+
+    Dos órdenes (2 € cada una) más la conversión AutoFX al comprar y al vender. Usa las
+    mismas constantes que comisiones.py para que una tarifa nueva cambie las dos cosas.
+    """
+    import comisiones
+    importe = max(float(importe_eur or 0), 1.0)
+    fijo = 2 * comisiones.COMISION_FIJA_EUR / importe * 100
+    divisa = 2 * comisiones.FX_AUTO_PCT * 100
+    return round(fijo + divisa, 2)
+
+
+def deduplicar_senales(sigs):
+    """Una señal por símbolo, día y precio de entrada.
+
+    Regenerar el análisis el mismo día guardaba otra recomendación idéntica, y el Track
+    record la contaba dos veces: inflaba la muestra y duplicaba cada acierto o fallo. Se
+    conserva la versión más reciente del día, que es la que viste por última vez. Un
+    análisis con el precio ya movido es otra decisión y se mantiene.
+    """
+    elegidas = {}
+    for s in sigs:
+        clave = (s["created"].date(), round(float(s["entry"]), 2))
+        actual = elegidas.get(clave)
+        if actual is None or s["created"] > actual["created"]:
+            elegidas[clave] = s
+    return sorted(elegidas.values(), key=lambda s: s["created"], reverse=True)
+
+
+def retorno_indice_en_ventana(fechas, cierres, desde, hasta=None):
+    """Retorno % del índice desde el último cierre anterior a `desde` hasta `hasta`.
+
+    La señal entra al precio del momento del análisis y su vela siguiente ya cuenta para
+    el resultado, así que el índice tiene que empezar ANTES de esa vela: en el último
+    cierre conocido cuando se hizo el análisis. Empezar en el cierre de la vela siguiente
+    se comía justo el movimiento de ese día, y una señal cerrada en ella se comparaba
+    siempre con un 0 %. `hasta` es la fecha de cierre de la señal; None si sigue abierta
+    (se mide hasta hoy). Devuelve None si no hay datos: un hueco no se rellena con un
+    número inventado.
+    """
+    if not fechas:
         return None
-    tp2, sl = _num(tp2), _num(sl)
-    if not future:
+    siguiente = next((i for i in range(len(fechas)) if fechas[i] > desde), None)
+    if siguiente is None:
         return None
-    for hi, lo, _close in future:
-        hi, lo = _num(hi), _num(lo)
-        if sl and lo is not None and lo <= sl:
-            return ("stop", round((sl - entry) / entry * 100, 1))
-        if tp2 and hi is not None and hi >= tp2:
-            return ("tp2", round((tp2 - entry) / entry * 100, 1))
-    last_close = _num(future[-1][2])
-    cur = round((last_close - entry) / entry * 100, 1) if last_close else None
-    return ("abierta", cur)
+    idx = max(siguiente - 1, 0)
+    fin = len(fechas) - 1
+    if hasta is not None:
+        fin = max((i for i in range(len(fechas)) if fechas[i] <= hasta), default=None)
+        if fin is None or fin < idx:
+            return None
+    base, last = _num(cierres[idx]), _num(cierres[fin])
+    if not base or not last:
+        return None
+    return round((last - base) / base * 100, 1)
+
+
+def _neto(retorno, coste_pct):
+    return round(retorno - coste_pct, 1) if retorno is not None else None
+
+
+def veredicto_benchmark(sistema_medio, spy_medio):
+    """Qué se le puede decir al usuario sin engañarle.
+
+    Batir al índice y ganar dinero son dos cosas distintas: si el mercado cae un 2,5 % y
+    el motor un 0,7 %, el motor "bate" al índice pero tú has perdido dinero. La pantalla
+    lo presentaba como "aporta valor"; este veredicto separa los cuatro casos.
+    """
+    if sistema_medio is None or spy_medio is None:
+        return None
+    gana = sistema_medio > 0
+    bate = sistema_medio > spy_medio
+    if gana and bate:
+        return "gana_y_bate"
+    if gana:
+        return "gana_sin_batir"
+    if bate:
+        return "pierde_menos_que_indice"
+    return "pierde_y_no_bate"
+
+
+def construir_fila(sym, s, velas, spy_fechas, spy_closes, coste_pct):
+    """Resultado de UNA señal, ya con costes, y el índice medido en su misma ventana.
+
+    `velas` trae las listas fechas/highs/lows/closes del símbolo. `retorno` es neto de
+    costes; `retorno_bruto` queda al lado para poder comprobar la resta. El índice lleva
+    los mismos costes: comprar SPY tampoco es gratis, y compararlo sin ellos inflaría la
+    ventaja del índice en vez de medirla.
+    """
+    fechas, highs, lows, closes = velas["fechas"], velas["highs"], velas["lows"], velas["closes"]
+    created = s["created"].replace(tzinfo=None)
+    inicio = next((i for i in range(len(fechas)) if fechas[i] > created), len(fechas))
+    future = [(highs[i], lows[i], closes[i]) for i in range(inicio, len(fechas))]
+    if future:
+        ev = evaluar_con_cierre(s["entry"], s.get("tp1"), s.get("sl"), future)
+    else:
+        # Señal recién creada (sin velas posteriores aún): aparece ya como 'abierta' a
+        # precio ~actual, para que veas al instante que se guardó.
+        last = _num(closes[-1]) if closes else None
+        ret = round((last - s["entry"]) / s["entry"] * 100, 1) if last else 0.0
+        ev = ("abierta", ret, None)
+    if not ev:
+        return None
+    resultado, retorno, i_cierre = ev
+    fecha_cierre = fechas[inicio + i_cierre] if i_cierre is not None else None
+    spy = retorno_indice_en_ventana(spy_fechas, spy_closes, created, fecha_cierre)
+    fila = {
+        "symbol": sym, "fecha": s["created"].date().isoformat(),
+        "entrada": round(s["entry"], 2), "resultado": resultado,
+        "retorno": _neto(retorno, coste_pct), "retorno_bruto": retorno,
+        "spy_retorno": _neto(spy, coste_pct),
+    }
+    # Resultado alternativo aguantando hasta TP2 (si el análisis lo definió).
+    ev2 = evaluate_signal_tp2(s["entry"], s.get("tp2"), s.get("sl"), future) if s.get("tp2") else None
+    if ev2:
+        fila["resultado_tp2"] = ev2[0]
+        fila["retorno_tp2"] = _neto(ev2[1], coste_pct)
+    return fila
 
 
 async def compute_track_record(db, days: int = 180, min_age_days: int = 0) -> dict:
@@ -104,7 +230,7 @@ async def compute_track_record(db, days: int = 180, min_age_days: int = 0) -> di
         })
 
     # Índice de referencia (SPY): para cada señal, cuánto habría hecho el S&P 500 en la
-    # misma ventana [fecha señal → hoy]. Así medimos si el motor bate a "comprar el índice".
+    # MISMA ventana que la señal (de su fecha a su cierre, o a hoy si sigue abierta).
     try:
         spy_df = await asyncio.to_thread(market_data.get_full_indicator_history, "SPY")
         spy_fechas = spy_df["Date"].tolist()
@@ -112,19 +238,9 @@ async def compute_track_record(db, days: int = 180, min_age_days: int = 0) -> di
     except Exception:
         spy_fechas, spy_closes = [], []
 
-    def _spy_return_desde(created):
-        """Retorno % de SPY desde la primera vela tras `created` hasta la última."""
-        if not spy_fechas:
-            return None
-        idx = next((i for i in range(len(spy_fechas)) if spy_fechas[i] > created), None)
-        if idx is None:
-            return None
-        base, last = _num(spy_closes[idx]), _num(spy_closes[-1])
-        if not base or not last:
-            return None
-        return round((last - base) / base * 100, 1)
-
+    coste = coste_ida_vuelta_pct()
     señales = []
+    duplicadas = 0
     for sym, sigs in by_symbol.items():
         try:
             df = await asyncio.to_thread(market_data.get_full_indicator_history, sym)
@@ -132,33 +248,14 @@ async def compute_track_record(db, days: int = 180, min_age_days: int = 0) -> di
             df = None
         if df is None or getattr(df, "empty", True):
             continue
-        fechas = df["Date"].tolist()
-        highs, lows, closes = df["High"].tolist(), df["Low"].tolist(), df["Close"].tolist()
-        for s in sigs:
-            created = s["created"].replace(tzinfo=None)
-            future = [(highs[i], lows[i], closes[i])
-                      for i in range(len(fechas)) if fechas[i] > created]
-            if future:
-                ev = evaluate_signal(s["entry"], s["tp1"], s["sl"], future)
-            else:
-                # Señal recién creada (sin velas posteriores aún): aparece ya como
-                # 'abierta' a precio ~actual, para que veas al instante que se guardó.
-                last = _num(closes[-1]) if closes else None
-                ret = round((last - s["entry"]) / s["entry"] * 100, 1) if last else 0.0
-                ev = ("abierta", ret)
-            if not ev:
-                continue
-            resultado, retorno = ev
-            fila = {
-                "symbol": sym, "fecha": s["created"].date().isoformat(),
-                "entrada": round(s["entry"], 2), "resultado": resultado, "retorno": retorno,
-                "spy_retorno": _spy_return_desde(created),
-            }
-            # Resultado alternativo aguantando hasta TP2 (si el análisis lo definió).
-            ev2 = evaluate_signal_tp2(s["entry"], s["tp2"], s["sl"], future) if s.get("tp2") else None
-            if ev2:
-                fila["resultado_tp2"], fila["retorno_tp2"] = ev2
-            señales.append(fila)
+        velas = {"fechas": df["Date"].tolist(), "highs": df["High"].tolist(),
+                 "lows": df["Low"].tolist(), "closes": df["Close"].tolist()}
+        unicas = deduplicar_senales(sigs)
+        duplicadas += len(sigs) - len(unicas)
+        for s in unicas:
+            fila = construir_fila(sym, s, velas, spy_fechas, spy_closes, coste)
+            if fila:
+                señales.append(fila)
 
     señales.sort(key=lambda x: x["fecha"], reverse=True)
     cerradas = [s for s in señales if s["resultado"] in ("tp1", "stop")]
@@ -226,11 +323,15 @@ async def compute_track_record(db, days: int = 180, min_age_days: int = 0) -> di
             "alpha": round(sis - spy, 1),          # cuánto bate (o no) al índice
             "baten_spy_pct": round(baten / len(pares) * 100, 1),
             "muestra": len(pares),
+            "veredicto": veredicto_benchmark(sis, spy),
         }
 
     return {
         "total": len(señales),
         "benchmark": benchmark,
+        # Supuestos con los que se ha calculado todo lo de arriba, para enseñarlos.
+        "costes": {"pct_ida_vuelta": coste, "importe_referencia_eur": IMPORTE_REFERENCIA_EUR},
+        "duplicadas_descartadas": duplicadas,
         "aciertos": len(aciertos),
         "fallos": len(fallos),
         "abiertas": len(abiertas),
