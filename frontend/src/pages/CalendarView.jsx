@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CalendarBlank, ArrowRight, ArrowClockwise } from "@phosphor-icons/react";
 import { api } from "../lib/api";
 import { useSignals } from "../hooks/useSignals";
+import { etiquetaCalendario } from "../lib/cartera";
 
 function dayLabel(dateStr) {
   if (!dateStr) return "—";
@@ -27,17 +28,31 @@ export default function CalendarView({ setSymbol }) {
     return [...new Set(entries.map((e) => e.symbol).filter(Boolean))];
   }, [signals]);
 
-  // Mapa símbolo → grupo de Alertas (Cartera / Cimientos), para ver de qué pestaña sale
-  // cada earnings (así identificas los que no recuerdas haber añadido).
+  // Qué tienes de verdad: la misma consulta (y la misma caché) que la cabecera de Cartera.
+  const { data: resumen } = useQuery({
+    queryKey: ["cartera-resumen"],
+    queryFn: () => api.cartera.resumen(),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const enCartera = React.useMemo(() => {
+    if (!resumen?.posiciones) return null;
+    return new Set(resumen.posiciones
+      .filter((p) => (p.acciones || 0) > 0)
+      .map((p) => (p.symbol || "").toUpperCase()));
+  }, [resumen]);
+
+  // Mapa símbolo → de dónde sale cada earnings: «En cartera» solo si tienes acciones;
+  // si no, es una acción que vigilas. Antes todo lo de la tabla salía como «Cartera».
   const symGroup = React.useMemo(() => {
     const entries = Array.isArray(signals) ? signals : (signals?.items || signals?.entries || []);
-    const labels = { ideas_javi: "Cartera", cimientos: "Cimientos" };
     const m = {};
     entries.forEach((e) => {
-      if (e.symbol) m[e.symbol.toUpperCase()] = labels[e.grupo || "ideas_javi"] || (e.grupo || "Cartera");
+      const etiqueta = e.symbol && etiquetaCalendario(e, enCartera);
+      if (etiqueta) m[e.symbol.toUpperCase()] = etiqueta;
     });
     return m;
-  }, [signals]);
+  }, [signals, enCartera]);
 
   // Earnings de esos símbolos: el backend los trae en paralelo por símbolo.
   const earningsQuery = useQuery({
@@ -68,7 +83,7 @@ export default function CalendarView({ setSymbol }) {
             <p className="iv-etiqueta tracking-[0.16em] text-tinta-3 mb-1">Agenda</p>
             <h2 className="iv-verbo text-tinta">Calendario de resultados</h2>
             <p className="text-cuerpo text-tinta-2 mt-3 max-w-[58ch]">
-              Próximos earnings de las acciones que tienes en Cartera.
+              Próximos earnings de las acciones que tienes y de las que vigilas.
             </p>
           </div>
           <button onClick={() => setRefreshN((n) => n + 1)} title="Recargar (datos frescos)"

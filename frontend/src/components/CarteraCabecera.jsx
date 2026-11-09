@@ -6,7 +6,8 @@ import { toast } from "sonner";
 import { api } from "../lib/api";
 import { fmtEur, fmtPct } from "../lib/format";
 import { leerComoBroker } from "../lib/preferencias";
-import { cifrasResumen } from "../lib/operaciones";
+import { cifrasResumen, datosPosicion } from "../lib/operaciones";
+import { estadoPosicion } from "../lib/cartera";
 
 /* Cabecera de Cartera · la lectura antes del detalle
    ─────────────────────────────────────────────────────────────────────────────
@@ -41,31 +42,6 @@ const N_SECTOR = 6;   // sectores con nombre propio; el resto cae en «Otros»
 const COLORES = ["#f08c1a", "#2fbf8a", "#4f8ff0", "#ef5a7a", "#2bb3e6", "#9b7bf0", "#8a8fa3"];
 
 const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
-
-/** El estado de una posición en una frase, derivado de lo que ya sabemos.
- *
- * No hay ningún campo «estado» en la base de datos: sale de cruzar la tendencia que
- * calcula el backend con la distancia a tus niveles de compra. Por eso el orden de
- * las ramas importa — un veto manda sobre cualquier proximidad a un nivel, que es la
- * misma regla que aplica la ficha de la acción. */
-function estadoDe(entrada, precio) {
-  const t = (entrada?.tendencia || "").toUpperCase();
-  if (t === "BAJISTA") return { txt: "Compra vetada", tono: "text-baja" };
-  const niveles = [1, 2, 3, 4, 5]
-    .map((n) => ({ n, p: num(Number(entrada?.[`nivel${n}`])) }))
-    .filter((x) => x.p && x.p > 0);
-  if (precio && niveles.length) {
-    // El nivel más cercano POR ENCIMA del cual todavía no has comprado.
-    const cerca = niveles
-      .map((x) => ({ ...x, d: (precio - x.p) / x.p }))
-      .filter((x) => x.d >= -0.005 && x.d <= 0.03)
-      .sort((a, b) => Math.abs(a.d) - Math.abs(b.d))[0];
-    if (cerca) return { txt: `Nivel ${cerca.n} cerca`, tono: "text-marca" };
-  }
-  if (t === "ALCISTA") return { txt: "Tendencia intacta", tono: "text-sube" };
-  if (t === "INDEFINIDA") return { txt: "Esperar", tono: "text-tinta-2" };
-  return { txt: "Sin datos", tono: "text-tinta-3" };
-}
 
 const RIESGO_TONO = { BAJO: "text-sube", MEDIO: "text-aviso", ALTO: "text-baja" };
 
@@ -147,6 +123,12 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serieCompleta, rango]);
 
+  // Las tres cifras en el método del interruptor «Como en DEGIRO», como Hoy y Operaciones.
+  // Antes esta cabecera leía siempre el método de gestión y no cuadraba con las otras dos.
+  const [comoBroker] = React.useState(leerComoBroker);
+  // Tendencia por símbolo: la calcula el servidor con la salud de la cartera (la misma
+  // lectura que paga el veto). Sin ella la columna Estado salía «Sin datos» en todo.
+  const tendencias = saludResp?.tendencias;
   const posiciones = React.useMemo(() => {
     const porSymbol = new Map(
       (entries || []).filter((e) => e?.symbol).map((e) => [e.symbol.toUpperCase(), e]));
@@ -162,17 +144,17 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
           sector: e.sector || "Otros",
           riesgo: (e.riesgo || "").toUpperCase(),
           hoyPct: precio && previo ? ((precio - previo) / previo) * 100 : null,
-          estado: estadoDe(e, precio),
+          // P&L de la fila en el método del interruptor. Antes se leía `latente_eur`,
+          // un campo que las posiciones no traen, y la columna salía «—» entera.
+          pnl: num(datosPosicion(p, comoBroker).g?.pnl_eur),
+          estado: estadoPosicion(e, precio, tendencias?.[(p.symbol || "").toUpperCase()]),
         };
       })
       .filter((p) => num(p.valor_eur) !== null)
       .sort((a, b) => (b.valor_eur || 0) - (a.valor_eur || 0));
-  }, [resumen, entries]);
+  }, [resumen, entries, tendencias, comoBroker]);
 
   const totalValor = posiciones.reduce((s, p) => s + (p.valor_eur || 0), 0);
-  // Las tres cifras en el método del interruptor «Como en DEGIRO», como Hoy y Operaciones.
-  // Antes esta cabecera leía siempre el método de gestión y no cuadraba con las otras dos.
-  const [comoBroker] = React.useState(leerComoBroker);
   const cifras = cifrasResumen(resumen, comoBroker);
   const invertido = num(cifras.invertido);
   const latente = num(cifras.latente);
@@ -526,8 +508,8 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
                         {p.hoyPct !== null ? fmtPct(p.hoyPct) : "—"}
                       </td>
                       <td className={`px-3 py-3 text-right iv-cifra whitespace-nowrap ${
-                        p.latente_eur > 0 ? "text-sube" : p.latente_eur < 0 ? "text-baja" : "text-tinta-3"}`}>
-                        {num(p.latente_eur) !== null ? fmtEur(p.latente_eur) : "—"}
+                        p.pnl > 0 ? "text-sube" : p.pnl < 0 ? "text-baja" : "text-tinta-3"}`}>
+                        {p.pnl !== null ? fmtEur(p.pnl) : "—"}
                       </td>
                       <td className="px-3 py-3 whitespace-nowrap">
                         <Barra pct={peso} />
@@ -536,7 +518,8 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
                       <td className={`px-3 py-3 iv-etiqueta ${RIESGO_TONO[p.riesgo] || "text-tinta-3"}`}>
                         {p.riesgo || "—"}
                       </td>
-                      <td className={`px-3 py-3 whitespace-nowrap ${p.estado.tono}`}>
+                      <td className={`px-3 py-3 whitespace-nowrap ${p.estado.tono}`}
+                          title={p.estado.ayuda || undefined}>
                         {p.estado.txt}
                       </td>
                       <td className="px-2 py-3 text-right">

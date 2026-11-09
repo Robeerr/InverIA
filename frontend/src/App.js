@@ -8,6 +8,7 @@ import Header from "./components/Header";
 import Rail from "./components/Rail";
 import ErrorBoundary from "./components/ErrorBoundary";
 import LoginPage from "./pages/LoginPage";
+import { tituloDePagina } from "./lib/titulo";
 
 const Dashboard        = React.lazy(() => import("./pages/Dashboard"));
 const OpportunitiesView = React.lazy(() => import("./pages/OpportunitiesView"));
@@ -126,9 +127,12 @@ function AppInner() {
     }
   }, [darkMode]);
 
+  // El título sale de la PANTALLA, no del ticker seleccionado: con el ticker, que
+  // empieza en AAPL, la portada y el resto se llamaban «AAPL · InverIA».
+  const { pathname } = useLocation();
   useEffect(() => {
-    document.title = symbol ? `${symbol} · InverIA` : "InverIA · Análisis Bursátil";
-  }, [symbol]);
+    document.title = tituloDePagina(pathname);
+  }, [pathname]);
 
   /* Elegir un ticker en cualquier pantalla lleva a su ficha.
      Se pasa con el nombre `setSymbol` a propósito: las ocho pantallas que ya lo

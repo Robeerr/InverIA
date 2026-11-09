@@ -4387,6 +4387,9 @@ async def _salud_de_la_cartera() -> dict:
             sector_de[e["symbol"].upper()] = e.get("sector") or "Otros"
 
     conc_sector = conc_posicion = pct_estructura = None
+    # La tendencia de cada posición, que ya se lee para la estructura. Viaja en la
+    # respuesta para que la columna Estado de Cartera no tenga que pedirla otra vez.
+    tendencias = {}
     if total > 0:
         por_sector = {}
         for p in pos:
@@ -4404,6 +4407,7 @@ async def _salud_de_la_cartera() -> dict:
                 t = await asyncio.to_thread(market_data.tendencia_de, sym)
             except Exception:
                 continue
+            tendencias[sym] = t
             # `no_verificable` ya contesta esto y es su dueño: cubre el SIN_DATOS, el
             # None y cualquier etiqueta que nadie haya mapeado. Repetir la comprobación
             # aquí sería una segunda implementación de una regla que ya tiene sitio.
@@ -4420,7 +4424,8 @@ async def _salud_de_la_cartera() -> dict:
     vol = cartera_historico.volatilidad_anualizada(snaps)
     salud = cartera_historico.indice_salud(conc_sector, conc_posicion, pct_estructura, vol)
     return {"salud": salud, "dias_de_historico": len(snaps),
-            "minimo_para_volatilidad": cartera_historico.MINIMO_PARA_VOLATILIDAD}
+            "minimo_para_volatilidad": cartera_historico.MINIMO_PARA_VOLATILIDAD,
+            "tendencias": tendencias}
 
 
 @api_router.get("/cartera/historico")
