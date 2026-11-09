@@ -196,7 +196,7 @@ def tarjeta_alerta(alerta, entrada=None):
 
 
 def tarjeta_nivel(caliente, nivel_motor=None, aviso=None, tiene_posicion=False,
-                  motor_con_datos=False):
+                  motor_con_datos=False, esperanza_motor=None):
     """3 · Un nivel está muy cerca. Con el porqué del motor, si lo hay.
 
     `caliente` viene de /signals/hot, que ya calcula y ordena la distancia al nivel
@@ -204,6 +204,11 @@ def tarjeta_nivel(caliente, nivel_motor=None, aviso=None, tiene_posicion=False,
     calcula por su cuenta, con su fuerza y sus métodos coincidentes — es lo que
     convierte «está cerca de un número que escribiste» en «está cerca de un número
     que además tiene respaldo».
+
+    `esperanza_motor` es lo que gana de media cada señal de compra del motor, neta de
+    costes, según el Track record (None si aún no está medido). Que el precio esté en tu
+    nivel de compra es un hecho y se dice siempre; llamarlo «compra» es una
+    recomendación, y solo se hace si esa esperanza medida es positiva.
     """
     distancia = _pct(caliente.get("pct_away"))
     if distancia is None or distancia > UMBRAL_NIVEL_PCT:
@@ -250,6 +255,17 @@ def tarjeta_nivel(caliente, nivel_motor=None, aviso=None, tiene_posicion=False,
                    "se ha calculado para este símbolo. No es un rechazo ni una confirmación.")
 
     accion = (caliente.get("action") or "").lower()
+    respaldada = None
+    coletilla = f" · sería una {accion}" if accion else ""
+    if accion == "compra":
+        respaldada = esperanza_motor is not None and esperanza_motor > 0
+        if not respaldada:
+            coletilla = " · es tu nivel de compra"
+            if esperanza_motor is not None and esperanza_motor < 0:
+                coletilla += (f", pero las compras del motor pierden un "
+                              f"{_fmt_pct(esperanza_motor)} por operación tras costes")
+            elif esperanza_motor is not None:
+                coletilla += ", pero las compras del motor no ganan dinero tras costes"
     return _tarjeta(
         "nivel", symbol, caliente.get("name"), urgencia,
         que_pasa=f"{symbol} está a un {_fmt_pct(distancia)} de {etiqueta}",
@@ -257,7 +273,7 @@ def tarjeta_nivel(caliente, nivel_motor=None, aviso=None, tiene_posicion=False,
         que_vigilar=(
             f"Precio {_fmt_precio(caliente.get('price'))} contra "
             f"{_fmt_precio(caliente.get('target'))}"
-            + (f" · sería una {accion}" if accion else "")
+            + coletilla
         ),
         datos={
             "price": caliente.get("price"),
@@ -265,6 +281,8 @@ def tarjeta_nivel(caliente, nivel_motor=None, aviso=None, tiene_posicion=False,
             "distancia_pct": distancia,
             "nivel": caliente.get("level_label"),
             "accion": caliente.get("action"),
+            "compra_respaldada": respaldada,
+            "esperanza_motor": esperanza_motor,
             "fuerza": fuerza,
             "razones": razones[:3],
             "tiene_posicion": tiene_posicion,

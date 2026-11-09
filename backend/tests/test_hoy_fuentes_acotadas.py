@@ -131,8 +131,13 @@ def portada(monkeypatch):
     """Monta `/hoy` con todo lo caro sustituido, salvo lo que se está midiendo."""
     import server
 
+    # `esperanza`: lo que gana cada compra del motor según el Track record. Positiva por
+    # defecto, para que estos tests midan el veto por tendencia y nada más.
     estado = {"consultas": [], "orden": [], "tendencia": "ALCISTA", "fuentes": {},
-              "entradas": []}
+              "entradas": [], "esperanza": 1.0}
+
+    async def _esperanza():
+        return estado["esperanza"]
 
     def _tendencia_de(sym):
         estado["consultas"].append(sym)
@@ -156,6 +161,7 @@ def portada(monkeypatch):
     monkeypatch.setattr(server, "resumen_cartera", _resumen)
     monkeypatch.setattr(server, "earnings_calendar", _cal)
     monkeypatch.setattr(server, "_newsletters_recientes", _news)
+    monkeypatch.setattr(server, "_esperanza_motor", _esperanza)
     server._invalidar_signals_hot()
     server._cache._store.clear()
     return server, estado
@@ -445,6 +451,22 @@ async def test_alcista_e_indefinida_conservan_su_comportamiento(portada, monkeyp
         for t in _tarjetas_nivel(r):
             assert t["datos"]["accion"] == "COMPRA", tend
             assert "sería una compra" in t["que_vigilar"], tend
+
+
+@pytest.mark.anyio
+async def test_sin_ventaja_medida_la_portada_no_llama_compra_a_un_nivel(portada, monkeypatch):
+    """Tendencia alcista, pero el Track record dice que las compras pierden dinero."""
+    server, estado = portada
+    estado["tendencia"] = "ALCISTA"
+    estado["esperanza"] = -0.8
+    estado["entradas"] = _niveles(6)
+    r, _ = await _abrir(server, estado, monkeypatch)
+    tarjetas = _tarjetas_nivel(r)
+    assert tarjetas
+    for t in tarjetas:
+        assert "sería una compra" not in t["que_vigilar"]
+        assert "tu nivel de compra" in t["que_vigilar"]
+        assert t["datos"]["compra_respaldada"] is False
 
 
 @pytest.mark.anyio

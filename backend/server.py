@@ -4212,8 +4212,54 @@ async def track_record(days: int = 180, refresh: bool = False, _user: str = Depe
             return cached
     import track_record as tr
     result = await tr.compute_track_record(db, days=days)
-    _cache.set(f"track_record_{days}", result, ttl=300)  # 5 min
+    # Servible caducado hasta un día: la portada lee de aquí la esperanza del motor
+    # (`_esperanza_motor`) y no debe quedarse sin ella cada cinco minutos.
+    _cache.set(f"track_record_{days}", result, ttl=300, servible_hasta=24 * 3600)
     return result
+
+
+_esperanza_calculando = False
+_tareas_de_fondo = set()
+MUESTRA_MINIMA_ESPERANZA = 30   # operaciones cerradas para fiarse de una esperanza positiva
+
+
+async def _esperanza_motor():
+    """Lo que gana de media cada compra del motor, neta de costes (Track record, 180 días).
+
+    La portada la necesita para decidir si un nivel cercano se puede llamar «compra».
+    Calcular el Track record cuesta segundos (un histórico por símbolo), así que aquí NO se
+    espera: se usa el último calculado, aunque tenga horas, y si tiene más de una hora (o
+    no hay ninguno) se recalcula por detrás; sin ninguno, se devuelve None. None no es «gana dinero»: la tarjeta lo trata como sin
+    medir y no recomienda comprar.
+    """
+    global _esperanza_calculando
+    valor, fresco = _cache.get_stale("track_record_180", max_age=24 * 3600)
+    if not fresco and not _esperanza_calculando:
+        _esperanza_calculando = True
+
+        async def _calcular():
+            global _esperanza_calculando
+            try:
+                import track_record as tr
+                r = await asyncio.wait_for(tr.compute_track_record(db, days=180), timeout=120)
+                # Una hora: la esperanza de 180 días apenas cambia en minutos, y así la
+                # portada no recalcula el Track record entero en cada visita.
+                _cache.set("track_record_180", r, ttl=3600, servible_hasta=24 * 3600)
+            except Exception as e:
+                logger.warning("Portada «Hoy»: no se pudo medir el Track record: %s", e)
+            finally:
+                _esperanza_calculando = False
+
+        # Se guarda la referencia: una tarea sin dueño la puede recoger el recolector
+        # de basura a medio cálculo.
+        tarea = asyncio.create_task(_calcular())
+        _tareas_de_fondo.add(tarea)
+        tarea.add_done_callback(_tareas_de_fondo.discard)
+    valor = valor or {}
+    cerradas = (valor.get("aciertos") or 0) + (valor.get("fallos") or 0)
+    if cerradas < MUESTRA_MINIMA_ESPERANZA and (valor.get("esperanza") or 0) > 0:
+        return None     # demasiado pocas para respaldar una compra
+    return valor.get("esperanza")
 
 
 # ---------- Watchlist ----------
@@ -6851,6 +6897,8 @@ async def _tarjetas_de_nivel(calientes, posiciones, limite) -> list:
     compra» lo redacta `hoy.py`, y escribirlo aquí sería tener la misma frase en dos sitios.
     La urgencia no cambia al vetar, así que la posición en el ranking tampoco.
     """
+    # Una sola lectura por portada: decide si un nivel de compra se puede llamar compra.
+    esperanza = await _esperanza_motor() if calientes else None
     contexto = {}
     for c in calientes:
         sym = (c.get("symbol") or "").upper()
@@ -6866,7 +6914,8 @@ async def _tarjetas_de_nivel(calientes, posiciones, limite) -> list:
         ctx = contexto[id(c)]
         return hoy.tarjeta_nivel(c, ctx["zona"], aviso=ctx["aviso"],
                                  tiene_posicion=ctx["tiene"],
-                                 motor_con_datos=ctx["con_datos"])
+                                 motor_con_datos=ctx["con_datos"],
+                                 esperanza_motor=esperanza)
 
     previas = [(c, _construir(c)) for c in calientes]
     vivas = [(c, t) for c, t in previas if t]
