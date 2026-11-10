@@ -2,6 +2,9 @@ import React from "react";
 import { Link } from "react-router-dom";
 import Chip from "@/components/base/Chip";
 
+const ENLACE = "text-etiqueta text-marca underline-offset-4 decoration-marca/50 hover:underline " +
+  "inline-flex items-center gap-1 py-1 shrink-0";
+
 /* PanelCerebro · qué han dicho tus fuentes desde la última visita
    ─────────────────────────────────────────────────────────────────────────────
    Compacto y en la barra lateral: es una novedad para curiosear, no una decisión.
@@ -12,14 +15,16 @@ export default function PanelCerebro({ cerebro }) {
   const c = cerebro || {};
   const hayNovedad = c.menciones_nuevas > 0 || (c.tickers_nuevos?.length || 0) > 0;
   return (
-    <section className="iv-panel p-4" aria-labelledby="hoy-cerebro">
-      <div className="flex items-baseline justify-between gap-2 mb-1">
-        <p className="iv-etiqueta tracking-[0.16em] text-tinta-3">Desde tu última visita</p>
-        <Link to="/cerebro" className="text-etiqueta text-marca hover:underline shrink-0">explorar ›</Link>
+    // Sin caja propia: comparte panel con el Calendario (lo monta HoyView).
+    <section className="p-4 sm:px-5" aria-labelledby="hoy-cerebro">
+      <div className="flex items-baseline justify-between gap-2 mb-1.5">
+        <h2 id="hoy-cerebro" className="font-heading text-cuerpo font-semibold text-tinta">
+          Cerebro <span className="text-apoyo font-normal text-tinta-3">· desde tu última visita</span>
+        </h2>
+        <Link to="/cerebro" className={ENLACE}>
+          Explorar <span aria-hidden="true">→</span>
+        </Link>
       </div>
-      <h2 id="hoy-cerebro" className="font-heading text-cuerpo font-semibold text-tinta mb-1.5">
-        Cerebro
-      </h2>
 
       {hayNovedad ? (
         <>
@@ -30,7 +35,8 @@ export default function PanelCerebro({ cerebro }) {
           {c.tickers_nuevos?.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {c.tickers_nuevos.slice(0, 10).map((t) => (
-                <Link key={t} to={`/accion/${t}`}>
+                <Link key={t} to={`/accion/${t}`} className="rounded-full">
+
                   <Chip tono="marca">{t}</Chip>
                 </Link>
               ))}

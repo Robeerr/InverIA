@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import PageShell from "@/components/base/PageShell";
-import TarjetaAtencion from "@/components/base/TarjetaAtencion";
+import TarjetaAtencion, { esUrgente } from "@/components/base/TarjetaAtencion";
 import Boton from "@/components/base/Boton";
 import { Cargando, Error as ErrorEstado } from "@/components/base/Estado";
 import { fmtHace } from "@/lib/format";
@@ -38,6 +38,20 @@ const CLAVE_ULTIMA_VISITA = "inveria-ultima-visita-hoy";
 function fechaLarga(d = new Date()) {
   const t = d.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
   return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+/** Parte la lista en tramos para pintarla: cada urgente va sola; las informativas
+ *  consecutivas van juntas. No reordena nada — el orden es el del servidor. */
+function segmentosDe(lista) {
+  const tramos = [];
+  lista.forEach((t, i) => {
+    const item = { t, orden: i + 1 };
+    const urgente = esUrgente(t);
+    const ultimo = tramos[tramos.length - 1];
+    if (!urgente && ultimo && !ultimo.urgente) ultimo.items.push(item);
+    else tramos.push({ urgente, clave: `${t.symbol}-${t.tipo}`, items: [item] });
+  });
+  return tramos;
 }
 
 function leerUltimaVisita() {
@@ -105,38 +119,30 @@ export default function HoyView() {
           una banda propia debajo: es la condición bajo la que se leen las decisiones
           que vienen después, no una decisión más. Su lectura completa —SPY, medias,
           distancia— sigue estando entera en el panel de abajo. */}
-      <header className="iv-veredicto mb-8 flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+      <header className="iv-veredicto mb-6 sm:mb-8 flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
         <div className="min-w-0">
-          <p className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="iv-etiqueta tracking-[0.16em] text-tinta-3">Panel de control</span>
-            <span className="iv-etiqueta text-linea-fuerte">·</span>
-            <span className="iv-etiqueta text-tinta-3">{fechaLarga()}</span>
-            {data?.generado_en && (
-              <>
-                <span className="iv-etiqueta text-linea-fuerte">·</span>
-                <span className="iv-etiqueta text-tinta-3">Calculado {fmtHace(data.generado_en)}</span>
-              </>
-            )}
-          </p>
           <h1 className="iv-verbo text-tinta">
             {saludoDeLaHora()}{nombreUsuario ? `, ${nombreUsuario}` : ""}
           </h1>
-          <p className="text-cuerpo text-tinta-2 mt-3 max-w-[58ch]">
+          {/* La fecha y la frescura, DEBAJO del saludo y no como antetítulo: el saludo se
+              lee primero, y «calculado hace…» es la nota que dice si fiarse de lo demás. */}
+          <p className="iv-cifra text-etiqueta text-tinta-3 mt-2.5 flex flex-wrap gap-x-2">
+            <span>{fechaLarga()}</span>
+            {data?.generado_en && (
+              <>
+                <span aria-hidden="true" className="text-linea-marcada">·</span>
+                <span>Calculado {fmtHace(data.generado_en)}</span>
+              </>
+            )}
+          </p>
+          <p className="hidden sm:block text-cuerpo text-tinta-2 mt-2 max-w-[58ch]">
             No necesitas mirar todo. Solo saber qué importa ahora.
           </p>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0 flex-wrap">
-          {!isLoading && !error && mercado?.label && mercado.light !== "desconocido" && (
-            <span className="flex items-center gap-2 border border-linea rounded-full bg-superficie/70 pl-3 pr-4 py-1.5">
-              <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${
-                {verde: "bg-sube", amarillo: "bg-aviso", rojo: "bg-baja"}[mercado.light] || "bg-linea-marcada"}`} />
-              <span className="min-w-0">
-                <span className="iv-etiqueta block text-[9px] text-tinta-3">Régimen de mercado</span>
-                <span className="text-apoyo text-tinta">{mercado.label}</span>
-              </span>
-            </span>
-          )}
+        {/* El régimen ya no se repite aquí en una pastilla: se lee entero en el panel de
+            mercado justo debajo, con sus cifras. */}
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <Boton variante="fantasma" tamano="sm" onClick={() => refetch()} ocupado={isFetching}>
             Actualizar
           </Boton>
@@ -150,11 +156,18 @@ export default function HoyView() {
       {/* ── 1 · CINTA DE MERCADO ────────────────────────────────────────────
           El estado del terreno de juego, arriba y en cifras. El régimen decide si
           fiarse de las señales; los futuros y el termómetro de miedo lo enmarcan. */}
+      {/* Un solo panel con filetes internos: régimen arriba; futuros y miedo/codicia
+          debajo, lado a lado en escritorio. Antes eran tres cajas apiladas. */}
       {!isLoading && !error && (
-        <div className="space-y-2 mb-6">
+        <div className="iv-panel overflow-hidden mb-8 divide-y divide-linea">
           <BandaRegimen mercado={mercado} />
-          <MarketFuturesBar futures={futures} />
-          <FearGreedBar data={sentiment} />
+          {(futures?.items?.length > 0 || sentiment?.score != null) && (
+            <div className="flex flex-col lg:flex-row divide-y lg:divide-y-0 lg:divide-x divide-linea
+                            lg:[&>*]:flex-1 [&>*]:min-w-0">
+              <MarketFuturesBar futures={futures} />
+              <FearGreedBar data={sentiment} />
+            </div>
+          )}
         </div>
       )}
 
@@ -164,27 +177,27 @@ export default function HoyView() {
         <div className="min-w-0">
           {/* La cabecera de sección con filete corrido, en su variante de acento: esta
               es la sección PRINCIPAL de la portada y la única que lo lleva. */}
-          <div className="iv-seccion iv-seccion-acento">
-            <span className="iv-etiqueta tracking-[0.18em] text-tinta-2">Lo que importa hoy</span>
+          {/* El titular de la sección ES la cabecera con filete de acento: antes llevaba
+              además un antetítulo («Lo que importa hoy») que decía lo mismo. */}
+          <div className="iv-seccion iv-seccion-acento !mb-1.5">
+            <h2 className="font-heading text-titulo font-semibold text-tinta leading-tight min-w-0 text-balance">
+              {titular ? "Decisiones que requieren tu atención" : "Hoy no hay decisiones pendientes"}
+            </h2>
           </div>
-          <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1 mb-3">
-            <div className="min-w-0">
-              <h2 className="font-heading text-titulo text-tinta leading-tight">
-                {titular ? "Decisiones que requieren tu atención" : "Hoy no hay decisiones pendientes"}
-              </h2>
-              {/* El desglose por tipo: es el dato que antes iba en el titular grande. */}
-              {(desglose.length > 0 || data?.saludo?.piezas?.length > 0) && (
-                <p className="text-apoyo text-tinta-3 mt-1">
-                  {(desglose.length ? desglose : data.saludo.piezas).join(" · ")}
-                </p>
-              )}
-            </div>
+          {/* El desglose por tipo y el recuento, en una sola línea de apoyo, sin caja. */}
+          <p className="text-apoyo text-tinta-3 mb-4 flex flex-wrap gap-x-2">
+            {(desglose.length > 0 || data?.saludo?.piezas?.length > 0) && (
+              <span>{(desglose.length ? desglose : data.saludo.piezas).join(" · ")}</span>
+            )}
             {!isLoading && !error && importa.length > 0 && (
-              <span className="iv-cifra text-etiqueta text-tinta-3 border border-linea rounded-iv-sm px-2 py-1 shrink-0">
+              <span className="iv-cifra text-etiqueta self-center">
+                {(desglose.length > 0 || data?.saludo?.piezas?.length > 0) && (
+                  <span aria-hidden="true" className="text-linea-marcada mr-2">—</span>
+                )}
                 {importa.length} de {data?.saludo?.total ?? importa.length} · por urgencia
               </span>
             )}
-          </div>
+          </p>
 
           {isLoading ? (
             <div className="space-y-3">
@@ -220,11 +233,20 @@ export default function HoyView() {
             </div>
           ) : (
             <>
-              {/* Una tarjeta por decisión, separadas. El orden de urgencia lo dicen el
-                  ordinal de cada una y el halo de la primera. */}
+              {/* Urgentes como tarjeta con halo; informativas seguidas, juntas en un único
+                  panel con filetes. Se respeta el orden de urgencia que manda el servidor:
+                  solo se agrupan las informativas CONSECUTIVAS. */}
               <div className="space-y-3">
-                {importa.map((t, i) => (
-                  <TarjetaAtencion key={`${t.symbol}-${t.tipo}`} tarjeta={t} orden={i + 1} />
+                {segmentosDe(importa).map((seg) => (
+                  seg.urgente ? (
+                    <TarjetaAtencion key={seg.clave} tarjeta={seg.items[0].t} orden={seg.items[0].orden} />
+                  ) : (
+                    <div key={seg.clave} className="iv-panel overflow-hidden divide-y divide-linea">
+                      {seg.items.map(({ t, orden }) => (
+                        <TarjetaAtencion key={`${t.symbol}-${t.tipo}`} tarjeta={t} orden={orden} />
+                      ))}
+                    </div>
+                  )
                 ))}
               </div>
               {importa.length < 3 && (
@@ -246,8 +268,10 @@ export default function HoyView() {
           ) : (
             <>
               <PanelCartera cartera={cartera} />
-              <PanelAgenda eventos={data?.proximos_7_dias} />
-              <PanelCerebro cerebro={cerebro} />
+              <div className="iv-panel overflow-hidden divide-y divide-linea">
+                <PanelAgenda eventos={data?.proximos_7_dias} />
+                <PanelCerebro cerebro={cerebro} />
+              </div>
             </>
           )}
         </aside>
