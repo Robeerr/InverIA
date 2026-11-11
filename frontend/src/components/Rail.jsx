@@ -74,16 +74,22 @@ function Item({ n, activo, onNavigate }) {
       data-testid={n.testId}
       onClick={onNavigate}
       aria-current={activo ? "page" : undefined}
-      /* El activo es una píldora tintada de naranja, con el icono en naranja. Las
-         demás no tienen caja hasta que pasas por encima. */
-      className={`flex items-center gap-2.5 mx-1.5 px-2.5 py-[7px] text-apoyo rounded-iv transition-colors ${
+      /* El activo es un fondo tintado de naranja con el icono en naranja: una sola
+         señal. El anillo que llevaba encima era una segunda caja que no decía nada
+         nuevo. Las demás no tienen caja hasta que pasas por encima.
+         Más alto en el cajón móvil (py-2.5 ≈ 40px de zona táctil) que en el rail fijo,
+         donde se apunta con ratón y la lista tiene que caber entera. */
+      className={`group flex items-center gap-2.5 mx-1.5 px-2.5 py-2.5 lg:py-1.5 text-apoyo rounded-iv-sm
+                  transition-colors duration-150 ease-out motion-reduce:transition-none ${
         activo
-          ? "bg-marca/10 text-tinta font-medium ring-1 ring-inset ring-marca/25"
-          : "text-tinta-2 hover:bg-superficie-alt hover:text-tinta"
+          ? "bg-marca/10 text-tinta font-medium"
+          : "text-tinta-2 hover:bg-superficie-alt hover:text-tinta active:bg-superficie-alt"
       }`}
     >
-      <Icon size={15} weight="regular"
-            className={`shrink-0 ${activo ? "text-marca" : "text-tinta-3"}`} />
+      <Icon size={16} weight={activo ? "fill" : "regular"} aria-hidden="true"
+            className={`shrink-0 transition-colors duration-150 ${
+              activo ? "text-marca" : "text-tinta-3 group-hover:text-tinta-2"
+            }`} />
       <span className="truncate">{n.label}</span>
     </Link>
   );
@@ -93,6 +99,9 @@ function Item({ n, activo, onNavigate }) {
 export function RailContenido({ onNavigate }) {
   const { pathname, search } = useLocation();
   const actual = pathname + search;
+  // El rail fijo y el cajón pintan este mismo contenido: los id tienen que ser propios
+  // de cada instancia o se repetirían en la página.
+  const uid = React.useId();
   const esActivo = (to) =>
     to.includes("?") ? actual === to : pathname === to && !search.includes("modo=screener");
 
@@ -103,29 +112,31 @@ export function RailContenido({ onNavigate }) {
       <Link
         to="/"
         onClick={onNavigate}
-        className="flex items-center gap-2.5 px-2.5 pt-1 pb-4 shrink-0 border-b border-linea mb-2"
+        className="flex items-center gap-2.5 px-1.5 pt-1 pb-4 shrink-0 border-b border-linea mb-1 rounded-iv-sm"
       >
-        <span className="w-8 h-8 rounded-[10px] iv-boton-brillo flex items-center justify-center shrink-0">
+        <span aria-hidden="true" className="w-8 h-8 rounded-[10px] iv-boton-brillo flex items-center justify-center shrink-0">
           <ChartBar size={16} weight="bold" />
         </span>
         <span className="min-w-0">
           <span className="iv-marca-palabra block text-[21px] leading-none pb-0.5">InverIA</span>
-          <span className="iv-etiqueta block mt-1 text-[9px] tracking-[0.14em] text-tinta-3 whitespace-nowrap">
+          {/* 11px, el suelo de la casa (antes 9px, que no se lee). Con menos tracking
+              para que quepa en los 196px del rail sin partirse. */}
+          <span className="iv-etiqueta block mt-1 tracking-[0.06em] truncate">
             Terminal privada
           </span>
         </span>
       </Link>
 
-      <nav className="flex-1 min-h-0 overflow-y-auto -mx-2.5">
+      <nav aria-label="Principal" className="flex-1 min-h-0 overflow-y-auto overscroll-contain -mx-2.5 pb-1">
         {GRUPOS.map((g) => (
           <div key={g.titulo}>
             {/* pl-3 = los 12px a los que empieza el texto de un ítem (2px de filete
                 + 10px de sangría). Sin esto las etiquetas de grupo quedaban 2px a la
                 izquierda de los enlaces que encabezan. */}
-            <p className="iv-etiqueta pl-3 pr-2.5 pt-4 pb-1.5 tracking-[0.16em] text-tinta-3">
+            <p id={`${uid}-${g.titulo}`} className="iv-etiqueta pl-3 pr-2.5 pt-4 pb-1.5 tracking-[0.14em] text-tinta-3">
               {g.titulo}
             </p>
-            <div>
+            <div role="group" aria-labelledby={`${uid}-${g.titulo}`} className="space-y-px">
               {g.items.map((n) => (
                 <Item key={n.to} n={n} activo={esActivo(n.to)} onNavigate={onNavigate} />
               ))}
@@ -135,7 +146,7 @@ export function RailContenido({ onNavigate }) {
       </nav>
 
       {/* Herramientas: se llega, pero no compiten. Antes no se llegaba de ninguna forma. */}
-      <div className="border-t border-linea pt-2 mt-2 shrink-0 -mx-2.5">
+      <div role="group" aria-label="Herramientas" className="border-t border-linea pt-2 mt-2 shrink-0 -mx-2.5 space-y-px">
         {HERRAMIENTAS.map((n) => (
           <Item key={n.to} n={n} activo={esActivo(n.to)} onNavigate={onNavigate} />
         ))}
@@ -193,18 +204,29 @@ export function RailCajon({ abierto, cerrar }) {
 
   if (!abierto) return null;
   return createPortal(
-    <div className="lg:hidden fixed inset-0 z-50" role="dialog" aria-modal="true">
+    <div className="lg:hidden fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Menú">
+      {/* El velo: fundido corto. Fuera del orden de tabulación —el botón de cierre
+          visible ya lo cubre— para que el teclado no pase dos veces por «Cerrar». */}
       <button
         aria-label="Cerrar menú"
+        tabIndex={-1}
         onClick={cerrar}
-        className="absolute inset-0 bg-fondo/80 backdrop-blur-sm"
+        className="absolute inset-0 bg-fondo/80 backdrop-blur-sm animate-in fade-in-0 duration-200"
       />
-      <div className="absolute left-0 top-0 bottom-0 w-[236px] bg-superficie border-r border-linea
-                      px-2.5 py-3.5 flex flex-col shadow-2xl">
+      {/* El cajón entra desde el borde del que sale el gesto, con la curva de cajón de
+          iOS: arranca rápido y frena suave. Con movimiento reducido solo aparece. */}
+      <div className="absolute left-0 top-0 bottom-0 w-[260px] max-w-[85vw] bg-superficie border-r border-linea
+                      px-2.5 py-3.5 pb-[max(0.875rem,env(safe-area-inset-bottom))] flex flex-col
+                      shadow-[12px_0_40px_-12px_rgb(0_0_0/0.6)]
+                      motion-safe:animate-in motion-safe:slide-in-from-left motion-safe:duration-300
+                      motion-safe:ease-[cubic-bezier(0.32,0.72,0,1)]">
         <button
           onClick={cerrar}
           aria-label="Cerrar menú"
-          className="absolute right-2.5 top-3.5 text-tinta-3 hover:text-tinta p-1"
+          className="absolute right-2 top-2.5 z-10 inline-flex items-center justify-center h-9 w-9 rounded-iv-sm
+                     text-tinta-3 hover:text-tinta hover:bg-superficie-alt active:scale-[0.96]
+                     transition-[color,background-color,transform] duration-150 ease-out
+                     motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           <X size={16} />
         </button>

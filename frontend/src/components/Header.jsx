@@ -8,6 +8,14 @@ import { api } from "../lib/api";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
 
+// Botón de icono de la barra: sin caja propia hasta que pasas por encima. Antes cada
+// acción llevaba borde y fondo, y la barra se leía como una fila de cuatro cajas que
+// pesaban lo mismo que el buscador. 40px de lado: es zona táctil cómoda en móvil.
+const ICONO =
+  "h-10 w-10 shrink-0 text-tinta-2 hover:text-tinta hover:bg-superficie-alt " +
+  "active:scale-[0.96] transition-[color,background-color,transform] duration-150 ease-out " +
+  "motion-reduce:transition-none motion-reduce:active:scale-100";
+
 // La navegación ya no vive aquí: la tiene `Rail.jsx`, que es su dueño único. Esta
 // barra se queda con lo que de verdad es suyo —buscar, estado y cuenta— y con la
 // hamburguesa que abre el cajón en móvil.
@@ -96,13 +104,13 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
       {/* Barra superior. Ya no lleva navegación ni marca: las dos viven en el rail.
           Se queda con lo único que es suyo —buscar, estado y cuenta— y con la
           hamburguesa, que en móvil abre el cajón con las MISMAS etiquetas. */}
-      <div className="mx-auto px-4 sm:px-5 py-2.5 flex items-center gap-3">
+      <div className="mx-auto px-3 sm:px-5 py-2.5 flex items-center gap-2 sm:gap-3">
         <Button
           onClick={() => setMenuOpen(true)}
           variant="outline"
           size="icon"
           aria-label="Abrir menú"
-          className="lg:hidden h-9 w-9 border-linea hover:bg-superficie-alt shrink-0"
+          className={`lg:hidden ${ICONO} border-linea`}
         >
           <List size={16} />
         </Button>
@@ -121,29 +129,40 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
             menú que hay en móvil. Ahí el campo tiene que poder encogerse. */}
         {showSearch && (
           <div ref={searchRef} className="flex-1 relative min-w-0 lg:min-w-[200px]">
-            <form onSubmit={submit} className="relative">
-              <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-tinta-3" />
+            <form onSubmit={submit} className="relative" role="search">
+              <label htmlFor="busqueda-valor" className="sr-only">Buscar valor por ticker o nombre</label>
+              <MagnifyingGlass size={16} aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-tinta-3" />
               <Input
+                id="busqueda-valor"
                 data-testid="stock-search-input"
                 value={query}
                 onChange={(e) => setQuery(e.target.value.toUpperCase())}
                 onFocus={() => { if (suggestions.length) setShowSug(true); }}
                 placeholder="Ticker o nombre (ej: AAPL o Apple)"
-                className="pl-9 h-10 bg-superficie border-linea font-mono text-sm placeholder:text-tinta-3 focus-visible:ring-marca"
+                className="pl-9 h-10 bg-superficie border-linea font-mono text-sm text-tinta
+                           placeholder:text-tinta-3 hover:border-linea-fuerte transition-colors
+                           focus-visible:border-linea-fuerte focus-visible:ring-marca"
                 autoComplete="off"
               />
             </form>
+            {/* Desplegable: filas compactas, ticker en tinta (el naranja es del rail y
+                del activo, no de cada resultado) y nombre en segundo plano. El ticker
+                ocupa lo que necesite —«BRK.B», «SAN.MC»— y el nombre se recorta. */}
             {showSug && suggestions.length > 0 && (
-              <div className="absolute z-50 left-0 right-0 mt-1 bg-superficie border border-linea rounded-iv-sm shadow-lg overflow-hidden max-h-72 overflow-y-auto">
+              <div className="absolute z-50 left-0 right-0 mt-1.5 bg-superficie border border-linea-fuerte
+                              rounded-iv-sm shadow-[0_12px_32px_-12px_rgb(0_0_0/0.5)] overflow-hidden
+                              max-h-72 overflow-y-auto overscroll-contain py-1">
                 {suggestions.map((s) => (
                   <button
                     key={s.symbol}
                     type="button"
                     onClick={() => pick(s.symbol)}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-fondo transition-colors"
+                    className="w-full flex items-baseline gap-3 px-3 py-2 text-left
+                               hover:bg-superficie-alt focus-visible:bg-superficie-alt transition-colors duration-100"
                   >
-                    <span className="font-mono font-bold text-sm text-marca shrink-0 w-16">{s.symbol}</span>
-                    <span className="text-xs text-tinta-3 truncate">{s.name}</span>
+                    <span className="font-mono font-semibold text-sm text-tinta shrink-0 min-w-[4.5rem]">{s.symbol}</span>
+                    <span className="text-apoyo text-tinta-2 truncate min-w-0">{s.name}</span>
                   </button>
                 ))}
               </div>
@@ -151,42 +170,71 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
           </div>
         )}
 
-        {/* Actions */}
-        <div className="flex items-center gap-2 shrink-0 ml-auto">
+        {/* Acciones. Una sola fila sin cajas: el estado es un punto con su palabra, las
+            acciones son iconos que solo toman fondo al pasar, y la cuenta se separa con
+            un filete fino. Lo único que puede pedir atención aquí es «Offline», y por
+            eso es lo único que se enseña en rojo y con palabra también en móvil. */}
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-auto">
           {/* Status indicator */}
           <div
+            role="status"
             title={backendOk === null ? "Comprobando backend..." : backendOk ? "Backend activo ✓" : "Backend no responde"}
-            className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-iv-sm border border-linea bg-superficie text-xs font-mono"
+            className={`flex items-center gap-1.5 h-10 px-1.5 sm:px-2 font-mono text-etiqueta tracking-normal ${
+              backendOk === false ? "text-baja" : "text-tinta-3"
+            }`}
           >
-            <span className={`w-2 h-2 rounded-full ${backendOk === null ? "bg-aviso animate-pulse" : backendOk ? "bg-sube" : "bg-baja animate-pulse"}`} />
-            <span className="text-tinta-3 hidden lg:inline">{backendOk === null ? "..." : backendOk ? "Online" : "Offline"}</span>
+            <span aria-hidden="true" className="relative flex w-2 h-2 shrink-0">
+              {backendOk === false && (
+                <span className="absolute inset-0 rounded-full bg-baja/60 motion-safe:animate-ping" />
+              )}
+              <span className={`relative w-2 h-2 rounded-full ${
+                backendOk === null ? "bg-aviso motion-safe:animate-pulse" : backendOk ? "bg-sube" : "bg-baja"
+              }`} />
+            </span>
+            <span className={backendOk === false ? "inline" : "sr-only lg:not-sr-only"}>
+              {backendOk === null ? "..." : backendOk ? "Online" : "Offline"}
+            </span>
           </div>
+
           <Button
             data-testid="dark-mode-toggle"
             onClick={() => setDarkMode(!darkMode)}
-            variant="outline"
+            variant="ghost"
             size="icon"
-            className="h-9 w-9 sm:h-10 sm:w-10 border-linea hover:bg-linea"
+            className={ICONO}
             title={darkMode ? "Modo claro" : "Modo oscuro"}
+            aria-label={darkMode ? "Modo claro" : "Modo oscuro"}
           >
-            {darkMode ? <Sun size={15} /> : <Moon size={15} />}
+            {darkMode ? <Sun size={16} /> : <Moon size={16} />}
           </Button>
           <Button
             data-testid="test-telegram-btn"
             onClick={testTelegram}
-            variant="outline"
+            variant="ghost"
             size="icon"
-            className="hidden sm:flex h-9 w-9 sm:h-10 sm:w-10 border-linea hover:bg-linea"
+            className={`hidden sm:inline-flex ${ICONO}`}
             title="Probar Telegram"
+            aria-label="Probar Telegram"
           >
-            <TelegramLogo size={15} />
+            <TelegramLogo size={16} />
           </Button>
+
           {/* User + logout */}
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-iv-sm border border-linea bg-superficie text-xs font-mono text-tinta-3">
-            <User size={13} />
-            <span className="hidden md:inline">{user}</span>
-            <button onClick={logout} title="Cerrar sesión" className="ml-1 hover:text-baja transition-colors">
-              <SignOut size={13} />
+          <div className="hidden sm:flex items-center gap-1 pl-2 ml-1 border-l border-linea">
+            <span className="flex items-center gap-1.5 px-1.5 font-mono text-etiqueta tracking-normal text-tinta-3 min-w-0">
+              <User size={14} aria-hidden="true" className="shrink-0" />
+              <span className="hidden md:inline truncate max-w-[12ch]" title={user}>{user}</span>
+            </span>
+            <button
+              onClick={logout}
+              title="Cerrar sesión"
+              aria-label="Cerrar sesión"
+              className="inline-flex items-center justify-center h-9 w-9 rounded-iv-sm text-tinta-3
+                         hover:text-baja hover:bg-baja/10 active:scale-[0.96]
+                         transition-[color,background-color,transform] duration-150 ease-out
+                         motion-reduce:transition-none motion-reduce:active:scale-100"
+            >
+              <SignOut size={15} />
             </button>
           </div>
         </div>
