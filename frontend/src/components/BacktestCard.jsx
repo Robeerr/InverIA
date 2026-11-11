@@ -14,16 +14,19 @@ function RateRow({ label, stat }) {
   const tone = rateTone(stat?.hold_rate);
   const rate = stat?.hold_rate;
   return (
-    <div className="flex items-center gap-3">
-      <span className="font-mono text-[11px] text-tinta-2 w-28 shrink-0">{label}</span>
-      <div className="flex-1 h-1.5 bg-linea rounded-full overflow-hidden">
-        <div className={`h-full ${tone.bar} transition-all`} style={{ width: `${rate ?? 0}%` }} />
-      </div>
-      <span className={`font-mono text-[11px] font-semibold w-20 text-right ${tone.text}`}>
+    // En móvil la barra baja a su propia línea y el detalle se coloca debajo: con los
+    // cuatro anchos fijos en una sola fila, a 360px se salía por la derecha.
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[7rem_minmax(0,1fr)_5rem_8rem] items-center gap-x-3 gap-y-1">
+      <span className="iv-cifra text-etiqueta text-tinta-2 truncate">{label}</span>
+      <span className={`iv-cifra text-etiqueta font-semibold text-right sm:order-3 ${tone.text}`}>
         {rate != null ? `${rate}%` : "s/datos"}
         {stat?.n ? <span className="text-tinta-3 font-normal"> ({stat.n})</span> : null}
       </span>
-      <span className="font-mono text-[10px] text-tinta-3 w-32 text-right shrink-0">
+      <div className="col-span-2 sm:col-span-1 sm:order-2 h-1.5 bg-linea rounded-full overflow-hidden">
+        <div className={`h-full w-full origin-left ${tone.bar} transition-transform duration-300 ease-out motion-reduce:transition-none`}
+             style={{ transform: `scaleX(${(rate ?? 0) / 100})` }} />
+      </div>
+      <span className="col-span-2 sm:col-span-1 sm:order-4 iv-cifra text-[10px] text-tinta-3 sm:text-right">
         {stat?.clean_hold_rate != null ? `limpio ${stat.clean_hold_rate}%` : ""}
         {stat?.avg_bounce_atr != null ? ` · ${stat.avg_bounce_atr}×ATR` : ""}
       </span>
@@ -113,8 +116,8 @@ export default function BacktestCard({ symbol }) {
 
       {data && (
         <div className="space-y-4">
-          <div className="flex items-baseline gap-2">
-            <span className="font-mono text-3xl font-bold text-tinta">{data.overall?.hold_rate ?? "—"}%</span>
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className="iv-cifra text-3xl font-bold text-tinta shrink-0">{data.overall?.hold_rate ?? "—"}%</span>
             <span className="text-sm text-tinta-3">
               de los niveles tocados aguantaron · {data.samples} pruebas
               {data.symbols_tested ? ` · ${data.symbols_tested} acciones` : ""} · ventana {data.forward_window_days} días
@@ -133,9 +136,11 @@ export default function BacktestCard({ symbol }) {
           <button
             type="button"
             onClick={() => setShowDetail((v) => !v)}
-            className="flex items-center gap-1.5 text-[11px] font-mono text-tinta-3 hover:text-marca transition-colors"
+            aria-expanded={showDetail}
+            className="flex items-center gap-1.5 py-1 text-etiqueta font-mono text-tinta-3 hover:text-marca transition-colors duration-150 motion-reduce:transition-none"
           >
-            <CaretDown size={12} weight="bold" className={`transition-transform ${showDetail ? "rotate-180" : ""}`} />
+            <CaretDown size={12} weight="bold" aria-hidden="true"
+              className={`transition-transform duration-200 ease-out motion-reduce:transition-none ${showDetail ? "rotate-180" : ""}`} />
             {showDetail ? "Ocultar detalle técnico" : "Ver detalle técnico (por metodología)"}
           </button>
 
@@ -156,16 +161,18 @@ export default function BacktestCard({ symbol }) {
                   </p>
                   <div className="space-y-1">
                     {Object.entries(data.by_source).map(([src, st]) => (
-                      <div key={src} className="flex items-center gap-3 text-[11px] font-mono">
-                        <span className="text-tinta-2 w-32 shrink-0 truncate">{src}</span>
-                        <div className="flex-1 h-1.5 bg-linea rounded-full overflow-hidden">
-                          <div className={`h-full ${rateTone(st.clean_hold_rate).bar}`} style={{ width: `${st.clean_hold_rate ?? 0}%` }} />
-                        </div>
-                        <span className={`w-28 text-right ${rateTone(st.clean_hold_rate).text}`}>
+                      <div key={src}
+                           className="grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[8rem_minmax(0,1fr)_7rem_6rem_3rem] items-center gap-x-3 gap-y-1 text-etiqueta iv-cifra">
+                        <span className="text-tinta-2 truncate" title={src}>{src}</span>
+                        <span className={`text-right sm:order-3 ${rateTone(st.clean_hold_rate).text}`}>
                           limpio {st.clean_hold_rate}%
                         </span>
-                        <span className="text-tinta-3 w-24 text-right">{st.avg_bounce_atr}×ATR</span>
-                        <span className="text-tinta-3 w-12 text-right">({st.n})</span>
+                        <div className="col-span-2 sm:col-span-1 sm:order-2 h-1.5 bg-linea rounded-full overflow-hidden">
+                          <div className={`h-full w-full origin-left ${rateTone(st.clean_hold_rate).bar}`}
+                               style={{ transform: `scaleX(${(st.clean_hold_rate ?? 0) / 100})` }} />
+                        </div>
+                        <span className="text-tinta-3 sm:text-right sm:order-4">{st.avg_bounce_atr}×ATR</span>
+                        <span className="text-tinta-3 text-right sm:order-5">({st.n})</span>
                       </div>
                     ))}
                   </div>
