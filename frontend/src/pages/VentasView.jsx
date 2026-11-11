@@ -1,5 +1,5 @@
 import React from "react";
-import { Warning, X } from "@phosphor-icons/react";
+import { CaretDown, Info, Warning, X } from "@phosphor-icons/react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "../lib/api";
@@ -37,6 +37,19 @@ const fecha = (f) => (f ? f.split("-").reverse().join("/") : "—");
 
 const tono = (v) => (v == null ? "text-tinta-3" : v >= 0 ? "text-sube" : "text-baja");
 
+// El botón de guardar de los formularios: mismo aspecto en los cuatro, con respuesta al
+// pasar, al pulsar y desactivado (antes solo cambiaba la opacidad al desactivarse).
+const BOTON_PRINCIPAL = "w-full min-h-[44px] bg-marca text-marca-tinta rounded px-4 py-2 text-sm "
+  + "font-semibold transition-[filter,transform] duration-150 ease-out motion-reduce:transition-none "
+  + "hover:brightness-110 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed "
+  + "disabled:hover:brightness-100 disabled:active:scale-100";
+
+// Acción secundaria en texto: subrayado discreto que se afirma al pasar. Una sola clase
+// para los enlaces-botón sueltos que había, cada uno con su propio estilo.
+const ENLACE = "text-etiqueta text-tinta-3 underline underline-offset-4 decoration-linea-fuerte "
+  + "hover:text-tinta hover:decoration-tinta-3 transition-colors duration-150 "
+  + "motion-reduce:transition-none disabled:opacity-60 disabled:cursor-not-allowed";
+
 /* Las cifras de una posición abierta, calculadas UNA vez.
    ─────────────────────────────────────────────────────────────────────────────
    «Lo que tienes abierto» se pinta de dos formas: tabla de seis columnas en
@@ -71,14 +84,23 @@ function NivelesDeLaFila({ p }) {
   // posición no tiene niveles.
   const niveles = p.niveles_abiertos || p.niveles_comprados || [];
   if (!niveles.length) return null;
+  // Compactas: «N1 N2 N3» en una sola pastilla en vez de cuatro chips «NIVEL 1…» que
+  // partían la fila en dos o tres líneas. El nombre completo va en title y aria-label.
+  const nombres = niveles.map((n) => NIVEL_ETIQUETA[n] || n);
   return (
-    <span className="ml-2 inline-flex gap-1">
+    <span className="inline-flex items-center gap-1 rounded bg-info/10 px-1.5 py-0.5 iv-cifra text-etiqueta text-info whitespace-nowrap"
+          title={`Niveles con posición abierta: ${nombres.join(", ")}`}
+          aria-label={`Niveles con posición abierta: ${nombres.join(", ")}`}>
       {niveles.map((n) => (
-        <Chip key={n} tono="nivel">{NIVEL_ETIQUETA[n] || n}</Chip>
+        <span key={n}>{NIVEL_CORTO[n] || NIVEL_ETIQUETA[n] || n}</span>
       ))}
     </span>
   );
 }
+
+const NIVEL_CORTO = {
+  deseado: "D", nivel1: "N1", nivel2: "N2", nivel3: "N3", nivel4: "N4", nivel5: "N5",
+};
 
 const NIVEL_ETIQUETA = {
   deseado: "Deseado", nivel1: "Nivel 1", nivel2: "Nivel 2",
@@ -92,7 +114,7 @@ function Chip({ children, tono: t = "neutro", title }) {
     aviso: "bg-aviso/15 text-aviso",
   }[t];
   return (
-    <span title={title} className={`font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${estilos}`}>
+    <span title={title} className={`font-mono text-[11px] leading-none uppercase tracking-wider px-1.5 py-1 rounded whitespace-nowrap ${estilos}`}>
       {children}
     </span>
   );
@@ -102,6 +124,15 @@ function Chip({ children, tono: t = "neutro", title }) {
 // La ayuda NO puede vivir solo en `title=`: en el móvil no hay ratón que posar encima, así
 // que el texto era sencillamente inalcanzable. Es un botón que despliega el texto bajo la
 // cifra, y de paso funciona con teclado.
+// Flecha de desplegar: un icono de verdad que gira, en vez de alternar «▲/▼». El giro
+// dice qué ha pasado al pulsar; con movimiento reducido cambia sin animarse.
+function Flecha({ abierta, className = "" }) {
+  return (
+    <CaretDown size={12} weight="bold" aria-hidden="true"
+               className={`shrink-0 text-tinta-3 transition-transform duration-200 ease-out motion-reduce:transition-none ${abierta ? "rotate-180" : ""} ${className}`} />
+  );
+}
+
 function Kpi({ etiqueta, significa, valor, sub, acento = false, ayuda }) {
   const [abierta, setAbierta] = React.useState(false);
   /* Filete superior de color. Va por el SIGNO del número, no por el concepto: un
@@ -115,20 +146,22 @@ function Kpi({ etiqueta, significa, valor, sub, acento = false, ayuda }) {
      latente aún puede evaporarse— así que la que manda se distingue por color en vez
      de por estar la primera, que no lo dice.
 
-     Si algún día el acento se mueve a otro KPI, este comentario se mueve con él. */
-  const filete = acento ? "border-t-marca"
-    : valor == null ? "border-t-linea"
-    : valor > 0 ? "border-t-sube" : valor < 0 ? "border-t-baja" : "border-t-linea-fuerte";
+     Si algún día el acento se mueve a otro KPI, este comentario se mueve con él.
+
+     Rediseño: ya no es una tarjeta suelta sino una celda dentro de UN panel (como la
+     cinta de mercado de Hoy). El filete de color por signo se quita: repetía lo que ya
+     dice el color de la cifra. El acento se queda, como un punto naranja en el rótulo. */
   return (
-    <div className={`iv-panel border-t-2 ${filete} px-4 py-3 flex-1 min-w-[150px]`}>
-      <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono flex items-center gap-1">
-        {etiqueta}
+    <div className="flex-[1_1_220px] min-w-0 border-l border-t border-linea px-4 py-3.5">
+      <p className="iv-etiqueta flex items-center gap-1.5">
+        {acento && <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-marca shrink-0" />}
+        <span className={acento ? "text-tinta-2" : undefined}>{etiqueta}</span>
         {ayuda && (
           <button type="button" onClick={() => setAbierta((a) => !a)}
                   aria-expanded={abierta}
                   aria-label={`Qué significa ${etiqueta}`}
-                  className="opacity-60 hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 rounded">
-            ⓘ
+                  className={`-m-1.5 p-1.5 rounded transition-colors duration-150 motion-reduce:transition-none hover:text-tinta ${abierta ? "text-marca" : "text-tinta-3"}`}>
+            <Info size={13} weight={abierta ? "fill" : "regular"} aria-hidden="true" />
           </button>
         )}
       </p>
@@ -137,14 +170,51 @@ function Kpi({ etiqueta, significa, valor, sub, acento = false, ayuda }) {
           de debajo es el detalle (cuántas ventas, qué método). Faltaba lo del medio: la
           frase que contesta "¿esto qué es?" sin tener que abrir la ayuda. */}
       {significa && (
-        <p className="text-[11px] text-tinta-2 mt-0.5 leading-snug">{significa}</p>
+        <p className="text-etiqueta tracking-normal text-tinta-2 mt-1 leading-snug">{significa}</p>
       )}
-      <p className={`font-mono font-bold mt-1 ${acento ? "text-2xl" : "text-xl"} ${tono(valor)}`}>
+      {/* text-xl en mono: «−1.234.567,89 €» son 15 caracteres ≈ 180 px, y la celda más
+          estrecha (minmax 220 px menos el relleno) deja 188. Si aun así no cupiera, la
+          cifra puede partir antes que salirse de la celda. */}
+      <p className={`iv-cifra font-bold text-xl leading-tight mt-2 [overflow-wrap:anywhere] ${tono(valor)}`}>
         {eur(valor)}
       </p>
-      {sub && <p className="text-[11px] text-tinta-3 mt-0.5">{sub}</p>}
+      {sub && <p className="text-etiqueta tracking-normal text-tinta-3 mt-1 leading-snug">{sub}</p>}
       {abierta && ayuda && (
-        <p className="text-[11px] text-tinta-3 mt-2 pt-2 border-t border-linea leading-relaxed">
+        <p className="text-etiqueta tracking-normal text-tinta-2 mt-2.5 pt-2.5 border-t border-linea leading-relaxed">
+          {ayuda}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// El Total, a lo ancho del panel y debajo de los sumandos: se lee como el resultado de
+// una suma — realizado + latente + dividendos + costes = total — que es lo que es.
+// Antes quedaba sola en una segunda fila, con el mismo peso que las demás.
+function KpiTotal({ valor, sub, ayuda }) {
+  const [abierta, setAbierta] = React.useState(false);
+  return (
+    <div className="px-4 py-4 bg-superficie-alt/40">
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+        <div className="min-w-0">
+          <p className="iv-etiqueta flex items-center gap-1.5 text-tinta-2">
+            Total
+            <button type="button" onClick={() => setAbierta((a) => !a)}
+                    aria-expanded={abierta}
+                    aria-label="Qué significa Total"
+                    className={`-m-1.5 p-1.5 rounded transition-colors duration-150 motion-reduce:transition-none hover:text-tinta ${abierta ? "text-marca" : "text-tinta-3"}`}>
+              <Info size={13} weight={abierta ? "fill" : "regular"} aria-hidden="true" />
+            </button>
+          </p>
+          <p className="text-apoyo text-tinta-2 mt-1">Todo junto: tu resultado en esta cuenta</p>
+          {sub && <p className="text-etiqueta tracking-normal text-tinta-3 mt-0.5">{sub}</p>}
+        </div>
+        <p className={`iv-cifra font-bold text-[clamp(26px,5vw,34px)] leading-none tracking-tight ml-auto text-right [overflow-wrap:anywhere] ${tono(valor)}`}>
+          {eur(valor)}
+        </p>
+      </div>
+      {abierta && (
+        <p className="text-etiqueta tracking-normal text-tinta-2 mt-3 pt-3 border-t border-linea leading-relaxed max-w-[80ch]">
           {ayuda}
         </p>
       )}
@@ -188,7 +258,7 @@ function DetalleLotes({ lotes, divisa }) {
           </p>
         ) : null;
       })()}
-      <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-2">
+      <p className="text-[11px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-2">
         Estas acciones salieron de
       </p>
       <div className="space-y-1.5">
@@ -229,16 +299,16 @@ function FilaVenta({ v, metodo, comoBroker, onBorrar }) {
 
   return (
     <div className="border-b border-linea last:border-0">
-      <div className="px-4 py-3 flex items-center gap-3 flex-wrap hover:bg-superficie-alt transition-colors">
+      <div className={`px-4 py-1.5 flex items-center gap-x-3 gap-y-0 flex-wrap transition-colors duration-150 motion-reduce:transition-none hover:bg-superficie-alt/60 ${abierto ? "bg-superficie-alt/60" : ""}`}>
         {/* aria-label descriptivo, no fijo: un lector de pantalla leía 146 botones
             idénticos. min-h para que el dedo acierte en el móvil. */}
         <button onClick={() => setAbierto((o) => !o)}
                 aria-expanded={abierto}
                 aria-label={`${abierto ? "Ocultar" : "Ver"} el detalle de la venta de ${v.acciones} ${v.symbol} del ${fecha(v.fecha)}`}
-                className="flex items-center gap-3 flex-1 min-w-0 text-left min-h-[44px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 rounded">
-          <span className="font-mono text-[11px] text-tinta-3 w-16 shrink-0">{fecha(v.fecha)}</span>
-          <span className="font-mono font-bold text-sm w-16 shrink-0">{v.symbol}</span>
-          <span className="font-mono text-xs text-tinta-3 shrink-0">
+                className="flex items-center gap-x-3 gap-y-0.5 flex-wrap flex-1 min-w-0 text-left min-h-[44px] rounded">
+          <span className="iv-cifra text-etiqueta text-tinta-3 w-[74px] shrink-0">{fecha(v.fecha)}</span>
+          <span className="iv-cifra font-bold text-apoyo text-tinta w-14 shrink-0">{v.symbol}</span>
+          <span className="iv-cifra text-etiqueta text-tinta-3 shrink-0">
             {v.acciones} × {usd(v.precio_venta, v.divisa)}
           </span>
           {v.sin_cubrir > 0 && (
@@ -248,11 +318,11 @@ function FilaVenta({ v, metodo, comoBroker, onBorrar }) {
           )}
         </button>
 
-        <div className="text-right shrink-0">
-          <p className={`font-mono font-bold text-sm ${tono(m.ganancia_eur ?? m.ganancia_divisa)}`}>
+        <div className="text-right shrink-0 ml-auto">
+          <p className={`iv-cifra font-bold text-apoyo leading-tight whitespace-nowrap ${tono(m.ganancia_eur ?? m.ganancia_divisa)}`}>
             {m.ganancia_eur != null ? eur(m.ganancia_eur) : usd(m.ganancia_divisa, v.divisa)}
           </p>
-          <p className={`font-mono text-[11px] ${tono(m.pct_eur ?? m.pct)}`}>
+          <p className={`iv-cifra text-etiqueta whitespace-nowrap ${tono(m.pct_eur ?? m.pct)}`}>
             {pct(m.pct_eur ?? m.pct)}
             {m.ganancia_eur != null && (
               <span className="text-tinta-3"> · {usd(m.ganancia_divisa, v.divisa)}</span>
@@ -261,8 +331,9 @@ function FilaVenta({ v, metodo, comoBroker, onBorrar }) {
         </div>
 
         <button onClick={() => setAbierto((o) => !o)}
-                className="text-tinta-3 text-xs w-5 shrink-0" aria-label="Ver detalle">
-          {abierto ? "▲" : "▼"}
+                className="w-8 h-8 -mr-2 inline-flex items-center justify-center rounded shrink-0 hover:bg-superficie-alt"
+                aria-label="Ver detalle" aria-expanded={abierto}>
+          <Flecha abierta={abierto} />
         </button>
       </div>
 
@@ -278,18 +349,18 @@ function FilaVenta({ v, metodo, comoBroker, onBorrar }) {
                 DEGIRO y nada lo decía: la MISMA venta salía a −56,39 € y a +282,04 € en dos
                 pantallas por lo demás idénticas, sin forma de saber cuál era cuál. Un
                 número que cambia sin decir por qué se lee como un fallo, y con razón. */}
-            <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono pb-1">
+            <p className="text-[11px] uppercase tracking-[0.15em] text-tinta-3 font-mono pb-1">
               Calculado por <b className="text-tinta-2">{nombreMetodo}</b>
               {nombreMetodo === "media ponderada" && " · el método de DEGIRO"}
               {nombreMetodo === "FIFO" && " · el que va a tu declaración"}
               {nombreMetodo === "LIFO" && " · como vendes tú"}
             </p>
             <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 gap-y-1 items-baseline">
-              <span className="text-[10px] uppercase tracking-wider text-tinta-3 font-mono">Concepto</span>
-              <span className="text-[10px] uppercase tracking-wider text-tinta-3 font-mono text-right">
+              <span className="text-[11px] uppercase tracking-wider text-tinta-3 font-mono">Concepto</span>
+              <span className="text-[11px] uppercase tracking-wider text-tinta-3 font-mono text-right">
                 {v.divisa === "USD" ? "Dólares" : v.divisa}
               </span>
-              <span className="text-[10px] uppercase tracking-wider text-tinta-3 font-mono text-right">Euros</span>
+              <span className="text-[11px] uppercase tracking-wider text-tinta-3 font-mono text-right">Euros</span>
 
               <span className="text-tinta-3">Ingresado (menos comisión)</span>
               <span className="font-mono text-right">{usd(m.ingreso_divisa, v.divisa)}</span>
@@ -316,7 +387,7 @@ function FilaVenta({ v, metodo, comoBroker, onBorrar }) {
             </div>
 
             {v.tasa_venta && (
-              <p className="text-[10px] text-tinta-3 pt-1">
+              <p className="text-[11px] text-tinta-3 pt-1">
                 Cambio del día de la venta: 1 € = {v.tasa_venta} {v.divisa}. El coste va al
                 cambio del día de CADA compra, que es el que ves en cada línea de arriba.
               </p>
@@ -384,7 +455,7 @@ function FilaVenta({ v, metodo, comoBroker, onBorrar }) {
                       <b className="text-tinta">{eur(v.ponderada.ganancia_eur)}</b>
                     )}
                     {v.ponderada.pct_eur != null && ` · ${pct(v.ponderada.pct_eur)}`}
-                    <span className="block text-[10px]">
+                    <span className="block text-[11px]">
                       {usd(v.ponderada.ganancia_divisa, v.divisa)}
                       {v.ponderada.pct != null && ` · ${pct(v.ponderada.pct)}`}
                     </span>
@@ -563,7 +634,7 @@ function ImportarDegiro({ onCerrar }) {
     <div className="iv-panel p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="font-heading font-bold text-sm">Importar el CSV de DEGIRO</h3>
-        <button type="button" onClick={onCerrar} className="text-tinta-3 hover:text-tinta"><X size={16} /></button>
+        <button type="button" onClick={onCerrar} aria-label="Cerrar" className="-m-2 p-2 rounded text-tinta-3 hover:text-tinta hover:bg-superficie-alt transition-colors duration-150 motion-reduce:transition-none"><X size={16} aria-hidden="true" /></button>
       </div>
 
       <p className="text-[11px] text-tinta-3 leading-relaxed">
@@ -582,7 +653,7 @@ function ImportarDegiro({ onCerrar }) {
 
       {archivo && !previo && (
         <button onClick={() => leer.mutate()} disabled={leer.isPending}
-                className="w-full bg-marca text-marca-tinta rounded px-4 py-2 text-sm font-semibold disabled:opacity-60">
+                className={BOTON_PRINCIPAL}>
           {leer.isPending ? "Leyendo…" : "Leer el fichero"}
         </button>
       )}
@@ -625,14 +696,14 @@ function ImportarDegiro({ onCerrar }) {
           {/* El emparejamiento. Solo se pregunta una vez por producto: el ISIN se guarda en
               la Cartera y la próxima importación ya no lo pide. */}
           <div>
-            <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-2">
+            <p className="text-[11px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-2">
               ¿A qué acción corresponde cada producto?
             </p>
             <div className="space-y-1.5">
               {(previo.productos || []).map((p) => (
                 <div key={p.isin} className="flex items-center gap-2 flex-wrap text-xs">
                   <span className="flex-1 min-w-0 truncate" title={p.isin}>{p.producto}</span>
-                  <span className="text-[10px] text-tinta-3 font-mono">{p.operaciones} ops</span>
+                  <span className="text-[11px] text-tinta-3 font-mono">{p.operaciones} ops</span>
                   {/* Campo LIBRE con la Cartera como sugerencias, no un desplegable cerrado.
                       Un CSV con años de historial trae posiciones ya cerradas y valores que
                       se dejaron de seguir, y sus ventas son parte de lo ganado: exigir que
@@ -644,7 +715,7 @@ function ImportarDegiro({ onCerrar }) {
                     onChange={(e) => setMapeo((m) => ({ ...m, [p.isin]: e.target.value.toUpperCase() }))}
                     placeholder="ticker"
                     className="border border-linea rounded px-2 py-1 font-mono text-xs w-28 bg-transparent disabled:opacity-40" />
-                  <label className="flex items-center gap-1 text-[10px] text-tinta-3 cursor-pointer"
+                  <label className="flex items-center gap-1 text-[11px] text-tinta-3 cursor-pointer"
                          title="Deja este producto fuera de la importación. Útil para ETFs o valores que no quieres seguir.">
                     <input type="checkbox"
                            checked={mapeo[p.isin] === IGNORAR}
@@ -719,7 +790,7 @@ function ImportarDegiro({ onCerrar }) {
 
           <button onClick={() => confirmar.mutate()}
                   disabled={confirmar.isPending || !!pendientes.length}
-                  className="w-full bg-marca text-marca-tinta rounded px-4 py-2 text-sm font-semibold disabled:opacity-60">
+                  className={BOTON_PRINCIPAL}>
             {confirmar.isPending ? "Importando…"
               : ignorados.length
                 ? `Importar (ignorando ${ignorados.length} producto(s))`
@@ -790,7 +861,7 @@ function LotesAbiertos({ symbol, metodo }) {
 
   return (
     <div className="bg-superficie-alt px-4 py-3 border-t border-linea">
-      <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-2">
+      <p className="text-[11px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-2">
         Lo que te queda, por compra · {metodo.toUpperCase()}
         {vendidas > 0.0001 && (
           <span className="normal-case tracking-normal ml-2">
@@ -844,7 +915,7 @@ function LotesAbiertos({ symbol, metodo }) {
             <div key={l.id} className="flex items-center gap-3 flex-wrap text-xs">
               <span className="font-mono text-tinta-3 w-20 shrink-0">{fecha(l.fecha)}</span>
               {!!l.tasa && divisa !== "EUR" && (
-                <span className="font-mono text-[10px] text-tinta-3"
+                <span className="font-mono text-[11px] text-tinta-3"
                       title={`Cambio con el que el coste de esta compra se pasó a euros. Es el del día de la fecha que tiene el lote; si esa fecha no es la de tu compra real, esta cifra tampoco lo es.`}>
                   @{Math.round(l.tasa * 1e4) / 1e4}
                 </span>
@@ -853,7 +924,7 @@ function LotesAbiertos({ symbol, metodo }) {
                 {l.acciones_abiertas} × {usd(l.precio, divisa)}
               </span>
               {l.acciones_abiertas !== l.acciones && (
-                <span className="text-[10px] text-tinta-3">(de {l.acciones})</span>
+                <span className="text-[11px] text-tinta-3">(de {l.acciones})</span>
               )}
               {/* El selector está SIEMPRE, no solo en los lotes sin nivel: equivocarse al
                   asignar es un clic, y sin poder reasignar la única salida era borrar la
@@ -865,7 +936,7 @@ function LotesAbiertos({ symbol, metodo }) {
                 <select value={l.nivel || ""} disabled={asignar.isPending}
                         onChange={(e) => asignar.mutate({ id: l.id, nivel: e.target.value || null })}
                         title="Cambiar el nivel de esta compra. El precio del nivel en la Cartera se actualizará al precio real de la compra, y las campanitas se recalcularán."
-                        className="text-[10px] bg-transparent border border-linea rounded px-1 py-0.5 text-tinta-3">
+                        className="text-[11px] bg-transparent border border-linea rounded px-1 py-0.5 text-tinta-3">
                   <option value="">{l.nivel ? "sin nivel" : "asignar nivel…"}</option>
                   {/* Los cinco, con precio o sin él: en una acción sin niveles esta
                       lista salía vacía y "asignar nivel…" no ofrecía nada que asignar. */}
@@ -921,7 +992,7 @@ function LotesAbiertos({ symbol, metodo }) {
 function Campo({ label, ayuda, children }) {
   return (
     <label className="block">
-      <span className="text-[10px] uppercase tracking-wider text-tinta-3 font-mono flex items-center gap-1">
+      <span className="text-[11px] uppercase tracking-wider text-tinta-3 font-mono flex items-center gap-1">
         {label}{ayuda && <span title={ayuda} className="cursor-help opacity-60">ⓘ</span>}
       </span>
       {children}
@@ -988,7 +1059,7 @@ function VistaPreviaVenta({ symbol, acciones }) {
 
   return (
     <div className="rounded border border-linea px-3 py-2 space-y-1.5">
-      <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono">
+      <p className="text-[11px] uppercase tracking-[0.15em] text-tinta-3 font-mono">
         Tienes {disponibles} acciones de {sym}
       </p>
       {n > 0 && (
@@ -1125,7 +1196,7 @@ function FormularioPorNiveles({ onCerrar }) {
     <div className="iv-panel p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="font-heading font-bold text-sm">Dar de alta las compras por niveles</h3>
-        <button type="button" onClick={onCerrar} className="text-tinta-3 hover:text-tinta"><X size={16} /></button>
+        <button type="button" onClick={onCerrar} aria-label="Cerrar" className="-m-2 p-2 rounded text-tinta-3 hover:text-tinta hover:bg-superficie-alt transition-colors duration-150 motion-reduce:transition-none"><X size={16} aria-hidden="true" /></button>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1172,7 +1243,7 @@ function FormularioPorNiveles({ onCerrar }) {
             <div key={n.nivel} className="flex items-center gap-3 text-xs">
               <Chip tono="nivel">{n.etiqueta}</Chip>
               <span className="font-mono text-tinta-3 w-24">{usd(n.precio, data?.divisa)}</span>
-              {n.comprado && <span className="text-[10px] text-tinta-3">campanita apagada</span>}
+              {n.comprado && <span className="text-[11px] text-tinta-3">campanita apagada</span>}
               <input
                 value={porNivel[n.nivel] ?? ""}
                 onChange={(e) => setPorNivel((p) => ({ ...p, [n.nivel]: e.target.value }))}
@@ -1226,7 +1297,7 @@ function FormularioPorNiveles({ onCerrar }) {
       )}
 
       <button onClick={guardar} disabled={guardando || !filas.length}
-              className="w-full bg-marca text-marca-tinta rounded px-4 py-2 text-sm font-semibold disabled:opacity-60">
+              className={BOTON_PRINCIPAL}>
         {guardando ? "Guardando…" : `Guardar ${filas.length || ""} compra(s)`}
       </button>
     </div>
@@ -1294,10 +1365,13 @@ function Plegable({ id, titulo, cabeceraExtra, abierta: porDefecto = true, child
       {/* El titulo va en la etiqueta monoespaciada de seccion, no en la serif: dentro
           de un panel plegable es un CONTROL, y la serif esta reservada a los titulares
           de pantalla. El triangulo se queda porque dice si esta abierto o cerrado. */}
-      <div className="px-4 py-3 border-b border-linea flex items-center justify-between flex-wrap gap-2">
-        <button onClick={alternar} className="flex items-center gap-2.5 text-left group">
-          <span className="text-tinta-3 text-[9px] group-hover:text-marca transition-colors">{abierta ? "▲" : "▼"}</span>
-          <h2 className="iv-etiqueta tracking-[0.16em] text-tinta-2 group-hover:text-tinta transition-colors">{titulo}</h2>
+      {/* Sin filete inferior cuando está cerrada: un panel plegado era una caja con
+          una raya debajo de nada. */}
+      <div className={`px-4 py-1 flex items-center justify-between flex-wrap gap-x-4 gap-y-1 ${abierta ? "border-b border-linea" : ""}`}>
+        <button onClick={alternar} aria-expanded={abierta}
+                className="flex items-center gap-2.5 text-left group min-h-[44px] rounded">
+          <Flecha abierta={abierta} className="group-hover:text-marca" />
+          <h2 className="iv-etiqueta tracking-[0.16em] text-tinta-2 group-hover:text-tinta transition-colors duration-150 motion-reduce:transition-none">{titulo}</h2>
         </button>
         {cabeceraExtra}
       </div>
@@ -1341,7 +1415,7 @@ function CeldaValorHoy({ p }) {
     <>
       {eur(p.valor_eur)}
       {p.precio_manual && (
-        <div className="text-[10px] text-aviso cursor-pointer"
+        <div className="text-[11px] text-aviso cursor-pointer"
              title="Este valor sale de un precio que pusiste tú a mano, no de una cotización en vivo. Pincha para cambiarlo o quitarlo."
              onClick={(e) => {
                e.stopPropagation();
@@ -1471,7 +1545,7 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
         <h3 className="font-heading font-bold text-sm">
           {tipo === "compra" ? "Registrar una compra" : "Registrar una venta"}
         </h3>
-        <button type="button" onClick={onCerrar} className="text-tinta-3 hover:text-tinta"><X size={16} /></button>
+        <button type="button" onClick={onCerrar} aria-label="Cerrar" className="-m-2 p-2 rounded text-tinta-3 hover:text-tinta hover:bg-superficie-alt transition-colors duration-150 motion-reduce:transition-none"><X size={16} aria-hidden="true" /></button>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1550,7 +1624,7 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
           tan legítimo como 6 y 6, y adivinarlo mal sería peor que preguntarlo. */}
       {tipo === "compra" && (f.niveles || []).length > 1 && (
         <div className="rounded border border-linea px-3 py-2 space-y-1.5">
-          <p className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono">
+          <p className="text-[11px] uppercase tracking-[0.15em] text-tinta-3 font-mono">
             ¿Cuántas acciones en cada nivel?
           </p>
           <div className="flex flex-wrap gap-2">
@@ -1597,7 +1671,7 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
       <AvisoComision comision={f.comision} acciones={f.acciones} precio={f.precio} />
 
       <button type="submit" disabled={mut.isPending}
-              className="w-full bg-marca text-marca-tinta rounded px-4 py-2 text-sm font-semibold disabled:opacity-60">
+              className={BOTON_PRINCIPAL}>
         {mut.isPending ? "Guardando…" : tipo === "compra" ? "Guardar compra" : "Guardar venta"}
       </button>
     </form>
@@ -1707,7 +1781,7 @@ export default function VentasView() {
   });
   const [verExplicacion, setVerExplicacion] = React.useState(false);   // texto del método
 
-  const { data: hist, isPending: cargandoHist } = useQuery({
+  const { data: hist, isPending: cargandoHist, isError: errorHist, refetch: reintentarHist } = useQuery({
     queryKey: ["cartera", "historial"],
     queryFn: api.cartera.historial,
     staleTime: 60_000,
@@ -1824,23 +1898,27 @@ export default function VentasView() {
             Lo que llevas ganado de verdad, en euros, con el tipo de cambio de cada operación.
           </p>
         </div>
-        {/* Píldoras, como el resto de botones de la app. Los dos que mueven dinero
-            —importar y vender— llevan el naranja con brillo; los otros dos, contorno. */}
-        <div className="flex gap-2">
-          <button onClick={() => setForm("degiro")}
-                  className="iv-boton-brillo rounded-full px-4 py-1.5 text-sm font-semibold hover:brightness-110 transition">
-            Importar CSV de DEGIRO
-          </button>
-          <button onClick={() => setForm("niveles")}
-                  className="border border-linea-fuerte rounded-full px-4 py-1.5 text-sm font-semibold hover:bg-superficie-alt transition-colors">
-            + Compras por niveles
-          </button>
-          <button onClick={() => setForm("compra")}
-                  className="border border-linea-fuerte rounded-full px-4 py-1.5 text-sm font-semibold hover:bg-superficie-alt transition-colors">
-            + Compra suelta
-          </button>
-          <button onClick={() => setForm("venta")}
-                  className="iv-boton-brillo rounded-full px-4 py-1.5 text-sm font-semibold hover:brightness-110 transition">
+        {/* Píldoras, como el resto de botones de la app. Solo UNA brilla: «+ Venta», la
+            operación que mueve dinero y por la que se viene a esta pantalla. Con dos
+            botones naranjas iguales ninguno era el principal. Importar va en contorno
+            con el texto en naranja: sigue siendo la vía buena para meter operaciones,
+            pero se usa de vez en cuando. En el móvil los cuatro bajan de línea en vez de
+            salirse de la pantalla, y el que está abierto se marca. */}
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Registrar operaciones">
+          {[
+            ["degiro", "Importar CSV de DEGIRO", "text-marca"],
+            ["niveles", "+ Compras por niveles", ""],
+            ["compra", "+ Compra suelta", ""],
+          ].map(([id, texto, extra]) => (
+            <button key={id} onClick={() => setForm(id)} aria-pressed={form === id}
+                    className={`min-h-[36px] rounded-full px-4 py-1.5 text-sm font-semibold border transition-colors duration-150 motion-reduce:transition-none ${extra} ${form === id
+                      ? "border-marca/60 bg-marca/10"
+                      : "border-linea-fuerte hover:bg-superficie-alt hover:border-linea-marcada"}`}>
+              {texto}
+            </button>
+          ))}
+          <button onClick={() => setForm("venta")} aria-pressed={form === "venta"}
+                  className="iv-boton-brillo min-h-[36px] rounded-full px-4 py-1.5 text-sm font-semibold transition-[filter,transform] duration-150 ease-out motion-reduce:transition-none hover:brightness-110 active:scale-[0.97]">
             + Venta
           </button>
         </div>
@@ -1855,7 +1933,12 @@ export default function VentasView() {
       {/* Cifras de cabecera. Realizado y latente van SEPARADOS: uno está en tu cuenta y el
           otro puede evaporarse mañana. Sumarlos sin distinguirlos da una sensación de
           riqueza que el mercado no ha confirmado. */}
-      <div className="flex gap-3 flex-wrap">
+      {/* Un solo panel con filetes internos, en vez de cinco cajas sueltas. Cada celda
+          pinta su filete izquierdo y superior; el margen de −1 px los esconde en la
+          primera columna y la primera fila. Celdas de 220 px como mínimo —el ancho que
+          necesita un importe de siete cifras— y la última fila se estira, sin huecos. */}
+      <section aria-label="Resultado en euros" className="iv-panel overflow-hidden">
+      <div className="flex flex-wrap -ml-px -mt-px">
         <Kpi etiqueta="Realizado" significa="Lo que ya cobraste al vender" valor={realizado} acento
              // n_ventas cuelga del resumen, no del método: el número de ventas es el
              // mismo se mire con FIFO o con LIFO. Leerlo de dentro del método daba
@@ -1926,19 +2009,22 @@ export default function VentasView() {
             la pantalla que NO depende del método: como el realizado y el latente van en la
             misma base, lo que un método se apunta de más en uno se lo guarda en el otro y
             la suma sale igual. Por eso no hay que activar nada para leerla. */}
-        <Kpi etiqueta="Total" significa="Todo junto: tu resultado en esta cuenta" valor={total}
-             ayuda="Todo lo que llevas ganado o perdido en esta cuenta: lo realizado en ventas, lo latente de lo que sigue abierto, los dividendos cobrados y los costes. NO cambia con el método ni con el interruptor de DEGIRO: FIFO, LIFO y media ponderada reparten lo mismo de otra forma entre realizado y latente, pero suman igual. Si alguna vez cambia, es un fallo."
-             sub={[
-               "realizado + latente",
-               dividendos != null ? "+ dividendos" : null,
-               costes != null ? "+ costes" : null,
-             ].filter(Boolean).join(" ")} />
         {tot?.efecto_divisa_eur != null && Math.abs(tot.efecto_divisa_eur) >= 0.01 && (
           <Kpi etiqueta="Efecto del euro" significa="Cuánto de tu resultado es el euro y no la acción" valor={tot.efecto_divisa_eur}
                sub="incluido en el realizado"
                ayuda="Cuánto de tu ganancia realizada viene del movimiento del euro frente al dólar, y no de que la acción subiera." />
         )}
       </div>
+      <div className="border-t border-linea-fuerte">
+        <KpiTotal valor={total}
+             ayuda="Todo lo que llevas ganado o perdido en esta cuenta: lo realizado en ventas, lo latente de lo que sigue abierto, los dividendos cobrados y los costes. NO cambia con el método ni con el interruptor de DEGIRO: FIFO, LIFO y media ponderada reparten lo mismo de otra forma entre realizado y latente, pero suman igual. Si alguna vez cambia, es un fallo."
+             sub={[
+               "realizado + latente",
+               dividendos != null ? "+ dividendos" : null,
+               costes != null ? "+ costes" : null,
+             ].filter(Boolean).join(" ")} />
+      </div>
+      </section>
 
       {/* Ventas de la contabilidad VIEJA (el diálogo Vender de la Cartera antes de que
           escribiera en el libro). Si quedan, ni sus acciones ni su ganancia están en
@@ -2011,8 +2097,8 @@ export default function VentasView() {
       )}
 
       {!!hist?.ventas_antiguas && (
-        <div className="iv-panel px-4 py-3 border-l-4 border-l-amber-500">
-          <p className="text-sm font-semibold mb-1">
+        <div className="iv-panel px-4 py-3 border-aviso/40 bg-aviso/[0.06]">
+          <p className="text-apoyo font-semibold text-aviso mb-1">
             <Warning size={12} weight="fill" className="inline mb-px mr-1" />{hist.ventas_antiguas} venta(s) del sistema antiguo, fuera de estas cifras
           </p>
           <p className="text-xs text-tinta-3">
@@ -2028,8 +2114,8 @@ export default function VentasView() {
           coincide al céntimo; tecleada de memoria, rara vez lo hace. En una posición ya
           cerrada no se nota en las acciones — solo en que el Realizado se dispara. */}
       {!!hist?.posibles_duplicadas?.length && (
-        <div className="iv-panel px-4 py-3 border-l-4 border-l-amber-500">
-          <p className="text-sm font-semibold mb-1">
+        <div className="iv-panel px-4 py-3 border-aviso/40 bg-aviso/[0.06]">
+          <p className="text-apoyo font-semibold text-aviso mb-1">
             <Warning size={12} weight="fill" className="inline mb-px mr-1" />{hist.posibles_duplicadas.length} venta(s) posiblemente contadas dos veces
           </p>
           <p className="text-xs text-tinta-3 mb-2">
@@ -2053,8 +2139,8 @@ export default function VentasView() {
           pantalla donde el broker tenía 50, y unos +140 € de ganancia inexistente. Las otras
           quince posiciones cuadraban al detalle, que es lo que hace que no se sospeche. */}
       {!!hist?.posibles_compras_duplicadas?.length && (
-        <div className="iv-panel px-4 py-3 border-l-4 border-l-amber-500">
-          <p className="text-sm font-semibold mb-1">
+        <div className="iv-panel px-4 py-3 border-aviso/40 bg-aviso/[0.06]">
+          <p className="text-apoyo font-semibold text-aviso mb-1">
             <Warning size={12} weight="fill" className="inline mb-px mr-1" />{hist.posibles_compras_duplicadas.length} compra(s) posiblemente contadas dos veces
           </p>
           <p className="text-xs text-tinta-3 mb-2">
@@ -2090,8 +2176,8 @@ export default function VentasView() {
           cifras distintas para la misma venta sin decir cuál vale para Hacienda sería peor
           que enseñar una sola. */}
       <div className="iv-panel px-4 py-3">
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className="text-[10px] uppercase tracking-[0.15em] text-tinta-3 font-mono">Método de cálculo</span>
+        <div className="flex items-center gap-x-3 gap-y-2 flex-wrap">
+          <span id="metodo-calculo" className="iv-etiqueta">Método de cálculo</span>
           {/* El interruptor del bróker vive AQUÍ, junto al método, porque manda en toda la
               pantalla: el historial, el realizado y la tabla de posiciones. Estaba metido
               en la cabecera de esa tabla y desde ahí parecía cambiar solo esa tabla —que
@@ -2100,36 +2186,43 @@ export default function VentasView() {
               Va aparte de FIFO/LIFO y no como un tercer botón porque no es lo mismo: esos
               dos deciden CÓMO SE EMPAREJAN tus ventas y se guardan en el servidor; este
               solo cambia lo que estás mirando ahora, y vive en tu navegador. */}
-          <div className="flex rounded overflow-hidden border border-linea">
+          {/* Control segmentado: la opción activa es una pastilla dentro de una vía, no
+              un bloque naranja pegado a uno gris. El naranja macizo se reserva para el
+              botón de DEGIRO cuando está puesto, que es lo que cambia toda la pantalla. */}
+          <div role="group" aria-labelledby="metodo-calculo"
+               className="inline-flex rounded p-0.5 bg-fondo/60 border border-linea">
             {[["fifo", "FIFO"], ["lifo", "LIFO"]].map(([k, label]) => (
-              <button key={k} onClick={() => setMetodo(k)}
-                      className={`px-3 py-1 text-xs font-mono font-semibold ${metodo === k ? "bg-marca text-marca-tinta" : "text-tinta-3"}`}>
+              <button key={k} onClick={() => setMetodo(k)} aria-pressed={metodo === k}
+                      className={`min-w-[52px] px-3 py-1 rounded-[6px] text-xs font-mono font-semibold transition-colors duration-150 motion-reduce:transition-none ${metodo === k
+                        ? "bg-superficie-alt text-tinta shadow-[0_1px_2px_rgb(0_0_0/0.35)] ring-1 ring-inset ring-marca/50"
+                        : "text-tinta-3 hover:text-tinta"}`}>
                 {label}
               </button>
             ))}
           </div>
-          <button onClick={alternarBroker}
+          <button onClick={alternarBroker} aria-pressed={comoBroker}
                   title="Tu bróker valora TODAS las acciones al precio medio ponderado, que no baja al vender. FIFO/LIFO dejan vivos unos lotes concretos —los caros o los baratos— y por eso dan otro número. Ninguna está mal: lo que una se apunta de más aquí, la otra ya se lo apuntó en lo realizado. Cambia el historial, el realizado y la tabla de posiciones."
-                  className={`text-[11px] rounded px-2 py-1 border ${comoBroker
-                    ? "bg-marca text-marca-tinta border-marca font-semibold"
-                    : "border-linea text-tinta-3"}`}>
+                  className={`text-etiqueta rounded px-2.5 py-1.5 border transition-colors duration-150 motion-reduce:transition-none ${comoBroker
+                    ? "bg-marca text-marca-tinta border-marca font-semibold hover:brightness-110"
+                    : "border-linea-fuerte text-tinta-2 hover:text-tinta hover:border-linea-marcada"}`}>
             {comoBroker ? "Como en DEGIRO (media ponderada)" : "Ver como en DEGIRO"}
           </button>
           {cambiarMetodo.isPending && (
-            <span className="text-[11px] text-tinta-3">Recalculando…</span>
+            <span className="text-etiqueta text-tinta-3" role="status">Recalculando…</span>
           )}
+          {/* Texto explicativo en tinta normal: el verde se reserva para subidas. */}
           {metodo === "lifo" ? (
-            <span className="text-[11px] text-sube font-semibold">Vende lo más reciente · tu precio medio SUBE al vender</span>
+            <span className="text-etiqueta text-tinta-2 basis-full sm:basis-auto">Vende lo más reciente · tu precio medio SUBE al vender</span>
           ) : (
-            <span className="text-[11px] text-sube font-semibold">Vende lo más antiguo · tu precio medio BAJA al vender · es el de Hacienda</span>
+            <span className="text-etiqueta text-tinta-2 basis-full sm:basis-auto">Vende lo más antiguo · tu precio medio BAJA al vender · es el de Hacienda</span>
           )}
-          <button onClick={() => setVerExplicacion((v) => !v)}
-                  className="text-[11px] text-tinta-3 underline ml-auto">
+          <button onClick={() => setVerExplicacion((v) => !v)} aria-expanded={verExplicacion}
+                  className={`${ENLACE} ml-auto`}>
             {verExplicacion ? "ocultar" : "¿cómo funciona?"}
           </button>
         </div>
         {verExplicacion && (
-        <p className="text-[11px] text-tinta-3 mt-2 leading-relaxed">
+        <p className="text-apoyo text-tinta-2 mt-3 pt-3 border-t border-linea leading-relaxed max-w-[90ch]">
           Esto no cambia solo lo que ves: gobierna qué lotes te quedan vivos, tu precio medio
           y qué campanitas se encienden. Cambiarlo recalcula todo, pero <b>no altera ninguna
           operación</b> — tus compras y ventas son las que son.
@@ -2152,20 +2245,37 @@ export default function VentasView() {
 
       {hist?.resumen?.aviso && (
         <div className="iv-panel px-4 py-2.5 border border-aviso/40 bg-aviso/[0.06] flex items-start gap-2">
-          <Warning size={14} weight="fill" />
+          <Warning size={14} weight="fill" aria-hidden="true" className="text-aviso shrink-0 mt-px" />
           <span className="text-[11px] text-aviso leading-snug">{hist.resumen.aviso}</span>
         </div>
       )}
 
       {/* Historial */}
       <Plegable id="historial" titulo={`Historial de ventas (${ventas.length})`}
-                cabeceraExtra={<span className="text-[11px] text-tinta-3">Toca una para ver de qué compra salió</span>}>
+                cabeceraExtra={<span className="text-etiqueta text-tinta-3">Toca una para ver de qué compra salió</span>}>
         {cargandoHist ? (
-          <p className="px-4 py-8 text-center text-sm text-tinta-3">Cargando…</p>
+          // Esqueleto con la forma de las filas de verdad, para que la lista no salte al
+          // llegar. Sin pulso si el sistema pide menos movimiento.
+          <div role="status" aria-label="Cargando el historial de ventas" className="divide-y divide-linea">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="px-4 py-4 flex items-center gap-3 animate-pulse motion-reduce:animate-none">
+                <span className="h-2.5 w-16 rounded bg-superficie-alt" />
+                <span className="h-3 w-12 rounded bg-superficie-alt" />
+                <span className="h-2.5 w-24 rounded bg-superficie-alt hidden sm:block" />
+                <span className="h-3 w-20 rounded bg-superficie-alt ml-auto" />
+              </div>
+            ))}
+          </div>
+        ) : errorHist ? (
+          <div role="alert" className="px-4 py-6 flex items-center gap-3 flex-wrap">
+            <Warning size={14} weight="fill" aria-hidden="true" className="text-baja shrink-0" />
+            <p className="text-apoyo text-tinta-2">No se ha podido cargar el historial de ventas.</p>
+            <button onClick={() => reintentarHist()} className={`${ENLACE} ml-auto`}>Reintentar</button>
+          </div>
         ) : !ventas.length ? (
-          <div className="px-4 py-8 text-center space-y-3">
-            <p className="text-sm text-tinta-3">Aún no has registrado ninguna venta.</p>
-            <p className="text-[11px] text-tinta-3 max-w-md mx-auto">
+          <div className="px-4 py-10 text-center space-y-3">
+            <p className="text-cuerpo text-tinta-2">Aún no has registrado ninguna venta.</p>
+            <p className="text-apoyo text-tinta-3 max-w-[60ch] mx-auto leading-relaxed">
               Si ya tenías posiciones en la Cartera, impórtalas para no empezar de cero. Se
               reconstruye <b>un lote por cada nivel que tengas con la campanita apagada</b>,
               que es como marcas los niveles ya comprados. Con uno o dos niveles el reparto
@@ -2173,7 +2283,7 @@ export default function VentasView() {
               estimación y te lo aviso para que la corrijas.
             </p>
             <button onClick={() => importar.mutate(false)} disabled={importar.isPending}
-                    className="border border-linea rounded px-3 py-1.5 text-xs font-semibold disabled:opacity-60">
+                    className="border border-linea-fuerte rounded px-3 py-2 text-xs font-semibold transition-colors duration-150 motion-reduce:transition-none hover:bg-superficie-alt hover:border-linea-marcada disabled:opacity-60">
               {importar.isPending ? "Importando…" : "Importar mis posiciones actuales"}
             </button>
           </div>
@@ -2187,7 +2297,8 @@ export default function VentasView() {
             ))}
             {ventas.length > 15 && (
               <button onClick={() => setVerTodas((v) => !v)}
-                      className="w-full py-2.5 text-xs text-tinta-3 underline hover:bg-superficie-alt">
+                      aria-expanded={verTodas}
+                      className="w-full min-h-[44px] py-2.5 text-etiqueta text-tinta-2 border-t border-linea transition-colors duration-150 motion-reduce:transition-none hover:bg-superficie-alt/60 hover:text-tinta">
                 {verTodas ? "Enseñar solo las últimas 15" : `Enseñar las ${ventas.length - 15} restantes`}
               </button>
             )}
@@ -2200,9 +2311,9 @@ export default function VentasView() {
         <Plegable id="por-accion" titulo={`Por acción (${hist.por_symbol.length})`} abierta={false}>
           {hist.por_symbol.map((s) => (
             <div key={s.symbol} className="px-4 py-2.5 flex items-center gap-3 border-b border-linea last:border-0">
-              <span className="font-mono font-bold text-sm w-16">{s.symbol}</span>
-              <span className="text-[11px] text-tinta-3">{s.n_ventas} venta(s)</span>
-              <span className={`ml-auto font-mono font-semibold text-sm ${tono(s.ganancia_eur ?? s.ganancia_divisa)}`}>
+              <span className="iv-cifra font-bold text-apoyo w-16 shrink-0">{s.symbol}</span>
+              <span className="text-etiqueta text-tinta-3">{s.n_ventas} venta(s)</span>
+              <span className={`ml-auto iv-cifra font-semibold text-apoyo whitespace-nowrap ${tono(s.ganancia_eur ?? s.ganancia_divisa)}`}>
                 {s.ganancia_eur != null ? eur(s.ganancia_eur) : usd(s.ganancia_divisa, s.divisa)}
               </span>
             </div>
@@ -2221,16 +2332,16 @@ export default function VentasView() {
           .sort((a, b) => (b.coste_eur || 0) - (a.coste_eur || 0));
         if (!sospechosas.length) return null;
         return (
-          <div className="iv-panel px-4 py-3 border border-aviso/40 bg-aviso/[0.06] mb-3">
+          <div className="iv-panel px-4 py-3 border border-aviso/40 bg-aviso/[0.06]">
             <p className="text-apoyo text-aviso leading-snug mb-2">
-            <Warning size={12} weight="fill" className="inline mb-px mr-1" /><b>{sospechosas.length} posición(es) con lotes que no vienen del CSV.</b>{" "}
+            <Warning size={12} weight="fill" aria-hidden="true" className="inline mb-px mr-1" /><b>{sospechosas.length} posición(es) con lotes que no vienen del CSV.</b>{" "}
             Esos lotes llevan la fecha en que se dieron de alta, no la de tu compra, así
             que su coste se pasó a euros al cambio de ese día. Por eso el latente puede
             no cuadrar con DEGIRO teniendo el mismo precio y las mismas acciones. Se
             arreglan borrando esos lotes y volviendo a importar el CSV.
             </p>
             <div className="overflow-x-auto">
-            <table className="w-full text-etiqueta font-mono">
+            <table className="w-full text-etiqueta iv-cifra whitespace-nowrap">
               <thead className="text-tinta-3">
                 <tr className="text-left">
                   <th className="pr-3 font-normal">Acción</th>
@@ -2270,7 +2381,7 @@ export default function VentasView() {
       {!!resumen?.posiciones?.length && (
         <Plegable id="abierto" titulo={`Lo que tienes abierto (${resumen.posiciones.length})`}
                   cabeceraExtra={
-            <div className="flex items-center gap-3 flex-wrap ml-auto">
+            <div className="flex items-center gap-x-4 gap-y-1 flex-wrap sm:ml-auto pb-2 sm:pb-0">
               {/* El interruptor que hace que esta tabla se pueda comparar fila a fila con la
                   pantalla del bróker. Sin él, las posiciones donde se vendió parte enseñaban
                   otro precio medio y otra ganancia, y parecía un error de cálculo. */}
@@ -2283,7 +2394,7 @@ export default function VentasView() {
                         + "ventas registradas NO se tocan.\n\n¿Continuar?")
                         && importar.mutate(true)}
                       disabled={importar.isPending}
-                      className="text-[11px] text-tinta-3 underline disabled:opacity-60">
+                      className={ENLACE}>
                 {importar.isPending ? "Rehaciendo…" : "Rehacer la importación"}
               </button>
               <button onClick={() => window.confirm(
@@ -2294,11 +2405,11 @@ export default function VentasView() {
                         + "versión del CSV, que trae las fechas y precios reales.\n\n¿Continuar?")
                         && quitarDup.mutate()}
                       disabled={quitarDup.isPending}
-                      className="text-[11px] text-tinta-3 underline disabled:opacity-60">
+                      className={ENLACE}>
                 {quitarDup.isPending ? "Quitando…" : "Quitar duplicados del CSV"}
               </button>
               {resumen.tasas && (
-                <span className="text-[11px] text-tinta-3 font-mono"
+                <span className="text-etiqueta text-tinta-3 iv-cifra"
                       title="El tipo de cambio se consulta como mucho una vez por hora, y esta pantalla no se refresca sola: para ver el más reciente, recarga.">
                   {Object.entries(resumen.tasas).filter(([d]) => d !== "EUR")
                     .map(([d, t]) => {
@@ -2333,7 +2444,7 @@ export default function VentasView() {
                       un campo y un botón cuando falta cotización, y un control dentro
                       de otro control es HTML inválido y deja de responder. */}
                   <div onClick={() => setAbierta(abiertaEsta ? null : p.symbol)}
-                       className="px-4 py-3 cursor-pointer">
+                       className={`px-4 py-3 cursor-pointer transition-colors duration-150 motion-reduce:transition-none active:bg-superficie-alt/60 ${abiertaEsta ? "bg-superficie-alt/40" : ""}`}>
                     {/* Primera línea: quién es y cuánto gana. Las dos cosas que se
                         miran de un vistazo van juntas y arriba. */}
                     <div className="flex items-start justify-between gap-3">
@@ -2344,8 +2455,8 @@ export default function VentasView() {
                                 aria-expanded={abiertaEsta}
                                 aria-label={`${abiertaEsta ? "Ocultar" : "Ver"} las compras de ${p.symbol}`}
                                 className="inline-flex items-center gap-1.5 min-h-[44px] -my-2 pr-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 rounded">
-                          <span className="text-tinta-3 text-[10px]">{abiertaEsta ? "▲" : "▼"}</span>
-                          <span className="font-mono font-bold text-sm">{p.symbol}</span>
+                          <Flecha abierta={abiertaEsta} />
+                          <span className="iv-cifra font-bold text-sm">{p.symbol}</span>
                         </button>
                         {!!p.divisas_mezcladas && (
                           <Chip tono="aviso"
@@ -2377,28 +2488,28 @@ export default function VentasView() {
                         )}
                       </div>
                       <div className="text-right shrink-0">
-                        <div className={`font-mono font-semibold text-sm ${tono(g.pnl_eur)}`}>{eur(g.pnl_eur)}</div>
-                        <div className={`font-mono text-[10px] ${tono(g.pct_eur)}`}>{pct(g.pct_eur)}</div>
+                        <div className={`iv-cifra font-semibold text-sm whitespace-nowrap ${tono(g.pnl_eur)}`}>{eur(g.pnl_eur)}</div>
+                        <div className={`iv-cifra text-etiqueta whitespace-nowrap ${tono(g.pct_eur)}`}>{pct(g.pct_eur)}</div>
                       </div>
                     </div>
 
                     {/* Los cuatro datos restantes, cada uno con su rótulo. Dos columnas
                         y no una lista larga: así la tarjeta sigue cabiendo de un vistazo. */}
                     <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-2.5 text-[11px]">
-                      <div className="flex items-baseline justify-between gap-2">
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-2 min-w-0">
                         <dt className="text-tinta-3">Acciones</dt>
                         <dd className="font-mono">{p.acciones}</dd>
                       </div>
-                      <div className="flex items-baseline justify-between gap-2">
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-2 min-w-0">
                         <dt className="text-tinta-3">Invertido <span className="opacity-60">(€)</span></dt>
-                        <dd className="font-mono">{eur(invertido)}</dd>
+                        <dd className="iv-cifra ml-auto text-right whitespace-nowrap">{eur(invertido)}</dd>
                       </div>
-                      <div className="flex items-baseline justify-between gap-2">
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-2 min-w-0">
                         <dt className="text-tinta-3">Precio medio <span className="opacity-60">({p.divisa === "EUR" ? "€" : p.divisa})</span></dt>
-                        <dd className="font-mono text-right">
+                        <dd className="iv-cifra ml-auto text-right whitespace-nowrap">
                           {usd(precioMedio, p.divisa)}
                           {hayOtroMedio && (
-                            <div className="text-[10px] text-tinta-3">
+                            <div className="text-[11px] text-tinta-3">
                               {comoBroker
                                 ? `${metodo.toUpperCase()} = ${usd(p.precio_medio, p.divisa)}`
                                 : `bróker ≈ ${usd(p.precio_medio_degiro ?? p.precio_medio_ponderado, p.divisa)}`}
@@ -2406,12 +2517,12 @@ export default function VentasView() {
                           )}
                         </dd>
                       </div>
-                      <div className="flex items-baseline justify-between gap-2">
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-2 min-w-0">
                         <dt className="text-tinta-3">Valor hoy <span className="opacity-60">(€)</span></dt>
                         {/* El div frena la propagación por dentro: cuando falta cotización
                             esta celda trae un campo y un botón, y al escribir en él no se
                             puede plegar la tarjeta que lo contiene. */}
-                        <dd className="font-mono" onClick={(e) => e.stopPropagation()}>
+                        <dd className="iv-cifra ml-auto text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           <CeldaValorHoy p={p} />
                         </dd>
                       </div>
@@ -2422,31 +2533,31 @@ export default function VentasView() {
               );
             })}
             {/* El total, con la misma forma de tarjeta para que se lea como una más. */}
-            <li className="px-4 py-3 border-t-2 border-linea">
+            <li className="px-4 py-3 border-t border-linea-fuerte bg-superficie-alt/40">
               <div className="flex items-start justify-between gap-3">
-                <span className="font-semibold text-sm">Total</span>
+                <span className="iv-etiqueta text-tinta-2 pt-0.5">Total</span>
                 <div className="text-right shrink-0">
-                  <div className={`font-mono font-semibold text-sm ${tono(totales.ganancia)}`}>{eur(totales.ganancia)}</div>
+                  <div className={`iv-cifra font-bold text-sm whitespace-nowrap ${tono(totales.ganancia)}`}>{eur(totales.ganancia)}</div>
                   {totales.pct != null ? (
-                    <div className={`font-mono text-[10px] ${tono(totales.ganancia)}`}>{pct(totales.pct)}</div>
+                    <div className={`iv-cifra text-[11px] whitespace-nowrap ${tono(totales.ganancia)}`}>{pct(totales.pct)}</div>
                   ) : null}
                   {totales.sinValorar > 0 && (
-                    <div className="text-[10px] text-tinta-3">{totales.sinValorar} sin valorar, fuera del total</div>
+                    <div className="text-[11px] text-tinta-3">{totales.sinValorar} sin valorar, fuera del total</div>
                   )}
                 </div>
               </div>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-2.5 text-[11px]">
-                <div className="flex items-baseline justify-between gap-2">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-2 min-w-0">
                   <dt className="text-tinta-3">Posiciones</dt>
                   <dd className="font-mono">{resumen.posiciones.length}</dd>
                 </div>
-                <div className="flex items-baseline justify-between gap-2">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-2 min-w-0">
                   <dt className="text-tinta-3">Invertido <span className="opacity-60">(€)</span></dt>
-                  <dd className="font-mono">{eur(totales.invertido)}</dd>
+                  <dd className="iv-cifra ml-auto text-right whitespace-nowrap">{eur(totales.invertido)}</dd>
                 </div>
-                <div className="flex items-baseline justify-between gap-2 col-span-2">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-2 col-span-2">
                   <dt className="text-tinta-3">Valor hoy <span className="opacity-60">(€)</span></dt>
-                  <dd className="font-mono">{eur(totales.valor)}</dd>
+                  <dd className="iv-cifra ml-auto text-right whitespace-nowrap">{eur(totales.valor)}</dd>
                 </div>
               </dl>
             </li>
@@ -2455,23 +2566,26 @@ export default function VentasView() {
           {/* Escritorio: la tabla de siempre, intacta. Aquí las seis columnas caben
               y comparar posiciones en vertical es más rápido que en tarjetas. */}
           <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-xs">
+            {/* Cifras en dígitos tabulares y sin partir: «24.252,52 €» se partía en dos
+                líneas en la fila del Total. Cada columna numérica lleva su propio relleno
+                lateral para que las cifras no se toquen entre sí. */}
+            <table className="w-full text-xs [&_td]:align-top">
               <thead>
-                <tr className="text-left text-tinta-3 border-b border-linea">
+                <tr className="text-left border-b border-linea [&>th]:font-mono [&>th]:text-etiqueta [&>th]:uppercase [&>th]:text-tinta-3 [&>th]:whitespace-nowrap">
                   {/* Las unidades EN LA CABECERA: el precio medio va en la divisa del
                       valor y el resto en euros, y sin decirlo la tabla parecía mezclar. */}
-                  <th scope="col" className="px-4 py-2 font-normal">Acción</th>
-                  <th scope="col" className="py-2 font-normal text-right">Acciones</th>
-                  <th scope="col" className="py-2 font-normal text-right">
-                    Precio medio <span className="opacity-60">(divisa)</span>
+                  <th scope="col" className="px-4 py-2.5 font-normal">Acción</th>
+                  <th scope="col" className="px-3 py-2.5 font-normal text-right">Acciones</th>
+                  <th scope="col" className="px-3 py-2.5 font-normal text-right">
+                    Precio medio <span className="opacity-60 normal-case">(divisa)</span>
                   </th>
-                  <th scope="col" className="py-2 font-normal text-right">
+                  <th scope="col" className="px-3 py-2.5 font-normal text-right">
                     Invertido <span className="opacity-60">(€)</span>
                   </th>
-                  <th scope="col" className="py-2 font-normal text-right">
+                  <th scope="col" className="px-3 py-2.5 font-normal text-right">
                     Valor hoy <span className="opacity-60">(€)</span>
                   </th>
-                  <th scope="col" className="px-4 py-2 font-normal text-right">
+                  <th scope="col" className="px-4 py-2.5 font-normal text-right">
                     Ganancia <span className="opacity-60">(€)</span>
                   </th>
                 </tr>
@@ -2481,9 +2595,10 @@ export default function VentasView() {
                   const { g, precioMedio, invertido, hayOtroMedio, sinPmp } = datosPosicion(p, comoBroker);
                   return (
                   <React.Fragment key={p.symbol}>
-                  <tr className="border-b border-linea cursor-pointer hover:bg-superficie-alt"
+                  <tr className={`border-b border-linea cursor-pointer transition-colors duration-150 motion-reduce:transition-none hover:bg-superficie-alt/60 [&>td]:py-2.5 ${abierta === p.symbol ? "bg-superficie-alt/40" : ""}`}
                       onClick={() => setAbierta(abierta === p.symbol ? null : p.symbol)}>
-                    <td className="px-4 py-2">
+                    <td className="px-4">
+                      <div className="flex items-center gap-x-2 gap-y-1 flex-wrap">
                       {/* Un botón de verdad, no un <tr onClick>: así se despliega también
                           con teclado y un lector de pantalla dice qué hace y si está
                           abierto. min-h/min-w para que el dedo acierte en el móvil. */}
@@ -2492,9 +2607,9 @@ export default function VentasView() {
                                                 setAbierta(abierta === p.symbol ? null : p.symbol); }}
                               aria-expanded={abierta === p.symbol}
                               aria-label={`${abierta === p.symbol ? "Ocultar" : "Ver"} las compras de ${p.symbol}`}
-                              className="inline-flex items-center gap-1 min-h-[44px] -my-2 pr-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 rounded">
-                        <span className="text-tinta-3 text-[10px]">{abierta === p.symbol ? "▲" : "▼"}</span>
-                        <span className="font-mono font-bold">{p.symbol}</span>
+                              className="inline-flex items-center gap-1.5 min-h-[36px] -my-2 pr-1 rounded">
+                        <Flecha abierta={abierta === p.symbol} />
+                        <span className="iv-cifra font-bold text-apoyo">{p.symbol}</span>
                       </button>
                       {!!p.divisas_mezcladas && (
                         <Chip tono="aviso"
@@ -2524,15 +2639,16 @@ export default function VentasView() {
                           niveles pendientes
                         </Chip>
                       )}
+                      </div>
                     </td>
-                    <td className="py-2 text-right font-mono">{p.acciones}</td>
-                    <td className="py-2 text-right font-mono">
+                    <td className="px-3 text-right iv-cifra">{p.acciones}</td>
+                    <td className="px-3 text-right iv-cifra whitespace-nowrap">
                       {/* Con el interruptor puesto manda la ponderada, que es la del bróker;
                           la otra baja debajo etiquetada. Ninguna es una corrección de la
                           otra: miden cosas distintas y las dos son correctas. */}
                       {usd(precioMedio, p.divisa)}
                       {hayOtroMedio && (
-                        <div className="text-[10px] text-tinta-3"
+                        <div className="text-[11px] text-tinta-3"
                              title={comoBroker
                                ? `Arriba, la media ponderada (la de tu bróker). Debajo, el coste real de las ${p.acciones} acciones que te quedan por ${metodo.toUpperCase()}.`
                                : "Precio medio ponderado: el que suele enseñar tu bróker. No cambia al vender, porque promedia TODO lo que has comprado. El de arriba es el coste de las acciones que te quedan de verdad."}>
@@ -2542,11 +2658,13 @@ export default function VentasView() {
                         </div>
                       )}
                     </td>
-                    <td className="py-2 text-right font-mono">{eur(invertido)}</td>
-                    <td className="py-2 text-right font-mono"><CeldaValorHoy p={p} /></td>
-                    <td className="px-4 py-2 text-right">
-                      <span className={`font-mono font-semibold ${tono(g.pnl_eur)}`}>{eur(g.pnl_eur)}</span>
-                      <span className={`font-mono text-[10px] ml-1 ${tono(g.pct_eur)}`}>{pct(g.pct_eur)}</span>
+                    <td className="px-3 text-right iv-cifra whitespace-nowrap">{eur(invertido)}</td>
+                    <td className="px-3 text-right iv-cifra whitespace-nowrap"><CeldaValorHoy p={p} /></td>
+                    {/* Importe y % apilados en la misma columna derecha: en línea, el %
+                        se caía a la línea siguiente en unas filas sí y en otras no. */}
+                    <td className="px-4 text-right whitespace-nowrap">
+                      <div className={`iv-cifra font-semibold ${tono(g.pnl_eur)}`}>{eur(g.pnl_eur)}</div>
+                      <div className={`iv-cifra text-[11px] ${tono(g.pct_eur)}`}>{pct(g.pct_eur)}</div>
                     </td>
                   </tr>
                   {abierta === p.symbol && (
@@ -2563,25 +2681,25 @@ export default function VentasView() {
               {/* Totales: hasta ahora había que sumar las filas a mano para saber cuánto
                   llevas metido y cuánto vale hoy. El % agregado es sobre lo invertido. */}
               <tfoot>
-                <tr className="border-t-2 border-linea font-semibold">
-                  <td className="px-4 py-2">Total</td>
-                  <td className="py-2 text-right font-mono text-tinta-3">
+                <tr className="border-t border-linea-fuerte bg-superficie-alt/40 font-semibold [&>td]:py-3">
+                  <td className="px-4 iv-etiqueta text-tinta-2">Total</td>
+                  <td className="px-3 text-right iv-cifra text-tinta-3 font-normal whitespace-nowrap">
                     {resumen.posiciones.length} pos.
                   </td>
                   <td />
                   {/* El Total suma las MISMAS cifras que enseñan las filas: invertido y
                       ganancia en el mismo método, así valor − invertido = ganancia. */}
-                  <td className="py-2 text-right font-mono">{eur(totales.invertido)}</td>
-                  <td className="py-2 text-right font-mono">{eur(totales.valor)}</td>
-                  <td className="px-4 py-2 text-right">
-                    <span className={`font-mono ${tono(totales.ganancia)}`}>{eur(totales.ganancia)}</span>
+                  <td className="px-3 text-right iv-cifra whitespace-nowrap">{eur(totales.invertido)}</td>
+                  <td className="px-3 text-right iv-cifra whitespace-nowrap">{eur(totales.valor)}</td>
+                  <td className="px-4 text-right whitespace-nowrap">
+                    <div className={`iv-cifra font-bold ${tono(totales.ganancia)}`}>{eur(totales.ganancia)}</div>
                     {totales.pct != null ? (
-                      <span className={`font-mono text-[10px] ml-1 ${tono(totales.ganancia)}`}>
+                      <div className={`iv-cifra text-[11px] ${tono(totales.ganancia)}`}>
                         {pct(totales.pct)}
-                      </span>
+                      </div>
                     ) : null}
                     {totales.sinValorar > 0 && (
-                      <div className="text-[10px] text-tinta-3">{totales.sinValorar} sin valorar, fuera del total</div>
+                      <div className="text-[11px] text-tinta-3">{totales.sinValorar} sin valorar, fuera del total</div>
                     )}
                   </td>
                 </tr>
@@ -2589,11 +2707,13 @@ export default function VentasView() {
             </table>
           </div>
           {/* La explicación se lee una vez y luego estorba: plegada por defecto. */}
-          <details className="border-t border-linea">
-            <summary className="px-4 py-2 text-[11px] text-tinta-3 cursor-pointer">
+          <details className="group border-t border-linea">
+            <summary className="px-4 py-2.5 text-etiqueta text-tinta-3 cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center gap-2 hover:text-tinta transition-colors duration-150 motion-reduce:transition-none">
+              <CaretDown size={11} weight="bold" aria-hidden="true"
+                         className="-rotate-90 group-open:rotate-0 transition-transform duration-200 ease-out motion-reduce:transition-none" />
               Cómo leer esta tabla
             </summary>
-          <p className="px-4 pb-2 text-[11px] text-tinta-3">
+          <p className="px-4 pb-3 text-apoyo text-tinta-2 leading-relaxed max-w-[90ch]">
             El precio medio es el de las acciones que te QUEDAN, por <b>{metodo.toUpperCase()}</b>.
             Tras vender parte, FIFO y LIFO dejan lotes distintos abiertos y el medio no
             coincide: si no cuadra con tu bróker, prueba el otro método arriba.
