@@ -3,6 +3,8 @@ import { Pulse } from "@phosphor-icons/react";
 import { api } from "../../lib/api";
 import { MOTIVOS } from "../../lib/intelligence";
 import { fmtDateTime } from "../../lib/format";
+import Boton from "../base/Boton";
+import FilaHerramienta from "./FilaHerramienta";
 
 /**
  * «Comprobar ahora»: la prueba de vida de la cadena fuente → evento → Mongo.
@@ -58,7 +60,7 @@ function Fuente({ f }) {
     <div className="mt-5 pt-4 border-t border-linea first:border-t-0"
          data-testid={`prueba-resultado-${f.fuente}`}>
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-sm font-semibold text-tinta">{f.nombre || f.fuente}</span>
+        <span className="text-apoyo font-semibold text-tinta">{f.nombre || f.fuente}</span>
         {f.estado === "ONLINE" ? (
           <span className="iv-etiqueta text-sube">Ha contestado</span>
         ) : (
@@ -69,7 +71,7 @@ function Fuente({ f }) {
       </div>
 
       {f.estado !== "ONLINE" && (
-        <p className="mt-1 text-sm text-baja">
+        <p className="mt-1 text-apoyo text-baja break-words">
           {f.estado === "NO_CONFIGURADA"
             ? "Le falta su variable de entorno, así que no se ha hecho ninguna petición."
             : `${f.error || f.estado}`}
@@ -77,12 +79,12 @@ function Fuente({ f }) {
       )}
 
       {/* Leerlos de izquierda a derecha es leer la cadena entera. */}
-      <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-x-4 gap-y-3">
         {pasos.map(([etiqueta, n], i) => (
           <div key={etiqueta}
-               className={i === pasos.length - 1 ? "border-l border-marca pl-3" : ""}>
-            <p className="iv-cifra text-xl text-tinta">{n ?? 0}</p>
-            <p className="iv-etiqueta">{etiqueta}</p>
+               className={`min-w-0 ${i === pasos.length - 1 ? "border-l border-marca pl-3" : ""}`}>
+            <p className="iv-cifra text-lg font-semibold text-tinta break-all">{n ?? 0}</p>
+            <p className="iv-etiqueta leading-snug">{etiqueta}</p>
           </div>
         ))}
       </div>
@@ -135,17 +137,20 @@ export default function PruebaDeVida({ alTerminar }) {
   const fuentes = r?.fuentes || [];
 
   return (
-    <div className="mt-6" data-testid="prueba-de-vida">
-      <button onClick={comprobar} disabled={cargando}
-              className="inline-flex items-center gap-2 border border-linea-fuerte px-3 py-1.5
-                         text-sm text-tinta hover:border-marca disabled:opacity-50">
-        <Pulse size={15} />
-        {cargando ? "Preguntando a las fuentes…" : "Comprobar ahora"}
-      </button>
-      <p className="mt-2 text-xs text-tinta-3 max-w-[62ch] leading-relaxed">
-        Fuerza una vuelta de cada fuente y enseña por dónde va cada evento. Es el mismo
-        ciclo que corre solo, no una versión de prueba.
-      </p>
+    <FilaHerramienta
+      data-testid="prueba-de-vida"
+      descripcion={
+        <p className="text-apoyo text-tinta-2">
+          Fuerza una vuelta de cada fuente y enseña por dónde va cada evento. Es el mismo
+          ciclo que corre solo, no una versión de prueba.
+        </p>
+      }
+      accion={
+        <Boton variante="contorno" tamano="sm" onClick={comprobar} ocupado={cargando}>
+          <Pulse size={15} aria-hidden="true" />
+          {cargando ? "Preguntando a las fuentes…" : "Comprobar ahora"}
+        </Boton>
+      }>
       {fuentes.length > 0 && (
         <p className="mt-3 text-xs text-tinta-3 max-w-[70ch] leading-relaxed">
           <b className="text-tinta-2">Ya conocidos</b> no son descartes: son documentos que
@@ -155,9 +160,9 @@ export default function PruebaDeVida({ alTerminar }) {
         </p>
       )}
 
-      {error && <p className="mt-3 text-sm text-baja" role="alert">{String(error)}</p>}
+      {error && <p className="mt-3 text-apoyo text-baja break-words" role="alert">{String(error)}</p>}
 
       {fuentes.map((f) => <Fuente key={f.fuente} f={f} />)}
-    </div>
+    </FilaHerramienta>
   );
 }

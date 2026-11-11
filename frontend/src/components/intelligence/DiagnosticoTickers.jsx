@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { MagnifyingGlass } from "@phosphor-icons/react";
 import { api } from "../../lib/api";
+import Boton from "../base/Boton";
+import FilaHerramienta from "./FilaHerramienta";
 
 /**
  * La tabla que traduce tus símbolos a empresas de la SEC, auditada.
@@ -50,38 +52,38 @@ export default function DiagnosticoTickers() {
   const visibles = verTodos ? casos : casos.slice(0, 12);
 
   return (
-    <div className="mt-8" data-testid="diagnostico-tickers">
-      <div className="iv-seccion"><span className="iv-etiqueta">Tabla ticker ↔ CIK</span></div>
-      <p className="text-xs text-tinta-3 max-w-[70ch] leading-relaxed">
-        Una petición al fichero de tickers de la SEC para auditar cómo traducimos tus
-        símbolos a empresas. Las filas se resumen y se tiran; no se guarda nada.
-      </p>
-
-      <button onClick={mirar} disabled={cargando}
-              className="mt-3 inline-flex items-center gap-2 border border-linea-fuerte
-                         px-3 py-1.5 text-sm text-tinta hover:border-marca
-                         disabled:opacity-50">
-        <MagnifyingGlass size={15} />
-        {cargando ? "Leyendo…" : "Auditar la tabla"}
-      </button>
-
-      {error && <p className="mt-3 text-sm text-baja" role="alert">{String(error)}</p>}
+    <FilaHerramienta
+      data-testid="diagnostico-tickers"
+      titulo="Tabla ticker ↔ CIK"
+      descripcion={
+        <p>
+          Una petición al fichero de tickers de la SEC para auditar cómo traducimos tus
+          símbolos a empresas. Las filas se resumen y se tiran; no se guarda nada.
+        </p>
+      }
+      accion={
+        <Boton variante="contorno" tamano="sm" onClick={mirar} ocupado={cargando}>
+          <MagnifyingGlass size={15} aria-hidden="true" />
+          {cargando ? "Leyendo…" : "Auditar la tabla"}
+        </Boton>
+      }>
+      {error && <p className="mt-3 text-apoyo text-baja break-words" role="alert">{String(error)}</p>}
 
       {r && (
-        <div className="mt-4" data-testid="tickers-resultado">
-          <p className={`text-sm ${r.veredicto === "A" ? "text-sube" : "text-alerta"}`}>
+        <div className="mt-4 pt-4 border-t border-linea" data-testid="tickers-resultado">
+          <p className={`text-apoyo font-medium ${r.veredicto === "A" ? "text-sube" : "text-alerta"}`}>
             {r.veredicto} · {r.titulo}
           </p>
-          <p className="mt-1 text-xs text-tinta-3 max-w-[70ch]">{r.detalle}</p>
+          <p className="mt-1 text-xs text-tinta-3 max-w-[70ch] break-words">{r.detalle}</p>
 
-          <div className="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div className="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-x-4 gap-y-3">
             {[["Filas", r.total_filas], ["CIK distintos", r.ciks_distintos],
               ["Tickers", r.tickers_distintos],
               ["CIK con varias clases", r.ciks_con_varios_tickers],
               ["Perdía el mapa viejo", r.tickers_que_perdia_el_mapa_viejo]].map(([t, v], i) => (
-              <div key={t} className={i === 4 ? "border-l border-linea-fuerte pl-3" : ""}>
-                <p className="iv-cifra text-xl text-tinta">{v}</p>
-                <p className="iv-etiqueta">{t}</p>
+              <div key={t} className={`min-w-0 ${i === 4 ? "border-l border-linea-fuerte pl-3" : ""}`}>
+                <p className="iv-cifra text-lg font-semibold text-tinta break-all">{v}</p>
+                <p className="iv-etiqueta leading-snug">{t}</p>
               </div>
             ))}
           </div>
@@ -89,15 +91,15 @@ export default function DiagnosticoTickers() {
           {/* Tu universo, con el mapa VIGENTE. Dos estados, no tres. */}
           {u && (
             <div className="mt-6">
-              <p className="iv-etiqueta mb-2">Tus {u.revisados} valores, ahora</p>
-              <ul className="text-sm space-y-1">
-                <li className="flex justify-between gap-3">
+              <p className="iv-etiqueta mb-1.5">Tus {u.revisados} valores, ahora</p>
+              <ul className="text-apoyo divide-y divide-linea max-w-md">
+                <li className="flex justify-between gap-3 py-1.5">
                   <span className="text-sube">Se resuelven a un CIK</span>
-                  <span className="iv-cifra text-tinta-2">{u.resueltos.length}</span>
+                  <span className="iv-cifra font-semibold text-tinta text-right">{u.resueltos.length}</span>
                 </li>
-                <li className="flex justify-between gap-3">
+                <li className="flex justify-between gap-3 py-1.5">
                   <span className="text-tinta-3">Sin CIK en la SEC</span>
-                  <span className="iv-cifra text-tinta-2">{u.sin_cik_en_la_sec.length}</span>
+                  <span className="iv-cifra font-semibold text-tinta text-right">{u.sin_cik_en_la_sec.length}</span>
                 </li>
               </ul>
               {u.los_recuperaba_la_migracion?.length > 0 && (
@@ -124,7 +126,7 @@ export default function DiagnosticoTickers() {
                   <tr className="text-left">
                     {["Ticker", "¿En la SEC?", "CIK", "Tickers de ese CIK",
                       "El mapa viejo guardaba", "¿Se alcanza ahora?"].map((h) => (
-                      <th key={h} className="font-normal pb-2 pr-4">{h}</th>
+                      <th key={h} scope="col" className="font-normal pb-2 pr-4 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -154,7 +156,8 @@ export default function DiagnosticoTickers() {
                 CIK con varias clases de acción ({casos.length}) · lo que guardaba el
                 mapa viejo
               </p>
-              <ul className="text-xs iv-cifra text-tinta-2 space-y-0.5 max-h-72 overflow-y-auto">
+              <ul className="text-xs iv-cifra text-tinta-2 space-y-0.5 max-h-72 overflow-y-auto
+                             break-words border-l border-linea pl-3">
                 {visibles.map((c) => (
                   <li key={c.cik}>
                     {c.cik} · {c.tickers.join(", ")}{" "}
@@ -163,15 +166,15 @@ export default function DiagnosticoTickers() {
                 ))}
               </ul>
               {casos.length > visibles.length && (
-                <button onClick={() => setVerTodos(true)}
-                        className="mt-2 text-xs text-marca hover:underline">
+                <Boton variante="enlace" onClick={() => setVerTodos(true)}
+                       className="mt-2 h-auto p-0 text-xs font-medium">
                   Ver los {casos.length}
-                </button>
+                </Boton>
               )}
             </div>
           )}
         </div>
       )}
-    </div>
+    </FilaHerramienta>
   );
 }

@@ -4,6 +4,8 @@ import { api } from "../../lib/api";
 import { nivelDe } from "../../lib/intelligence";
 import { fmtHace } from "../../lib/format";
 import DocumentosEnviados from "./DocumentosEnviados";
+import Boton from "../base/Boton";
+import FilaHerramienta from "./FilaHerramienta";
 
 /**
  * Qué se investigaría si se encendiera la fase de IA. Sin encenderla.
@@ -50,18 +52,18 @@ function Lista({ titulo, eventos, nota }) {
           const n = nivelDe(e);
           return (
             <li key={e.id} className="py-2 flex items-baseline gap-3">
-              <span className="iv-cifra text-xs text-tinta-3 w-6 shrink-0">{i + 1}</span>
-              <span className="iv-cifra text-sm font-semibold text-tinta w-16 shrink-0 truncate">
+              <span className="iv-cifra text-etiqueta text-tinta-3 w-6 shrink-0 text-right">{i + 1}</span>
+              <span className="iv-cifra text-apoyo font-semibold text-tinta w-14 sm:w-16 shrink-0 truncate">
                 {e.symbol || "—"}
               </span>
-              <span className="flex-1 min-w-0 text-sm text-tinta-2 truncate">{e.titulo}</span>
-              <span className="hidden md:inline iv-cifra text-xs text-tinta-3 shrink-0">
+              <span className="flex-1 min-w-0 text-apoyo text-tinta-2 truncate">{e.titulo}</span>
+              <span className="hidden md:inline iv-cifra text-etiqueta text-tinta-3 shrink-0 w-14 text-right">
                 {e.relevancia}/100
               </span>
               <span className="hidden lg:inline text-xs text-tinta-3 shrink-0">
                 {e.afecta_cartera ? "cartera" : "seguimiento"}
               </span>
-              <span className="hidden md:inline text-xs text-tinta-3 shrink-0 whitespace-nowrap">
+              <span className="hidden md:inline iv-cifra text-etiqueta text-tinta-3 shrink-0 whitespace-nowrap">
                 {fmtHace(e.recibido_en)}
               </span>
               <span className={`iv-etiqueta shrink-0 ${n.clase}`}>{n.etiqueta}</span>
@@ -214,34 +216,34 @@ export default function PlanInvestigacion() {
   const p = r?.presupuesto;
 
   return (
-    <div className="mt-8" data-testid="plan-investigacion">
-      <div className="iv-seccion"><span className="iv-etiqueta">Plan de investigación</span></div>
-      <p className="text-xs text-tinta-3 max-w-[70ch] leading-relaxed">
-        Qué se investigaría con los eventos que hay ahora mismo en la base de datos.{" "}
-        <b className="text-tinta-2">No descarga ningún documento, no llama a ningún modelo
-        y no cambia el estado de nada.</b> La fase de IA todavía no está encendida.
-      </p>
-
-      <button onClick={mirar} disabled={cargando}
-              className="mt-3 inline-flex items-center gap-2 border border-linea-fuerte
-                         px-3 py-1.5 text-sm text-tinta hover:border-marca
-                         disabled:opacity-50">
-        <Eye size={15} />
-        {cargando ? "Calculando…" : "Ver el plan"}
-      </button>
-
-      {error && <p className="mt-3 text-sm text-baja" role="alert">{String(error)}</p>}
+    <FilaHerramienta
+      data-testid="plan-investigacion"
+      titulo="Plan de investigación"
+      descripcion={
+        <p>
+          Qué se investigaría con los eventos que hay ahora mismo en la base de datos.{" "}
+          <b className="text-tinta-2">No descarga ningún documento, no llama a ningún modelo
+          y no cambia el estado de nada.</b> La fase de IA todavía no está encendida.
+        </p>
+      }
+      accion={
+        <Boton variante="contorno" tamano="sm" onClick={mirar} ocupado={cargando}>
+          <Eye size={15} aria-hidden="true" />
+          {cargando ? "Calculando…" : "Ver el plan"}
+        </Boton>
+      }>
+      {error && <p className="mt-3 text-apoyo text-baja break-words" role="alert">{String(error)}</p>}
 
       {r && (
-        <div className="mt-4" data-testid="plan-resultado">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="mt-4 pt-4 border-t border-linea" data-testid="plan-resultado">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
             {[["Eventos", r.total_eventos],
               ["Pendientes", r.por_estado.pendiente_de_investigacion],
               ["Entrarían hoy", r.entrarian_en_el_presupuesto],
               ["Quedarían fuera", r.quedarian_pendientes]].map(([t, v], i) => (
-              <div key={t} className={i === 2 ? "border-l border-marca pl-3" : ""}>
-                <p className="iv-cifra text-xl text-tinta">{v}</p>
-                <p className="iv-etiqueta">{t}</p>
+              <div key={t} className={`min-w-0 ${i === 2 ? "border-l border-marca pl-3" : ""}`}>
+                <p className="iv-cifra text-lg font-semibold text-tinta break-all">{v}</p>
+                <p className="iv-etiqueta leading-snug">{t}</p>
               </div>
             ))}
           </div>
@@ -250,14 +252,14 @@ export default function PlanInvestigacion() {
               obliga a recordar qué distingue «no investigable» de «pendiente». */}
           <div className="mt-6">
             <p className="iv-etiqueta mb-2">Los cinco estados</p>
-            <ul className="space-y-2">
+            <ul className="divide-y divide-linea">
               {Object.entries(ESTADOS).map(([clave, [nombre, color, explicacion]]) => (
-                <li key={clave} className="flex items-baseline justify-between gap-3">
+                <li key={clave} className="flex items-baseline justify-between gap-3 py-2">
                   <div className="min-w-0">
-                    <span className={`text-sm ${color}`}>{nombre}</span>
+                    <span className={`text-apoyo font-medium ${color}`}>{nombre}</span>
                     <p className="text-xs text-tinta-3 max-w-[62ch]">{explicacion}</p>
                   </div>
-                  <span className="iv-cifra text-sm text-tinta shrink-0">
+                  <span className="iv-cifra text-apoyo font-semibold text-tinta shrink-0 text-right">
                     {r.por_estado[clave] ?? 0}
                   </span>
                 </li>
@@ -271,10 +273,10 @@ export default function PlanInvestigacion() {
             <p className="iv-etiqueta mb-2">Sin investigar, por nivel</p>
             <table className="w-full text-xs iv-cifra max-w-md">
               <thead className="text-tinta-3">
-                <tr className="text-left">
-                  <th className="font-normal pb-2 pr-4">Nivel</th>
-                  <th className="font-normal pb-2 pr-4">Hay</th>
-                  <th className="font-normal pb-2">Pasan la puerta</th>
+                <tr>
+                  <th scope="col" className="font-normal pb-2 pr-4 text-left">Nivel</th>
+                  <th scope="col" className="font-normal pb-2 pr-4 text-right">Hay</th>
+                  <th scope="col" className="font-normal pb-2 text-right">Pasan la puerta</th>
                 </tr>
               </thead>
               <tbody className="text-tinta-2">
@@ -285,8 +287,8 @@ export default function PlanInvestigacion() {
                       <td className={`py-1.5 pr-4 ${nivelDe({ nivel_alerta: nivel }).clase}`}>
                         {nivelDe({ nivel_alerta: nivel }).etiqueta}
                       </td>
-                      <td className="py-1.5 pr-4">{r.sin_investigar_por_nivel?.[nivel] ?? 0}</td>
-                      <td className={`py-1.5 ${pasa ? "" : "text-tinta-3"}`}>
+                      <td className="py-1.5 pr-4 text-right">{r.sin_investigar_por_nivel?.[nivel] ?? 0}</td>
+                      <td className={`py-1.5 text-right ${pasa ? "" : "text-tinta-3"}`}>
                         {pasa ? (r.pendientes_por_nivel?.[nivel] ?? 0) : "no, por diseño"}
                       </td>
                     </tr>
@@ -307,17 +309,15 @@ export default function PlanInvestigacion() {
           {/* El botón que SÍ gasta. Separado del resto y diciendo cuánto va a costar:
               un botón que consume cuota no puede parecerse a los que solo miran. */}
           {r.elegidos?.length > 0 && (
-            <div className="mt-6 pt-4 border-t border-marca">
-              <button onClick={investigar} disabled={ejecutando}
-                      className="inline-flex items-center gap-2 border border-marca
-                                 px-3 py-1.5 text-sm text-tinta hover:bg-superficie-2
-                                 disabled:opacity-50"
-                      data-testid="investigar-ahora">
-                <Brain size={15} />
+            <div className="mt-6 -mx-4 sm:-mx-5 px-4 sm:px-5 py-4 border-y border-marca/40 bg-marca/[0.04]">
+              <Boton variante="contorno" tamano="sm" onClick={investigar} ocupado={ejecutando}
+                     className="border-marca text-marca hover:bg-marca/10 whitespace-normal text-left h-auto min-h-8 py-1.5"
+                     data-testid="investigar-ahora">
+                <Brain size={15} aria-hidden="true" />
                 {ejecutando
                   ? "Leyendo documentos y preguntando al modelo…"
                   : `Investigar ahora los ${r.elegidos.length}`}
-              </button>
+              </Boton>
               <p className="mt-2 text-xs text-aviso max-w-[70ch] leading-relaxed">
                 Esto SÍ gasta: descarga {r.elegidos.length} documento(s) de la SEC y hace{" "}
                 {r.elegidos.length} llamada(s) al modelo. Consume presupuesto diario y no
@@ -328,8 +328,8 @@ export default function PlanInvestigacion() {
 
           {ejecucion && (
             <div className="mt-6" data-testid="ejecucion-resultado">
-              <div className="iv-seccion"><span className="iv-etiqueta">Resultado</span></div>
-              <p className="text-sm text-tinta-2">
+              <h4 className="iv-etiqueta mb-1.5">Resultado</h4>
+              <p className="text-apoyo text-tinta-2 iv-cifra">
                 {ejecucion.investigados} investigado(s) ·{" "}
                 {ejecucion.llamadas_al_modelo} llamada(s) al modelo ·{" "}
                 presupuesto {ejecucion.presupuesto?.gastadas_despues}/
@@ -349,6 +349,6 @@ export default function PlanInvestigacion() {
           </p>
         </div>
       )}
-    </div>
+    </FilaHerramienta>
   );
 }

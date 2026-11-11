@@ -27,15 +27,19 @@ export default function RadarFuente({ fuente }) {
          data-testid={`radar-fuente-${fuente.fuente}`}>
       <div className="flex items-baseline justify-between gap-3">
         <div className="min-w-0">
-          <span className="text-sm font-semibold text-tinta">{fuente.nombre}</span>
+          <span className="text-apoyo font-semibold text-tinta">{fuente.nombre}</span>
           {/* El tier es la fiabilidad de la fuente, no su velocidad. Va aquí porque es lo
               que decide cuánto pesa lo que dice. */}
           <span className="iv-etiqueta ml-2">Tier {fuente.tier}</span>
         </div>
-        <span className={`iv-etiqueta whitespace-nowrap ${e.clase}`}>{e.etiqueta}</span>
+        {/* El estado con su punto: se lee de un vistazo bajando por la columna derecha. */}
+        <span className={`iv-etiqueta whitespace-nowrap inline-flex items-center gap-1.5 ${e.clase}`}>
+          <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-current" />
+          {e.etiqueta}
+        </span>
       </div>
 
-      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-tinta-3">
+      <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-tinta-3">
         {fuente.actualizado_en
           ? <span>Última vuelta {fmtHace(fuente.actualizado_en)}</span>
           : <span>Todavía no ha dado ninguna vuelta</span>}
@@ -55,7 +59,7 @@ export default function RadarFuente({ fuente }) {
           normal casi todo lo que llega ya lo teníamos, y mezclarlos haría que el filtro
           pareciera desbocado justo cuando todo va bien. */}
       {ciclo && (
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs iv-cifra text-tinta-2">
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs iv-cifra text-tinta-2">
           <span>{ciclo.recibidos ?? 0} leídos</span>
           <span className="text-tinta-3">{ciclo.repetidos ?? 0} ya conocidos</span>
           <span>{ciclo.nuevos ?? 0} nuevos</span>
