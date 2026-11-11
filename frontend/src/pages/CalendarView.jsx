@@ -1,12 +1,28 @@
 import React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarBlank, ArrowRight, ArrowClockwise } from "@phosphor-icons/react";
+import { ArrowRight, ArrowClockwise, CaretDown } from "@phosphor-icons/react";
 import { api } from "../lib/api";
 import { useSignals } from "../hooks/useSignals";
 import { etiquetaCalendario } from "../lib/cartera";
+import { fmtEnDias } from "../lib/format";
+import { cn } from "../lib/utils";
+import Boton from "../components/base/Boton";
+import { Cargando, Error as ErrorEstado } from "../components/base/Estado";
+
+/* Calendario de resultados · rediseño de presentación
+   ─────────────────────────────────────────────────────────────────────────────
+   Mismo lenguaje que la portada «Hoy»: cabecera a sangre sin caja, UN solo panel
+   con filetes en vez de una caja por día, filas compactas y la cifra (EPS est.)
+   en una columna derecha de dígitos tabulares. El color se reserva para lo que
+   dice algo: la fecha más cercana (hoy/mañana) y las acciones que tienes. */
+
+function fechaValida(dateStr) {
+  return !!dateStr && !Number.isNaN(new Date(dateStr).getTime());
+}
 
 function dayLabel(dateStr) {
   if (!dateStr) return "—";
+  if (!fechaValida(dateStr)) return dateStr; // «Sin fecha»: se enseña tal cual, no «Invalid Date»
   const d = new Date(dateStr);
   return d.toLocaleDateString("es-ES", { weekday: "short", day: "2-digit", month: "short" });
 }
@@ -15,6 +31,11 @@ function hourLabel(h) {
   if (!h) return "—";
   const map = { bmo: "Antes apertura", amc: "Tras cierre", dmh: "Durante sesión" };
   return map[h] || h;
+}
+
+/** Tono de la etiqueta de origen: lo que tienes destaca; lo que vigilas, no. */
+function tonoGrupo(etiqueta) {
+  return etiqueta === "En cartera" ? "text-marca" : "text-tinta-3";
 }
 
 export default function CalendarView({ setSymbol }) {
@@ -75,83 +96,156 @@ export default function CalendarView({ setSymbol }) {
     return Object.entries(m).map(([date, items]) => ({ date, items }));
   }, [data]);
 
+  const total = data?.items?.length || 0;
+
   return (
-    <div data-testid="calendar-view" className="space-y-6">
-      <section className="iv-panel p-6">
-        <div className="iv-veredicto flex items-end justify-between flex-wrap gap-3 mb-6">
-          <div className="min-w-0">
-            <p className="iv-etiqueta tracking-[0.16em] text-tinta-3 mb-1">Agenda</p>
-            <h2 className="iv-verbo text-tinta">Calendario de resultados</h2>
-            <p className="text-cuerpo text-tinta-2 mt-3 max-w-[58ch]">
-              Próximos earnings de las acciones que tienes y de las que vigilas.
-            </p>
+    <div data-testid="calendar-view">
+      {/* ── Cabecera a sangre, sin caja (como «Hoy»). Controles a la derecha; en móvil
+          bajan debajo del título y quedan a mano del pulgar. */}
+      <header className="iv-veredicto mb-6 sm:mb-8 flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+        <div className="min-w-0">
+          <h1 className="iv-verbo text-tinta text-balance">Calendario de resultados</h1>
+          <p className="text-cuerpo text-tinta-2 mt-2.5 max-w-[58ch]">
+            Próximos earnings de las acciones que tienes y de las que vigilas.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="relative">
+            <label htmlFor="calendario-periodo" className="sr-only">Periodo</label>
+            <select
+              id="calendario-periodo"
+              data-testid="days-select"
+              value={days}
+              onChange={(e) => setDays(parseInt(e.target.value))}
+              className="appearance-none h-8 pl-3 pr-8 rounded-full bg-superficie-alt border border-linea-fuerte
+                         text-apoyo text-tinta font-mono cursor-pointer
+                         hover:border-tinta-3 transition-colors duration-150 motion-reduce:transition-none"
+            >
+              <option value={7}>Próximos 7 días</option>
+              <option value={14}>Próximos 14 días</option>
+              <option value={30}>Próximos 30 días</option>
+              <option value={60}>Próximos 60 días</option>
+            </select>
+            <CaretDown size={12} weight="bold" aria-hidden="true"
+              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-tinta-3" />
           </div>
-          <button onClick={() => setRefreshN((n) => n + 1)} title="Recargar (datos frescos)"
-            className="p-2 rounded-iv border border-linea text-marca mr-1">
-            <ArrowClockwise size={16} weight="bold" className={loading ? "animate-spin" : ""} />
-          </button>
-          <select
-            data-testid="days-select"
-            value={days}
-            onChange={(e) => setDays(parseInt(e.target.value))}
-            className="bg-superficie border border-linea rounded text-xs px-2 py-1.5 font-mono"
+          <Boton
+            variante="fantasma"
+            tamano="sm"
+            onClick={() => setRefreshN((n) => n + 1)}
+            title="Recargar (datos frescos)"
+            aria-busy={loading || undefined}
           >
-            <option value={7}>Próximos 7 días</option>
-            <option value={14}>Próximos 14 días</option>
-            <option value={30}>Próximos 30 días</option>
-            <option value={60}>Próximos 60 días</option>
-          </select>
+            <ArrowClockwise size={14} weight="bold" aria-hidden="true"
+              className={cn("text-marca", loading && "animate-spin motion-reduce:animate-none")} />
+            Actualizar
+          </Boton>
         </div>
-      </section>
+      </header>
 
-      {loading && <div className="iv-panel p-8 text-center text-tinta-3">Cargando calendario...</div>}
+      {/* ── Cabecera de sección con filete de acento + recuento en una línea de apoyo. */}
+      <div className="iv-seccion iv-seccion-acento !mb-1.5">
+        <h2 className="font-heading text-titulo font-semibold text-tinta leading-tight min-w-0">
+          Próximos resultados
+        </h2>
+      </div>
+      <p className="iv-cifra text-etiqueta text-tinta-3 mb-4 min-h-[1rem]" aria-live="polite">
+        {!loading && !earningsQuery.error && data && total > 0 &&
+          `${total} ${total === 1 ? "resultado" : "resultados"} · ${grouped.length} ${grouped.length === 1 ? "fecha" : "fechas"}`}
+      </p>
 
-      {!loading && data && grouped.length === 0 && (
-        <div className="iv-panel p-12 text-center">
-          <p className="text-sm text-tinta-3">Ninguna de tus señales tiene earnings en este período.</p>
+      {loading ? (
+        <div className="iv-panel p-5">
+          <Cargando filas={4} etiqueta="Cargando calendario..." />
         </div>
-      )}
-
-      {!loading && grouped.map(({ date, items }) => (
-        <section key={date} className="iv-panel p-4">
-          <h3 className="font-heading font-semibold text-lg text-tinta capitalize mb-3">{dayLabel(date)}</h3>
-          <div className="space-y-1">
-            {items.map((it, i) => (
-              <div
-                key={`${it.symbol}-${i}`}
-                data-testid={`earnings-${it.symbol}`}
-                className="flex items-center gap-3 p-2 hover:bg-fondo rounded cursor-pointer"
-                /* setSymbol ya navega a /accion/:symbol. El navigate("/") que había
-                   aquí ahora llevaría a la portada, que es lo contrario de lo que
-                   espera quien pulsa una fila del calendario. */
-                onClick={() => setSymbol(it.symbol)}
-              >
-                <div className="w-11 h-11 rounded-iv bg-marca text-marca-tinta flex items-center justify-center font-mono font-bold text-xs shrink-0">
-                  {it.symbol.slice(0, 4)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <p className="font-mono font-semibold text-sm text-tinta">{it.symbol}</p>
-                    {symGroup[it.symbol?.toUpperCase()] && (
-                      <span className="text-etiqueta font-semibold px-1.5 py-0.5 rounded-full bg-marca/10 text-marca">
-                        {symGroup[it.symbol.toUpperCase()]}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-etiqueta text-tinta-3 truncate">
-                    Q{it.quarter} {it.year} · {hourLabel(it.hour)}
-                  </p>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="font-mono text-etiqueta uppercase text-tinta-3">EPS est.</p>
-                  <p className="font-mono text-sm text-tinta">{it.eps_estimate ?? "—"}</p>
-                </div>
-                <ArrowRight size={14} className="text-tinta-3 shrink-0" />
-              </div>
-            ))}
-          </div>
-        </section>
-      ))}
+      ) : earningsQuery.error ? (
+        <ErrorEstado
+          error={earningsQuery.error}
+          onReintentar={() => earningsQuery.refetch()}
+          titulo="No se ha podido cargar el calendario"
+        />
+      ) : data && grouped.length === 0 ? (
+        <div className="iv-panel px-6 py-10 text-center">
+          <p className="text-cuerpo text-tinta font-medium">
+            Ninguna de tus señales tiene earnings en este período.
+          </p>
+          <p className="text-apoyo text-tinta-3 mt-1">
+            Periodo consultado: próximos {days} días.
+          </p>
+        </div>
+      ) : grouped.length > 0 ? (
+        // Un único panel; cada fecha es un bloque con filete, no una caja propia.
+        <div className="iv-panel overflow-hidden divide-y divide-linea">
+          {grouped.map(({ date, items }) => {
+            const relativa = fechaValida(date) ? fmtEnDias(date) : null;
+            const inminente = relativa === "hoy" || relativa === "mañana";
+            return (
+              <section key={date} aria-label={dayLabel(date)}>
+                <header className="flex items-baseline justify-between gap-3 px-4 sm:px-5 pt-4 pb-1.5">
+                  <h3 className="font-heading font-semibold text-cuerpo text-tinta capitalize">
+                    {dayLabel(date)}
+                  </h3>
+                  {relativa && (
+                    <span className={cn("iv-cifra text-etiqueta shrink-0",
+                      inminente ? "text-marca font-semibold" : "text-tinta-3")}>
+                      {relativa}
+                    </span>
+                  )}
+                </header>
+                <ul className="pb-2">
+                  {items.map((it, i) => {
+                    const grupo = symGroup[it.symbol?.toUpperCase()];
+                    return (
+                      <li key={`${it.symbol}-${i}`}>
+                        <button
+                          type="button"
+                          data-testid={`earnings-${it.symbol}`}
+                          className="group w-full text-left flex items-center gap-3 px-4 sm:px-5 py-2.5
+                                     hover:bg-superficie-alt focus-visible:-outline-offset-2
+                                     transition-colors duration-150 motion-reduce:transition-none"
+                          /* setSymbol ya navega a /accion/:symbol. El navigate("/") que había
+                             aquí ahora llevaría a la portada, que es lo contrario de lo que
+                             espera quien pulsa una fila del calendario. */
+                          onClick={() => setSymbol(it.symbol)}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="flex items-baseline gap-2 min-w-0">
+                              <span className="iv-cifra font-semibold text-apoyo text-tinta truncate
+                                               group-hover:text-marca transition-colors duration-150
+                                               motion-reduce:transition-none">
+                                {it.symbol}
+                              </span>
+                              {grupo && (
+                                <span className={cn("text-etiqueta font-medium shrink-0", tonoGrupo(grupo))}>
+                                  {grupo}
+                                </span>
+                              )}
+                            </p>
+                            <p className="iv-cifra text-etiqueta text-tinta-3 truncate mt-0.5">
+                              Q{it.quarter} {it.year} · {hourLabel(it.hour)}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0 min-w-[5.5rem]">
+                            <p className="iv-etiqueta">EPS est.</p>
+                            <p className="iv-cifra text-apoyo font-semibold text-tinta whitespace-nowrap">
+                              {it.eps_estimate ?? "—"}
+                            </p>
+                          </div>
+                          <ArrowRight size={14} aria-hidden="true"
+                            className="text-tinta-3 shrink-0 transition-transform duration-150 ease-out
+                                       group-hover:translate-x-0.5 group-hover:text-tinta-2
+                                       motion-reduce:transition-none motion-reduce:group-hover:translate-x-0" />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }
