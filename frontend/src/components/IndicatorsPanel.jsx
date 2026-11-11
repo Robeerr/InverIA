@@ -34,38 +34,40 @@ export function FuerzaRelativa({ rs }) {
   // funciona con selectores de clase (.dark .text-sube), así que un color en línea se lo
   // salta y se queda en 3,6:1 sobre el fondo oscuro — por debajo del mínimo legible.
   const tono = {
-    "LÍDER":       { c: "text-sube", bg: "bg-sube/10", i: "▲" },
-    "POR DELANTE": { c: "text-sube", bg: "bg-sube/5",  i: "↗" },
-    "POR DETRÁS":  { c: "text-aviso", bg: "bg-aviso/10", i: "↘" },
-    "REZAGADA":    { c: "text-baja", bg: "bg-baja/10", i: "▼" },
-  }[rs.veredicto] || { c: "text-tinta-3", bg: "", i: "" };
+    "LÍDER":       { c: "text-sube", i: "▲" },
+    "POR DELANTE": { c: "text-sube", i: "↗" },
+    "POR DETRÁS":  { c: "text-aviso", i: "↘" },
+    "REZAGADA":    { c: "text-baja", i: "▼" },
+  }[rs.veredicto] || { c: "text-tinta-3", i: "" };
   const orden = ["1m", "3m", "6m"];
+  // Panel como los demás de la sección, sin fondo teñido: el veredicto ya lleva el
+  // color, y una franja rosa entera gritaba más que el propio consenso de analistas.
   return (
-    <div data-testid="fuerza-relativa" className={`mb-4 rounded-iv px-3 py-2.5 ${tono.bg}`}>
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-sm leading-none">{tono.i}</span>
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-tinta-3">
-            Fuerza relativa vs S&amp;P 500
-          </span>
-          <span className={`font-mono text-xs font-bold ${tono.c}`}>{rs.veredicto}</span>
+    <div data-testid="fuerza-relativa" className="iv-panel p-5">
+      <div className="flex items-start justify-between flex-wrap gap-x-6 gap-y-3">
+        <div className="min-w-0">
+          <h3 className="iv-etiqueta">Fuerza relativa vs S&amp;P 500</h3>
+          <p className={`font-mono text-cuerpo font-bold mt-1 flex items-center gap-1.5 ${tono.c}`}>
+            {tono.i && <span aria-hidden="true" className="text-apoyo">{tono.i}</span>}
+            {rs.veredicto}
+          </p>
         </div>
-        <div className="flex items-center gap-3">
+        <dl className="flex items-start gap-5">
           {orden.filter((k) => rs.ventanas[k]).map((k) => {
             const v = rs.ventanas[k];
             const col = v.diferencia_pp >= 0 ? "text-sube" : "text-baja";
             return (
               <div key={k} className="text-right">
-                <div className="font-mono text-[9px] uppercase text-tinta-3">{k}</div>
-                <div className={`font-mono text-xs font-semibold ${col}`}>
+                <dt className="iv-etiqueta">{k}</dt>
+                <dd className={`iv-cifra text-apoyo font-semibold mt-0.5 whitespace-nowrap ${col}`}>
                   {v.diferencia_pp >= 0 ? "+" : ""}{v.diferencia_pp} pp
-                </div>
+                </dd>
               </div>
             );
           })}
-        </div>
+        </dl>
       </div>
-      <p className="text-[11px] text-tinta-3 mt-1.5 leading-snug">
+      <p className="text-etiqueta text-tinta-3 mt-3 leading-snug max-w-[80ch]">
         Diferencia de rentabilidad frente al índice. Positivo = la acción va por delante del
         mercado. Es una medida de calidad de la candidata, no una señal de entrada.
       </p>
@@ -78,19 +80,14 @@ export default function IndicatorsPanel({ indicators, analysis }) {
   const { rsi, macd, bollinger, sma, ema, fibonacci, support_resistance, patterns } = indicators;
 
   return (
-    <section data-testid="indicators-panel" className="iv-panel p-6 animate-fade-up">
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-8 h-8 rounded-iv bg-marca text-marca-tinta flex items-center justify-center">
-          <ChartBar size={18} weight="bold" />
-        </div>
-        <h3 className="font-heading font-semibold text-lg text-tinta">
-          Indicadores Técnicos
-        </h3>
-      </div>
-
+    <section data-testid="indicators-panel" className="iv-panel p-5">
+      <h3 className="font-heading text-cuerpo font-semibold text-tinta flex items-center gap-2 mb-3">
+        <ChartBar size={16} weight="bold" className="text-tinta-3" aria-hidden="true" />
+        Indicadores Técnicos
+      </h3>
 
       <Tabs defaultValue="momentum">
-        <TabsList className="bg-fondo border border-linea grid grid-cols-4 mb-4">
+        <TabsList className="bg-fondo border border-linea grid grid-cols-4 mb-3 w-full">
           <TabsTrigger value="momentum" data-testid="tab-momentum">Momentum</TabsTrigger>
           <TabsTrigger value="trend" data-testid="tab-trend">Tendencia</TabsTrigger>
           <TabsTrigger value="levels" data-testid="tab-levels">Niveles</TabsTrigger>
@@ -99,8 +96,8 @@ export default function IndicatorsPanel({ indicators, analysis }) {
 
         <TabsContent value="momentum" className="space-y-3">
           <Row icon={<Pulse size={14} weight="bold" />} label="RSI (14)" testId="rsi" info="RSI" value={
-            <span className={`font-mono ${rsiTone(rsi)}`}>
-              {rsi ?? "—"} <span className="text-[10px] uppercase ml-1">{rsiLabel(rsi)}</span>
+            <span className={`iv-cifra ${rsiTone(rsi)}`}>
+              {rsi ?? "—"} <span className="iv-etiqueta ml-1 !text-current">{rsiLabel(rsi)}</span>
             </span>
           } />
           <Row label="MACD" testId="macd" info="MACD" value={
@@ -125,23 +122,23 @@ export default function IndicatorsPanel({ indicators, analysis }) {
         </TabsContent>
 
         <TabsContent value="levels" className="space-y-3">
-          <h4 className="label-small flex items-center gap-1.5">Soportes <InfoDot term="Soporte" /></h4>
+          <h4 className="iv-etiqueta flex items-center gap-1.5 pt-1">Soportes <InfoDot term="Soporte" /></h4>
           {(support_resistance?.supports || []).map((s, i) => (
             <Row key={`s-${i}`} label={`S${i + 1}`} value={<span className="font-mono text-sube">${fmtPrice(s)}</span>} />
           ))}
           {(support_resistance?.supports || []).length === 0 && (
-            <p className="text-xs text-tinta-3">Sin soportes detectados.</p>
+            <p className="text-apoyo text-tinta-3">Sinsoportes detectados.</p>
           )}
           <div className="divider-soft my-2" />
-          <h4 className="label-small flex items-center gap-1.5">Resistencias <InfoDot term="Resistencia" /></h4>
+          <h4 className="iv-etiqueta flex items-center gap-1.5 pt-1">Resistencias <InfoDot term="Resistencia" /></h4>
           {(support_resistance?.resistances || []).map((s, i) => (
             <Row key={`r-${i}`} label={`R${i + 1}`} value={<span className="font-mono text-baja">${fmtPrice(s)}</span>} />
           ))}
           {(support_resistance?.resistances || []).length === 0 && (
-            <p className="text-xs text-tinta-3">Sin resistencias detectadas.</p>
+            <p className="text-apoyo text-tinta-3">Sinresistencias detectadas.</p>
           )}
           <div className="divider-soft my-2" />
-          <h4 className="label-small flex items-center gap-1.5">Fibonacci (52sem) <InfoDot term="Fibonacci" /></h4>
+          <h4 className="iv-etiqueta flex items-center gap-1.5 pt-1">Fibonacci (52sem) <InfoDot term="Fibonacci" /></h4>
           {Object.entries(fibonacci || {}).map(([k, v]) => (
             <Row key={k} label={`Fib ${k}%`} value={<span className="font-mono">${fmtPrice(v)}</span>} />
           ))}
@@ -150,18 +147,18 @@ export default function IndicatorsPanel({ indicators, analysis }) {
         <TabsContent value="patterns" className="space-y-2">
           {(patterns || []).length > 0 ? (
             (patterns || []).map((p, i) => (
-              <div key={i} data-testid={`pattern-${i}`} className="flex items-center gap-2 px-3 py-2 bg-fondo border border-linea rounded-iv">
-                <Triangle size={14} weight="bold" className="text-marca" />
-                <span className="text-sm text-tinta">{p}</span>
+              <div key={i} data-testid={`pattern-${i}`} className="flex items-center gap-2 py-1.5 border-b border-linea last:border-0">
+                <Triangle size={12} weight="bold" className="text-tinta-3 shrink-0" aria-hidden="true" />
+                <span className="text-apoyo text-tinta">{p}</span>
               </div>
             ))
           ) : (
-            <p className="text-xs text-tinta-3">Sin patrones detectados actualmente.</p>
+            <p className="text-apoyo text-tinta-3">Sin patrones detectados actualmente.</p>
           )}
           {analysis?.pattern_analysis && (
-            <div className="mt-3 p-3 bg-fondo border border-linea rounded-iv">
-              <p className="label-small mb-1">Visión IA</p>
-              <p className="text-xs text-tinta leading-relaxed">{analysis.pattern_analysis}</p>
+            <div className="mt-3 pt-3 border-t border-linea">
+              <p className="iv-etiqueta mb-1">Visión IA</p>
+              <p className="text-apoyo text-tinta-2 leading-relaxed max-w-[70ch]">{analysis.pattern_analysis}</p>
             </div>
           )}
         </TabsContent>
@@ -172,13 +169,13 @@ export default function IndicatorsPanel({ indicators, analysis }) {
 
 function Row({ icon, label, value, testId, info }) {
   return (
-    <div data-testid={testId} className="flex items-center justify-between py-1.5 border-b border-linea last:border-0">
-      <span className="text-xs text-tinta-3 flex items-center gap-1.5">
-        {icon}
+    <div data-testid={testId} className="flex items-center justify-between gap-3 py-1.5 border-b border-linea last:border-0">
+      <span className="text-apoyo text-tinta-2 flex items-center gap-1.5 min-w-0">
+        {icon && <span className="text-tinta-3" aria-hidden="true">{icon}</span>}
         {label}
         {info && <InfoDot term={info} />}
       </span>
-      <span className="text-sm">{value}</span>
+      <span className="text-apoyo iv-cifra text-right tabular-nums">{value}</span>
     </div>
   );
 }

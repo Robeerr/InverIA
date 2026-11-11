@@ -35,14 +35,14 @@ const ADX_CON_FUERZA = 25;   // el mismo umbral que usa indicators.market_regime
 
 function Dato({ etiqueta, children, tono, testId, info }) {
   return (
-    <div className="flex flex-col gap-0.5 min-w-0" data-testid={testId}>
-      <span className="text-etiqueta uppercase tracking-[0.14em] text-tinta-3 font-mono flex items-center gap-1">
+    <div className="flex flex-col gap-1 min-w-0" data-testid={testId}>
+      <dt className="iv-etiqueta flex items-center gap-1">
         {etiqueta}
         {info && <InfoDot term={info} />}
-      </span>
-      <span className={`text-apoyo font-medium leading-tight ${tono || "text-tinta"}`}>
+      </dt>
+      <dd className={`text-apoyo font-medium leading-snug ${tono || "text-tinta"}`}>
         {children}
-      </span>
+      </dd>
     </div>
   );
 }
@@ -73,8 +73,10 @@ export default function EstadoTecnico({ indicators, quote, marketRegime }) {
   if (!hayAlgo) return null;
 
   return (
-    <section className="iv-panel px-4 py-3" data-testid="estado-tecnico">
-      <div className="flex flex-wrap gap-x-6 gap-y-3">
+    <section className="iv-panel px-5 py-4" data-testid="estado-tecnico">
+      {/* Rejilla fija en vez de una fila que se reparte como cae: cada dato arranca en
+          su columna y la franja se lee como una tabla, no como una nube de etiquetas. */}
+      <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
         {etiquetaRegimen && (
           <Dato etiqueta="Régimen" testId="et-regimen" info={adx != null ? "ADX" : undefined}>
             {etiquetaRegimen}{conFuerza}{adxTexto}
@@ -115,7 +117,7 @@ export default function EstadoTecnico({ indicators, quote, marketRegime }) {
             tono={salida.por_encima ? "text-sube" : "text-baja"}
           >
             {salida.por_encima ? "Por encima" : "Por debajo"}
-            {salida.sma != null ? ` · $${fmtPrice(salida.sma)}` : ""}
+            {salida.sma != null && <span className="iv-cifra">{` · $${fmtPrice(salida.sma)}`}</span>}
           </Dato>
         )}
 
@@ -123,6 +125,7 @@ export default function EstadoTecnico({ indicators, quote, marketRegime }) {
           <Dato etiqueta="Mercado" testId="et-mercado">
             <span className="inline-flex items-center gap-1.5">
               <span
+                aria-hidden="true"
                 className="w-2 h-2 rounded-full inline-block shrink-0"
                 style={{
                   background:
@@ -134,16 +137,17 @@ export default function EstadoTecnico({ indicators, quote, marketRegime }) {
             </span>
           </Dato>
         )}
-      </div>
+      </dl>
 
       {/* La señal de salida del método. Va aparte y no como un dato más: es lo único
           de esta franja que pide una decisión hoy, y hasta ahora no existía en pantalla. */}
       {salida?.recien_perdida && (
         <p
-          className="mt-3 pt-3 border-t border-linea text-apoyo text-baja font-medium flex gap-1.5"
+          className="mt-4 rounded-iv bg-baja/[0.08] px-3 py-2 text-apoyo text-baja font-medium flex gap-2"
           data-testid="et-recien-perdida"
+          role="status"
         >
-          <Warning size={13} weight="fill" aria-hidden="true" />
+          <Warning size={14} weight="fill" aria-hidden="true" className="shrink-0 mt-0.5" />
           <span>Acaba de perder la media de 10 semanas — es la señal de salida del método.</span>
         </p>
       )}

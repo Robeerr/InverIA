@@ -61,7 +61,7 @@ function Version({ v, esUltima }) {
       <div className="flex items-baseline gap-2 flex-wrap">
         <span className="text-[11px] font-mono text-tinta-3 shrink-0">v{v.version}</span>
         {esUltima && (
-          <span className="text-[10px] uppercase tracking-[0.15em] font-mono text-marca shrink-0">
+          <span className="text-etiqueta uppercase tracking-[0.15em] font-mono text-marca shrink-0">
             vigente
           </span>
         )}

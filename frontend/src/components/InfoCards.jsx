@@ -15,11 +15,11 @@ export function PricePredictionCard({ analysis, quote }) {
   const Cell = ({ label, val }) => {
     const d = current && val ? ((val - current) / current) * 100 : null;
     return (
-      <div className="bg-fondo border border-linea rounded-iv px-2 py-3 text-center">
-        <p className="text-[10px] uppercase tracking-wider text-tinta-3">{label}</p>
-        <p className="font-mono font-bold text-lg text-tinta mt-1">{val != null ? `$${fmtPrice(val)}` : "—"}</p>
+      <div className="px-3 py-2.5 min-w-0 first:pl-0">
+        <p className="iv-etiqueta">{label}</p>
+        <p className="iv-cifra font-semibold text-cuerpo text-tinta mt-0.5 break-all">{val != null ? `$${fmtPrice(val)}` : "—"}</p>
         {d != null && (
-          <p className={`font-mono text-[11px] mt-0.5 ${d >= 0 ? "text-sube" : "text-baja"}`}>
+          <p className={`iv-cifra text-etiqueta mt-0.5 ${d >= 0 ? "text-sube" : "text-baja"}`}>
             {d >= 0 ? "+" : ""}{d.toFixed(1)}%
           </p>
         )}
@@ -35,28 +35,28 @@ export function PricePredictionCard({ analysis, quote }) {
   const beat = hasEP ? (beatStyle[(ep.will_beat || "").toUpperCase()] || { bg: "bg-tinta-3/10", text: "text-tinta-3", label: "Incierto" }) : null;
 
   return (
-    <section data-testid="price-prediction" className="iv-panel p-6 animate-fade-up">
+    <section data-testid="price-prediction" className="iv-panel p-5">
       <div className="flex items-center gap-2 mb-3">
         <Crosshair size={18} weight="bold" className="text-marca" />
-        <h3 className="font-heading font-semibold text-lg text-tinta">Predicciones IA</h3>
+        <h3 className="font-heading text-cuerpo font-semibold text-tinta">Predicciones IA</h3>
       </div>
 
       {hasPP && (
         <>
           <div className="flex items-center justify-between mb-2">
-            <p className="label-small">Precio objetivo estimado</p>
-            <span className="font-mono text-[11px] text-tinta-3">Confianza {conf}%</span>
+            <p className="iv-etiqueta">Precio objetivo estimado</p>
+            <span className="iv-cifra text-etiqueta text-tinta-3">Confianza {conf}%</span>
           </div>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 divide-x divide-linea border-y border-linea">
             <Cell label="3 meses" val={pp.target_3m} />
             <Cell label="6 meses" val={pp.target_6m} />
             <Cell label="12 meses" val={pp.target_12m} />
           </div>
-          <div className="h-1.5 bg-linea rounded-full overflow-hidden mt-3">
-            <div className={`h-full ${confColor} transition-all`} style={{ width: `${conf}%` }} />
+          <div className="h-1.5 bg-linea rounded-full overflow-hidden mt-3" aria-hidden="true">
+            <div className={`h-full ${confColor}`} style={{ width: `${conf}%` }} />
           </div>
           {pp.rationale && (
-            <p className="text-xs text-tinta-3 mt-3 leading-relaxed border-l-2 border-marca pl-3">{pp.rationale}</p>
+            <p className="text-apoyo text-tinta-2 mt-3 leading-relaxed max-w-[75ch]">{pp.rationale}</p>
           )}
         </>
       )}
@@ -64,16 +64,16 @@ export function PricePredictionCard({ analysis, quote }) {
       {hasEP && (
         <div className={`${hasPP ? "mt-4 pt-4 border-t border-linea" : ""}`}>
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <p className="label-small">Próximos resultados (earnings)</p>
+            <p className="iv-etiqueta">Próximos resultados (earnings)</p>
             <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-mono font-semibold ${beat.bg} ${beat.text}`}>
               {beat.label}{ep.confidence ? ` · ${ep.confidence}%` : ""}
             </span>
           </div>
-          {ep.rationale && <p className="text-xs text-tinta-3 mt-2 leading-relaxed">{ep.rationale}</p>}
+          {ep.rationale && <p className="text-apoyo text-tinta-2 mt-2 leading-relaxed max-w-[75ch]">{ep.rationale}</p>}
         </div>
       )}
 
-      <p className="text-[10px] text-tinta-3 mt-3">Proyecciones estimadas por IA, no garantizadas. Solo educativo.</p>
+      <p className="text-etiqueta text-tinta-3 mt-3">Proyecciones estimadas por IA, no garantizadas. Solo educativo.</p>
     </section>
   );
 }
@@ -81,44 +81,50 @@ export function PricePredictionCard({ analysis, quote }) {
 export function NewsFeed({ news }) {
   if (!news || news.length === 0) {
     return (
-      <section data-testid="news-feed" className="iv-panel p-6">
-        <div className="flex items-center gap-2 mb-3">
-          <Newspaper size={18} weight="bold" className="text-marca" />
-          <h3 className="font-heading font-semibold text-lg text-tinta">Noticias</h3>
-        </div>
-        <p className="text-sm text-tinta-3">Sin noticias disponibles.</p>
+      <section data-testid="news-feed" className="iv-panel p-5">
+        <h3 className="font-heading text-cuerpo font-semibold text-tinta flex items-center gap-2">
+          <Newspaper size={16} weight="bold" className="text-tinta-3" aria-hidden="true" />
+          Noticias
+        </h3>
+        <p className="text-apoyo text-tinta-3 mt-1">Sin noticias disponibles.</p>
       </section>
     );
   }
 
+  // Lista con filetes, no una caja por titular: ocho recuadros con borde que se
+  // iluminaban en naranja convertían la lectura de titulares en una rejilla de botones.
   return (
-    <section data-testid="news-feed" className="iv-panel p-6 animate-fade-up">
-      <div className="flex items-center gap-2 mb-4">
-        <Newspaper size={18} weight="bold" className="text-marca" />
-        <h3 className="font-heading font-semibold text-lg text-tinta">Noticias Recientes</h3>
-      </div>
-      <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
+    <section data-testid="news-feed" className="iv-panel p-5">
+      <h3 className="font-heading text-cuerpo font-semibold text-tinta flex items-center gap-2 mb-2">
+        <Newspaper size={16} weight="bold" className="text-tinta-3" aria-hidden="true" />
+        Noticias Recientes
+      </h3>
+      <ul className="divide-y divide-linea max-h-[360px] overflow-y-auto -mx-2 px-2" tabIndex={0} aria-label="Noticias recientes">
         {news.map((n, i) => (
-          <a
-            key={i}
-            data-testid={`news-item-${i}`}
-            href={n.url}
-            target="_blank"
-            rel="noreferrer"
-            className="group block p-3 bg-fondo border border-linea rounded-iv hover:border-marca transition-colors"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-sm text-tinta leading-snug group-hover:text-marca line-clamp-2">
-                {n.title}
-              </p>
-              <ArrowSquareOut size={14} className="text-tinta-3 mt-0.5 shrink-0" />
-            </div>
-            <p className="text-[10px] text-tinta-3 mt-1 uppercase tracking-wider">
-              {n.publisher || "—"}
-            </p>
-          </a>
+          <li key={i}>
+            <a
+              data-testid={`news-item-${i}`}
+              href={n.url}
+              target="_blank"
+              rel="noreferrer"
+              className="group flex items-start justify-between gap-3 py-2.5 -mx-2 px-2 rounded-iv-sm
+                         hover:bg-superficie-alt transition-colors duration-150 motion-reduce:transition-none"
+            >
+              <span className="min-w-0">
+                <span className="block text-apoyo text-tinta leading-snug group-hover:text-marca line-clamp-2
+                                 transition-colors duration-150 motion-reduce:transition-none">
+                  {n.title}
+                </span>
+                <span className="block iv-etiqueta mt-1">
+                  {n.publisher || "—"}
+                </span>
+              </span>
+              <ArrowSquareOut size={14} className="text-tinta-3 mt-0.5 shrink-0 group-hover:text-marca" aria-hidden="true" />
+              <span className="sr-only">(se abre en otra pestaña)</span>
+            </a>
+          </li>
         ))}
-      </div>
+      </ul>
     </section>
   );
 }
@@ -126,11 +132,14 @@ export function NewsFeed({ news }) {
 export function FundamentalsCard({ quote, analysis }) {
   if (!quote) return null;
   return (
-    <section data-testid="fundamentals" className="iv-panel p-6 animate-fade-up">
-      <h3 className="font-heading font-semibold text-lg text-tinta mb-3">
+    <section data-testid="fundamentals" className="iv-panel p-5">
+      <h3 className="font-heading text-cuerpo font-semibold text-tinta mb-2">
         Fundamentales
       </h3>
-      <div className="grid grid-cols-2 gap-3">
+      {/* Diez datos como tabla de dos columnas con filetes: rótulo a la izquierda y cifra
+          tabular a la derecha. Antes eran diez cajas con borde, y la cifra arrancaba en un
+          sitio distinto en cada una. */}
+      <dl className="grid sm:grid-cols-2 gap-x-8">
         {[
           ["P/E", quote.pe_ratio ?? "—"],
           ["P/E Fwd", quote.forward_pe ?? "—"],
@@ -143,34 +152,31 @@ export function FundamentalsCard({ quote, analysis }) {
           ["52W Bajo", `$${fmtPrice(quote.low_52w)}`],
           ["Vol. Prom.", fmtNum(quote.avg_volume)],
         ].map(([label, val]) => (
-          <div key={label} className="bg-fondo border border-linea rounded-iv px-3 py-2">
-            <p className="label-small">{label}</p>
-            <p className="font-mono text-sm text-tinta mt-1">{val}</p>
+          <div key={label} className="flex flex-wrap items-baseline justify-between gap-x-3 py-2 border-b border-linea">
+            <dt className="iv-etiqueta">{label}</dt>
+            <dd className="iv-cifra text-apoyo text-tinta ml-auto text-right break-all">{val}</dd>
           </div>
         ))}
-      </div>
+      </dl>
       {quote.description && (
-        <>
-          <div className="divider-soft my-4" />
-          <p className="text-xs text-tinta-3 leading-relaxed">{quote.description}</p>
-        </>
+        <p className="text-apoyo text-tinta-3 leading-relaxed mt-4 max-w-[80ch]">{quote.description}</p>
       )}
       {analysis?.fundamentals_view && (
-        <div className="mt-3 p-3 bg-fondo border border-linea rounded-iv">
-          <p className="label-small mb-1">Visión IA</p>
-          <p className="text-xs text-tinta leading-relaxed">{analysis.fundamentals_view}</p>
+        <div className="mt-4 pt-3 border-t border-linea">
+          <p className="iv-etiqueta mb-1">Visión IA</p>
+          <p className="text-apoyo text-tinta-2 leading-relaxed max-w-[75ch]">{analysis.fundamentals_view}</p>
         </div>
       )}
       {analysis?.insider_view && (
-        <div className="mt-3 p-3 bg-fondo border border-linea rounded-iv">
-          <p className="label-small mb-1">Insider Trading (directivos)</p>
-          <p className="text-xs text-tinta leading-relaxed">{analysis.insider_view}</p>
+        <div className="mt-4 pt-3 border-t border-linea">
+          <p className="iv-etiqueta mb-1">Insider Trading (directivos)</p>
+          <p className="text-apoyo text-tinta-2 leading-relaxed max-w-[75ch]">{analysis.insider_view}</p>
         </div>
       )}
       {analysis?.earnings_view && (
-        <div className="mt-3 p-3 bg-fondo border border-linea rounded-iv">
-          <p className="label-small mb-1">Historial de Resultados</p>
-          <p className="text-xs text-tinta leading-relaxed">{analysis.earnings_view}</p>
+        <div className="mt-4 pt-3 border-t border-linea">
+          <p className="iv-etiqueta mb-1">Historial de Resultados</p>
+          <p className="text-apoyo text-tinta-2 leading-relaxed max-w-[75ch]">{analysis.earnings_view}</p>
         </div>
       )}
     </section>
@@ -181,8 +187,8 @@ export function MarketSignalsCard({ insider, earningsHistory }) {
   if (!insider && !earningsHistory) return null;
   const isBuy = insider && insider.net_shares > 0;
   return (
-    <section data-testid="market-signals" className="iv-panel p-6 animate-fade-up">
-      <h3 className="font-heading font-semibold text-lg text-tinta mb-3">
+    <section data-testid="market-signals" className="iv-panel p-5">
+      <h3 className="font-heading text-cuerpo font-semibold text-tinta mb-3">
         Señales de Mercado
       </h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -190,18 +196,18 @@ export function MarketSignalsCard({ insider, earningsHistory }) {
           <div data-testid="insider-card" className="border border-linea rounded-iv p-4">
             <div className="flex items-center gap-2 mb-3">
               <Users size={14} weight="bold" className="text-marca" />
-              <p className="label-small">Insider Trading (6 meses)</p>
+              <p className="iv-etiqueta">Insider Trading (6 meses)</p>
             </div>
             <div className={`inline-flex px-2 py-1 rounded text-[11px] font-mono font-semibold mb-3 ${isBuy ? "bg-sube/10 text-sube" : "bg-baja/10 text-baja"}`}>
               {insider.signal}
             </div>
             <div className="flex gap-4 mb-3">
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-tinta-3">Compras</p>
+                <p className="iv-etiqueta">Compras</p>
                 <p className="font-mono text-sm text-sube font-semibold">{insider.buy_transactions}</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-tinta-3">Ventas</p>
+                <p className="iv-etiqueta">Ventas</p>
                 <p className="font-mono text-sm text-baja font-semibold">{insider.sell_transactions}</p>
               </div>
             </div>
@@ -221,7 +227,7 @@ export function MarketSignalsCard({ insider, earningsHistory }) {
           <div data-testid="earnings-card" className="border border-linea rounded-iv p-4">
             <div className="flex items-center gap-2 mb-3">
               <ChartLineUp size={14} weight="bold" className="text-marca" />
-              <p className="label-small">Historial Resultados (EPS)</p>
+              <p className="iv-etiqueta">Historial Resultados (EPS)</p>
             </div>
             <div className="inline-flex px-2 py-1 rounded text-[11px] font-mono font-semibold mb-3 bg-marca/10 text-marca">
               Bate estimaciones {earningsHistory.beat_rate}% ({earningsHistory.beats}/{earningsHistory.total})
@@ -252,19 +258,19 @@ export function MarketSignalsCard({ insider, earningsHistory }) {
 export function RisksCatalystsCard({ analysis }) {
   if (!analysis) return null;
   return (
-    <section data-testid="risks-catalysts" className="iv-panel p-6 animate-fade-up">
-      <h3 className="font-heading font-semibold text-lg text-tinta mb-3">
+    <section data-testid="risks-catalysts" className="iv-panel p-5">
+      <h3 className="font-heading text-cuerpo font-semibold text-tinta mb-3">
         Riesgos y Catalizadores
       </h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <div className="flex items-center gap-2 mb-2">
             <Warning size={14} weight="bold" className="text-baja" />
-            <p className="label-small">Riesgos</p>
+            <p className="iv-etiqueta">Riesgos</p>
           </div>
           <ul className="space-y-1.5">
             {(analysis.risks || []).map((r, i) => (
-              <li key={i} className="text-xs text-tinta pl-3 border-l-2 border-baja">
+              <li key={i} className="text-apoyo text-tinta leading-snug pl-3 border-l-2 border-baja/60">
                 {r}
               </li>
             ))}
@@ -273,11 +279,11 @@ export function RisksCatalystsCard({ analysis }) {
         <div>
           <div className="flex items-center gap-2 mb-2">
             <Lightning size={14} weight="bold" className="text-sube" />
-            <p className="label-small">Catalizadores</p>
+            <p className="iv-etiqueta">Catalizadores</p>
           </div>
           <ul className="space-y-1.5">
             {(analysis.catalysts || []).map((c, i) => (
-              <li key={i} className="text-xs text-tinta pl-3 border-l-2 border-sube">
+              <li key={i} className="text-apoyo text-tinta leading-snug pl-3 border-l-2 border-sube/60">
                 {c}
               </li>
             ))}
@@ -285,23 +291,23 @@ export function RisksCatalystsCard({ analysis }) {
         </div>
       </div>
       {analysis.technical_analysis && (
-        <div className="mt-4 p-3 bg-fondo border border-linea rounded-iv">
-          <p className="label-small mb-1">Análisis Técnico Detallado</p>
-          <p className="text-xs text-tinta leading-relaxed">{analysis.technical_analysis}</p>
+        <div className="mt-4 p-3 bg-superficie-alt rounded-iv">
+          <p className="iv-etiqueta mb-1">Análisis Técnico Detallado</p>
+          <p className="text-apoyo text-tinta-2 leading-relaxed">{analysis.technical_analysis}</p>
         </div>
       )}
       {(analysis.fibonacci_analysis || analysis.pattern_analysis) && (
         <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
           {analysis.fibonacci_analysis && (
-            <div className="p-3 bg-fondo border border-linea rounded-iv">
-              <p className="label-small mb-1">Fibonacci</p>
-              <p className="text-xs text-tinta leading-relaxed">{analysis.fibonacci_analysis}</p>
+            <div className="p-3 bg-superficie-alt rounded-iv">
+              <p className="iv-etiqueta mb-1">Fibonacci</p>
+              <p className="text-apoyo text-tinta-2 leading-relaxed">{analysis.fibonacci_analysis}</p>
             </div>
           )}
           {analysis.pattern_analysis && (
-            <div className="p-3 bg-fondo border border-linea rounded-iv">
-              <p className="label-small mb-1">Patrones Técnicos</p>
-              <p className="text-xs text-tinta leading-relaxed">{analysis.pattern_analysis}</p>
+            <div className="p-3 bg-superficie-alt rounded-iv">
+              <p className="iv-etiqueta mb-1">Patrones Técnicos</p>
+              <p className="text-apoyo text-tinta-2 leading-relaxed">{analysis.pattern_analysis}</p>
             </div>
           )}
         </div>

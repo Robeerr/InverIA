@@ -56,8 +56,38 @@ const LightweightChart = React.lazy(() => import("../components/LightweightChart
 // esto, al aparecer empujaría hacia abajo todo lo que hubiera debajo.
 function HuecoGrafico() {
   return (
-    <div className="iv-panel p-3" style={{ height: 516 }} aria-busy="true">
-      <div className="h-full w-full rounded bg-superficie-alt animate-pulse" />
+    <div className="iv-panel p-3" style={{ height: 516 }} aria-busy="true" aria-label="Cargando el gráfico">
+      <div className="h-full w-full rounded-iv bg-superficie-alt animate-pulse motion-reduce:animate-none" />
+    </div>
+  );
+}
+
+/** Esqueleto de la cabecera mientras llega la primera respuesta. Ocupa lo mismo que
+ *  QuoteHeader (ticker a la izquierda, precio a la derecha, fila de datos del día), así
+ *  que al llegar el precio no salta nada de sitio. */
+function CabeceraCargando() {
+  const barra = "rounded-iv-sm bg-superficie-alt animate-pulse motion-reduce:animate-none";
+  return (
+    <div className="pt-1" aria-busy="true" role="status">
+      <span className="sr-only">Cargando datos…</span>
+      <div className="flex items-start justify-between gap-6">
+        <div className="space-y-2">
+          <div className={`${barra} h-7 w-24`} />
+          <div className={`${barra} h-4 w-44`} />
+        </div>
+        <div className="space-y-2 flex flex-col items-end">
+          <div className={`${barra} h-10 w-36`} />
+          <div className={`${barra} h-4 w-24`} />
+        </div>
+      </div>
+      <div className="mt-6 pt-4 border-t border-linea grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        {[0, 1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="space-y-1.5">
+            <div className={`${barra} h-3 w-16`} />
+            <div className={`${barra} h-4 w-20`} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -417,9 +447,29 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
           Lo único de la página que cambia en tiempo real. Por eso va arriba y va solo:
           todo lo que hay debajo es una foto del momento en que se ensambló el dashboard. */}
       {loadingQuote && !quote ? (
-        <div className="iv-panel p-8 text-center text-tinta-3">Cargando datos...</div>
+        <CabeceraCargando />
       ) : quote ? (
         <QuoteHeader quote={quote} />
+      ) : sym && (consultaDashboard.isError || datos) && !esCancelada(errorDashboard) ? (
+        // Sin cotización tras cargar: antes la página se quedaba en blanco debajo del
+        // aviso flotante, que desaparece a los pocos segundos. El texto se queda.
+        <div className="iv-panel p-5" role="alert">
+          <p className="text-cuerpo font-medium text-tinta">No se han podido cargar los datos de {sym}.</p>
+          <p className="text-apoyo text-tinta-3 mt-1 max-w-[60ch]">
+            Las fuentes de datos no han respondido a tiempo o el símbolo no existe. Vuelve a
+            intentarlo en unos segundos.
+          </p>
+          <button
+            type="button"
+            onClick={() => consultaDashboard.refetch()}
+            disabled={consultaDashboard.isFetching}
+            className="mt-3 text-apoyo font-medium px-3 py-1.5 rounded-iv border border-linea-fuerte text-tinta
+                       hover:border-marca hover:text-marca disabled:opacity-50
+                       transition-colors duration-150 motion-reduce:transition-none"
+          >
+            {consultaDashboard.isFetching ? "Reintentando…" : "Reintentar"}
+          </button>
+        </div>
       ) : null}
 
       <Seccion titulo="Veredicto" nota="Lectura determinista, sin pulsar nada">

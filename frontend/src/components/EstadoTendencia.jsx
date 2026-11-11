@@ -100,16 +100,16 @@ export default function EstadoTendencia({ estado, motivo, soportes, symbol }) {
   return (
     <section
       data-testid="estado-tendencia"
-      className={`iv-panel p-6 animate-fade-up border-l-[3px] ${borde}`}
+      className={`iv-panel p-5 sm:p-6 border-l-[3px] ${borde}`}
     >
       <div className="flex items-start gap-3">
-        <Icono size={22} weight="bold" className={`${texto} shrink-0 mt-0.5`} />
+        <Icono size={22} weight="bold" className={`${texto} shrink-0 mt-0.5`} aria-hidden="true" />
         <div className="min-w-0">
-          <h3 className="font-heading font-bold text-xl text-tinta">
+          <h3 className="font-heading text-titulo text-tinta">
             {bloqueada ? "No comprar" : "En seguimiento"}
           </h3>
-          <p className="text-cuerpo text-tinta-2 mt-1.5 leading-relaxed">{motivo}</p>
-          <p className="text-apoyo text-tinta-3 mt-3 leading-relaxed">
+          <p className="text-cuerpo text-tinta mt-1.5 leading-relaxed max-w-[68ch]">{motivo}</p>
+          <p className="text-apoyo text-tinta-3 mt-3 leading-relaxed max-w-[68ch]">
             No se muestran zonas de compra porque un soporte, por sí solo, no es una
             oportunidad: indica dónde podría pararse el precio, no que convenga comprar
             ahí.
@@ -121,33 +121,32 @@ export default function EstadoTendencia({ estado, motivo, soportes, symbol }) {
               onClick={vigilar}
               disabled={vigilando || vigilada}
               title="Recibirás un aviso en Telegram cuando esta acción vuelva a tendencia alcista"
-              className={`mt-4 flex items-center gap-1.5 px-3 py-2 text-apoyo transition-colors ${
+              aria-live="polite"
+              className={`mt-4 flex items-center gap-1.5 px-3 py-2 rounded-iv text-apoyo font-medium
+                          transition-[color,border-color,background-color,transform] duration-150 motion-reduce:transition-none ${
                 vigilada
                   ? "border border-sube/40 text-sube bg-sube/10"
-                  : "border border-linea-fuerte text-tinta hover:border-marca hover:text-marca disabled:opacity-50"
+                  : "border border-linea-fuerte text-tinta hover:border-marca/60 hover:text-marca active:scale-[0.97] disabled:opacity-50"
               }`}
             >
               {vigilada
-                ? <><Check size={14} /> Te avisaré cuando se pueda comprar</>
-                : <><BellSimple size={14} /> Avísame cuando se pueda comprar</>}
+                ? <><Check size={14} aria-hidden="true" /> Te avisaré cuando se pueda comprar</>
+                : <><BellSimple size={14} aria-hidden="true" /> Avísame cuando se pueda comprar</>}
             </button>
           )}
 
           {/* Los soportes siguen siendo información técnica válida. Se enseñan como lo
               que son —estructura— y sin etiqueta de compra, precio ni plan. */}
           {Array.isArray(soportes) && soportes.length > 0 && (
-            <div className="mt-4">
+            <div className="mt-5 pt-4 border-t border-linea">
               <p className="iv-etiqueta mb-1.5">Soportes técnicos</p>
-              <div className="flex flex-wrap gap-1.5">
+              <ul className="flex flex-wrap gap-x-5 gap-y-1">
                 {soportes.slice(0, 4).map((s) => (
-                  <span
-                    key={s}
-                    className="iv-cifra text-apoyo text-tinta-2 bg-superficie-alt border border-linea rounded-iv-sm px-2 py-0.5"
-                  >
+                  <li key={s} className="iv-cifra text-apoyo text-tinta-2">
                     ${typeof s === "number" ? s.toFixed(2) : s}
-                  </span>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </div>
           )}
         </div>

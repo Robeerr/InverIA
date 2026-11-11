@@ -43,7 +43,7 @@ function Componente({ c }) {
       </div>
       <div className="mt-1"><Barra puntos={c.puntos} maximo={c.maximo} /></div>
       {c.detalle && (
-        <p className="text-[10px] text-tinta-3 mt-0.5 leading-snug">{c.detalle}</p>
+        <p className="text-etiqueta text-tinta-3 mt-0.5 leading-snug">{c.detalle}</p>
       )}
     </div>
   );
@@ -92,7 +92,7 @@ export default function Score({ symbol, children }) {
         {/* El chip no parecía pulsable: se veía como una etiqueta más. Este rótulo lo
             dice, y cambia con el estado para que se sepa que se puede volver a cerrar.
             Va aquí y no en la tarjeta porque depende de `abierto`. */}
-        <span className="block text-[9px] text-tinta-3 mt-0.5 text-right
+        <span className="block text-etiqueta text-tinta-3 mt-0.5 text-right
                          group-hover:text-marca transition-colors">
           {abierto ? "ocultar ▴" : "ver desglose ▾"}
         </span>
@@ -123,7 +123,7 @@ export default function Score({ symbol, children }) {
           {estado === "listo" && d && (
             <>
               <div className="flex items-baseline justify-between gap-2 pb-1.5 mb-1 border-b border-linea">
-                <span className="text-[9.5px] font-mono uppercase tracking-wider text-tinta-3">
+                <span className="text-etiqueta font-mono uppercase tracking-wider text-tinta-3">
                   De dónde salen los puntos
                 </span>
                 <span className="text-[10.5px] font-mono text-tinta-3">
@@ -147,7 +147,7 @@ export default function Score({ symbol, children }) {
                     </span>
                   </div>
                   {d.motivo_multiplicador && (
-                    <p className="text-[10px] text-tinta-3 mt-0.5 leading-snug">
+                    <p className="text-etiqueta text-tinta-3 mt-0.5 leading-snug">
                       {d.motivo_multiplicador}
                     </p>
                   )}
@@ -155,13 +155,13 @@ export default function Score({ symbol, children }) {
               )}
 
               {d.recortado && (
-                <p className="text-[10px] text-tinta-3 mt-2 leading-snug">
+                <p className="text-etiqueta text-tinta-3 mt-2 leading-snug">
                   La suma pasaba de 100 y se ha recortado al tope.
                 </p>
               )}
 
               {datos.generado_en && (
-                <p className="text-[9.5px] font-mono text-tinta-3 mt-2 pt-2 border-t border-linea">
+                <p className="text-etiqueta font-mono text-tinta-3 mt-2 pt-2 border-t border-linea">
                   del escaneo de las {new Date(datos.generado_en).toLocaleTimeString("es-ES",
                     { hour: "2-digit", minute: "2-digit" })}
                 </p>

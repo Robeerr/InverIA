@@ -254,7 +254,7 @@ export default function LightweightChart({ candles, buyLevels, lines, timeframe,
             {tf}
           </button>
         ))}
-        <span className="text-[10px] text-tinta-3 ml-auto">TradingView Lightweight</span>
+        <span className="text-etiqueta text-tinta-3 ml-auto">TradingView Lightweight</span>
       </div>
       <div ref={boxRef} style={{ width: "100%", height: 460 }} />
       {lines?.pattern && (
@@ -263,13 +263,13 @@ export default function LightweightChart({ candles, buyLevels, lines, timeframe,
             <span className={`px-1.5 py-0.5 rounded font-mono font-semibold ${lines.pattern.sentido === "alcista" ? "bg-sube/10 text-sube" : lines.pattern.sentido === "bajista" ? "bg-baja/10 text-baja" : "bg-fondo text-tinta-3"}`}>
               {lines.pattern.nombre}
             </span>
-            <span className="px-1.5 py-0.5 rounded bg-fondo text-tinta-3 text-[9px] font-mono uppercase tracking-wide shrink-0">auto</span>
+            <span className="px-1.5 py-0.5 rounded bg-fondo text-tinta-3 text-etiqueta font-mono uppercase tracking-wide shrink-0">auto</span>
             <span className="text-tinta-3 flex-1">{lines.pattern.descripcion}</span>
           </div>
-          <p className="text-[10px] text-tinta-3 italic">Detección automática por geometría (puede fallar). El veredicto fiable lo da el Chartista IA de abajo.</p>
+          <p className="text-etiqueta text-tinta-3 italic">Detección automática por geometría (puede fallar). El veredicto fiable lo da el Chartista IA de abajo.</p>
         </div>
       )}
-      <p className="text-[10px] text-tinta-3 mt-2">Diagonales: directrices · Azul: zonas de compra · Verde/rojo punteado: soporte/resistencia · SMA 50 (azul) / 200 (dorado).</p>
+      <p className="text-etiqueta text-tinta-3 mt-2">Diagonales: directrices · Azul: zonas de compra · Verde/rojo punteado: soporte/resistencia · SMA 50 (azul) / 200 (dorado).</p>
     </div>
   );
 }

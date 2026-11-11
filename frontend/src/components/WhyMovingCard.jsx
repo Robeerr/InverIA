@@ -60,32 +60,37 @@ export default function WhyMovingCard({ symbol, model, runSignal }) {
   const pct = data?.change_percent;
 
   return (
-    <section data-testid="why-moving" className="iv-panel p-6 animate-fade-up">
+    <section data-testid="why-moving" className="iv-panel p-5" aria-busy={loading}>
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Lightning size={18} weight="bold" className="text-marca" />
-          <h3 className="font-heading font-semibold text-lg text-tinta">¿Por qué se mueve hoy?</h3>
-        </div>
+        <h3 className="font-heading text-cuerpo font-semibold text-tinta flex items-center gap-2">
+          <Lightning size={16} weight="bold" className="text-marca" aria-hidden="true" />
+          ¿Por qué se mueve hoy?
+        </h3>
+        {/* Botón secundario de contorno, igual que el del Chartista: en esta sección el
+            único botón relleno es «Generar análisis». Tres naranjas sólidos seguidos no
+            dejaban saber cuál era el principal. */}
         <button
           data-testid="why-moving-btn"
           onClick={run}
           disabled={loading || !symbol}
-          className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-iv bg-marca text-marca-tinta hover:bg-marca/60 disabled:opacity-50 transition-colors"
+          className="inline-flex items-center gap-1.5 text-etiqueta font-mono font-semibold px-3 py-1.5 rounded-iv
+                     border border-marca/50 text-marca hover:bg-marca/10 active:scale-[0.97] disabled:opacity-50
+                     transition-[background-color,transform] duration-150 motion-reduce:transition-none"
         >
-          <Sparkle size={14} weight="bold" />
+          <Sparkle size={14} weight="bold" aria-hidden="true" />
           {loading ? "Analizando…" : data ? "Actualizar" : "Explicar movimiento"}
         </button>
       </div>
 
       {!data && !loading && (
-        <p className="text-sm text-tinta-3 mt-3">
+        <p className="text-apoyo text-tinta-2 mt-2 max-w-[68ch]">
           La IA conecta el movimiento de hoy de <span className="font-mono font-semibold text-tinta">{symbol}</span> con las
           noticias recientes y te dice, en segundos, qué hay detrás de la subida o caída.
         </p>
       )}
 
       {loading && (
-        <p className="text-sm text-tinta-3 mt-4 animate-pulse">Leyendo noticias y conectando con el precio…</p>
+        <p className="text-apoyo text-tinta-3 mt-3 animate-pulse motion-reduce:animate-none" role="status">Leyendo noticias y conectando con el precio…</p>
       )}
 
       {data && exp && (
@@ -95,7 +100,7 @@ export default function WhyMovingCard({ symbol, model, runSignal }) {
               {verdict.label}
             </span>
             {pct != null && (
-              <span className={`font-mono text-sm font-semibold ${pct >= 0 ? "text-sube" : "text-baja"}`}>
+              <span className={`iv-cifra text-apoyo font-semibold ${pct >= 0 ? "text-sube" : "text-baja"}`}>
                 {pct >= 0 ? "+" : ""}{fmtPct(pct)}
               </span>
             )}
@@ -107,14 +112,14 @@ export default function WhyMovingCard({ symbol, model, runSignal }) {
           )}
 
           {exp.resumen && (
-            <p className="text-sm text-tinta-2 leading-relaxed border-l-2 border-marca pl-3">{exp.resumen}</p>
+            <p className="text-apoyo text-tinta-2 leading-relaxed max-w-[70ch]">{exp.resumen}</p>
           )}
 
           {Array.isArray(exp.factores) && exp.factores.length > 0 && (
             <ul className="space-y-1.5">
               {exp.factores.filter(Boolean).map((f, i) => (
-                <li key={i} className="text-sm text-tinta-2 flex gap-2">
-                  <span className="text-marca font-bold shrink-0">·</span>
+                <li key={i} className="text-apoyo text-tinta-2 flex gap-2 max-w-[70ch]">
+                  <span className="text-tinta-3 font-bold shrink-0" aria-hidden="true">·</span>
                   <span>{f}</span>
                 </li>
               ))}
@@ -123,12 +128,12 @@ export default function WhyMovingCard({ symbol, model, runSignal }) {
 
           <div className="flex items-center justify-between flex-wrap gap-2 pt-1">
             {exp.tipo_movimiento && (
-              <span className="text-[11px] text-tinta-3">
+              <span className="text-etiqueta text-tinta-3">
                 {MOVE_TYPE[(exp.tipo_movimiento || "").toUpperCase()] || exp.tipo_movimiento}
               </span>
             )}
             {data.model && (
-              <span className="text-[10px] uppercase tracking-wider text-tinta-3 font-mono">
+              <span className="iv-etiqueta">
                 {data.model}{data.fellback ? " (fallback)" : ""}
               </span>
             )}
@@ -136,12 +141,12 @@ export default function WhyMovingCard({ symbol, model, runSignal }) {
 
           {Array.isArray(data.news) && data.news.length > 0 && (
             <div className="pt-2 border-t border-linea">
-              <p className="label-small flex items-center gap-1 mb-2">
-                <Newspaper size={12} /> Noticias usadas
+              <p className="iv-etiqueta flex items-center gap-1 mb-2">
+                <Newspaper size={12} aria-hidden="true" /> Noticias usadas
               </p>
               <ul className="space-y-1">
                 {data.news.slice(0, 3).map((n, i) => (
-                  <li key={i} className="text-xs text-tinta-3 truncate">
+                  <li key={i} className="text-etiqueta text-tinta-3 truncate">
                     {n.url ? (
                       <a href={n.url} target="_blank" rel="noopener noreferrer" className="hover:text-marca hover:underline">
                         {n.title}

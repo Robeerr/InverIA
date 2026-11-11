@@ -25,12 +25,12 @@ export function AlternativePanel({ symbol, onPick }) {
   }, [symbol]);
   if (!d || !(d.alternativas || []).length) return null;
   return (
-    <section className="iv-panel p-5 animate-fade-up">
-      <div className="flex items-center gap-2 mb-1">
-        <ArrowFatRight size={18} weight="fill" className="text-aviso" />
-        <h3 className="font-heading font-semibold text-base text-tinta">Alternativa en {d.grupo || d.sector}</h3>
-      </div>
-      <p className="text-etiqueta text-tinta-3 mb-3">
+    <section className="iv-panel p-5">
+      <h3 className="font-heading text-cuerpo font-semibold text-tinta flex items-center gap-2 mb-1">
+        <ArrowFatRight size={16} weight="fill" className="text-aviso shrink-0" aria-hidden="true" />
+        Alternativa en {d.grupo || d.sector}
+      </h3>
+      <p className="text-apoyo text-tinta-3 mb-3">
         {d.industry && d.grupo === d.industry
           ? `Del mismo sector (${d.industry}) con mejor potencial que ${d.symbol}:`
           : `Del mismo sector con mejor potencial que ${d.symbol}:`}
@@ -41,7 +41,7 @@ export function AlternativePanel({ symbol, onPick }) {
             del borde se conserva; en un div funciona igual. */}
         {d.alternativas.map((a) => (
           <div key={a.symbol}
-            className="flex items-start justify-between gap-2 px-3 py-2 rounded-iv border border-linea hover:border-aviso transition-colors">
+            className="flex items-start justify-between gap-2 px-3 py-2.5 rounded-iv border border-linea hover:border-aviso transition-colors duration-150 motion-reduce:transition-none">
             {/* `flex-1` y `self-stretch` no son adorno: sin ellos el boton se dimensiona
                 a su contenido —el ticker y el nombre— y el resto de la fila queda muerto.
                 Antes toda la fila era el boton, asi que pulsar en el hueco central
@@ -56,7 +56,7 @@ export function AlternativePanel({ symbol, onPick }) {
                 y el desglose salen idénticos. El verde es fijo aquí a propósito: una
                 alternativa se enseña PORQUE supera a la que estás mirando. */}
             <Score symbol={a.symbol}>
-              <span className="text-sm font-mono font-bold text-sube">{a.potential_score} pts</span>
+              <span className="iv-cifra text-apoyo font-bold text-sube">{a.potential_score} pts</span>
               {typeof a.revenue_growth === "number" && (
                 <span className="block text-etiqueta text-tinta-3 text-right">ventas +{Math.round(a.revenue_growth)}%</span>
               )}

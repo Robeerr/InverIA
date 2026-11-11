@@ -47,13 +47,14 @@ function ModelSelector({ model, setModel, disabled }) {
   if (!setModel) return null;
   return (
     <div className="mb-3">
-      <label className="label-small mb-1 block">Modelo de IA (todos gratis)</label>
+      <label htmlFor="selector-modelo-ia" className="iv-etiqueta mb-1.5 block">Modelo de IA (todos gratis)</label>
       <select
+        id="selector-modelo-ia"
         data-testid="model-selector"
         value={model}
         onChange={(e) => setModel(e.target.value)}
         disabled={disabled}
-        className="w-full bg-fondo border border-linea rounded-iv px-3 py-2 font-mono text-sm text-tinta focus:outline-none focus:border-marca disabled:opacity-50"
+        className="w-full bg-fondo border border-linea rounded-iv px-3 py-2 font-mono text-base sm:text-apoyo text-tinta focus:outline-none focus:border-marca disabled:opacity-50"
       >
         {FREE_MODELS.map((m) => (
           <option key={m.id} value={m.id}>{etiquetas[m.id] || m.label}</option>
@@ -91,11 +92,11 @@ function ConfidenceBar({ value }) {
   return (
     <div className="w-full">
       <div className="flex items-center justify-between mb-1">
-        <span className="label-small">Confianza</span>
-        <span data-testid="confidence-value" className="font-mono text-sm font-semibold text-tinta">{v}%</span>
+        <span className="iv-etiqueta">Confianza</span>
+        <span data-testid="confidence-value" className="iv-cifra text-apoyo font-semibold text-tinta">{v}%</span>
       </div>
-      <div className="h-1.5 bg-linea rounded-full overflow-hidden">
-        <div className={`h-full ${color} transition-all`} style={{ width: `${v}%` }} />
+      <div className="h-1.5 bg-linea rounded-full overflow-hidden" aria-hidden="true">
+        <div className={`h-full ${color}`} style={{ width: `${v}%` }} />
       </div>
     </div>
   );
@@ -104,49 +105,49 @@ function ConfidenceBar({ value }) {
 export default function RecommendationPanel({ analysis, isLoading, onAnalyze, model, setModel }) {
   if (!analysis && !isLoading) {
     return (
-      <section data-testid="recommendation-panel-empty" className="iv-panel p-6">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="w-8 h-8 rounded-iv bg-marca text-marca-tinta flex items-center justify-center">
-            <Brain size={18} weight="bold" />
-          </div>
-          <h3 className="font-heading font-semibold text-lg text-tinta">
-            Análisis con IA
-          </h3>
-        </div>
-        <p className="text-sm text-tinta-3 mb-4">
+      <section data-testid="recommendation-panel-empty" className="iv-panel p-5">
+        <h3 className="font-heading text-cuerpo font-semibold text-tinta flex items-center gap-2">
+          <Brain size={16} weight="bold" className="text-marca" aria-hidden="true" />
+          Análisis con IA
+        </h3>
+        <p className="text-apoyo text-tinta-2 mt-1 mb-4 max-w-[64ch]">
           Genera una recomendación de compra/venta con niveles precisos basada en los datos en vivo y análisis técnico.
         </p>
-        <ModelSelector model={model} setModel={setModel} />
-        <Button
-          data-testid="run-analysis-btn"
-          onClick={onAnalyze}
-          className="w-full bg-marca hover:bg-tinta text-marca-tinta font-mono"
-        >
-          <Lightning size={16} weight="bold" className="mr-2" />
-          Generar análisis
-        </Button>
+        {/* Selector y botón en la misma fila en escritorio: el botón a todo el ancho
+            pesaba más que el veredicto de arriba, y esto es una acción opcional. */}
+        <div className="flex flex-col sm:flex-row sm:items-end gap-x-3">
+          <div className="sm:flex-1 sm:max-w-sm">
+            <ModelSelector model={model} setModel={setModel} />
+          </div>
+          <Button
+            data-testid="run-analysis-btn"
+            onClick={onAnalyze}
+            className="w-full sm:w-auto mb-3 bg-marca text-marca-tinta font-mono font-semibold
+                       hover:bg-marca hover:brightness-110 active:scale-[0.97]
+                       transition-[filter,transform] duration-150 motion-reduce:transition-none"
+          >
+            <Lightning size={16} weight="bold" className="mr-2" aria-hidden="true" />
+            Generar análisis
+          </Button>
+        </div>
       </section>
     );
   }
 
   if (isLoading) {
     return (
-      <section data-testid="recommendation-loading" className="iv-panel p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-8 h-8 rounded-iv bg-marca text-marca-tinta flex items-center justify-center animate-pulse">
-            <Brain size={18} weight="bold" />
-          </div>
-          <h3 className="font-heading font-semibold text-lg text-tinta">
-            Generando análisis...
-          </h3>
+      <section data-testid="recommendation-loading" className="iv-panel p-5" aria-busy="true">
+        <h3 className="font-heading text-cuerpo font-semibold text-tinta flex items-center gap-2 mb-4">
+          <Brain size={16} weight="bold" className="text-marca animate-pulse motion-reduce:animate-none" aria-hidden="true" />
+          Generando análisis...
+        </h3>
+        <div className="space-y-3" aria-hidden="true">
+          <div className="h-4 bg-superficie-alt rounded animate-pulse motion-reduce:animate-none" />
+          <div className="h-4 bg-superficie-alt rounded animate-pulse motion-reduce:animate-none w-3/4" />
+          <div className="h-20 bg-superficie-alt rounded animate-pulse motion-reduce:animate-none" />
+          <div className="h-4 bg-superficie-alt rounded animate-pulse motion-reduce:animate-none" />
         </div>
-        <div className="space-y-3">
-          <div className="h-4 bg-linea rounded animate-pulse" />
-          <div className="h-4 bg-linea rounded animate-pulse w-3/4" />
-          <div className="h-20 bg-linea rounded animate-pulse" />
-          <div className="h-4 bg-linea rounded animate-pulse" />
-        </div>
-        <p className="text-xs text-tinta-3 mt-4 text-center">
+        <p className="text-etiqueta text-tinta-3 mt-4" role="status">
           {modelLabel(model)} está analizando datos técnicos y fundamentales...
         </p>
       </section>
@@ -154,13 +155,11 @@ export default function RecommendationPanel({ analysis, isLoading, onAnalyze, mo
   }
 
   return (
-    <section data-testid="recommendation-panel" className="iv-panel p-6 animate-fade-up">
+    <section data-testid="recommendation-panel" className="iv-panel p-5 sm:p-6">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-iv bg-marca text-marca-tinta flex items-center justify-center">
-            <Brain size={18} weight="bold" />
-          </div>
-          <h3 className="font-heading font-semibold text-lg text-tinta">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h3 className="font-heading text-cuerpo font-semibold text-tinta flex items-center gap-2">
+            <Brain size={16} weight="bold" className="text-marca" aria-hidden="true" />
             Recomendación IA
           </h3>
           {analysis._ai_tier && <TierBadge tier={analysis._ai_tier} model={analysis._ai_model} />}
@@ -170,31 +169,30 @@ export default function RecommendationPanel({ analysis, isLoading, onAnalyze, mo
 
       <ConfidenceBar value={analysis.confidence} />
 
-      <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-        <div className="bg-fondo border border-linea rounded-iv px-2 py-2">
-          <p className="label-small">Tendencia</p>
-          <p data-testid="trend" className="font-mono text-xs font-semibold mt-1 text-tinta">{analysis.trend}</p>
+      {/* Tres datos en una fila con filetes, sin una caja por dato. */}
+      <dl className="mt-4 grid grid-cols-3 divide-x divide-linea border-y border-linea">
+        <div className="pr-3 py-2.5 min-w-0">
+          <dt className="iv-etiqueta">Tendencia</dt>
+          <dd data-testid="trend" className="font-mono text-apoyo font-semibold mt-0.5 text-tinta truncate">{analysis.trend}</dd>
         </div>
-        <div className="bg-fondo border border-linea rounded-iv px-2 py-2">
-          <p className="label-small">Horizonte</p>
-          <p className="font-mono text-xs font-semibold mt-1 text-tinta">{analysis.timeframe?.replace("_", " ")}</p>
+        <div className="px-3 py-2.5 min-w-0">
+          <dt className="iv-etiqueta">Horizonte</dt>
+          <dd className="font-mono text-apoyo font-semibold mt-0.5 text-tinta truncate">{analysis.timeframe?.replace("_", " ")}</dd>
         </div>
-        <div className="bg-fondo border border-linea rounded-iv px-2 py-2">
-          <p className="label-small">R/R</p>
-          <p data-testid="risk-reward" className="font-mono text-xs font-semibold mt-1 text-tinta">
+        <div className="px-3 py-2.5 min-w-0">
+          <dt className="iv-etiqueta">R/R</dt>
+          <dd data-testid="risk-reward" className="iv-cifra text-apoyo font-semibold mt-0.5 text-tinta">
             {analysis.risk_reward_ratio ? `1:${analysis.risk_reward_ratio}` : "—"}
-          </p>
+          </dd>
         </div>
-      </div>
+      </dl>
 
-      <p data-testid="analysis-summary" className="text-sm text-tinta mt-4 leading-relaxed">
+      <p data-testid="analysis-summary" className="text-apoyo text-tinta-2 mt-4 leading-relaxed max-w-[70ch]">
         {analysis.summary}
       </p>
 
-      <div className="divider-soft my-5" />
-
-      <h4 className="label-small mb-3">Niveles Operativos</h4>
-      <div className="space-y-2">
+      <h4 className="iv-etiqueta mt-5 mb-1">Niveles operativos</h4>
+      <div className="divide-y divide-linea">
         {analysis.entry_zone && (
           <LevelRow
             icon={<Target size={14} weight="bold" />}
@@ -233,13 +231,16 @@ export default function RecommendationPanel({ analysis, isLoading, onAnalyze, mo
         )}
       </div>
 
-      <div className="mt-5">
-        <ModelSelector model={model} setModel={setModel} />
+      <div className="mt-5 pt-4 border-t border-linea flex flex-col sm:flex-row sm:items-end gap-x-3">
+        <div className="sm:flex-1 sm:max-w-sm">
+          <ModelSelector model={model} setModel={setModel} />
+        </div>
         <Button
           data-testid="rerun-analysis-btn"
           onClick={onAnalyze}
           variant="outline"
-          className="w-full border-linea hover:bg-linea font-mono text-xs"
+          className="w-full sm:w-auto mb-3 border-linea-fuerte hover:border-marca/60 hover:bg-marca/10 font-mono text-xs
+                     transition-colors duration-150 motion-reduce:transition-none"
         >
           Re-analizar con {modelLabel(model)}
         </Button>
@@ -255,12 +256,12 @@ function LevelRow({ icon, label, value, tone, testId }) {
     neutral: "text-tinta",
   };
   return (
-    <div data-testid={testId} className="flex items-center justify-between py-2 px-3 bg-fondo border border-linea rounded-iv">
-      <span className={`flex items-center gap-2 text-xs ${colors[tone]} font-medium`}>
-        {icon}
+    <div data-testid={testId} className="flex flex-wrap items-center justify-between gap-x-3 py-2">
+      <span className="flex items-center gap-2 text-apoyo text-tinta-2">
+        <span className={colors[tone]} aria-hidden="true">{icon}</span>
         {label}
       </span>
-      <span className={`font-mono text-sm font-semibold ${colors[tone]}`}>{value}</span>
+      <span className={`iv-cifra text-apoyo font-semibold ml-auto text-right ${colors[tone]}`}>{value}</span>
     </div>
   );
 }
