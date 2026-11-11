@@ -24,6 +24,12 @@ const grupoOf = (e) => e.grupo || "ideas_javi"; // entradas antiguas → Cartera
 const fmtP = (v) => (v != null && v !== "" ? `$${Number(v).toFixed(2)}` : "—");
 const fmtPct = (v) => (v != null ? `${Number(v).toFixed(2)}%` : "—");
 
+// ── estilos compartidos (solo presentación) ──────────────────────────────────
+// Transición corta de color/borde; se apaga con «reducir movimiento».
+const TRANS = "transition-colors duration-150 ease-out motion-reduce:transition-none";
+const BOTON_SEC = `inline-flex items-center gap-1.5 px-3 py-2 rounded-iv border border-linea-fuerte text-sm text-tinta-2 hover:border-marca hover:text-marca active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none transition-[color,border-color,transform] duration-150 ease-out motion-reduce:transition-none`;
+const BOTON_PRI = "inline-flex items-center gap-1.5 px-4 py-2 rounded-iv bg-marca text-marca-tinta text-sm font-semibold hover:bg-marca/90 active:scale-[0.98] disabled:opacity-50 transition-[background-color,transform] duration-150 ease-out motion-reduce:transition-none";
+
 
 // Pre-market / after-hours info for an entry (from the quote the worker stores)
 function extendedInfo(e) {
@@ -57,7 +63,7 @@ function ExtendedBadge({ entry }) {
     <div className="flex flex-col gap-0.5">
       {dailyPct != null && (
         <div
-          className={`text-[10px] font-mono ${dayUp ? "text-sube" : "text-baja"}`}
+          className={`text-[11px] font-mono tabular-nums ${dayUp ? "text-sube" : "text-baja"}`}
           title="Variación sesión regular vs cierre anterior"
         >
           {dayUp ? "+" : ""}{dailyPct.toFixed(2)}% hoy
@@ -65,7 +71,7 @@ function ExtendedBadge({ entry }) {
       )}
       {ext && (
         <div
-          className={`text-[10px] font-mono ${ahUp ? "text-sube" : "text-baja"}`}
+          className={`text-[11px] font-mono tabular-nums ${ahUp ? "text-sube" : "text-baja"}`}
           title={`${ext.label === "PRE" ? "Pre-market" : "After-hours"} vs cierre regular`}
         >
           {ext.label} ${Number(ext.price).toFixed(2)}{ahPct != null ? ` (${ahUp ? "+" : ""}${ahPct.toFixed(2)}%)` : ""}
@@ -152,7 +158,7 @@ function PnlText({ abs, pct, size = "sm", eur = null, tasa = null }) {
             : hayEur
               ? "Exacto: cada compra convertida al tipo de cambio de su fecha y el valor de hoy al de hoy."
               : undefined}>
-      <span className={`font-mono font-bold ${size === "sm" ? "text-sm" : "text-base"} ${color}`}>
+      <span className={`font-mono tabular-nums font-bold ${size === "sm" ? "text-sm" : "text-base"} ${color}`}>
         {aprox && <span className="opacity-60">≈ </span>}
         {up ? "+" : "−"}{Math.abs(principal).toLocaleString("es-ES", { maximumFractionDigits: 0 })}
         {enEuros ? " €" : " $"}
@@ -163,7 +169,7 @@ function PnlText({ abs, pct, size = "sm", eur = null, tasa = null }) {
       {/* La divisa original, en pequeño: sirve para cuadrar con la pantalla del bróker,
           que la muestra en dólares. */}
       {enEuros && abs != null && (
-        <span className="font-mono text-[10px] text-tinta-2">
+        <span className="font-mono tabular-nums text-[11px] text-tinta-2">
           {abs >= 0 ? "+" : "−"}${eur0(Math.abs(abs))}
         </span>
       )}
@@ -266,34 +272,34 @@ function CorrelationCard() {
 
   const nivel = corrNivel(data?.avg_corr);
   return (
-    <div className="rounded-iv-lg border border-linea bg-superficie p-4">
-      <div className="flex items-center justify-between gap-2 mb-1">
-        <p className="text-[11px] uppercase tracking-wide text-tinta-3 font-mono">Correlación (concentración oculta)</p>
+    <section className="iv-panel p-5" aria-labelledby="correlacion-titulo" aria-busy={loading}>
+      <div className="flex items-center justify-between gap-3 mb-1.5">
+        <h2 id="correlacion-titulo" className="iv-etiqueta">Correlación (concentración oculta)</h2>
         <button onClick={run} disabled={loading}
-          className="px-2.5 py-1 rounded text-[11px] font-mono font-semibold bg-marca text-marca-tinta disabled:opacity-50">
+          className={done ? `${BOTON_SEC} py-1.5 text-etiqueta` : `${BOTON_PRI} px-3 py-1.5 text-etiqueta`}>
           {loading ? "Calculando…" : done ? "Recalcular" : "Analizar"}
         </button>
       </div>
       {!done && !loading && (
-        <p className="text-xs text-tinta-3">Mide si tus acciones se mueven a la vez (aunque sean de sectores distintos). Si están muy correlacionadas, una caída del mercado te afecta a todas por igual.</p>
+        <p className="text-apoyo text-tinta-2 max-w-[75ch] leading-relaxed">Mide si tus acciones se mueven a la vez (aunque sean de sectores distintos). Si están muy correlacionadas, una caída del mercado te afecta a todas por igual.</p>
       )}
-      {data?.message && <p className="text-xs text-tinta-2 mt-1">{data.message}</p>}
+      {data?.message && <p className="text-apoyo text-tinta-2 mt-1">{data.message}</p>}
       {done && data && data.avg_corr != null && (
-        <div className="space-y-2 mt-1">
-          <div className="flex items-baseline gap-2">
-            <span className="font-mono font-bold text-lg text-tinta">{data.avg_corr}</span>
-            <span className={`text-xs font-semibold ${nivel.cls}`}>{nivel.txt}</span>
+        <div className="space-y-3 mt-2">
+          <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+            <span className="iv-cifra font-bold text-2xl leading-none text-tinta">{data.avg_corr}</span>
+            <span className={`text-sm font-semibold ${nivel.cls}`}>{nivel.txt}</span>
             {/* De cuántas. Con 83 valores en la Cartera y un techo de 25, decir solo "25
                 acciones" hace leer como veredicto de toda la cartera lo que es de una
                 parte. Las abiertas entran primero, que es lo que hace que la cifra siga
                 significando algo aunque no quepan todas. */}
-            <span className="text-[10px] text-tinta-3">
+            <span className="text-etiqueta text-tinta-3">
               · {data.n} acciones
               {data.truncado && data.total ? ` de ${data.total}` : ""}
             </span>
           </div>
           {data.truncado && (
-            <p className="text-[10px] text-tinta-3 leading-snug">
+            <p className="text-etiqueta text-tinta-3 leading-snug max-w-[75ch]">
               Se analizan hasta {data.n} valores, y entran primero tus{" "}
               {data.en_cartera} posición(es) abiertas: cada acción descarga un año de
               histórico. Las que solo vigilas pueden quedarse fuera.
@@ -301,21 +307,21 @@ function CorrelationCard() {
           )}
           {(data.high || []).length > 0 ? (
             <div>
-              <p className="text-[10px] uppercase text-tinta-3 font-mono mb-1">Se mueven casi igual (riesgo de bloque)</p>
-              <div className="flex flex-wrap gap-1.5">
+              <p className="iv-etiqueta mb-1.5">Se mueven casi igual (riesgo de bloque)</p>
+              <ul className="flex flex-wrap gap-1.5">
                 {data.high.slice(0, 6).map((p) => (
-                  <span key={`${p.a}-${p.b}`} className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-baja/30 text-baja">
+                  <li key={`${p.a}-${p.b}`} className="iv-cifra text-etiqueta px-2 py-0.5 rounded-iv-sm border border-baja/30 bg-baja/10 text-baja">
                     {p.a} ↔ {p.b} · {p.corr}
-                  </span>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </div>
           ) : (
-            <p className="text-xs text-sube">Ningún par se mueve en exceso al unísono. Buena señal.</p>
+            <p className="text-apoyo text-sube">Ningún par se mueve en exceso al unísono. Buena señal.</p>
           )}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -341,7 +347,8 @@ function CategoriaDegiro({ value, onChange }) {
       value={v}
       onChange={(ev) => onChange(ev.target.value || null)}
       title="Categoría de riesgo de DEGIRO (A-D). Sale junto al nombre del producto en la pantalla de la orden. Determina cuánto margen libera vender esta acción."
-      className={`bg-transparent border border-linea rounded px-1 py-0.5 text-xs font-mono font-bold ${CAT_TONO[v] || "text-tinta-3"}`}
+      aria-label="Categoría de riesgo de DEGIRO"
+      className={`bg-transparent border border-linea rounded-iv-sm px-1 py-0.5 text-xs font-mono font-bold cursor-pointer hover:border-linea-fuerte ${TRANS} ${CAT_TONO[v] || "text-tinta-3"}`}
     >
       <option value="">—</option>
       {["A", "B", "C", "D"].map((c) => <option key={c} value={c}>{c}</option>)}
@@ -353,19 +360,24 @@ function RiesgoBadge({ value }) {
   if (!value) return <span className="text-tinta-3">—</span>;
   const key = value.toUpperCase();
   const s = RIESGO_STYLE[key] || { bg: "bg-superficie-alt", text: "text-tinta-2" };
+  // Sin pastilla de fondo: el color del texto ya dice el nivel, y una fila con
+  // mercado + riesgo + categoría eran tres chips seguidos compitiendo entre sí.
   return (
-    <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold uppercase ${s.bg} ${s.text}`}>
+    <span className={`iv-etiqueta font-semibold ${s.text}`}>
       {value}
     </span>
   );
 }
 
 function BellToggle({ active, onClick, title }) {
+  const t = title || (active ? "Alerta activa — clic para desactivar" : "Alerta inactiva — clic para activar");
   return (
     <button
       onClick={onClick}
-      title={title || (active ? "Alerta activa — clic para desactivar" : "Alerta inactiva — clic para activar")}
-      className={`p-1 rounded transition-colors ${active ? "text-aviso hover:text-aviso" : "text-tinta-3 hover:text-tinta-2"}`}
+      title={t}
+      aria-label={t}
+      aria-pressed={active}
+      className={`p-1.5 -m-0.5 rounded-iv-sm active:scale-90 transition-[color,transform] duration-150 ease-out motion-reduce:transition-none ${active ? "text-aviso hover:text-aviso/80" : "text-tinta-3 hover:text-tinta"}`}
     >
       {active ? <Bell size={14} weight="fill" /> : <BellSlash size={14} />}
     </button>
@@ -390,7 +402,7 @@ function EditableCell({ value, onChange, isNumber = true, placeholder = "—", c
   if (editing) return (
     <input
       ref={inputRef}
-      className={`w-full bg-superficie-alt border border-info/30 rounded px-1 py-0.5 text-sm outline-none ${className}`}
+      className={`w-full min-w-[4.5rem] bg-superficie-alt border border-marca/60 rounded-iv-sm px-1.5 py-0.5 text-sm text-tinta outline-none ring-2 ring-marca/20 ${className}`}
       // NUNCA type="number": el teclado numérico de un teléfono en español ofrece coma, y
       // ese campo la descarta —el valor llega vacío y el nivel no se puede escribir—.
       // `inputMode="decimal"` da el mismo teclado sin la validación del navegador.
@@ -406,8 +418,13 @@ function EditableCell({ value, onChange, isNumber = true, placeholder = "—", c
   const display = format ? format(value) : (isNumber ? fmtP(value) : (value || placeholder));
   return (
     <span
+      role="button"
+      tabIndex={0}
       onClick={() => { setDraft(value ?? ""); setEditing(true); }}
-      className={`cursor-pointer hover:underline hover:text-info dark:hover:text-info select-none ${!value && value !== 0 ? "text-tinta-3" : ""} ${className}`}
+      onKeyDown={(ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); setDraft(value ?? ""); setEditing(true); } }}
+      // Subrayado punteado tenue siempre visible: en el móvil no hay hover y sin él
+      // nada dice que la cifra se puede tocar para editarla.
+      className={`cursor-pointer select-none tabular-nums underline decoration-dotted decoration-tinta-3/40 underline-offset-4 hover:decoration-current ${TRANS} ${!value && value !== 0 ? "text-tinta-3" : ""} ${className}`}
       title="Clic para editar"
     >
       {display}
@@ -736,7 +753,7 @@ export default function SignalsView({ setSymbol }) {
       />
 
       {/* ── EDICIÓN ─────────────────────────────────────────────────────────── */}
-      <div className="iv-seccion">
+      <div className="iv-seccion !mb-0 pt-2 sm:pt-4">
         <span className="iv-etiqueta tracking-[0.18em] text-tinta-2">Niveles y alertas</span>
         <span className="text-etiqueta text-tinta-3 whitespace-nowrap hidden sm:inline">
           Aquí se edita: toca cualquier valor
@@ -744,21 +761,19 @@ export default function SignalsView({ setSymbol }) {
       </div>
 
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-sm text-tinta-3">
-            Activa la <Bell size={13} weight="fill" className="inline text-aviso mb-px" /> en cada nivel para recibir alerta por Telegram y email cuando el precio lo alcance.
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-apoyo text-tinta-2 max-w-[62ch] leading-relaxed">
+          Activa la <Bell size={13} weight="fill" className="inline text-aviso mb-px" aria-label="campana" /> en cada nivel para recibir alerta por Telegram y email cuando el precio lo alcance.
+        </p>
         <div className="flex gap-2 flex-wrap">
-          <button onClick={fetchEntries} className="flex items-center gap-1.5 px-3 py-2 rounded-iv border border-linea text-sm hover:bg-superficie-alt transition-colors">
-            <ArrowClockwise size={14} /> Refrescar
+          <button onClick={fetchEntries} className={BOTON_SEC}>
+            <ArrowClockwise size={14} aria-hidden="true" className={loading ? "animate-spin motion-reduce:animate-none" : ""} /> Refrescar
           </button>
-          <button onClick={() => setShowImport(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-iv border border-linea text-sm hover:bg-superficie-alt transition-colors">
-            <UploadSimple size={14} /> Importar Excel
+          <button onClick={() => setShowImport(true)} className={BOTON_SEC}>
+            <UploadSimple size={14} aria-hidden="true" /> Importar Excel
           </button>
-          <button onClick={() => imageInputRef.current?.click()} disabled={importing} className="flex items-center gap-1.5 px-3 py-2 rounded-iv border border-linea text-sm hover:bg-superficie-alt transition-colors disabled:opacity-50">
-            <Camera size={14} /> {importing ? "Leyendo…" : "Importar foto"}
+          <button onClick={() => imageInputRef.current?.click()} disabled={importing} className={BOTON_SEC}>
+            <Camera size={14} aria-hidden="true" /> {importing ? "Leyendo…" : "Importar foto"}
           </button>
           <input
             ref={imageInputRef}
@@ -767,8 +782,8 @@ export default function SignalsView({ setSymbol }) {
             className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; doImportImage(f); }}
           />
-          <button onClick={() => { setNewEntry(EMPTY); setShowAdd(true); }} className="flex items-center gap-1.5 px-4 py-2 rounded-iv bg-marca hover:bg-marca/90 text-marca-tinta text-sm font-medium transition-colors">
-            <Plus size={14} weight="bold" /> Añadir acción
+          <button onClick={() => { setNewEntry(EMPTY); setShowAdd(true); }} className={BOTON_PRI}>
+            <Plus size={14} weight="bold" aria-hidden="true" /> Añadir acción
           </button>
         </div>
       </div>
@@ -804,52 +819,57 @@ export default function SignalsView({ setSymbol }) {
       {!loading && visible.length >= 2 && <CorrelationCard />}
 
       {/* Legend */}
-      <div className="flex flex-wrap gap-4 text-xs text-tinta-2">
-        <span className="flex items-center gap-1"><Bell size={12} weight="fill" className="text-aviso" /> Alerta activa</span>
-        <span className="flex items-center gap-1"><BellSlash size={12} className="text-tinta-3" /> Alerta inactiva</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-3 bg-info/8 border border-info/40 inline-block"></span> Nivel Deseado / Venta</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-3 bg-sube/8 border border-sube/40 inline-block"></span> Niveles de Compra</span>
-      </div>
+      <ul className="flex flex-wrap gap-x-5 gap-y-1.5 text-etiqueta text-tinta-2" aria-label="Leyenda">
+        <li className="flex items-center gap-1.5"><Bell size={12} weight="fill" className="text-aviso" aria-hidden="true" /> Alerta activa</li>
+        <li className="flex items-center gap-1.5"><BellSlash size={12} className="text-tinta-3" aria-hidden="true" /> Alerta inactiva</li>
+        <li className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-info/15 border border-info/50 inline-block" aria-hidden="true"></span> Nivel Deseado / Venta</li>
+        <li className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-sube/15 border border-sube/50 inline-block" aria-hidden="true"></span> Niveles de Compra</li>
+      </ul>
 
       {/* Import panel */}
       {showImport && (
-        <div className="rounded-iv-lg border border-info/30 bg-info/30 p-4 space-y-3">
+        <section className="iv-panel border-info/40 p-5 space-y-3" aria-labelledby="importar-titulo">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-info">Importar desde Excel</p>
-            <button onClick={() => { setShowImport(false); setImportText(""); }}><X size={16} className="text-info" /></button>
+            <h2 id="importar-titulo" className="text-sm font-semibold text-tinta">Importar desde Excel</h2>
+            <button onClick={() => { setShowImport(false); setImportText(""); }} aria-label="Cerrar"
+                    className={`p-1 rounded-iv-sm text-tinta-3 hover:text-tinta ${TRANS}`}><X size={16} /></button>
           </div>
-          <p className="text-xs text-info">
+          <p className="text-apoyo text-tinta-2 leading-relaxed">
             Abre tu Excel, selecciona todas las celdas incluyendo cabecera y pégalas aquí (Ctrl+V).<br />
-            Columnas reconocidas: <code>Acción, Mercado, Ticker/ISIN, Nivel Deseado/Venta, Nivel 1–5, Riesgo, Sector, Posibles Ganancias</code>
+            Columnas reconocidas: <code className="iv-cifra text-etiqueta text-info">Acción, Mercado, Ticker/ISIN, Nivel Deseado/Venta, Nivel 1–5, Riesgo, Sector, Posibles Ganancias</code>
           </p>
           <textarea
-            className="w-full h-40 p-3 rounded-iv border border-info/30 bg-superficie text-sm font-mono resize-none outline-none"
+            aria-label="Datos pegados desde Excel"
+            className={`w-full h-40 p-3 rounded-iv border border-linea bg-fondo text-sm font-mono text-tinta resize-none outline-none placeholder:text-tinta-3 focus:border-marca ${TRANS}`}
             placeholder={"Acción\tMercado\tTicker/ISIN\tNivel Deseado/Venta\tNivel 1\tNivel 2\tNivel 3\tNivel 4\tNivel 5 EXTRA\tRiesgo\tSector\nORACLE\tNYSE\tORCL\t300\t220\t200\t180\t160\tNO\tMEDIO\tTECH"}
             value={importText}
             onChange={(e) => setImportText(e.target.value)}
           />
           <div className="flex gap-2">
-            <button onClick={doImport} disabled={importing || !importText.trim()} className="px-4 py-2 rounded-iv bg-info/10 hover:bg-info/10 disabled:opacity-50 text-marca-tinta text-sm font-medium">
+            {/* Antes: texto oscuro (marca-tinta) sobre un azul al 10 %, ilegible en oscuro. */}
+            <button onClick={doImport} disabled={importing || !importText.trim()} className={BOTON_PRI}>
               {importing ? "Importando…" : "Importar"}
             </button>
-            <button onClick={() => { setShowImport(false); setImportText(""); }} className="px-4 py-2 rounded-iv border border-linea text-sm hover:bg-superficie-alt">Cancelar</button>
+            <button onClick={() => { setShowImport(false); setImportText(""); }} className={BOTON_SEC}>Cancelar</button>
           </div>
-        </div>
+        </section>
       )}
 
       {/* Add panel */}
       {showAdd && (
-        <div className="rounded-iv-lg border border-marca/30 bg-fondo p-4 space-y-3">
+        <section className="iv-panel border-marca/40 p-5 space-y-4" aria-labelledby="anadir-titulo">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-tinta">Nueva acción · Cartera</p>
-            <button onClick={() => setShowAdd(false)}><X size={16} /></button>
+            <h2 id="anadir-titulo" className="text-sm font-semibold text-tinta">Nueva acción · Cartera</h2>
+            <button onClick={() => setShowAdd(false)} aria-label="Cerrar"
+                    className={`p-1 rounded-iv-sm text-tinta-3 hover:text-tinta ${TRANS}`}><X size={16} /></button>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-3 gap-y-3.5">
             {ADD_FIELDS[grupo].map(({ key, label, placeholder }) => (
-              <div key={key} className="flex flex-col gap-1">
-                <label className="text-xs text-tinta-2">{label}</label>
+              <div key={key} className="flex flex-col gap-1 min-w-0">
+                <label htmlFor={`nueva-${key}`} className="text-etiqueta text-tinta-2">{label}</label>
                 <input
-                  className="border border-linea rounded-iv px-2 py-1.5 text-sm bg-superficie-alt outline-none focus:border-marca focus:ring-1 focus:ring-marca/20"
+                  id={`nueva-${key}`}
+                  className={`border border-linea rounded-iv px-2.5 py-1.5 text-sm text-tinta bg-fondo outline-none placeholder:text-tinta-3 hover:border-linea-fuerte focus:border-marca focus:ring-2 focus:ring-marca/20 ${TRANS}`}
                   placeholder={placeholder}
                   value={newEntry[key] ?? ""}
                   onChange={(e) => setNewEntry((p) => ({ ...p, [key]: e.target.value }))}
@@ -858,28 +878,50 @@ export default function SignalsView({ setSymbol }) {
             ))}
           </div>
           <div className="flex gap-2">
-            <button onClick={addEntry} className="px-4 py-2 rounded-iv bg-marca hover:bg-marca/90 text-marca-tinta text-sm font-medium">Guardar</button>
-            <button onClick={() => setShowAdd(false)} className="px-4 py-2 rounded-iv border border-linea text-sm hover:bg-superficie-alt">Cancelar</button>
+            <button onClick={addEntry} className={BOTON_PRI}>Guardar</button>
+            <button onClick={() => setShowAdd(false)} className={BOTON_SEC}>Cancelar</button>
           </div>
+        </section>
+      )}
+
+      {/* Loading · esqueleto con la forma de lo que viene, no un texto suelto */}
+      {loading && (
+        <div role="status" aria-live="polite" className="space-y-3">
+          <span className="sr-only">Cargando señales…</span>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="iv-panel p-5 space-y-3 animate-pulse motion-reduce:animate-none" aria-hidden="true">
+              <div className="flex justify-between">
+                <div className="h-4 w-24 rounded bg-superficie-alt" />
+                <div className="h-4 w-16 rounded bg-superficie-alt" />
+              </div>
+              <div className="h-3 w-2/3 rounded bg-superficie-alt" />
+            </div>
+          ))}
+          <p className="text-center text-etiqueta text-tinta-3" aria-hidden="true">Cargando señales…</p>
         </div>
       )}
 
-      {/* Loading */}
-      {loading && <div className="text-center py-16 text-tinta-3">Cargando señales…</div>}
-
       {/* Empty */}
       {!loading && visible.length === 0 && (
-        <div className="text-center py-16 text-tinta-3">
-          <p className="mb-3 flex justify-center"><Bell size={30} className="text-tinta-3" /></p>
-          <p className="text-lg font-medium">Sin acciones todavía</p>
-          <p className="text-sm mt-1">Añade una acción o importa desde Excel</p>
+        <div className="rounded-iv-lg border border-dashed border-linea-fuerte text-center py-14 px-6">
+          <p className="mb-3 flex justify-center"><Bell size={28} className="text-tinta-3" aria-hidden="true" /></p>
+          <p className="text-cuerpo font-semibold text-tinta">Sin acciones todavía</p>
+          <p className="text-apoyo text-tinta-3 mt-1">Añade una acción o importa desde Excel</p>
+          <div className="flex justify-center gap-2 mt-4 flex-wrap">
+            <button onClick={() => { setNewEntry(EMPTY); setShowAdd(true); }} className={BOTON_PRI}>
+              <Plus size={14} weight="bold" aria-hidden="true" /> Añadir acción
+            </button>
+            <button onClick={() => setShowImport(true)} className={BOTON_SEC}>
+              <UploadSimple size={14} aria-hidden="true" /> Importar Excel
+            </button>
+          </div>
         </div>
       )}
 
       {/* ════════════════ CARTERA ════════════════ */}
       {!loading && visible.length > 0 && <IdeasView entries={visible} saving={saving} updateField={updateField} deleteEntry={deleteEntry} setSymbol={setSymbol} onVendido={fetchEntries} />}
 
-      <p className="text-xs text-tinta-3 text-center pb-2">
+      <p className="text-etiqueta text-tinta-3 text-center pb-2 max-w-[80ch] mx-auto leading-relaxed">
         Alertas solo en horario de mercado (9:30-16:00 ET) · 1 vez al día por nivel · Telegram + Email · Haz clic en cualquier valor para editarlo
       </p>
     </div>
@@ -924,13 +966,14 @@ function DialogoVenta({ entry, onClose, onHecho }) {
   const eur = (x) => x == null ? "—" : `${x >= 0 ? "+" : ""}${Number(x).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-superficie rounded-iv-lg p-5 w-full max-w-md" onClick={(ev) => ev.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label={`Vender ${entry.symbol}`}
+           className="iv-panel border-linea-fuerte p-5 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(ev) => ev.stopPropagation()}>
         {!res ? (
           <>
             <div className="flex items-center justify-between mb-1">
               <h3 className="font-bold text-lg text-tinta">Vender {entry.symbol}</h3>
-              <button onClick={onClose} className="text-tinta-3 hover:text-tinta-2"><X size={18} /></button>
+              <button onClick={onClose} aria-label="Cerrar" className={`p-1 rounded-iv-sm text-tinta-3 hover:text-tinta ${TRANS}`}><X size={18} /></button>
             </div>
             <p className="text-xs text-tinta-2 mb-4">
               Tienes <b>{tiene}</b> acciones a un precio medio de <b>{fmtP(entry.compra)}</b> ({divisa}).
@@ -1011,112 +1054,138 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
   return (
     <>
       {/* MOBILE CARDS */}
+      {/* Una sola superficie por acción. Antes cada dato iba en su propia caja
+          rellena (posición, deseado, y una caja verde por nivel): seis o siete
+          rectángulos de colores por tarjeta que pesaban todos lo mismo. Ahora las
+          zonas se separan con filetes y el color queda solo en las cifras que lo
+          llevan —azul el deseado, verde los niveles de compra, ámbar el siguiente. */}
       <div className="lg:hidden space-y-3">
         {entries.map((e) => (
-          <div key={e.id} className={`rounded-iv-lg border border-linea bg-superficie p-4 space-y-3 ${!e.active ? "opacity-50" : ""}`}>
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-bold text-marca cursor-pointer text-lg" onClick={() => setSymbol && setSymbol(e.symbol)}>{e.symbol}</span>
-                  {e.mercado && <span className="text-[10px] font-mono bg-superficie-alt px-1.5 py-0.5 rounded">{e.mercado}</span>}
+          <article key={e.id} aria-label={e.symbol}
+                   className={`iv-panel p-4 ${!e.active ? "opacity-50" : ""}`}>
+            {/* Cabecera: quién es · precio · acciones */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-baseline gap-x-2 gap-y-1 flex-wrap">
+                  <button type="button" className={`iv-cifra font-bold text-marca text-lg leading-none hover:underline underline-offset-4 ${TRANS}`}
+                          onClick={() => setSymbol && setSymbol(e.symbol)}>{e.symbol}</button>
+                  {e.mercado && <span className="iv-etiqueta">{e.mercado}</span>}
                   <RiesgoBadge value={e.riesgo} />
                   <CategoriaDegiro value={e.categoria_degiro}
                                    onChange={(v) => updateField(e.id, "categoria_degiro", v)} />
                 </div>
-                <p className="text-sm text-tinta-2 mt-0.5">{e.name || "—"}</p>
-                {e.sector && <p className="text-xs text-tinta-3">{e.sector}</p>}
+                <p className="text-apoyo text-tinta-2 mt-1.5 truncate">{e.name || "—"}</p>
+                {e.sector && <p className="text-etiqueta text-tinta-3 truncate">{e.sector}</p>}
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-etiqueta text-tinta-3">Precio actual</p>
+                <p className="iv-cifra font-bold text-tinta text-base leading-tight">{fmtP(e.last_price)}</p>
+                <ExtendedBadge entry={e} />
+              </div>
+            </div>
+
+            {/* Posición + P&L (#20) */}
+            <div className="mt-3 pt-3 border-t border-linea flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+              <dl className="flex gap-5 min-w-0">
+                <div>
+                  <dt className="iv-etiqueta">Compra</dt>
+                  <dd><EditableCell value={e.compra} onChange={(v) => updateField(e.id, "compra", v)} className="iv-cifra text-sm font-semibold text-tinta" /></dd>
+                </div>
+                <div>
+                  <dt className="iv-etiqueta">Nº acc.</dt>
+                  <dd><EditableCell value={e.acciones} onChange={(v) => updateField(e.id, "acciones", v)} format={(v) => v != null && v !== "" ? Number(v).toLocaleString("es-ES", { maximumFractionDigits: 2 }) : "—"} className="iv-cifra text-sm font-semibold text-tinta" /></dd>
+                </div>
+              </dl>
+              <dl className="text-right min-w-0 ml-auto">
+                <dt className="iv-etiqueta">P&amp;L</dt>
+                <dd><PnlText abs={pnlAbs(e)} pct={pnlPct(e)} eur={pnlEur.porSymbol[(e.symbol || "").toUpperCase()]} tasa={pnlEur.tasaUSD} /></dd>
+              </dl>
+            </div>
+
+            {/* Deseado / venta */}
+            <div className="mt-3 pt-3 border-t border-linea flex items-center justify-between gap-3">
+              <div className="flex items-baseline gap-2.5 min-w-0">
+                <p className="iv-etiqueta text-info">Deseado / Venta</p>
+                <EditableCell value={e.deseado} onChange={(v) => updateField(e.id, "deseado", v)} className="iv-cifra font-bold text-info text-sm" />
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <div className="text-right">
-                  <p className="text-xs text-tinta-3">Precio actual</p>
-                  <p className="font-mono font-bold text-tinta">{fmtP(e.last_price)}</p>
-                  <ExtendedBadge entry={e} />
-                </div>
-                {/* Solo tiene sentido vender lo que se tiene. Sin acciones, el botón
-                    llevaría a un error del servidor en vez de a algo útil. */}
-                {Number(e.acciones) > 0 && (
-                  <button onClick={() => setVendiendo(e)} title="Registrar una venta"
-                          className="flex items-center gap-1 text-[11px] font-semibold border border-sube text-sube hover:bg-sube hover:text-marca-tinta rounded px-2 py-1 transition-colors">
-                    <CurrencyEur size={13} weight="bold" /> Vender
-                  </button>
-                )}
-                <button onClick={() => deleteEntry(e.id)} className="text-tinta-3 hover:text-baja text-xl p-1"><Trash size={16} /></button>
-              </div>
-            </div>
-            {/* Posición + P&L (#20) */}
-            <div className="flex items-center justify-between bg-superficie-alt border border-linea rounded-iv px-3 py-2">
-              <div className="flex gap-4">
-                <div>
-                  <p className="text-[9px] text-tinta-3 uppercase font-mono">Compra</p>
-                  <EditableCell value={e.compra} onChange={(v) => updateField(e.id, "compra", v)} className="font-mono text-sm font-semibold" />
-                </div>
-                <div>
-                  <p className="text-[9px] text-tinta-3 uppercase font-mono">Nº acc.</p>
-                  <EditableCell value={e.acciones} onChange={(v) => updateField(e.id, "acciones", v)} format={(v) => v != null && v !== "" ? Number(v).toLocaleString("es-ES", { maximumFractionDigits: 2 }) : "—"} className="font-mono text-sm font-semibold" />
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-[9px] text-tinta-3 uppercase font-mono">P&amp;L</p>
-                <PnlText abs={pnlAbs(e)} pct={pnlPct(e)} eur={pnlEur.porSymbol[(e.symbol || "").toUpperCase()]} tasa={pnlEur.tasaUSD} />
-              </div>
-            </div>
-            <div className="flex items-center justify-between bg-info/20 border border-info/30 rounded-iv px-3 py-2">
-              <div>
-                <p className="text-[10px] text-info uppercase font-mono font-bold">Deseado / Venta</p>
-                <EditableCell value={e.deseado} onChange={(v) => updateField(e.id, "deseado", v)} className="font-mono font-bold text-info text-sm" />
-              </div>
-              <div className="flex items-center gap-1">
-                {e.posibles_ganancias != null && <span className="text-xs text-sube font-bold">{fmtPct(e.posibles_ganancias)}</span>}
+                {e.posibles_ganancias != null && <span className="iv-cifra text-etiqueta text-sube font-semibold">{fmtPct(e.posibles_ganancias)}</span>}
                 {/* El estado que se NIEGA debe ser el mismo que se PINTA. Con `!e.alert_deseado`, una
     fila antigua sin el campo (undefined) se veía encendida (undefined !== false) pero al
     pulsar mandaba `!undefined` = true: seguía encendida y el primer clic no hacía nada. */}
 <BellToggle active={e.alert_deseado !== false} onClick={() => updateField(e.id, "alert_deseado", e.alert_deseado === false)} />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              {(() => { const nextN = nextNivelKey(e); return [1,2,3,4,5].map((n) => {
-                const val = e[`nivel${n}`];
-                const alertKey = `alert_nivel${n}`;
-                const alertOn = e[alertKey] !== false;
-                if (val == null) return null;
-                const d = nivelDist(e, n);
-                const isNext = n === nextN;
-                return (
-                  <div key={n} className={`bg-sube/20 rounded-iv p-2 ${isNext ? "border-2 border-aviso" : "border border-sube/30"}`}>
-                    <div className="flex items-center justify-between mb-0.5">
-                      <p className="text-[9px] text-sube uppercase font-mono font-bold">Nivel {n}{isNext ? " ◀" : ""}</p>
+
+            {/* Niveles de compra: filas, no cajas. Precio y distancia alineados a la
+                derecha en columna para leerlos en vertical; el siguiente en tocarse,
+                en ámbar y con su marca ◀. */}
+            <div className="mt-3 pt-2 border-t border-linea">
+              <ul className="grid sm:grid-cols-2 sm:gap-x-6">
+                {(() => { const nextN = nextNivelKey(e); return [1,2,3,4,5].map((n) => {
+                  const val = e[`nivel${n}`];
+                  const alertKey = `alert_nivel${n}`;
+                  const alertOn = e[alertKey] !== false;
+                  if (val == null) return null;
+                  const d = nivelDist(e, n);
+                  const isNext = n === nextN;
+                  return (
+                    <li key={n} className={`grid grid-cols-[5.25rem_1fr_auto_auto] items-center gap-x-3 py-1.5 -mx-2 px-2 rounded-iv-sm ${isNext ? "bg-aviso/10" : ""}`}>
+                      <span className={`iv-etiqueta font-semibold ${isNext ? "text-aviso" : "text-sube"}`}>Nivel {n}{isNext ? " ◀" : ""}</span>
+                      <span className="text-right">
+                        <EditableCell value={val} onChange={(v) => updateField(e.id, `nivel${n}`, v)} className="iv-cifra font-semibold text-sube text-sm" />
+                      </span>
+                      <span className={`iv-cifra text-etiqueta text-right w-14 ${isNext ? "text-aviso" : "text-tinta-3"}`}>
+                        {d != null ? `${d >= 0 ? "+" : ""}${d.toFixed(1)}%` : ""}
+                      </span>
                       <BellToggle active={alertOn} onClick={() => updateField(e.id, alertKey, !alertOn)} />
-                    </div>
-                    <EditableCell value={val} onChange={(v) => updateField(e.id, `nivel${n}`, v)} className="font-mono font-bold text-sube text-sm" />
-                    {d != null && <p className="text-[9px] font-mono text-tinta-3 mt-0.5">{d >= 0 ? "+" : ""}{d.toFixed(1)}%</p>}
-                  </div>
-                );
-              }); })()}
+                    </li>
+                  );
+                }); })()}
+              </ul>
             </div>
-            {saving[e.id] && <p className="text-[10px] text-tinta-3 animate-pulse">guardando…</p>}
-          </div>
+
+            {/* Acciones de la ficha, abajo y separadas: borrar no compite con el precio. */}
+            <div className="mt-3 pt-3 border-t border-linea flex items-center justify-between gap-3">
+              <span className="text-etiqueta text-tinta-3" aria-live="polite">
+                {saving[e.id] && <span className="animate-pulse motion-reduce:animate-none">guardando…</span>}
+              </span>
+              <div className="flex items-center gap-2">
+                {/* Solo tiene sentido vender lo que se tiene. Sin acciones, el botón
+                    llevaría a un error del servidor en vez de a algo útil. */}
+                {Number(e.acciones) > 0 && (
+                  <button onClick={() => setVendiendo(e)} title="Registrar una venta"
+                          className={`inline-flex items-center gap-1 text-etiqueta font-semibold border border-sube/60 text-sube hover:bg-sube/10 active:scale-[0.98] rounded-iv px-2.5 py-1.5 transition-[background-color,transform] duration-150 ease-out motion-reduce:transition-none`}>
+                    <CurrencyEur size={13} weight="bold" aria-hidden="true" /> Vender
+                  </button>
+                )}
+                <button onClick={() => deleteEntry(e.id)} aria-label={`Eliminar ${e.symbol}`} title="Eliminar"
+                        className={`p-2 rounded-iv text-tinta-3 hover:text-baja hover:bg-baja/10 ${TRANS}`}><Trash size={16} /></button>
+              </div>
+            </div>
+          </article>
         ))}
       </div>
 
       {/* DESKTOP TABLE */}
-      <div className="hidden lg:block rounded-iv-lg border border-linea overflow-x-auto shadow-sm">
+      <div className="hidden lg:block iv-panel overflow-x-auto">
         <table className="w-full text-sm border-collapse">
           <thead>
-            <tr className="text-left border-b-2 border-linea">
-              <th className="px-2 py-2.5 font-bold text-tinta text-xs whitespace-nowrap w-10 bg-superficie-alt sticky left-0 z-20"><Lightning size={13} className="mx-auto" /></th>
-              <th className="px-2 py-2.5 font-bold text-tinta text-xs whitespace-nowrap bg-superficie-alt sticky left-10 z-20 border-r border-linea">Acción</th>
-              <th className="px-2 py-2.5 font-bold text-tinta text-xs whitespace-nowrap bg-superficie-alt">Mdo.</th>
-              <th className="px-2 py-2.5 font-bold text-tinta text-xs whitespace-nowrap text-right bg-superficie-alt">Precio</th>
-              <th className="px-2 py-2.5 font-bold text-tinta text-xs whitespace-nowrap text-right bg-superficie-alt">Compra</th>
-              <th className="px-2 py-2.5 font-bold text-tinta text-xs whitespace-nowrap text-right bg-superficie-alt">Acc.</th>
-              <th className="px-2 py-2.5 font-bold text-tinta text-xs whitespace-nowrap text-right bg-superficie-alt">P&amp;L</th>
-              <th className="px-2 py-2.5 text-xs whitespace-nowrap text-right bg-info/10 text-info font-bold border-l border-info/25">Deseado</th>
+            <tr className="text-left border-b border-linea-fuerte">
+              <th scope="col" title="Monitorización activa" className="px-2 py-2.5 iv-etiqueta font-normal whitespace-nowrap w-10 bg-superficie sticky left-0 z-20"><Lightning size={13} className="mx-auto" aria-label="Monitorización activa" /></th>
+              <th scope="col" className="px-3 py-2.5 iv-etiqueta font-normal whitespace-nowrap bg-superficie sticky left-10 z-20 border-r border-linea">Acción</th>
+              <th scope="col" className="px-2 py-2.5 iv-etiqueta font-normal whitespace-nowrap">Mdo.</th>
+              <th scope="col" className="px-2 py-2.5 iv-etiqueta font-normal whitespace-nowrap text-right">Precio</th>
+              <th scope="col" className="px-2 py-2.5 iv-etiqueta font-normal whitespace-nowrap text-right">Compra</th>
+              <th scope="col" className="px-2 py-2.5 iv-etiqueta font-normal whitespace-nowrap text-right">Acc.</th>
+              <th scope="col" className="px-3 py-2.5 iv-etiqueta font-normal whitespace-nowrap text-right">P&amp;L</th>
+              <th scope="col" className="px-2 py-2.5 iv-etiqueta font-semibold whitespace-nowrap text-right !text-info bg-info/[0.07] border-l border-info/20">Deseado</th>
               {[1,2,3,4,5].map((n) => (
-                <th key={n} className="px-2 py-2.5 text-xs whitespace-nowrap text-right bg-sube/10 text-sube font-bold border-l border-sube/25">N{n}</th>
+                <th key={n} scope="col" className="px-2 py-2.5 iv-etiqueta font-semibold whitespace-nowrap text-right !text-sube bg-sube/[0.05] border-l border-sube/15">N{n}</th>
               ))}
-              <th className="px-2 py-2.5 font-bold text-tinta text-xs whitespace-nowrap bg-superficie-alt border-l border-linea">Riesgo</th>
-              <th title="Categoría de riesgo de DEGIRO (A-D). Determina cuánto margen libera vender esta acción." className="px-2 py-2.5 font-bold text-tinta text-xs whitespace-nowrap bg-superficie-alt">Cat.</th>
-              <th className="px-2 py-2.5 w-8 bg-superficie-alt"></th>
+              <th scope="col" className="px-2 py-2.5 iv-etiqueta font-normal whitespace-nowrap border-l border-linea">Riesgo</th>
+              <th scope="col" title="Categoría de riesgo de DEGIRO (A-D). Determina cuánto margen libera vender esta acción." className="px-2 py-2.5 iv-etiqueta font-normal whitespace-nowrap">Cat.</th>
+              <th className="px-2 py-2.5 w-8"><span className="sr-only">Eliminar</span></th>
             </tr>
           </thead>
           <tbody>
@@ -1125,41 +1194,43 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                 vista de móvil y se editan en el formulario, así que no se pierde nada —y
                 el sector sigue alimentando el modelo de riesgo igual, esté a la vista o
                 no. */}
-            {entries.map((e, idx) => (
-              <tr key={e.id} className={`border-t border-linea transition-colors group ${!e.active ? "opacity-40" : ""} ${idx % 2 === 0 ? "bg-superficie" : "bg-superficie-alt"} hover:bg-aviso/10 hover:bg-superficie-alt`}>
+            {/* Sin cebreado: con los tintes de Deseado y niveles, alternar fondos daba
+                un damero. Filete entre filas y resalte al pasar por encima. */}
+            {entries.map((e) => (
+              <tr key={e.id} className={`border-t border-linea group bg-superficie hover:bg-superficie-alt ${TRANS} ${!e.active ? "opacity-40" : ""}`}>
                 {/* Las dos primeras columnas van fijas: la tabla tiene quince columnas y
                     desborda a lo ancho, asi que al desplazarse quedaban treinta filas de
                     precios y niveles sin saber de que accion eran. El fondo va OPACO a
                     proposito —translucido dejaba ver por debajo lo que pasa al lado. */}
-                <td className={`px-2 py-2.5 text-center sticky left-0 z-10 ${idx % 2 === 0 ? "bg-superficie" : "bg-superficie-alt"} group-hover:bg-aviso/10 group-hover:bg-superficie-alt`}>
-                  <input type="checkbox" checked={e.active} onChange={(ev) => updateField(e.id, "active", ev.target.checked)} className="w-4 h-4 cursor-pointer accent-marca" title={e.active ? "Monitorización activa" : "Monitorización pausada"} />
+                <td className={`px-2 py-2.5 text-center sticky left-0 z-10 bg-superficie group-hover:bg-superficie-alt ${TRANS}`}>
+                  <input type="checkbox" checked={e.active} onChange={(ev) => updateField(e.id, "active", ev.target.checked)} className="w-4 h-4 cursor-pointer accent-marca" title={e.active ? "Monitorización activa" : "Monitorización pausada"} aria-label={`Monitorización de ${e.symbol}`} />
                 </td>
-                <td className={`px-2 py-2.5 whitespace-nowrap sticky left-10 z-10 border-r border-linea ${idx % 2 === 0 ? "bg-superficie" : "bg-superficie-alt"} group-hover:bg-aviso/10 group-hover:bg-superficie-alt`}>
+                <td className={`px-3 py-2.5 whitespace-nowrap sticky left-10 z-10 border-r border-linea bg-superficie group-hover:bg-superficie-alt ${TRANS}`}>
                   <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-marca cursor-pointer hover:underline text-sm" onClick={() => setSymbol && setSymbol(e.symbol)}>{e.symbol}</span>
-                    {saving[e.id] && <span className="text-[10px] text-tinta-3 animate-pulse">·</span>}
+                    <button type="button" className="iv-cifra font-bold text-marca hover:underline underline-offset-4 text-sm" onClick={() => setSymbol && setSymbol(e.symbol)}>{e.symbol}</button>
+                    {saving[e.id] && <span className="text-[11px] text-tinta-3 animate-pulse motion-reduce:animate-none" aria-label="guardando">·</span>}
                   </div>
-                  <p className="text-[11px] text-tinta-3 truncate max-w-[104px] font-medium">{e.name}</p>
+                  <p className="text-[11px] text-tinta-3 truncate max-w-[110px]" title={e.name || undefined}>{e.name}</p>
                 </td>
                 <td className="px-2 py-2.5">
-                  <span className="text-[11px] font-mono font-semibold bg-linea px-2 py-0.5 rounded text-tinta-2">{e.mercado || "—"}</span>
+                  <span className="iv-etiqueta">{e.mercado || "—"}</span>
                 </td>
                 <td className="px-2 py-2.5 text-right whitespace-nowrap">
-                  <span className="font-mono font-bold text-tinta text-sm">{fmtP(e.last_price)}</span>
+                  <span className="iv-cifra font-bold text-tinta text-sm">{fmtP(e.last_price)}</span>
                   <ExtendedBadge entry={e} />
                 </td>
                 <td className="px-2 py-2.5 text-right whitespace-nowrap">
-                  <EditableCell value={e.compra} onChange={(v) => updateField(e.id, "compra", v)} className="font-mono text-sm text-tinta-2" />
+                  <EditableCell value={e.compra} onChange={(v) => updateField(e.id, "compra", v)} className="iv-cifra text-sm text-tinta-2" />
                 </td>
                 <td className="px-2 py-2.5 text-right whitespace-nowrap">
-                  <EditableCell value={e.acciones} onChange={(v) => updateField(e.id, "acciones", v)} isNumber format={(v) => v != null && v !== "" ? Number(v).toLocaleString("es-ES", { maximumFractionDigits: 2 }) : "—"} className="font-mono text-sm text-tinta-2" />
+                  <EditableCell value={e.acciones} onChange={(v) => updateField(e.id, "acciones", v)} isNumber format={(v) => v != null && v !== "" ? Number(v).toLocaleString("es-ES", { maximumFractionDigits: 2 }) : "—"} className="iv-cifra text-sm text-tinta-2" />
                 </td>
-                <td className="px-2 py-2.5 text-right whitespace-nowrap">
+                <td className="px-3 py-2.5 text-right whitespace-nowrap">
                   <PnlText abs={pnlAbs(e)} pct={pnlPct(e)} eur={pnlEur.porSymbol[(e.symbol || "").toUpperCase()]} tasa={pnlEur.tasaUSD} />
                 </td>
-                <td className="px-2 py-2.5 bg-info/8 border-l border-info/25">
+                <td className="px-2 py-2.5 bg-info/[0.05] border-l border-info/20">
                   <div className="flex items-center justify-end gap-1">
-                    <EditableCell value={e.deseado} onChange={(v) => updateField(e.id, "deseado", v)} className="font-mono text-sm font-bold text-info" />
+                    <EditableCell value={e.deseado} onChange={(v) => updateField(e.id, "deseado", v)} className="iv-cifra text-sm font-bold text-info" />
                     {/* El estado que se NIEGA debe ser el mismo que se PINTA. Con `!e.alert_deseado`, una
     fila antigua sin el campo (undefined) se veía encendida (undefined !== false) pero al
     pulsar mandaba `!undefined` = true: seguía encendida y el primer clic no hacía nada. */}
@@ -1173,19 +1244,21 @@ function IdeasView({ entries, saving, updateField, deleteEntry, setSymbol, onVen
                   const d = nivelDist(e, n);
                   const isNext = n === nextN;
                   return (
-                    <td key={n} className={`px-2 py-2.5 border-l border-sube/25 ${isNext ? "bg-aviso/15" : "bg-sube/8"}`}>
+                    <td key={n} className={`px-2 py-2.5 border-l border-sube/15 ${isNext ? "bg-aviso/10 shadow-[inset_0_0_0_1px_rgb(var(--iv-aviso)/0.35)]" : "bg-sube/[0.04]"}`}>
                       <div className="flex items-center justify-end gap-1">
-                        <EditableCell value={val} onChange={(v) => updateField(e.id, `nivel${n}`, v)} className="font-mono text-sm font-semibold text-sube" />
+                        <EditableCell value={val} onChange={(v) => updateField(e.id, `nivel${n}`, v)} className="iv-cifra text-sm font-semibold text-sube" />
                         <BellToggle active={alertOn} onClick={() => updateField(e.id, alertKey, !alertOn)} />
                       </div>
-                      {d != null && <p className={`text-[9px] font-mono text-right mt-0.5 ${isNext ? "text-aviso font-bold" : "text-tinta-3"}`}>{isNext ? "◀ " : ""}{d >= 0 ? "+" : ""}{d.toFixed(1)}%</p>}
+                      {d != null && <p className={`text-[11px] iv-cifra text-right mt-0.5 pr-7 ${isNext ? "text-aviso font-semibold" : "text-tinta-3"}`}>{isNext ? "◀ " : ""}{d >= 0 ? "+" : ""}{d.toFixed(1)}%</p>}
                     </td>
                   );
                 }); })()}
                 <td className="px-2 py-2.5 whitespace-nowrap border-l border-linea"><RiesgoBadge value={e.riesgo} /></td>
                 <td className="px-2 py-2.5 whitespace-nowrap"><CategoriaDegiro value={e.categoria_degiro} onChange={(v) => updateField(e.id, "categoria_degiro", v)} /></td>
                 <td className="px-2 py-2.5 text-center">
-                  <button onClick={() => deleteEntry(e.id)} className="text-tinta-3 hover:text-baja transition-colors p-1 opacity-0 group-hover:opacity-100" title="Eliminar"><Trash size={14} /></button>
+                  {/* Oculto hasta pasar por la fila, pero visible al llegar con el teclado. */}
+                  <button onClick={() => deleteEntry(e.id)} aria-label={`Eliminar ${e.symbol}`}
+                          className="text-tinta-3 hover:text-baja p-1 rounded-iv-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-[color,opacity] duration-150 ease-out motion-reduce:transition-none" title="Eliminar"><Trash size={14} /></button>
                 </td>
               </tr>
             ))}

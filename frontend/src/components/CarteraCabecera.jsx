@@ -1,6 +1,6 @@
 import React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ArrowUpRight, CaretRight, Warning } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
@@ -45,6 +45,17 @@ const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
 
 const RIESGO_TONO = { BAJO: "text-sube", MEDIO: "text-aviso", ALTO: "text-baja" };
 
+/* Transición compartida: solo color/borde, corta y que se apaga con movimiento reducido. */
+const TRANS = "transition-colors duration-150 ease-out motion-reduce:transition-none";
+const BOTON_SEC = `inline-flex items-center gap-1.5 px-3 py-2 rounded-iv border border-linea-fuerte text-apoyo text-tinta-2 hover:border-marca hover:text-marca active:scale-[0.98] transition-[color,border-color,transform] duration-150 ease-out motion-reduce:transition-none`;
+
+/* Cifra grande en la letra de display, SIN el degradado verde de `.iv-cifra-hero`:
+   aquí el color debe decir algo (o nada), y un verde fijo leería «sube» donde no lo hay. */
+const CIFRA_GRANDE = "font-heading font-extrabold tabular-nums tracking-[-0.03em] leading-none";
+
+/** Tono de la nota de salud, el mismo umbral que las barras de componentes. */
+const tonoNota = (n) => (n >= 70 ? "text-sube" : n >= 40 ? "text-aviso" : "text-baja");
+
 /** Barra de peso: la misma pieza para la tabla y para la distribución.
  *
  * La PISTA va en `bg-linea` y no en `bg-superficie-alt`: sobre el panel apenas se
@@ -54,8 +65,8 @@ const RIESGO_TONO = { BAJO: "text-sube", MEDIO: "text-aviso", ALTO: "text-baja" 
  */
 function Barra({ pct, color, ancho = "w-16" }) {
   return (
-    <span className={`inline-block ${ancho} h-1 bg-linea align-middle overflow-hidden`}>
-      <span className="block h-full" style={{ width: `${Math.min(100, Math.max(0, pct))}%`,
+    <span className={`inline-block ${ancho} h-1 rounded-full bg-linea align-middle overflow-hidden`}>
+      <span className="block h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, pct))}%`,
                                               background: color || "rgb(var(--iv-marca))" }} />
     </span>
   );
@@ -205,12 +216,11 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
             </p>
           </div>
           <div className="flex gap-2 shrink-0">
-            <button onClick={onImportar}
-                    className="flex items-center gap-1.5 px-3 py-2 border border-linea-fuerte text-apoyo hover:border-marca hover:text-marca transition-colors">
-              <ArrowUpRight size={13} /> Importar
+            <button onClick={onImportar} className={BOTON_SEC}>
+              <ArrowUpRight size={13} aria-hidden="true" /> Importar
             </button>
             <button onClick={onAnadir}
-                    className="px-3 py-2 bg-marca text-marca-tinta text-apoyo font-semibold hover:opacity-90 transition-opacity">
+                    className="px-3 py-2 rounded-iv bg-marca text-marca-tinta text-apoyo font-semibold hover:bg-marca/90 active:scale-[0.98] transition-[background-color,transform] duration-150 ease-out motion-reduce:transition-none">
               + Añadir posición
             </button>
           </div>
@@ -219,15 +229,15 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
 
       {/* ── Estado y acciones de lectura ────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3 flex-wrap border-b border-linea pb-3">
-        <span className="flex items-center gap-2 iv-etiqueta">
-          <span className="w-1.5 h-1.5 rounded-full bg-sube inline-block" />
+        <span className="flex items-center gap-2 iv-etiqueta flex-wrap min-w-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-sube inline-block shrink-0" aria-hidden="true" />
           Cartera personal
           {resumen?.precio_actualizado && (
-            <span className="text-linea-fuerte">· Actualizada {resumen.precio_actualizado}</span>
+            <span className="text-tinta-3 normal-case tracking-normal">· Actualizada {resumen.precio_actualizado}</span>
           )}
         </span>
         <button onClick={onAnalizarCorrelacion}
-                className="px-3 py-1.5 border border-linea text-etiqueta hover:border-marca hover:text-marca transition-colors">
+                className={`px-3 py-1.5 rounded-iv border border-linea text-etiqueta text-tinta-2 hover:border-marca hover:text-marca ${TRANS}`}>
           Analizar correlación
         </button>
       </div>
@@ -235,20 +245,23 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
       {/* ── Tres lecturas ───────────────────────────────────────────────────── */}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1.2fr)]">
         {/* Patrimonio */}
-        <div className="iv-panel p-4">
-          <p className="iv-etiqueta mb-3">Patrimonio invertido</p>
+        <section className="iv-panel p-5 min-w-0" aria-labelledby="cartera-patrimonio">
+          <h2 id="cartera-patrimonio" className="iv-etiqueta mb-2.5">Patrimonio invertido</h2>
           {/* Los céntimos, más pequeños. En una cifra que se lee de un vistazo los
               dos últimos dígitos son ruido: ocupan el mismo espacio visual que los
-              miles y no cambian ninguna decisión. */}
-          <p className="iv-cifra text-tinta" style={{ fontSize: 30, lineHeight: 1 }}>
+              miles y no cambian ninguna decisión. El tamaño se ajusta al ancho
+              para que siete cifras quepan en la columna sin desbordar. */}
+          <p className={`${CIFRA_GRANDE} text-tinta text-[clamp(26px,7vw,34px)] lg:text-[clamp(24px,2.3vw,34px)] break-words`}>
             {invertido === null ? "—" : (() => {
               const t = fmtEur(invertido).replace("+", "");
               const i = t.lastIndexOf(",");
-              return i < 0 ? t : (<>{t.slice(0, i)}<span style={{ fontSize: 19 }}>{t.slice(i)}</span></>);
+              return i < 0 ? t : (<>{t.slice(0, i)}<span className="text-[0.62em] text-tinta-2">{t.slice(i)}</span></>);
             })()}
           </p>
-          <p className={`text-apoyo mt-2 ${latente > 0 ? "text-sube" : latente < 0 ? "text-baja" : "text-tinta-3"}`}>
-            {latente !== null ? `${fmtEur(latente)} · ${fmtPct(latentePct)} latente` : "—"}
+          <p className={`iv-cifra text-apoyo font-semibold mt-2 ${latente > 0 ? "text-sube" : latente < 0 ? "text-baja" : "text-tinta-3"}`}>
+            {latente !== null ? (
+              <>{fmtEur(latente)} · {fmtPct(latentePct)} <span className="font-normal text-tinta-3">latente</span></>
+            ) : "—"}
           </p>
           {/* Evolución. Barras y no una línea: la serie es DIARIA y con pocos puntos
               una línea insinúa una continuidad entre días que no se ha medido. */}
@@ -268,13 +281,13 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
                 );
               })}
             </div>
-              <div className="flex gap-1 mt-2">
+              <div className="flex gap-1 mt-2" role="group" aria-label="Rango del gráfico">
                 {["1M", "3M", "1A", "Todo"].map((r) => (
                   <button key={r} onClick={() => setRango(r)}
                           aria-pressed={rango === r}
                           disabled={serieCompleta.length < 2}
-                          className={`px-2 py-0.5 text-etiqueta transition-colors disabled:opacity-40 ${
-                            rango === r ? "text-marca" : "text-tinta-3 hover:text-tinta"}`}>
+                          className={`iv-cifra px-2 py-1 rounded-iv text-etiqueta disabled:opacity-40 ${TRANS} ${
+                            rango === r ? "text-marca bg-marca/10" : "text-tinta-3 hover:text-tinta"}`}>
                     {r}
                   </button>
                 ))}
@@ -288,37 +301,39 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
                   : "La evolución empieza hoy. El servidor guarda una foto por día de mercado; aún no hay ninguna."}
               </p>
               <button onClick={guardarFoto} disabled={guardando}
-                      className="mt-2 px-2.5 py-1 border border-linea-fuerte text-etiqueta hover:border-marca hover:text-marca transition-colors disabled:opacity-50">
+                      className={`mt-2 px-2.5 py-1 rounded-iv border border-linea-fuerte text-etiqueta text-tinta-2 hover:border-marca hover:text-marca disabled:opacity-50 ${TRANS}`}>
                 {guardando ? "Guardando…" : "Guardar la foto de hoy"}
               </button>
             </div>
           )}
 
-          <div className="mt-3 pt-3 border-t border-linea space-y-1.5">
-            <div className="flex justify-between text-apoyo">
-              <span className="text-tinta-3">Valor de mercado</span>
-              <span className="iv-cifra">{totalValor ? fmtEur(totalValor).replace("+", "") : "—"}</span>
+          <dl className="mt-4 pt-2 border-t border-linea">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 py-1.5 text-apoyo">
+              <dt className="text-tinta-2">Valor de mercado</dt>
+              <dd className="iv-cifra font-semibold text-tinta ml-auto text-right">{totalValor ? fmtEur(totalValor).replace("+", "") : "—"}</dd>
             </div>
-            <div className="flex justify-between text-apoyo">
-              <span className="text-tinta-3">Ya cobrado al vender</span>
-              <span className={`iv-cifra ${cifras.realizado > 0 ? "text-sube" : ""}`}>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 py-1.5 text-apoyo">
+              <dt className="text-tinta-2">Ya cobrado al vender</dt>
+              <dd className={`iv-cifra font-semibold ml-auto text-right ${cifras.realizado > 0 ? "text-sube" : "text-tinta"}`}>
                 {num(cifras.realizado) !== null ? fmtEur(cifras.realizado) : "—"}
-              </span>
+              </dd>
             </div>
-            {cifras.metodo && (
-              <p className="text-etiqueta text-tinta-3" title="Cambia con el interruptor «Como en DEGIRO» de Operaciones">
-                Cifras {cifras.metodo}
-              </p>
-            )}
-          </div>
-        </div>
+          </dl>
+          {cifras.metodo && (
+            <p className="text-etiqueta text-tinta-3 mt-1" title="Cambia con el interruptor «Como en DEGIRO» de Operaciones">
+              Cifras {cifras.metodo}
+            </p>
+          )}
+        </section>
 
         {/* Índice de salud · SIEMPRE con sus componentes detrás */}
-        <div className="iv-panel p-4">
-          <div className="flex items-center justify-between gap-2 mb-3">
-            <p className="iv-etiqueta">Salud de cartera</p>
+        <section className="iv-panel p-5 min-w-0" aria-labelledby="cartera-salud">
+          <div className="flex items-center justify-between gap-2 mb-2.5">
+            <h2 id="cartera-salud" className="iv-etiqueta">Salud de cartera</h2>
             {salud?.etiqueta && (
-              <span className="iv-etiqueta border border-linea-fuerte px-2 py-0.5">{salud.etiqueta}</span>
+              <span className={`iv-etiqueta ${salud?.puntuacion != null ? tonoNota(salud.puntuacion) : "text-tinta-2"}`}>
+                {salud.etiqueta}
+              </span>
             )}
           </div>
           {salud?.puntuacion == null ? (
@@ -328,30 +343,31 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
           ) : (
             <>
               <div className="flex items-baseline gap-2">
-                <span className="font-heading text-tinta" style={{ fontSize: 38, lineHeight: 1 }}>
+                <span className={`${CIFRA_GRANDE} text-[38px] ${tonoNota(salud.puntuacion)}`}>
                   {salud.puntuacion}
                 </span>
-                <span className="iv-etiqueta text-tinta-3">/ 100</span>
+                <span className="iv-cifra text-apoyo text-tinta-3">/ 100</span>
               </div>
               {/* El número SIEMPRE se puede abrir. Un compuesto que no se desglosa es
                   una métrica inventada con otro nombre: nadie sabría si baja por
                   concentración o por estructura. */}
               <button onClick={() => setAbierta((v) => !v)}
                       aria-expanded={abierta}
-                      className="mt-2 text-etiqueta text-marca hover:underline flex items-center gap-1">
+                      className="mt-2 py-1 text-etiqueta text-marca underline-offset-4 decoration-marca/50 hover:underline flex items-center gap-1">
                 {abierta ? "Ocultar el porqué" : "Qué significa cada uno"}
-                <CaretRight size={10} className={abierta ? "rotate-90 transition-transform" : "transition-transform"} />
+                <CaretRight size={10} aria-hidden="true"
+                            className={`transition-transform duration-200 ease-out motion-reduce:transition-none ${abierta ? "rotate-90" : ""}`} />
               </button>
               {/* Los componentes se ven SIEMPRE: un índice cuyo desglose hay que
                   desplegar sigue siendo un número opaco de un vistazo. Lo que se
                   pliega es la EXPLICACIÓN de cada uno, que es lo que ocupa. */}
-              <div className="mt-3 space-y-2.5">
+              <div className="mt-3 space-y-3">
                 {(salud.componentes || []).map((c) => (
                   <div key={c.clave}>
-                    <div className="flex justify-between items-baseline text-apoyo gap-2">
+                    <div className="flex justify-between items-baseline text-apoyo gap-2 mb-1">
                       <span className={c.medible ? "text-tinta-2" : "text-tinta-3"}>
                         {c.nombre}
-                        <span className="iv-etiqueta ml-1.5 text-linea-fuerte">{c.peso_efectivo || 0} %</span>
+                        <span className="iv-cifra text-etiqueta ml-1.5 text-tinta-3" title="Peso aplicado en el índice">{c.peso_efectivo || 0} %</span>
                       </span>
                       <span className={`iv-cifra shrink-0 ${!c.medible ? "text-tinta-3" : ""}`}>
                         {c.medible ? `${Math.round(c.valor)} ${c.unidad}` : "sin medir"}
@@ -376,45 +392,48 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
               </div>
             </>
           )}
-        </div>
+        </section>
 
         {/* Distribución por VALOR */}
-        <div className="iv-panel p-4">
-          <p className="iv-etiqueta mb-3">Distribución por valor</p>
-          <div className="flex h-2 overflow-hidden mb-3">
+        <section className="iv-panel p-5 min-w-0" aria-labelledby="cartera-distribucion">
+          <h2 id="cartera-distribucion" className="iv-etiqueta mb-3">Distribución por valor</h2>
+          <div className="flex h-2 rounded-full overflow-hidden mb-4 gap-px bg-linea" aria-hidden="true">
             {sectores.map((s) => (
               <span key={s.nombre} style={{ width: `${s.pct}%`, background: s.color }}
                     title={`${s.nombre} ${s.pct.toFixed(0)} %`} />
             ))}
           </div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+          {/* Una sola columna en lista: los nombres de sector (Communication Services…)
+              no caben en media columna sin cortarse, y así los % quedan en vertical. */}
+          <ul className="divide-y divide-linea">
             {sectores.map((s) => (
-              <div key={s.nombre} className="flex items-center justify-between gap-2 text-apoyo min-w-0">
-                <span className="flex items-center gap-1.5 min-w-0">
-                  <span className="w-2 h-2 shrink-0" style={{ background: s.color }} />
-                  <span className="truncate text-tinta-2">{s.nombre}</span>
+              <li key={s.nombre} className="flex items-center justify-between gap-3 py-1.5 text-apoyo min-w-0">
+                <span className="flex items-center gap-2 min-w-0">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} aria-hidden="true" />
+                  <span className="truncate text-tinta-2" title={s.nombre}>{s.nombre}</span>
                 </span>
-                <span className="iv-cifra shrink-0">{s.pct.toFixed(0)} %</span>
-              </div>
+                <span className="iv-cifra font-semibold text-tinta shrink-0">{s.pct.toFixed(0)} %</span>
+              </li>
             ))}
-          </div>
-        </div>
+          </ul>
+        </section>
       </div>
 
       {/* ── Lo que merece atención ──────────────────────────────────────────── */}
       {concentracion > 35 && (
-        <div className="aviso flex items-start gap-3">
-          <Warning size={15} weight="fill" className="text-aviso shrink-0 mt-0.5" />
-          <div className="min-w-0">
-            <b>Una concentración merece tu atención.</b>{" "}
+        <div role="note"
+             className="flex flex-wrap sm:flex-nowrap items-start gap-x-3 gap-y-2 rounded-iv-lg border border-aviso/35 bg-aviso/[0.06] px-4 py-3 text-apoyo">
+          <Warning size={16} weight="fill" className="text-aviso shrink-0 mt-0.5" aria-hidden="true" />
+          <div className="min-w-0 flex-1 leading-relaxed">
+            <b className="text-tinta font-semibold">Una concentración merece tu atención.</b>{" "}
             <span className="text-tinta-2">
               {sectores[0].nombre} representa el {concentracion.toFixed(0)} % de tu cartera por valor.
               Una sola caída sectorial te alcanzaría a esa parte entera.
             </span>
           </div>
           <button onClick={onAnalizarCorrelacion}
-                  className="ml-auto shrink-0 text-etiqueta text-marca hover:underline flex items-center gap-1">
-            Ver análisis <CaretRight size={11} />
+                  className="ml-7 sm:ml-auto shrink-0 py-0.5 text-etiqueta text-marca underline-offset-4 decoration-marca/50 hover:underline flex items-center gap-1">
+            Ver análisis <CaretRight size={11} aria-hidden="true" />
           </button>
         </div>
       )}
@@ -439,15 +458,15 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
               onChange={(e) => setBusca(e.target.value)}
               placeholder="Buscar activo"
               aria-label="Buscar activo en tus posiciones"
-              className="px-3 py-1.5 bg-superficie border border-linea text-apoyo w-full sm:w-56 placeholder:text-tinta-3"
+              className={`px-3 py-2 rounded-iv bg-superficie border border-linea text-apoyo text-tinta w-full sm:w-60 placeholder:text-tinta-3 hover:border-linea-fuerte focus:border-marca ${TRANS}`}
             />
-            <div className="flex gap-1">
+            <div className="flex p-0.5 rounded-iv border border-linea bg-superficie" role="group" aria-label="Filtrar por riesgo">
               {["Todas", "BAJO", "MEDIO", "ALTO"].map((r) => (
                 <button key={r} onClick={() => setRiesgoFiltro(r)}
                         aria-pressed={riesgoFiltro === r}
-                        className={`px-2.5 py-1.5 text-etiqueta border transition-colors ${
-                          riesgoFiltro === r ? "bg-marca text-marca-tinta border-marca"
-                                             : "border-linea text-tinta-3 hover:border-linea-fuerte hover:text-tinta"}`}>
+                        className={`px-3 py-1.5 rounded-[calc(var(--iv-radio)-2px)] text-etiqueta ${TRANS} ${
+                          riesgoFiltro === r ? "bg-superficie-alt text-tinta font-semibold"
+                                             : "text-tinta-3 hover:text-tinta"}`}>
                   {r === "Todas" ? "Todas" : r.charAt(0) + r.slice(1).toLowerCase()}
                 </button>
               ))}
@@ -456,7 +475,7 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
         )}
 
         {visibles.length === 0 ? (
-          <div className="border border-dashed border-linea-fuerte p-8 text-center">
+          <div className="rounded-iv-lg border border-dashed border-linea-fuerte p-8 text-center">
             {posiciones.length === 0 ? (
               <>
                 <p className="text-cuerpo text-tinta">Todavía no hay posiciones valoradas.</p>
@@ -476,15 +495,59 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto border border-linea">
-            <table className="w-full text-apoyo" style={{ minWidth: 780 }}>
+          <>
+          {/* MÓVIL · lista compacta. La tabla de siete columnas obligaba a desplazarse a
+              lo ancho en el teléfono; aquí lo que decide (símbolo y P&L) va en la
+              primera línea y el resto debajo, con las mismas cifras. */}
+          <ul className="md:hidden iv-panel divide-y divide-linea overflow-hidden">
+            {visibles.map((p) => {
+              const peso = totalValor ? (p.valor_eur / totalValor) * 100 : 0;
+              return (
+                <li key={p.symbol}>
+                  <Link to={`/accion/${p.symbol}`}
+                        className={`block px-4 py-3 hover:bg-superficie-alt active:bg-superficie-alt ${TRANS}`}>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <div className="min-w-0 flex items-baseline gap-2">
+                        <span className="iv-cifra font-semibold text-tinta shrink-0">{p.symbol}</span>
+                        <span className="text-etiqueta text-tinta-3 truncate">
+                          {[p.nombre, p.mercado].filter(Boolean).join(" · ")}
+                        </span>
+                      </div>
+                      <span className={`iv-cifra text-apoyo font-semibold shrink-0 ${
+                        p.pnl > 0 ? "text-sube" : p.pnl < 0 ? "text-baja" : "text-tinta-3"}`}>
+                        {p.pnl !== null ? fmtEur(p.pnl) : "—"}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-etiqueta">
+                      <span className="iv-cifra text-tinta-2">
+                        {num(p.precio_actual) !== null ? p.precio_actual.toFixed(2) : "—"}
+                      </span>
+                      <span className={`iv-cifra ${p.hoyPct > 0 ? "text-sube" : p.hoyPct < 0 ? "text-baja" : "text-tinta-3"}`}>
+                        {p.hoyPct !== null ? fmtPct(p.hoyPct) : "—"}
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <Barra pct={peso} ancho="w-10" />
+                        <span className="iv-cifra text-tinta-3">{peso.toFixed(0)} %</span>
+                      </span>
+                      <span className={`iv-etiqueta ${RIESGO_TONO[p.riesgo] || "text-tinta-3"}`}>{p.riesgo || "—"}</span>
+                      <span className={`ml-auto ${p.estado.tono}`} title={p.estado.ayuda || undefined}>{p.estado.txt}</span>
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* ESCRITORIO · tabla */}
+          <div className="hidden md:block iv-panel overflow-x-auto">
+            <table className="w-full text-apoyo" style={{ minWidth: 760 }}>
               <thead>
                 <tr>
                   {["Activo", "Precio", "Hoy", "P&L", "Peso", "Riesgo", "Estado"].map((h, i) => (
-                    <th key={h} className={`px-3 py-2.5 iv-etiqueta bg-superficie-alt border-b border-linea whitespace-nowrap ${
+                    <th key={h} scope="col" className={`px-4 py-2.5 iv-etiqueta font-normal border-b border-linea whitespace-nowrap ${
                       i >= 1 && i <= 3 ? "text-right" : "text-left"}`}>{h}</th>
                   ))}
-                  <th className="bg-superficie-alt border-b border-linea w-8" aria-label="Abrir" />
+                  <th className="border-b border-linea w-8"><span className="sr-only">Abrir</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -493,37 +556,43 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
                   return (
                     <tr key={p.symbol}
                         onClick={() => navegar(`/accion/${p.symbol}`)}
-                        className="group border-b border-linea last:border-b-0 hover:bg-superficie-alt transition-colors cursor-pointer">
-                      <td className="px-3 py-3">
-                        <span className="font-mono font-semibold text-tinta">{p.symbol}</span>
-                        <div className="text-etiqueta text-tinta-3 truncate max-w-[190px]">
+                        className={`group border-b border-linea last:border-b-0 hover:bg-superficie-alt cursor-pointer ${TRANS}`}>
+                      <td className="px-4 py-2.5">
+                        {/* El símbolo es un enlace real: la fila entera se pulsa con el
+                            ratón, y con el teclado se llega aquí con Tab. */}
+                        <Link to={`/accion/${p.symbol}`} onClick={(ev) => ev.stopPropagation()}
+                              className={`iv-cifra font-semibold text-tinta group-hover:text-marca ${TRANS}`}>
+                          {p.symbol}
+                        </Link>
+                        <div className="text-etiqueta text-tinta-3 truncate max-w-[200px]">
                           {[p.nombre, p.mercado].filter(Boolean).join(" · ")}
                         </div>
                       </td>
-                      <td className="px-3 py-3 text-right iv-cifra whitespace-nowrap">
+                      <td className="px-4 py-2.5 text-right iv-cifra text-tinta-2 whitespace-nowrap">
                         {num(p.precio_actual) !== null ? p.precio_actual.toFixed(2) : "—"}
                       </td>
-                      <td className={`px-3 py-3 text-right iv-cifra whitespace-nowrap ${
+                      <td className={`px-4 py-2.5 text-right iv-cifra whitespace-nowrap ${
                         p.hoyPct > 0 ? "text-sube" : p.hoyPct < 0 ? "text-baja" : "text-tinta-3"}`}>
                         {p.hoyPct !== null ? fmtPct(p.hoyPct) : "—"}
                       </td>
-                      <td className={`px-3 py-3 text-right iv-cifra whitespace-nowrap ${
+                      <td className={`px-4 py-2.5 text-right iv-cifra font-semibold whitespace-nowrap ${
                         p.pnl > 0 ? "text-sube" : p.pnl < 0 ? "text-baja" : "text-tinta-3"}`}>
                         {p.pnl !== null ? fmtEur(p.pnl) : "—"}
                       </td>
-                      <td className="px-3 py-3 whitespace-nowrap">
+                      <td className="px-4 py-2.5 whitespace-nowrap">
                         <Barra pct={peso} />
-                        <span className="iv-cifra text-tinta-3 ml-2">{peso.toFixed(0)} %</span>
+                        <span className="iv-cifra text-tinta-2 ml-2 inline-block w-9 text-right">{peso.toFixed(0)} %</span>
                       </td>
-                      <td className={`px-3 py-3 iv-etiqueta ${RIESGO_TONO[p.riesgo] || "text-tinta-3"}`}>
+                      <td className={`px-4 py-2.5 iv-etiqueta ${RIESGO_TONO[p.riesgo] || "text-tinta-3"}`}>
                         {p.riesgo || "—"}
                       </td>
-                      <td className={`px-3 py-3 whitespace-nowrap ${p.estado.tono}`}
+                      <td className={`px-4 py-2.5 whitespace-nowrap ${p.estado.tono}`}
                           title={p.estado.ayuda || undefined}>
                         {p.estado.txt}
                       </td>
-                      <td className="px-2 py-3 text-right">
-                        <CaretRight size={13} className="text-tinta-3 group-hover:text-marca transition-colors" />
+                      <td className="px-2 py-2.5 text-right">
+                        <CaretRight size={13} aria-hidden="true"
+                                    className={`text-tinta-3 group-hover:text-marca group-hover:translate-x-0.5 transition-[color,transform] duration-150 ease-out motion-reduce:transition-none`} />
                       </td>
                     </tr>
                   );
@@ -531,6 +600,7 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </>
