@@ -62,6 +62,12 @@ Contraste: todos los roles de texto ≥ 4,5:1 sobre las tres superficies (lo ver
 - Chips (`base/Chip`): Geist 12/500, radio 6, fondo 11 % del tono. Solo cuando aportan.
 - Métricas (`base/Metrica`): `sm`/`md` en mono, `lg`/`xl` como cifra héroe. Teñir por signo hay que pedirlo (`tono="auto"`).
 - Estados (`base/Estado`): cargando con forma, vacío con motivo, error con causa y reintento.
+- Monograma (`base/Monograma`): cuadrado de 32/40 px con las letras del ticker en Geist Mono; ancla las filas de lista (no hay logotipos y no se inventan). Se tiñe solo si la fila lo pide (`tono`).
+- Cabecera de bloque (`base/CabeceraBloque`): icono lucide 16 px en tinta-3 + rótulo Geist 13/500 + nota o enlace a la derecha. Nivel por debajo del titular de sección.
+- Listas de decisión (`base/TarjetaAtencion`): filas en un único panel, partidas en tramos rotulados («Piden decisión» / «Para vigilar»); urgentes con filo de color de 3 px a la izquierda y chip sólido; lectura numérica en columna fija de 264 px (escritorio) o franja de luz 2–4 columnas (móvil).
+
+## Pantalla «Hoy» (fase 2)
+Dos columnas: principal (cartera como métrica héroe de 40–60 px con «€» reducido, luego la lista de decisiones) y contexto de 336–364 px (mercado: régimen + futuros + miedo/codicia en un panel con filetes; calendario + cerebro; sectores como barras divergentes de ±3 %). En móvil, el contexto baja entero detrás de las decisiones.
 
 ## Pendiente (fases siguientes)
 Cada pantalla hereda el sistema pero conserva maquetación propia: tablas anchas de Cartera (niveles) y su desplazamiento horizontal, fichas con cajas anidadas, cifras de tabla en mono negrita que conviene aligerar, y la barra de señal inferior de la ficha.

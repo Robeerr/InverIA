@@ -1,12 +1,14 @@
 import React from "react";
 import { cn } from "@/lib/utils";
+import { Gauge } from "lucide-react";
+import CabeceraBloque from "@/components/base/CabeceraBloque";
 import { fmtPrice, fmtPct } from "@/lib/format";
 
-/* BandaRegimen · el semáforo del mercado, en cabecera de terminal
+/* BandaRegimen · el semáforo del mercado
    ─────────────────────────────────────────────────────────────────────────────
    El régimen decide si las señales de compra son fiables hoy, así que abre la
-   pantalla: un punto de color, la etiqueta, el consejo en prosa, y a la derecha la
-   LECTURA de SPY —precio, sus medias de 50 y 200 sesiones, la distancia a la de 200
+   columna de mercado, junto a la cartera: un punto de color, la etiqueta, el consejo
+   en prosa, y debajo la LECTURA de SPY —precio, sus medias de 50 y 200 sesiones, la distancia a la de 200
    y el retorno a un mes—. Todos los números vienen de `market_regime`; ninguno se
    inventa. Si no se ha podido calcular, se dice, y no se pinta un semáforo apagado
    como si fuera neutro (LEY 4 del producto: no saber no es una señal). */
@@ -17,6 +19,13 @@ const COLOR = {
   rojo: "bg-baja",
 };
 
+/* Halo del punto: el color del semáforo con un anillo del mismo tono, bajo. */
+const ANILLO = {
+  verde: "shadow-[0_0_0_4px_rgb(var(--iv-sube)/0.16)]",
+  amarillo: "shadow-[0_0_0_4px_rgb(var(--iv-aviso)/0.16)]",
+  rojo: "shadow-[0_0_0_4px_rgb(var(--iv-baja)/0.16)]",
+};
+
 function Stat({ etiqueta, valor, tono, num }) {
   const clave = tono === "auto"
     ? (num > 0 ? "text-sube" : num < 0 ? "text-baja" : "text-tinta")
@@ -24,7 +33,7 @@ function Stat({ etiqueta, valor, tono, num }) {
   return (
     <div className="min-w-0">
       <p className="iv-etiqueta leading-none">{etiqueta}</p>
-      <p className={cn("iv-cifra text-apoyo font-semibold mt-0.5", clave)}>{valor}</p>
+      <p className={cn("iv-cifra text-[13.5px] font-medium mt-1.5 leading-none", clave)}>{valor}</p>
     </div>
   );
 }
@@ -35,10 +44,11 @@ export default function BandaRegimen({ mercado }) {
 
   if (desconocido) {
     return (
-      <section className="px-4 py-3 sm:px-5" aria-label="Régimen de mercado">
-        <div className="flex items-center gap-2.5">
-          <span className="inline-block w-2.5 h-2.5 rounded-full bg-linea-marcada shrink-0" />
-          <p className="text-apoyo text-tinta-2">
+      <section className="p-5 sm:p-6" aria-label="Régimen de mercado">
+        <CabeceraBloque icono={Gauge}>Régimen de mercado</CabeceraBloque>
+        <div className="flex items-start gap-2.5 mt-3">
+          <span className="inline-block w-2 h-2 mt-1.5 rounded-full bg-linea-marcada shrink-0" />
+          <p className="text-[13.5px] text-tinta-2 leading-relaxed">
             No se ha podido evaluar el régimen de mercado ahora mismo. Suele ser que el
             histórico de SPY no está disponible; se reintenta solo en la próxima carga.
           </p>
@@ -48,33 +58,26 @@ export default function BandaRegimen({ mercado }) {
   }
 
   return (
-    <section
-      className="px-4 py-4 sm:px-5 sm:py-5 flex flex-col lg:flex-row lg:items-center gap-x-8 gap-y-4"
-      aria-labelledby="hoy-lectura"
-    >
-      {/* La LECTURA, en prosa y a tamaño de titular. El régimen no es un dato más de
-          la fila: es la condición bajo la que se leen todos los demás — y el consejo
-          debajo, que es lo que de verdad se puede accionar. Es también el único sitio
-          de la portada donde se nombra el régimen: antes se repetía en una pastilla
-          de la cabecera, a cien píxeles de aquí. */}
-      <div className="min-w-0 lg:flex-1">
-        <p className="iv-etiqueta mb-1.5">Lectura principal</p>
-        <h2 id="hoy-lectura" className="font-heading font-semibold text-tinta leading-[1.15] text-pretty
-                                         flex items-baseline gap-2.5"
-            style={{ fontSize: "clamp(19px, 2vw, 24px)" }}>
-          <span className={cn("inline-block w-2 h-2 rounded-full shrink-0 -translate-y-[0.15em]",
-                              COLOR[m.light] || "bg-linea-marcada")} aria-hidden="true" />
-          <span>{m.label}</span>
-        </h2>
-        {m.advice && (
-          <p className="text-apoyo sm:text-cuerpo text-tinta-2 mt-2 leading-relaxed max-w-[62ch]">{m.advice}</p>
-        )}
-      </div>
+    <section className="p-5 sm:p-6" aria-labelledby="hoy-lectura">
+      <CabeceraBloque icono={Gauge}>Régimen de mercado</CabeceraBloque>
 
-      {/* La lectura de SPY. Las cinco cifras que sostienen la frase de al lado: sin
+      {/* La LECTURA, en prosa y a tamaño de titular. El régimen no es un dato más: es
+          la condición bajo la que se leen todas las decisiones de la portada — y el
+          consejo debajo, que es lo que de verdad se puede accionar. */}
+      <h2 id="hoy-lectura"
+          className="mt-4 text-[19px] sm:text-[20px] font-semibold tracking-[-0.025em] text-tinta leading-[1.2]
+                     text-pretty flex items-baseline gap-3">
+        <span className={cn("inline-block w-2 h-2 rounded-full shrink-0 -translate-y-[0.2em]",
+                            COLOR[m.light] || "bg-linea-marcada", ANILLO[m.light])} aria-hidden="true" />
+        <span>{m.label}</span>
+      </h2>
+      {m.advice && (
+        <p className="text-[13.5px] text-tinta-2 mt-2 leading-relaxed text-pretty">{m.advice}</p>
+      )}
+
+      {/* La lectura de SPY. Las cinco cifras que sostienen la frase de arriba: sin
           ellas el veredicto es una opinión, y con ellas se puede comprobar. */}
-      <div className="grid grid-cols-3 sm:grid-cols-5 gap-x-6 gap-y-3 shrink-0
-                      pt-3 border-t border-linea lg:pt-0 lg:border-t-0 lg:border-l lg:pl-8">
+      <div className="grid grid-cols-3 gap-x-4 gap-y-4 mt-5 pt-5 border-t border-suave">
         <Stat etiqueta="SPY" valor={m.spy_price != null ? `$${fmtPrice(m.spy_price)}` : "—"} />
         <Stat etiqueta="vs SMA200" valor={m.dist_sma200_pct != null ? fmtPct(m.dist_sma200_pct) : "—"}
               tono="auto" num={m.dist_sma200_pct} />

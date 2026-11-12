@@ -1,21 +1,23 @@
 import React from "react";
 import { Link } from "react-router-dom";
+import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Chip from "./Chip";
+import Monograma from "./Monograma";
 import { fmtEur, fmtPctPlano, fmtPrice, fmtHace, fmtEnDias } from "@/lib/format";
 
 /* TarjetaAtencion · la unidad de «Lo que importa hoy»
    ─────────────────────────────────────────────────────────────────────────────
-   El rediseño de la portada la convierte en una FILA DE TERMINAL: a la izquierda el
-   relato (las tres preguntas que el Dashboard existe para contestar), a la derecha
-   una LECTURA numérica —la cifra que el relato describía en prosa—. La queja del
-   inventario era literal: «una lista de tarjetas de texto sin una sola cifra». Aquí
-   cada tipo trae su propio panel de números, sacado de `datos`, sin inventar nada.
+   Una FILA de lista de producto, no una tarjeta suelta: monograma del ticker a la
+   izquierda (el ancla que el ojo recorre en vertical), el relato en el centro y la
+   LECTURA numérica a la derecha —la cifra que el relato describía en prosa—. Todas
+   las filas viven en un mismo panel (lo monta HoyView), así que las columnas de
+   cifras quedan alineadas de una fila a otra como en una tabla.
 
        qué pasa    → el titular, con el ticker y el dato
        por qué     → el respaldo: fuerza del nivel, métodos que coinciden, quién lo dice
        qué vigilar → lo accionable
-       lectura     → las cifras de `datos`, en mono, alineadas a la derecha
+       lectura     → las cifras de `datos`, en mono, en rejilla fija
 
    El backend manda el texto ya redactado y los datos crudos por separado. La frase
    la escribe el servidor porque cruza posición, niveles y menciones; las cifras las
@@ -23,8 +25,8 @@ import { fmtEur, fmtPctPlano, fmtPrice, fmtHace, fmtEnDias } from "@/lib/format"
    es un precio en dólares o un importe en euros. */
 
 const TIPOS = {
-  ruptura: { tono: "baja", etiqueta: "Ruptura", halo: "iv-halo-baja" },
-  alerta: { tono: "aviso", etiqueta: "Alerta", halo: "iv-halo-marca" },
+  ruptura: { tono: "baja", etiqueta: "Ruptura" },
+  alerta: { tono: "aviso", etiqueta: "Alerta" },
   nivel: { tono: "marca", etiqueta: "Nivel cerca" },
   divergencia: { tono: "info", etiqueta: "Choque" },
   confluencia: { tono: "sube", etiqueta: "Coincidencia" },
@@ -33,9 +35,8 @@ const TIPOS = {
 
 /* URGENTE frente a INFORMATIVO. Una alerta que ha saltado o una ruptura de la media
    piden decidir hoy; un nivel cerca, un choque de fuentes o unos resultados piden
-   mirar. Antes las cinco tarjetas pesaban igual y la urgencia solo la decía el
-   orden; ahora la dice también la forma: las urgentes son tarjeta con halo, las
-   informativas son filas compactas dentro de un mismo panel. */
+   mirar. La urgencia la dice el orden, el grupo en el que cae (HoyView los rotula) y
+   la forma: las urgentes llevan filo de color, monograma teñido y chip sólido. */
 const URGENTES = new Set(["ruptura", "alerta"]);
 export function esUrgente(tarjeta) {
   return URGENTES.has(tarjeta?.tipo);
@@ -117,7 +118,8 @@ function tonoDelNumero(n) {
 
 /** Una celda de la lectura: etiqueta arriba, cifra mono debajo. La barra de fuerza va
  *  DEBAJO de la cifra y no a su lado: en móvil, «100/100» y la barra en la misma línea
- *  no cabían en media columna. */
+ *  no cabían en media columna. Cifra en peso medio, no negrita: en columna, el peso lo
+ *  da la alineación, y la negrita mono de antes pesaba más que el titular. */
 function Lectura({ etiqueta, valor, tono, num, barra }) {
   const vacio = valor == null || valor === "—";
   const clave = tono === "auto" ? tonoDelNumero(num) : tono || "neutro";
@@ -126,14 +128,14 @@ function Lectura({ etiqueta, valor, tono, num, barra }) {
       <p className="iv-etiqueta leading-none">{etiqueta}</p>
       {barra != null ? (
         <>
-          <p className="iv-cifra text-apoyo font-semibold mt-1 leading-tight text-tinta-2">{valor}</p>
-          <span className="block w-full max-w-[64px] h-1 mt-1.5 rounded-full bg-linea overflow-hidden"
+          <p className="iv-cifra text-[13.5px] font-medium mt-1.5 leading-tight text-tinta-2">{valor}</p>
+          <span className="block w-full max-w-[72px] h-1 mt-1.5 rounded-full bg-tinta/10 overflow-hidden"
                 aria-hidden="true">
             <span className="block h-full bg-marca rounded-full" style={{ width: `${Math.min(100, barra)}%` }} />
           </span>
         </>
       ) : (
-        <p className={cn("iv-cifra text-apoyo font-semibold mt-1 leading-tight break-words",
+        <p className={cn("iv-cifra text-[13.5px] font-medium mt-1.5 leading-tight break-words",
           vacio ? "text-tinta-3" : CLASES_TONO[clave] || CLASES_TONO.neutro)}>
           {valor ?? "—"}
         </p>
@@ -165,16 +167,25 @@ function TipoDiscreto({ meta }) {
   );
 }
 
-const ENLACE = "text-etiqueta text-marca underline-offset-4 decoration-marca/50 hover:underline " +
-  "inline-flex items-center gap-1 py-1";
+const FILO = {
+  baja: "bg-baja",
+  aviso: "bg-aviso",
+};
 
-/** «INTC está a un 0.6% de tu Nivel 1» → «está a un 0.6% de tu Nivel 1». */
+/** «INTC está a un 0.6% de tu Nivel 1» → «Está a un 0.6% de tu Nivel 1».
+ *  «MU: se ha disparado…» → «Se ha disparado…». El ticker ya está escrito encima, en
+ *  grande; repetirlo era la primera palabra de cada titular. Solo se quita si el texto
+ *  EMPIEZA por el ticker: nada del contenido cambia. */
 function sinPrefijoDelTicker(texto, symbol) {
   if (!texto || !symbol) return texto;
-  return texto.startsWith(symbol + " ") ? texto.slice(symbol.length + 1) : texto;
+  let t = texto;
+  if (t.startsWith(symbol + ": ")) t = t.slice(symbol.length + 2);
+  else if (t.startsWith(symbol + " ")) t = t.slice(symbol.length + 1);
+  else return texto;
+  return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
-export default function TarjetaAtencion({ tarjeta, orden }) {
+export default function TarjetaAtencion({ tarjeta, orden, indice = 0 }) {
   const meta = TIPOS[tarjeta.tipo] || { tono: "neutro", etiqueta: tarjeta.tipo };
   const d = tarjeta.datos || {};
   const lecturas = lecturasDe(tarjeta);
@@ -191,148 +202,107 @@ export default function TarjetaAtencion({ tarjeta, orden }) {
   const tambien = Array.isArray(tarjeta.tambien) && tarjeta.tambien.length > 0 ? tarjeta.tambien : null;
   const urgente = esUrgente(tarjeta);
 
-  const ordinal = orden != null && (
-    <span className={cn("iv-cifra text-etiqueta font-semibold tabular-nums shrink-0",
-                        urgente ? "text-marca" : "text-tinta-3")}
->
-      <span className="sr-only">Prioridad </span>{String(orden).padStart(2, "0")}
-    </span>
-  );
-
-  const relatoComun = (
-    <>
-      {tarjeta.por_que && (
-        <p className={cn("text-apoyo leading-relaxed mt-1 text-pretty",
-                         urgente ? "text-tinta-2" : "text-tinta-3")}>
-          {tarjeta.por_que}
-        </p>
-      )}
-
-      {tarjeta.que_vigilar && (
-        <p className="text-apoyo text-tinta mt-2 leading-snug text-pretty">
-          <span className="iv-etiqueta mr-2 text-marca">Vigila</span>
-          {tarjeta.que_vigilar}
-        </p>
-      )}
-
-      {(motor || extras.length > 0 || tambien) && (
-        <p className="text-etiqueta text-tinta-3 mt-2 leading-relaxed">
-          {[
-            motor && <span key="motor" title={motor.ayuda}>{motor.texto}</span>,
-            extras.length > 0 && <span key="extras">{extras.join(" · ")}</span>,
-            tambien && <span key="tambien">también: {tambien.map((t) => t.que_pasa).join(" · ")}</span>,
-          ].filter(Boolean).reduce((acc, el, i) => (i ? [...acc, " · ", el] : [el]), [])}
-        </p>
-      )}
-
-      {tarjeta.aviso && (
-        <p className="text-apoyo text-aviso mt-2.5 bg-aviso/10 border border-aviso/25 rounded-iv-sm px-2.5 py-1.5">
-          {tarjeta.aviso}
-        </p>
-      )}
-    </>
-  );
-
-  /* ── Fila informativa ──────────────────────────────────────────────────
-     Sin caja propia: vive dentro del panel que agrupa las informativas seguidas
-     (lo monta HoyView), separada de la siguiente por un filete. La lectura va a la
-     derecha en escritorio y en 2×2 debajo en móvil, sin rejilla de bordes. */
-  if (!urgente) {
-    return (
-      <article
-        className="px-4 py-4 sm:px-5 transition-colors duration-150 ease-out motion-reduce:transition-none
-                   [@media(hover:hover)]:hover:bg-superficie-alt/60"
-        data-testid={`tarjeta-hoy-${tarjeta.symbol}`}
-      >
-        <div className="flex flex-col md:flex-row md:gap-6">
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 min-w-0">
-              {ordinal}
-              <Link to={tarjeta.ruta}
-                    className="font-heading text-[17px] font-semibold leading-none text-tinta hover:text-marca
-                               transition-colors duration-150 motion-reduce:transition-none shrink-0">
-                {tarjeta.symbol}
-              </Link>
-              {tarjeta.nombre && tarjeta.nombre !== tarjeta.symbol && (
-                <span className="text-apoyo text-tinta-3 truncate hidden sm:inline min-w-0">{tarjeta.nombre}</span>
-              )}
-              <span className="ml-auto flex items-center gap-3 shrink-0">
-                {d.tiene_posicion && <span className="iv-etiqueta text-tinta-3">en cartera</span>}
-                <TipoDiscreto meta={meta} />
-              </span>
-            </div>
-            <p className="text-cuerpo text-tinta font-medium leading-snug mt-2 text-pretty">
-              {sinPrefijoDelTicker(tarjeta.que_pasa, tarjeta.symbol)}
-            </p>
-            {relatoComun}
-          </div>
-
-          {lecturas.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-linea md:mt-0 md:pt-0 md:border-t-0 md:w-[224px] md:shrink-0
-                            flex flex-col">
-              <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                {lecturas.map((l) => <Lectura key={l.etiqueta} {...l} />)}
-              </div>
-              <Link to={tarjeta.ruta} className={cn(ENLACE, "mt-2 md:mt-auto self-start")}>
-                Ver análisis <span aria-hidden="true">→</span>
-              </Link>
-            </div>
-          )}
-        </div>
-      </article>
-    );
-  }
-
-  /* ── Tarjeta urgente ───────────────────────────────────────────────────
-     Halo del color de su tipo, chip sólido y el «qué pasa» a tamaño de titular: es
-     lo primero que el ojo encuentra al abrir la portada. */
   return (
     <article
-      className={cn("iv-panel overflow-hidden", meta.halo)}
+      className="group relative px-4 py-5 sm:px-6 iv-entra
+                 transition-colors duration-150 ease-salida motion-reduce:transition-none
+                 [@media(hover:hover)]:hover:bg-tinta/[0.025]"
+      style={{ animationDelay: `${Math.min(indice, 8) * 40}ms` }}
       data-testid={`tarjeta-hoy-${tarjeta.symbol}`}
     >
-      <div className="flex flex-col md:flex-row">
-        <div className="flex-1 min-w-0 px-4 py-4 sm:px-5 sm:py-5">
-          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 min-w-0">
-            {ordinal}
+      {/* El filo de color de las urgentes: dice «esto pide decidir» antes de leer nada,
+          sin teñir la fila entera (eso volvería a ser una caja dentro de la caja). */}
+      {urgente && (
+        <span className={cn("absolute left-0 top-5 bottom-5 w-[3px] rounded-r-full",
+                            FILO[meta.tono] || "bg-marca")}
+              aria-hidden="true" />
+      )}
+
+      {/* En móvil el monograma sube a la línea del ticker (a 32 px): como columna propia
+          se comía 56 px de un texto que ya va justo de ancho. */}
+      <div className="grid grid-cols-1 sm:grid-cols-[40px_minmax(0,1fr)] sm:gap-x-4
+                      lg:grid-cols-[40px_minmax(0,1fr)_264px] lg:gap-x-6">
+        <Monograma symbol={tarjeta.symbol} tono={urgente ? meta.tono : "neutro"} className="mt-0.5 hidden sm:inline-flex" />
+
+        {/* ── El relato ── */}
+        <div className="min-w-0">
+          <div className="flex items-center gap-x-2 gap-y-1 min-w-0">
+            <Monograma symbol={tarjeta.symbol} tono={urgente ? meta.tono : "neutro"} tamano="sm"
+                       className="sm:hidden mr-1" />
             <Link to={tarjeta.ruta}
-                  className="font-heading text-titulo font-semibold leading-none text-tinta hover:text-marca
-                             transition-colors duration-150 motion-reduce:transition-none shrink-0">
+                  className="text-[15px] font-semibold tracking-[-0.015em] leading-none text-tinta
+                             hover:text-marca transition-colors duration-150 motion-reduce:transition-none shrink-0">
               {tarjeta.symbol}
             </Link>
             {tarjeta.nombre && tarjeta.nombre !== tarjeta.symbol && (
-              <span className="text-apoyo text-tinta-3 truncate hidden sm:inline min-w-0">{tarjeta.nombre}</span>
+              <span className="text-[13px] text-tinta-3 truncate min-w-0 leading-none">{tarjeta.nombre}</span>
             )}
-            <span className="ml-auto flex items-center gap-3 shrink-0">
-              {d.tiene_posicion && <span className="iv-etiqueta text-tinta-3">en cartera</span>}
-              <Chip tono={meta.tono} variante="solido">{meta.etiqueta}</Chip>
+            <span className="ml-auto flex items-center gap-2.5 shrink-0 pl-2">
+              {d.tiene_posicion && <span className="iv-etiqueta whitespace-nowrap">En cartera</span>}
+              {urgente
+                ? <Chip tono={meta.tono} variante="solido">{meta.etiqueta}</Chip>
+                : <TipoDiscreto meta={meta} />}
             </span>
           </div>
 
-          {/* qué pasa · a tamaño de titular: es la frase que hay que leer hoy */}
-          <p className="text-[17px] leading-snug text-tinta font-semibold mt-3 text-pretty">
+          {/* qué pasa · la frase que hay que leer hoy */}
+          <p className={cn("leading-snug text-tinta mt-2 text-pretty tracking-[-0.01em]",
+                           urgente ? "text-[16px] font-semibold" : "text-[15px] font-medium")}>
+            {orden != null && (
+              <span className="sr-only">Prioridad {String(orden).padStart(2, "0")}. </span>
+            )}
             {sinPrefijoDelTicker(tarjeta.que_pasa, tarjeta.symbol)}
           </p>
-          {relatoComun}
+
+          {tarjeta.por_que && (
+            <p className="text-[13.5px] leading-relaxed mt-1.5 text-pretty text-tinta-2 max-w-[68ch]">
+              {tarjeta.por_que}
+            </p>
+          )}
+
+          {tarjeta.que_vigilar && (
+            <p className="text-[13.5px] text-tinta mt-2.5 leading-snug text-pretty flex gap-2 max-w-[68ch]">
+              <span className="text-[12px] font-medium text-marca shrink-0 leading-[1.45]">Vigila</span>
+              <span>{tarjeta.que_vigilar}</span>
+            </p>
+          )}
+
+          {(motor || extras.length > 0 || tambien) && (
+            <p className="text-etiqueta text-tinta-3 mt-2 leading-relaxed">
+              {[
+                motor && <span key="motor" title={motor.ayuda}>{motor.texto}</span>,
+                extras.length > 0 && <span key="extras">{extras.join(" · ")}</span>,
+                tambien && <span key="tambien">también: {tambien.map((t) => t.que_pasa).join(" · ")}</span>,
+              ].filter(Boolean).reduce((acc, el, i) => (i ? [...acc, " · ", el] : [el]), [])}
+            </p>
+          )}
+
+          {tarjeta.aviso && (
+            <p className="text-apoyo text-aviso mt-2.5 bg-aviso/10 border border-aviso/25 rounded-iv-sm px-2.5 py-1.5">
+              {tarjeta.aviso}
+            </p>
+          )}
         </div>
 
-        {/* ── Lectura numérica ───────────────────────────────────────
-            La rejilla 2×2 de terminal, con filetes de un píxel. Las celdas son
-            transparentes para que el tinte del halo llegue hasta el borde. */}
+        {/* ── La lectura ──
+            En escritorio, columna fija a la derecha: el mismo ancho en todas las filas,
+            así las cifras se leen en vertical como una tabla. En móvil, debajo del
+            relato y a todo el ancho, en cuatro columnas cuando caben. */}
         {lecturas.length > 0 && (
-          <div className="border-t md:border-t-0 md:border-l border-linea md:w-[248px] md:shrink-0 flex flex-col">
-            <div className="grid grid-cols-2 flex-1">
-              {lecturas.map((l, i) => (
-                <div key={l.etiqueta}
-                     className={cn("px-4 py-3 border-linea", i % 2 === 0 && "border-r",
-                                   i < lecturas.length - 2 && "border-b")}>
-                  <Lectura {...l} />
-                </div>
-              ))}
+          <div className="col-span-full mt-4 lg:col-span-1 lg:mt-0 flex flex-col
+                          lg:border-l lg:border-suave lg:pl-6">
+            <div className="grid grid-cols-2 min-[460px]:grid-cols-4 lg:grid-cols-2 gap-x-4 gap-y-3.5
+                            rounded-iv bg-tinta/[0.03] px-3.5 py-3 lg:bg-transparent lg:p-0">
+              {lecturas.map((l) => <Lectura key={l.etiqueta} {...l} />)}
             </div>
-            {/* El enlace vive con las cifras: es adonde se va DESPUÉS de mirarlas. */}
-            <Link to={tarjeta.ruta} className={cn(ENLACE, "px-4 py-2.5 border-t border-linea")}>
-              Ver análisis <span aria-hidden="true">→</span>
+            <Link to={tarjeta.ruta}
+                  className="mt-3 lg:mt-auto lg:pt-3 self-start inline-flex items-center gap-1 min-h-[32px]
+                             text-[13px] font-medium text-tinta-2 hover:text-marca
+                             transition-colors duration-150 motion-reduce:transition-none">
+              Ver análisis
+              <ChevronRight className="w-3.5 h-3.5 transition-transform duration-150 ease-salida
+                                       group-hover:translate-x-0.5 motion-reduce:transition-none"
+                            strokeWidth={2} aria-hidden="true" />
             </Link>
           </div>
         )}
