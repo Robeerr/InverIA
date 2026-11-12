@@ -30,7 +30,7 @@ Bordes de pieza: `--borde-suave` (blanco 6,5 %) y `--borde-medio` (11 %) → uti
 Botón principal: relleno `--boton-fondo` (índigo más profundo, texto blanco ≥ 5:1).
 Contraste: todos los roles de texto ≥ 4,5:1 sobre las tres superficies (lo verifica `styles/tokens.test.js`; peor caso oscuro ≈ 4,95:1).
 `lib/tokens.js` repite los valores claros como respaldo para el gráfico; un test vigila que coincidan.
-**Nota `--iv-marca`:** la utilidad de Tailwind `marca` lee `--iv-intencion`. `--iv-marca` queda como token heredado porque `lib/tokens.js` (fuera de esta fase) fija su respaldo claro en `172 78 8`; lo usan a mano `CarteraCabecera`, `OpportunitiesView` y la línea «taza» del gráfico, que en tema claro aún salen en ámbar. Al migrar esos sitios a `--iv-intencion`, actualizar el respaldo y retirar el token.
+**Nota `--iv-marca`:** la utilidad de Tailwind `marca` lee `--iv-intencion`. `--iv-marca` queda como token heredado porque `lib/tokens.js` (fuera de esta fase) fija su respaldo claro en `172 78 8`; lo usaban a mano `CarteraCabecera`, `OpportunitiesView` (ambas ya migradas) y la línea «taza» del gráfico, que en tema claro aún salen en ámbar. Al migrar esos sitios a `--iv-intencion`, actualizar el respaldo y retirar el token.
 
 ## Tipografía
 - **Geist** (UI, titulares, cifra héroe con `tnum`), **Geist Mono** (columnas de cifras). Cargadas por `<link>` en `public/index.html`.
@@ -99,6 +99,15 @@ Dos columnas: principal (cartera como métrica héroe de 40–60 px con «€» 
 3. Avisos agrupados en `AvisosPanel` «Para cuadrar con DEGIRO» (solo si hay alguno).
 4. `Pestanas`: Historial de ventas · Lo que tienes abierto · Por acción (se recuerda en `localStorage` `ventas.pestana`). Ventas agrupadas por mes con cabecera fija bajo la barra superior, filas ancladas con `Monograma` y detalle desplegado en dos columnas (línea de tiempo de lotes · la cuenta en divisa y euros). Lo abierto: tabla con monogramas en escritorio, fichas con franja de datos en móvil. Por acción: dos columnas con barra proporcional a la ganancia en euros.
 5. Formularios como panel con `CabeceraForm` (icono en cuadrado índigo), campos de 40 px con foco índigo; `RiesgoVenta` como caja de luz baja (no panel dentro de panel) con la cifra en héroe 32 px. `ExtractoMargen` en una línea con icono, cifra y botones.
+
+## Pantalla «Oportunidades» (fase 2)
+- **Medidor** (`base/Medidor`, nuevo): hermano compacto de `Rango` para filas de tabla. Pista de 4 px, zonas opcionales teñidas bajo (`zonas: [{desde, hasta, tono}]`), marca vertical de 3 px donde cae el valor, `relleno` para puntuaciones. Neutro por defecto; si el valor no es número, no se pinta.
+1. Titular de página fijo (miga «Decidir › Oportunidades») y las cuatro vistas como `Pestanas` con recuento (el modo sigue en `?modo=`).
+2. **Héroe por vista**: cifra grande (44–60 px) de lo encontrado + metadatos (hora, «actualizando» como chip ámbar). En Señales, columna derecha de 400 px «Por tipo de señal»: cada categoría es una fila pulsable con barra proporcional — el reparto ES el filtro (activa: luz + filo índigo de 2 px). En Screener, la columna lleva el semáforo de mercado y los criterios del filtro.
+3. **Señales como tabla** (≥ 1280 px): valor + lectura (monograma, categoría con punto, motivo, señales en línea) y columnas Score · RSI (zonas 30/70 en info/ámbar) · Soporte–Resistencia (medidor con el precio dentro) · Analistas (consenso en frase + nº) · Precio con variación en píldora. Cabecera fija bajo la barra superior. Por debajo, la misma fila es ficha con banda de luz de 2–4 celdas (`xl:contents`).
+4. Categorías con paleta categórica fría (info, alerta, aviso, acento-2, intención, tinta-3): ya no hay verde/rojo para tipos de señal. `OpportunitiesView` ya no lee `--iv-marca`.
+5. Screener: Top selección en `iv-destacada` con ranking y medidor; tarjetas con monograma, precio de 30 px con «$» reducido, filas etiqueta/valor, banda de crecimiento y aviso de resultados en caja roja suave.
+6. Movers: tres paneles con ranking, monograma y barra de magnitud de la variación; en móvil un `Segmentado` (Subidas · Bajadas · Negociadas) muestra una lista a la vez.
 
 ## Pendiente (fases siguientes)
 Cada pantalla hereda el sistema pero conserva maquetación propia: la tabla de niveles de Cartera aún necesita desplazamiento horizontal por debajo de ~1400 px de lienzo, fichas con cajas anidadas y cifras de tabla en mono negrita que conviene aligerar. En la ficha, `LightweightChart` (fuera de esta fase) mantiene sus botones de escala con relleno índigo y su leyenda; y el interior de `TradingLevels`/`ChartistPanel` (zonas, stops, plan) solo se ha aligerado, no recompuesto.
