@@ -66,8 +66,18 @@ Contraste: todos los roles de texto ≥ 4,5:1 sobre las tres superficies (lo ver
 - Cabecera de bloque (`base/CabeceraBloque`): icono lucide 16 px en tinta-3 + rótulo Geist 13/500 + nota o enlace a la derecha. Nivel por debajo del titular de sección.
 - Listas de decisión (`base/TarjetaAtencion`): filas en un único panel, partidas en tramos rotulados («Piden decisión» / «Para vigilar»); urgentes con filo de color de 3 px a la izquierda y chip sólido; lectura numérica en columna fija de 264 px (escritorio) o franja de luz 2–4 columnas (móvil).
 
+- Segmentado (`base/Segmentado`): carril de luz baja con la opción elegida levantada (superficie + filo), sin índigo: elegir un filtro no es una acción principal. `mono` para opciones-código (1M, 3M), `tamano` sm/md.
+
+## Pantalla «Cartera» (fase 2)
+1. Titular + acciones (correlación en icono en móvil, Importar, Añadir posición).
+2. **Una pieza héroe** a lo ancho: patrimonio invertido 44–64 px (céntimos y «€» reducidos), chip de latente con flecha, evolución en barras índigo (la última plena) con `Segmentado`; desglose tabular a la derecha (320 px) o debajo en móvil.
+3. **Fila de riesgo** en 3 columnas: salud (nota héroe + medidor de 20 marcas + componentes), distribución (mayor peso como héroe, barra apilada, lista con € y %, aviso de concentración DENTRO del panel) y correlación.
+4. Posiciones (lectura): filas ancladas con `Monograma`, estado con punto de color; en móvil lista de dos líneas.
+5. Niveles y alertas (edición): tabla con cabecera fija y alto propio (`max-h: 100vh-140px`), dos columnas fijas opacas, sin columnas teñidas: niveles en tinta neutra (un nivel de compra no es una subida), deseado en `info`, el próximo nivel en ámbar con ◀. Posición = «N acc. / a precio» en una celda. En móvil, fichas con los niveles plegados en `<details>` cuyo resumen ya dice el siguiente nivel y su distancia.
+- Paleta categórica de sectores renovada en tonos medios fríos (sin verde, rojo ni índigo); `CarteraCabecera` y `SignalsView` la comparten. `CarteraCabecera` ya no lee `--iv-marca`.
+
 ## Pantalla «Hoy» (fase 2)
 Dos columnas: principal (cartera como métrica héroe de 40–60 px con «€» reducido, luego la lista de decisiones) y contexto de 336–364 px (mercado: régimen + futuros + miedo/codicia en un panel con filetes; calendario + cerebro; sectores como barras divergentes de ±3 %). En móvil, el contexto baja entero detrás de las decisiones.
 
 ## Pendiente (fases siguientes)
-Cada pantalla hereda el sistema pero conserva maquetación propia: tablas anchas de Cartera (niveles) y su desplazamiento horizontal, fichas con cajas anidadas, cifras de tabla en mono negrita que conviene aligerar, y la barra de señal inferior de la ficha.
+Cada pantalla hereda el sistema pero conserva maquetación propia: la tabla de niveles de Cartera aún necesita desplazamiento horizontal por debajo de ~1400 px de lienzo, fichas con cajas anidadas, cifras de tabla en mono negrita que conviene aligerar, y la barra de señal inferior de la ficha.

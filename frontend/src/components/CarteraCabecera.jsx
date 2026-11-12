@@ -1,13 +1,21 @@
 import React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowUpRight, CaretRight, Warning } from "@phosphor-icons/react";
+import {
+  AlertTriangle, ChartPie, ChevronRight, GitCompareArrows, HeartPulse, Minus, Plus, Search,
+  TrendingDown, TrendingUp, Upload, Wallet,
+} from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import { fmtEur, fmtPct } from "../lib/format";
 import { leerComoBroker } from "../lib/preferencias";
 import { cifrasResumen, datosPosicion } from "../lib/operaciones";
 import { estadoPosicion } from "../lib/cartera";
+import { cn } from "@/lib/utils";
+import Boton from "./base/Boton";
+import Monograma from "./base/Monograma";
+import CabeceraBloque from "./base/CabeceraBloque";
+import Segmentado from "./base/Segmentado";
 
 /* Cabecera de Cartera · la lectura antes del detalle
    ─────────────────────────────────────────────────────────────────────────────
@@ -15,6 +23,15 @@ import { estadoPosicion } from "../lib/cartera";
    se escriben. Esto es para LEER, y son dos trabajos distintos. Antes solo existía
    el segundo, así que para saber cuánto tienes invertido había que sumar mentalmente
    una tabla pensada para otra cosa.
+
+   COMPOSICIÓN (v2)
+
+     1. Titular de pantalla y acciones.
+     2. Una sola pieza héroe a lo ancho: el patrimonio invertido como cifra grande,
+        su evolución debajo y, a la derecha, el desglose en columna tabular.
+     3. Una fila de RIESGO: salud, distribución (con el aviso de concentración
+        dentro, junto al dato que lo provoca) y la correlación que pasa la página.
+     4. Las posiciones para leer, ancladas por su monograma.
 
    LA EVOLUCIÓN Y LA SALUD YA EXISTEN, PERO NO COMO SE PIDIERON
 
@@ -37,42 +54,78 @@ import { estadoPosicion } from "../lib/cartera";
 
 const N_SECTOR = 6;   // sectores con nombre propio; el resto cae en «Otros»
 
-/* Paleta categórica: la MISMA de la tabla de sectores de abajo, para que un sector
-   no cambie de color entre dos bloques de la misma pantalla. */
-const COLORES = ["#f08c1a", "#2fbf8a", "#4f8ff0", "#ef5a7a", "#2bb3e6", "#9b7bf0", "#8a8fa3"];
+/* Paleta CATEGÓRICA de sectores. Un sector no tiene papel —no sube, no baja, no
+   avisa—, solo hay que distinguirlo del de al lado. Por eso son valores fijos y, con
+   el sistema «grafito e índigo», tonos medios fríos que NO se confunden con los tres
+   colores que sí significan algo: ni verde, ni rojo, ni el índigo de la intención. */
+const COLORES = ["#6ea8fe", "#c9a26b", "#b48cf2", "#4fc3cf", "#e389b9", "#9fa8c9", "#7c8296"];
 
 const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
 
 const RIESGO_TONO = { BAJO: "text-sube", MEDIO: "text-aviso", ALTO: "text-baja" };
+const RIESGO_TXT = { BAJO: "Bajo", MEDIO: "Medio", ALTO: "Alto" };
 
-/* Transición compartida: solo color/borde, corta y que se apaga con movimiento reducido. */
-const TRANS = "transition-colors duration-150 ease-out motion-reduce:transition-none";
-const BOTON_SEC = `inline-flex items-center gap-1.5 px-3 py-2 rounded-iv border border-linea-fuerte text-apoyo text-tinta-2 hover:border-marca hover:text-marca active:scale-[0.98] transition-[color,border-color,transform] duration-150 ease-out motion-reduce:transition-none`;
-
-/* Cifra grande en la letra de display, SIN el degradado verde de `.iv-cifra-hero`:
-   aquí el color debe decir algo (o nada), y un verde fijo leería «sube» donde no lo hay. */
-const CIFRA_GRANDE = "font-heading font-extrabold tabular-nums tracking-[-0.03em] leading-none";
+const TRANS = "transition-colors duration-150 ease-salida motion-reduce:transition-none";
 
 /** Tono de la nota de salud, el mismo umbral que las barras de componentes. */
 const tonoNota = (n) => (n >= 70 ? "text-sube" : n >= 40 ? "text-aviso" : "text-baja");
+const FONDO_NOTA = { "text-sube": "bg-sube/10", "text-aviso": "bg-aviso/10", "text-baja": "bg-baja/10" };
+const colorNota =(n) => (n >= 70 ? "rgb(var(--iv-sube))" : n >= 40 ? "rgb(var(--iv-aviso))" : "rgb(var(--iv-baja))");
 
 /** Barra de peso: la misma pieza para la tabla y para la distribución.
  *
- * La PISTA va en `bg-linea` y no en `bg-superficie-alt`: sobre el panel apenas se
- * distinguían, así que una nota de 0 —concentración alta, por ejemplo— salía como un
- * hueco y se leía como un fallo de dibujo en vez de como un cero. Con la pista
- * visible, vacío significa vacío.
+ * La PISTA va visible (luz baja) y no del color del panel: una nota de 0 —concentración
+ * alta, por ejemplo— salía como un hueco y se leía como un fallo de dibujo en vez de
+ * como un cero. Con la pista visible, vacío significa vacío.
  */
-function Barra({ pct, color, ancho = "w-16" }) {
+function Barra({ pct, color, ancho = "w-16", alto = "h-1" }) {
   return (
-    <span className={`inline-block ${ancho} h-1 rounded-full bg-linea align-middle overflow-hidden`}>
+    <span className={`inline-block ${ancho} ${alto} rounded-full bg-tinta/[0.08] align-middle overflow-hidden`}>
       <span className="block h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, pct))}%`,
-                                              background: color || "rgb(var(--iv-marca))" }} />
+                                              background: color || "rgb(var(--iv-intencion) / 0.75)" }} />
     </span>
   );
 }
 
-export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, onAnadir, onImportar }) {
+/** «22.210,91 €» → «22.210» grande, «,91» y «€» reducidos. Mismo texto de `fmtEur`,
+ *  partido solo para pintarlo: los céntimos y el símbolo a tamaño héroe pesaban como
+ *  tres dígitos más y no cambian ninguna decisión. */
+function CifraHeroe({ valor }) {
+  if (valor === null) return "—";
+  const t = fmtEur(valor).replace("+", "");
+  const m = t.match(/^(.*?)(,\d+)?(\s?€)$/);
+  if (!m) return t;
+  return (
+    <>
+      {m[1]}
+      {m[2] && <span className="text-[0.5em] text-tinta-2 tracking-[-0.02em]">{m[2]}</span>}
+      <span className="text-[0.42em] font-medium text-tinta-3 ml-[0.18em] tracking-normal align-[0.78em]">€</span>
+    </>
+  );
+}
+
+/** Fila del desglose: rótulo a la izquierda, cifra en columna derecha tabular. */
+function Fila({ etiqueta, children, tono = "text-tinta", ayuda }) {
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-3 py-2.5">
+      <dt className="text-[13px] text-tinta-2" title={ayuda}>{etiqueta}</dt>
+      <dd className={cn("iv-cifra text-[14px] font-medium ml-auto text-right", tono)}>{children}</dd>
+    </div>
+  );
+}
+
+/** Estado de la posición: punto + texto en su tono. El punto hace de ancla en la
+ *  columna; el texto no cambia. */
+function EstadoTxt({ estado }) {
+  return (
+    <span className={cn("inline-flex items-center gap-2", estado.tono)} title={estado.ayuda || undefined}>
+      <span className="w-1.5 h-1.5 rounded-full bg-current shrink-0" aria-hidden="true" />
+      <span className="truncate">{estado.txt}</span>
+    </span>
+  );
+}
+
+export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, onAnadir, onImportar, correlacion = null }) {
   const { data: resumen } = useQuery({
     queryKey: ["cartera-resumen"],
     queryFn: () => api.cartera.resumen(),
@@ -170,6 +223,8 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
   const invertido = num(cifras.invertido);
   const latente = num(cifras.latente);
   const latentePct = invertido && latente !== null ? (latente / invertido) * 100 : null;
+  const signo = latente > 0 ? "sube" : latente < 0 ? "baja" : "neutro";
+  const Flecha = signo === "sube" ? TrendingUp : signo === "baja" ? TrendingDown : Minus;
 
   /* Distribución POR VALOR, no por número de acciones: cien acciones de 2 € pesan
      menos que dos de 500 €, y la tabla de abajo lo contaba por unidades. */
@@ -201,336 +256,370 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
     });
   }, [posiciones, busca, riesgoFiltro]);
 
+  // Barras del gráfico: las mismas 40 últimas de siempre, con su escala.
+  const barras = serieHist.slice(-40);
+  const vs = barras.map((x) => x.valor_eur);
+  const lo = Math.min(...vs), hi = Math.max(...vs);
+
   return (
     <>
-      {/* ── Cabecera editorial ──────────────────────────────────────────────── */}
-      <div className="iv-veredicto">
-        <p className="iv-etiqueta tracking-[0.16em] text-tinta-3 mb-1">
-          Gestionar <span className="text-linea-fuerte mx-1">/</span> Capital y riesgo
-        </p>
-        <div className="flex items-end justify-between gap-6 flex-wrap">
-          <div className="min-w-0">
-            <h1 className="iv-verbo text-tinta">Cartera</h1>
-            <p className="text-cuerpo text-tinta-2 mt-3 max-w-[58ch]">
-              Una lectura limpia de tu capital, tus concentraciones y las decisiones pendientes.
-            </p>
-          </div>
-          <div className="flex gap-2 shrink-0">
-            <button onClick={onImportar} className={BOTON_SEC}>
-              <ArrowUpRight size={13} aria-hidden="true" /> Importar
-            </button>
-            <button onClick={onAnadir}
-                    className="px-3 py-2 rounded-iv bg-marca text-marca-tinta text-apoyo font-semibold hover:bg-marca/90 active:scale-[0.98] transition-[background-color,transform] duration-150 ease-out motion-reduce:transition-none">
-              + Añadir posición
-            </button>
-          </div>
+      {/* ── Titular ─────────────────────────────────────────────────────────── */}
+      <header className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-x-8 gap-y-5">
+        <div className="min-w-0">
+          <p className="text-[13px] text-tinta-3 flex items-center gap-1.5">
+            Gestionar <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden="true" /> Capital y riesgo
+          </p>
+          <h1 className="iv-verbo text-tinta mt-2">Cartera</h1>
+          <p className="text-[14.5px] text-tinta-2 mt-2.5 max-w-[58ch] leading-relaxed">
+            Una lectura limpia de tu capital, tus concentraciones y las decisiones pendientes.
+          </p>
+          <p className="mt-3 flex items-center gap-2 text-[12.5px] text-tinta-3 flex-wrap">
+            <span className="relative flex w-2 h-2 shrink-0" aria-hidden="true">
+              <span className="absolute inset-0 rounded-full bg-sube/40 animate-ping motion-reduce:animate-none" />
+              <span className="relative w-2 h-2 rounded-full bg-sube" />
+            </span>
+            Cartera personal
+            {resumen?.precio_actualizado && (
+              <span>· Actualizada <span className="iv-cifra">{resumen.precio_actualizado}</span></span>
+            )}
+          </p>
         </div>
-      </div>
+        <div className="flex gap-2 shrink-0">
+          {/* En el teléfono el atajo queda en icono: los tres rótulos no caben en una fila. */}
+          <Boton variante="fantasma" onClick={onAnalizarCorrelacion} aria-label="Analizar correlación"
+                 title="Analizar correlación" className="px-2.5 sm:px-3.5">
+            <GitCompareArrows className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" />
+            <span className="hidden sm:inline">Analizar correlación</span>
+          </Boton>
+          <Boton variante="secundario" onClick={onImportar}>
+            <Upload className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" /> Importar
+          </Boton>
+          <Boton onClick={onAnadir}>
+            <Plus className="w-4 h-4" strokeWidth={2} aria-hidden="true" /> Añadir posición
+          </Boton>
+        </div>
+      </header>
 
-      {/* ── Estado y acciones de lectura ────────────────────────────────────── */}
-      <div className="flex items-center justify-between gap-3 flex-wrap border-b border-linea pb-3">
-        <span className="flex items-center gap-2 iv-etiqueta flex-wrap min-w-0">
-          <span className="w-1.5 h-1.5 rounded-full bg-sube inline-block shrink-0" aria-hidden="true" />
-          Cartera personal
-          {resumen?.precio_actualizado && (
-            <span className="text-tinta-3 normal-case tracking-normal">· Actualizada {resumen.precio_actualizado}</span>
-          )}
-        </span>
-        <button onClick={onAnalizarCorrelacion}
-                className={`px-3 py-1.5 rounded-iv border border-linea text-etiqueta text-tinta-2 hover:border-marca hover:text-marca ${TRANS}`}>
-          Analizar correlación
-        </button>
-      </div>
-
-      {/* ── Tres lecturas ───────────────────────────────────────────────────── */}
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1.2fr)]">
-        {/* Patrimonio */}
-        <section className="iv-panel p-5 min-w-0" aria-labelledby="cartera-patrimonio">
-          <h2 id="cartera-patrimonio" className="iv-etiqueta mb-2.5">Patrimonio invertido</h2>
-          {/* Los céntimos, más pequeños. En una cifra que se lee de un vistazo los
-              dos últimos dígitos son ruido: ocupan el mismo espacio visual que los
-              miles y no cambian ninguna decisión. El tamaño se ajusta al ancho
-              para que siete cifras quepan en la columna sin desbordar. */}
-          <p className={`${CIFRA_GRANDE} text-tinta text-[clamp(26px,7vw,34px)] lg:text-[clamp(24px,2.3vw,34px)] break-words`}>
-            {invertido === null ? "—" : (() => {
-              const t = fmtEur(invertido).replace("+", "");
-              const i = t.lastIndexOf(",");
-              return i < 0 ? t : (<>{t.slice(0, i)}<span className="text-[0.62em] text-tinta-2">{t.slice(i)}</span></>);
-            })()}
-          </p>
-          <p className={`iv-cifra text-apoyo font-semibold mt-2 ${latente > 0 ? "text-sube" : latente < 0 ? "text-baja" : "text-tinta-3"}`}>
-            {latente !== null ? (
-              <>{fmtEur(latente)} · {fmtPct(latentePct)} <span className="font-normal text-tinta-3">latente</span></>
-            ) : "—"}
-          </p>
-          {/* Evolución. Barras y no una línea: la serie es DIARIA y con pocos puntos
-              una línea insinúa una continuidad entre días que no se ha medido. */}
-          {serieHist.length >= 2 ? (
-            <>
-            <div className="mt-3 flex items-end gap-[2px] h-10" aria-hidden="true">
-              {serieHist.slice(-40).map((d, i, arr) => {
-                const vs = arr.map((x) => x.valor_eur);
-                const lo = Math.min(...vs), hi = Math.max(...vs);
-                const alto = hi > lo ? 15 + ((d.valor_eur - lo) / (hi - lo)) * 85 : 60;
-                return (
-                  <span key={d.dia} title={`${d.dia}: ${fmtEur(d.valor_eur).replace("+", "")}`}
-                        className="flex-1 min-w-[3px]"
-                        style={{ height: `${alto}%`,
-                                 background: i === arr.length - 1
-                                   ? "rgb(var(--iv-sube))" : "rgb(var(--iv-marca) / 0.55)" }} />
-                );
-              })}
-            </div>
-              <div className="flex gap-1 mt-2" role="group" aria-label="Rango del gráfico">
-                {["1M", "3M", "1A", "Todo"].map((r) => (
-                  <button key={r} onClick={() => setRango(r)}
-                          aria-pressed={rango === r}
-                          disabled={serieCompleta.length < 2}
-                          className={`iv-cifra px-2 py-1 rounded-iv text-etiqueta disabled:opacity-40 ${TRANS} ${
-                            rango === r ? "text-marca bg-marca/10" : "text-tinta-3 hover:text-tinta"}`}>
-                    {r}
-                  </button>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="mt-3">
-              <p className="text-etiqueta text-tinta-3 leading-relaxed">
-                {serieHist.length === 1
-                  ? "Ya hay una foto guardada. El gráfico aparece con la segunda: con un solo punto no hay nada que unir."
-                  : "La evolución empieza hoy. El servidor guarda una foto por día de mercado; aún no hay ninguna."}
-              </p>
-              <button onClick={guardarFoto} disabled={guardando}
-                      className={`mt-2 px-2.5 py-1 rounded-iv border border-linea-fuerte text-etiqueta text-tinta-2 hover:border-marca hover:text-marca disabled:opacity-50 ${TRANS}`}>
-                {guardando ? "Guardando…" : "Guardar la foto de hoy"}
-              </button>
-            </div>
-          )}
-
-          <dl className="mt-4 pt-2 border-t border-linea">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 py-1.5 text-apoyo">
-              <dt className="text-tinta-2">Valor de mercado</dt>
-              <dd className="iv-cifra font-semibold text-tinta ml-auto text-right">{totalValor ? fmtEur(totalValor).replace("+", "") : "—"}</dd>
-            </div>
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 py-1.5 text-apoyo">
-              <dt className="text-tinta-2">Ya cobrado al vender</dt>
-              <dd className={`iv-cifra font-semibold ml-auto text-right ${cifras.realizado > 0 ? "text-sube" : "text-tinta"}`}>
-                {num(cifras.realizado) !== null ? fmtEur(cifras.realizado) : "—"}
-              </dd>
-            </div>
-          </dl>
-          {cifras.metodo && (
-            <p className="text-etiqueta text-tinta-3 mt-1" title="Cambia con el interruptor «Como en DEGIRO» de Operaciones">
-              Cifras {cifras.metodo}
+      {/* ── Héroe · patrimonio ──────────────────────────────────────────────── */}
+      <section className="iv-panel relative overflow-hidden" aria-labelledby="cartera-patrimonio">
+        {/* Luz de esquina, muy baja: profundidad para la pieza principal sin teñirla. */}
+        <span aria-hidden="true"
+              className="pointer-events-none absolute -top-32 -left-24 w-[520px] h-[300px] rounded-full bg-marca/[0.09] blur-3xl" />
+        <div className="relative grid lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="p-5 sm:p-7 min-w-0">
+            <CabeceraBloque icono={Wallet} como="h2" id="cartera-patrimonio">Patrimonio invertido</CabeceraBloque>
+            {/* El tamaño se ajusta al ancho para que siete cifras quepan sin desbordar. */}
+            <p className="iv-cifra-hero text-[clamp(40px,11vw,64px)] lg:text-[clamp(44px,4.4vw,64px)] mt-4 break-words">
+              <CifraHeroe valor={invertido} />
             </p>
-          )}
-        </section>
-
-        {/* Índice de salud · SIEMPRE con sus componentes detrás */}
-        <section className="iv-panel p-5 min-w-0" aria-labelledby="cartera-salud">
-          <div className="flex items-center justify-between gap-2 mb-2.5">
-            <h2 id="cartera-salud" className="iv-etiqueta">Salud de cartera</h2>
-            {salud?.etiqueta && (
-              <span className={`iv-etiqueta ${salud?.puntuacion != null ? tonoNota(salud.puntuacion) : "text-tinta-2"}`}>
-                {salud.etiqueta}
+            <p className="mt-4 flex flex-wrap items-center gap-2">
+              <span className={cn("iv-cifra inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[13px] font-medium",
+                                  signo === "sube" ? "bg-sube/10 text-sube"
+                                    : signo === "baja" ? "bg-baja/10 text-baja" : "bg-tinta/5 text-tinta-3")}>
+                <Flecha className="w-3.5 h-3.5" strokeWidth={2} aria-hidden="true" />
+                {latente !== null ? <>{fmtEur(latente)} · {fmtPct(latentePct)}</> : "—"}
               </span>
+              <span className="text-[13px] text-tinta-3">latente</span>
+            </p>
+
+            {/* Evolución. Barras y no una línea: la serie es DIARIA y con pocos puntos
+                una línea insinúa una continuidad entre días que no se ha medido. */}
+            <div className="mt-7">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <p className="text-[12.5px] font-medium text-tinta-3">Evolución del valor</p>
+                {serieHist.length >= 2 && (
+                  <Segmentado opciones={["1M", "3M", "1A", "Todo"]} valor={rango} onCambio={setRango}
+                              etiqueta="Rango del gráfico" mono tamano="sm"
+                              disabled={serieCompleta.length < 2} />
+                )}
+              </div>
+              {serieHist.length >= 2 ? (
+                <div className="relative flex items-end gap-[3px] h-24 sm:h-28" aria-hidden="true">
+                  {/* Guías horizontales muy tenues: dan escala sin competir con las barras. */}
+                  <span className="absolute inset-x-0 top-0 border-t border-dashed border-suave" />
+                  <span className="absolute inset-x-0 top-1/2 border-t border-dashed border-suave" />
+                  {barras.map((d, i, arr) => {
+                    const alto = hi > lo ? 15 + ((d.valor_eur - lo) / (hi - lo)) * 85 : 60;
+                    const ultimo = i === arr.length - 1;
+                    return (
+                      <span key={d.dia} title={`${d.dia}: ${fmtEur(d.valor_eur).replace("+", "")}`}
+                            className={cn("relative flex-1 min-w-[3px] rounded-t-[3px] transition-[background-color] duration-150",
+                                          ultimo ? "bg-marca" : "bg-marca/30 hover:bg-marca/60")}
+                            style={{ height: `${alto}%` }} />
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-iv border border-dashed border-medio px-4 py-5">
+                  <p className="text-[13px] text-tinta-3 leading-relaxed max-w-[60ch]">
+                    {serieHist.length === 1
+                      ? "Ya hay una foto guardada. El gráfico aparece con la segunda: con un solo punto no hay nada que unir."
+                      : "La evolución empieza hoy. El servidor guarda una foto por día de mercado; aún no hay ninguna."}
+                  </p>
+                  <Boton variante="secundario" tamano="sm" className="mt-3" onClick={guardarFoto} ocupado={guardando}>
+                    {guardando ? "Guardando…" : "Guardar la foto de hoy"}
+                  </Boton>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Desglose */}
+          <div className="relative p-5 sm:p-7 border-t lg:border-t-0 lg:border-l border-suave bg-tinta/[0.015] flex flex-col">
+            <p className="text-[12.5px] font-medium text-tinta-3">Desglose</p>
+            <dl className="mt-2 [&>div+div]:border-t [&>div+div]:border-suave">
+              <Fila etiqueta="Valor de mercado">{totalValor ? fmtEur(totalValor).replace("+", "") : "—"}</Fila>
+              <Fila etiqueta="Latente" tono={signo === "sube" ? "text-sube" : signo === "baja" ? "text-baja" : "text-tinta"}>
+                {latente !== null ? fmtEur(latente) : "—"}
+              </Fila>
+              <Fila etiqueta="Ya cobrado al vender" tono={cifras.realizado > 0 ? "text-sube" : "text-tinta"}>
+                {num(cifras.realizado) !== null ? fmtEur(cifras.realizado) : "—"}
+              </Fila>
+              <Fila etiqueta="Posiciones abiertas">{posiciones.length}</Fila>
+            </dl>
+            {cifras.metodo && (
+              <p className="text-[12px] text-tinta-3 mt-auto pt-3" title="Cambia con el interruptor «Como en DEGIRO» de Operaciones">
+                Cifras {cifras.metodo}
+              </p>
             )}
           </div>
+        </div>
+      </section>
+
+      {/* ── Riesgo · salud, distribución, correlación ───────────────────────── */}
+      <div className={cn("grid gap-4 sm:gap-5 items-start", correlacion ? "lg:grid-cols-3" : "lg:grid-cols-2")}>
+        {/* Índice de salud · SIEMPRE con sus componentes detrás */}
+        <section className="iv-panel p-5 sm:p-6 min-w-0" aria-labelledby="cartera-salud">
+          <CabeceraBloque icono={HeartPulse} como="h2" id="cartera-salud"
+                          derecha={salud?.etiqueta && (
+                            <span className={cn("text-[12px] font-medium px-2 h-[22px] inline-flex items-center rounded-md",
+                                                salud?.puntuacion != null
+                                                  ? `${tonoNota(salud.puntuacion)} ${FONDO_NOTA[tonoNota(salud.puntuacion)]}`
+                                                  : "text-tinta-2 bg-tinta/[0.06]")}>
+                              {salud.etiqueta}
+                            </span>
+                          )}>
+            Salud de cartera
+          </CabeceraBloque>
           {salud?.puntuacion == null ? (
-            <p className="text-apoyo text-tinta-3">
+            <p className="text-[13px] text-tinta-3 mt-4">
               Todavía no hay nada que medir: hacen falta posiciones valoradas.
             </p>
           ) : (
             <>
-              <div className="flex items-baseline gap-2">
-                <span className={`${CIFRA_GRANDE} text-[38px] ${tonoNota(salud.puntuacion)}`}>
+              <div className="flex items-baseline gap-2 mt-4">
+                <span className={cn("iv-cifra-hero text-[44px]", tonoNota(salud.puntuacion))}>
                   {salud.puntuacion}
                 </span>
-                <span className="iv-cifra text-apoyo text-tinta-3">/ 100</span>
+                <span className="iv-cifra text-[13px] text-tinta-3">/ 100</span>
               </div>
-              {/* El número SIEMPRE se puede abrir. Un compuesto que no se desglosa es
-                  una métrica inventada con otro nombre: nadie sabría si baja por
-                  concentración o por estructura. */}
-              <button onClick={() => setAbierta((v) => !v)}
-                      aria-expanded={abierta}
-                      className="mt-2 py-1 text-etiqueta text-marca underline-offset-4 decoration-marca/50 hover:underline flex items-center gap-1">
-                {abierta ? "Ocultar el porqué" : "Qué significa cada uno"}
-                <CaretRight size={10} aria-hidden="true"
-                            className={`transition-transform duration-200 ease-out motion-reduce:transition-none ${abierta ? "rotate-90" : ""}`} />
-              </button>
+              {/* Medidor en 20 marcas: la nota se lee como «cuánto falta» de un vistazo. */}
+              <div className="flex gap-[3px] mt-3" aria-hidden="true">
+                {Array.from({ length: 20 }, (_, i) => (
+                  <span key={i} className="flex-1 h-1.5 rounded-[2px]"
+                        style={{ background: (i + 0.5) * 5 <= salud.puntuacion
+                          ? colorNota(salud.puntuacion) : "rgb(var(--iv-tinta) / 0.08)" }} />
+                ))}
+              </div>
               {/* Los componentes se ven SIEMPRE: un índice cuyo desglose hay que
                   desplegar sigue siendo un número opaco de un vistazo. Lo que se
                   pliega es la EXPLICACIÓN de cada uno, que es lo que ocupa. */}
-              <div className="mt-3 space-y-3">
+              <div className="mt-5 pt-4 border-t border-suave space-y-3.5">
                 {(salud.componentes || []).map((c) => (
                   <div key={c.clave}>
-                    <div className="flex justify-between items-baseline text-apoyo gap-2 mb-1">
+                    <div className="flex justify-between items-baseline text-[13px] gap-2 mb-1.5">
                       <span className={c.medible ? "text-tinta-2" : "text-tinta-3"}>
                         {c.nombre}
-                        <span className="iv-cifra text-etiqueta ml-1.5 text-tinta-3" title="Peso aplicado en el índice">{c.peso_efectivo || 0} %</span>
+                        <span className="iv-cifra text-[11.5px] ml-1.5 text-tinta-3" title="Peso aplicado en el índice">{c.peso_efectivo || 0} %</span>
                       </span>
-                      <span className={`iv-cifra shrink-0 ${!c.medible ? "text-tinta-3" : ""}`}>
+                      <span className={cn("iv-cifra shrink-0", c.medible ? "text-tinta" : "text-tinta-3")}>
                         {c.medible ? `${Math.round(c.valor)} ${c.unidad}` : "sin medir"}
                       </span>
                     </div>
-                    {c.medible && (
-                      <Barra pct={c.nota} ancho="w-full"
-                             color={c.nota >= 70 ? "rgb(var(--iv-sube))"
-                               : c.nota >= 40 ? "rgb(var(--iv-aviso))" : "rgb(var(--iv-baja))"} />
-                    )}
+                    {c.medible && <Barra pct={c.nota} ancho="w-full" color={colorNota(c.nota)} />}
                     {abierta && (
-                      <p className="text-etiqueta text-tinta-3 mt-1 leading-snug">{c.explica}</p>
+                      <p className="text-[12px] text-tinta-3 mt-1.5 leading-snug">{c.explica}</p>
                     )}
                   </div>
                 ))}
                 {abierta && salud.medidos < salud.de && (
-                  <p className="text-etiqueta text-tinta-3 border-t border-linea pt-2">
+                  <p className="text-[12px] text-tinta-3 border-t border-suave pt-3 leading-snug">
                     Se han podido medir {salud.medidos} de {salud.de}. Lo que no se mide no
                     puntúa cero: sale del reparto, y los pesos de arriba son los aplicados.
                   </p>
                 )}
               </div>
+              {/* El número SIEMPRE se puede abrir. Un compuesto que no se desglosa es
+                  una métrica inventada con otro nombre. */}
+              <button onClick={() => setAbierta((v) => !v)} aria-expanded={abierta}
+                      className={cn("mt-4 min-h-[32px] text-[13px] font-medium text-marca hover:text-tinta flex items-center gap-1", TRANS)}>
+                {abierta ? "Ocultar el porqué" : "Qué significa cada uno"}
+                <ChevronRight className={cn("w-3.5 h-3.5 transition-transform duration-200 ease-salida motion-reduce:transition-none",
+                                            abierta && "rotate-90")} strokeWidth={2} aria-hidden="true" />
+              </button>
             </>
           )}
         </section>
 
-        {/* Distribución por VALOR */}
-        <section className="iv-panel p-5 min-w-0" aria-labelledby="cartera-distribucion">
-          <h2 id="cartera-distribucion" className="iv-etiqueta mb-3">Distribución por valor</h2>
-          <div className="flex h-2 rounded-full overflow-hidden mb-4 gap-px bg-linea" aria-hidden="true">
+        {/* Distribución por VALOR, con el aviso de concentración junto a su causa */}
+        <section className="iv-panel p-5 sm:p-6 min-w-0" aria-labelledby="cartera-distribucion">
+          <CabeceraBloque icono={ChartPie} como="h2" id="cartera-distribucion"
+                          derecha={sectores[0] && (
+                            <span className="iv-cifra text-[12px] text-tinta-3">{sectores.length} sectores</span>
+                          )}>
+            Distribución por valor
+          </CabeceraBloque>
+          {sectores[0] && (
+            <div className="mt-4">
+              <p className="text-[12.5px] text-tinta-3">Mayor peso</p>
+              <p className="flex items-baseline gap-2 mt-1 min-w-0">
+                <span className="iv-cifra-hero text-[44px] shrink-0">{concentracion.toFixed(0)}<span className="text-[0.5em] text-tinta-3 ml-0.5">%</span></span>
+                <span className="text-[14px] text-tinta-2 truncate" title={sectores[0].nombre}>{sectores[0].nombre}</span>
+              </p>
+            </div>
+          )}
+          <div className="flex h-2.5 rounded-full overflow-hidden mt-4 gap-[2px]" aria-hidden="true">
             {sectores.map((s) => (
-              <span key={s.nombre} style={{ width: `${s.pct}%`, background: s.color }}
+              <span key={s.nombre} className="first:rounded-l-full last:rounded-r-full"
+                    style={{ width: `${s.pct}%`, background: s.color }}
                     title={`${s.nombre} ${s.pct.toFixed(0)} %`} />
             ))}
           </div>
           {/* Una sola columna en lista: los nombres de sector (Communication Services…)
               no caben en media columna sin cortarse, y así los % quedan en vertical. */}
-          <ul className="divide-y divide-linea">
+          <ul className="mt-4 pt-1 border-t border-suave">
             {sectores.map((s) => (
-              <li key={s.nombre} className="flex items-center justify-between gap-3 py-1.5 text-apoyo min-w-0">
-                <span className="flex items-center gap-2 min-w-0">
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} aria-hidden="true" />
+              <li key={s.nombre} className="flex items-center justify-between gap-3 py-2 text-[13px] min-w-0 border-b border-suave last:border-b-0">
+                <span className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-2 h-2 rounded-[3px] shrink-0" style={{ background: s.color }} aria-hidden="true" />
                   <span className="truncate text-tinta-2" title={s.nombre}>{s.nombre}</span>
                 </span>
-                <span className="iv-cifra font-semibold text-tinta shrink-0">{s.pct.toFixed(0)} %</span>
+                <span className="flex items-baseline gap-3 shrink-0">
+                  <span className="iv-cifra text-[12px] text-tinta-3 hidden sm:inline">{fmtEur(s.valor, 0)}</span>
+                  <span className="iv-cifra font-medium text-tinta w-11 text-right">{s.pct.toFixed(0)} %</span>
+                </span>
               </li>
             ))}
           </ul>
+
+          {/* ── Lo que merece atención: junto al dato que lo provoca ── */}
+          {concentracion > 35 && (
+            <div role="note" className="mt-4 rounded-iv bg-aviso/[0.07] border border-aviso/25 px-3.5 py-3 text-[13px]">
+              <p className="flex items-start gap-2.5 leading-relaxed">
+                <AlertTriangle className="w-4 h-4 text-aviso shrink-0 mt-0.5" strokeWidth={2} aria-hidden="true" />
+                <span>
+                  <b className="text-tinta font-semibold">Una concentración merece tu atención.</b>{" "}
+                  <span className="text-tinta-2">
+                    {sectores[0].nombre} representa el {concentracion.toFixed(0)} % de tu cartera por valor.
+                    Una sola caída sectorial te alcanzaría a esa parte entera.
+                  </span>
+                </span>
+              </p>
+              <button onClick={onAnalizarCorrelacion}
+                      className={cn("ml-[26px] mt-1 min-h-[28px] text-[13px] font-medium text-marca hover:text-tinta inline-flex items-center gap-1", TRANS)}>
+                Ver análisis <ChevronRight className="w-3.5 h-3.5" strokeWidth={2} aria-hidden="true" />
+              </button>
+            </div>
+          )}
         </section>
+
+        {correlacion}
       </div>
 
-      {/* ── Lo que merece atención ──────────────────────────────────────────── */}
-      {concentracion > 35 && (
-        <div role="note"
-             className="flex flex-wrap sm:flex-nowrap items-start gap-x-3 gap-y-2 rounded-iv-lg border border-aviso/35 bg-aviso/[0.06] px-4 py-3 text-apoyo">
-          <Warning size={16} weight="fill" className="text-aviso shrink-0 mt-0.5" aria-hidden="true" />
-          <div className="min-w-0 flex-1 leading-relaxed">
-            <b className="text-tinta font-semibold">Una concentración merece tu atención.</b>{" "}
-            <span className="text-tinta-2">
-              {sectores[0].nombre} representa el {concentracion.toFixed(0)} % de tu cartera por valor.
-              Una sola caída sectorial te alcanzaría a esa parte entera.
-            </span>
-          </div>
-          <button onClick={onAnalizarCorrelacion}
-                  className="ml-7 sm:ml-auto shrink-0 py-0.5 text-etiqueta text-marca underline-offset-4 decoration-marca/50 hover:underline flex items-center gap-1">
-            Ver análisis <CaretRight size={11} aria-hidden="true" />
-          </button>
-        </div>
-      )}
-
       {/* ── Posiciones, para LEER ───────────────────────────────────────────── */}
-      <div>
-        <div className="iv-seccion iv-seccion-acento">
-          <span className="iv-etiqueta tracking-[0.18em] text-tinta-2">
-            Posiciones · {posiciones.length} {posiciones.length === 1 ? "activa" : "activas"}
-          </span>
-          <span className="text-etiqueta text-tinta-3 whitespace-nowrap hidden sm:inline">
-            Revisa peso, riesgo y estado antes de decidir
-          </span>
-        </div>
-        {/* Buscador y filtro por riesgo. Con once posiciones la tabla ya no se
-            abarca de un vistazo, y el riesgo es el corte que de verdad se usa:
-            «enséñame solo lo que tengo marcado como ALTO». */}
-        {posiciones.length > 3 && (
-          <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-            <input
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              placeholder="Buscar activo"
-              aria-label="Buscar activo en tus posiciones"
-              className={`px-3 py-2 rounded-iv bg-superficie border border-linea text-apoyo text-tinta w-full sm:w-60 placeholder:text-tinta-3 hover:border-linea-fuerte focus:border-marca ${TRANS}`}
-            />
-            <div className="flex p-0.5 rounded-iv border border-linea bg-superficie" role="group" aria-label="Filtrar por riesgo">
-              {["Todas", "BAJO", "MEDIO", "ALTO"].map((r) => (
-                <button key={r} onClick={() => setRiesgoFiltro(r)}
-                        aria-pressed={riesgoFiltro === r}
-                        className={`px-3 py-1.5 rounded-[calc(var(--iv-radio)-2px)] text-etiqueta ${TRANS} ${
-                          riesgoFiltro === r ? "bg-superficie-alt text-tinta font-semibold"
-                                             : "text-tinta-3 hover:text-tinta"}`}>
-                  {r === "Todas" ? "Todas" : r.charAt(0) + r.slice(1).toLowerCase()}
-                </button>
-              ))}
-            </div>
+      <section aria-labelledby="cartera-posiciones">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-4">
+          <div className="min-w-0">
+            <h2 id="cartera-posiciones" className="text-[18px] font-semibold tracking-[-0.02em] text-tinta flex items-center gap-2.5">
+              Posiciones
+              <span className="iv-cifra text-[12px] font-medium text-tinta-2 h-[22px] px-2 inline-flex items-center rounded-md bg-tinta/[0.06]">
+                {posiciones.length} {posiciones.length === 1 ? "activa" : "activas"}
+              </span>
+            </h2>
+            <p className="text-[13px] text-tinta-3 mt-1">Revisa peso, riesgo y estado antes de decidir</p>
           </div>
-        )}
+          {/* Buscador y filtro por riesgo. Con once posiciones la tabla ya no se
+              abarca de un vistazo, y el riesgo es el corte que de verdad se usa:
+              «enséñame solo lo que tengo marcado como ALTO». */}
+          {posiciones.length > 3 && (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <label className="relative w-full sm:w-auto">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-tinta-3 pointer-events-none" strokeWidth={1.75} aria-hidden="true" />
+                <input
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                  placeholder="Buscar activo"
+                  aria-label="Buscar activo en tus posiciones"
+                  className={cn("h-9 pl-9 pr-3 rounded-[10px] bg-tinta/[0.04] border border-suave text-[13px] text-tinta w-full sm:w-56",
+                                "placeholder:text-tinta-3 hover:border-medio focus:border-marca/60 focus:bg-superficie outline-none", TRANS)}
+                />
+              </label>
+              <Segmentado
+                opciones={["Todas", "BAJO", "MEDIO", "ALTO"].map((r) => ({ valor: r, etiqueta: r === "Todas" ? "Todas" : RIESGO_TXT[r] }))}
+                valor={riesgoFiltro} onCambio={setRiesgoFiltro} etiqueta="Filtrar por riesgo" className="self-start sm:self-auto" />
+            </div>
+          )}
+        </div>
 
         {visibles.length === 0 ? (
-          <div className="rounded-iv-lg border border-dashed border-linea-fuerte p-8 text-center">
+          <div className="rounded-iv-lg border border-dashed border-medio p-10 text-center">
             {posiciones.length === 0 ? (
               <>
-                <p className="text-cuerpo text-tinta">Todavía no hay posiciones valoradas.</p>
-                <p className="text-apoyo text-tinta-3 mt-1 max-w-[46ch] mx-auto">
+                <p className="text-[14.5px] text-tinta font-medium">Todavía no hay posiciones valoradas.</p>
+                <p className="text-[13px] text-tinta-3 mt-1.5 max-w-[46ch] mx-auto">
                   En cuanto una acción tenga precio de compra y cotización, aparecerá aquí
                   con su peso y su resultado.
                 </p>
               </>
             ) : (
               <>
-                <p className="text-cuerpo text-tinta">Ninguna posición encaja con ese filtro.</p>
-                <button onClick={() => { setBusca(""); setRiesgoFiltro("Todas"); }}
-                        className="mt-3 px-3 py-1.5 border border-linea-fuerte text-apoyo hover:border-marca hover:text-marca transition-colors">
+                <p className="text-[14.5px] text-tinta font-medium">Ninguna posición encaja con ese filtro.</p>
+                <Boton variante="secundario" tamano="sm" className="mt-3"
+                       onClick={() => { setBusca(""); setRiesgoFiltro("Todas"); }}>
                   Ver todas
-                </button>
+                </Boton>
               </>
             )}
           </div>
         ) : (
           <>
-          {/* MÓVIL · lista compacta. La tabla de siete columnas obligaba a desplazarse a
-              lo ancho en el teléfono; aquí lo que decide (símbolo y P&L) va en la
-              primera línea y el resto debajo, con las mismas cifras. */}
-          <ul className="md:hidden iv-panel divide-y divide-linea overflow-hidden">
+          {/* MÓVIL · lista. Monograma a la izquierda para que el ojo baje por la
+              columna; lo que decide (P&L) arriba a la derecha y el resto debajo. */}
+          <ul className="md:hidden iv-panel overflow-hidden">
             {visibles.map((p) => {
               const peso = totalValor ? (p.valor_eur / totalValor) * 100 : 0;
               return (
-                <li key={p.symbol}>
+                <li key={p.symbol} className="border-b border-suave last:border-b-0">
                   <Link to={`/accion/${p.symbol}`}
-                        className={`block px-4 py-3 hover:bg-superficie-alt active:bg-superficie-alt ${TRANS}`}>
-                    <div className="flex items-baseline justify-between gap-3">
-                      <div className="min-w-0 flex items-baseline gap-2">
-                        <span className="iv-cifra font-semibold text-tinta shrink-0">{p.symbol}</span>
-                        <span className="text-etiqueta text-tinta-3 truncate">
-                          {[p.nombre, p.mercado].filter(Boolean).join(" · ")}
+                        className={cn("flex gap-3 px-4 py-3.5 active:bg-tinta/[0.04]", TRANS)}>
+                    <Monograma symbol={p.symbol} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-[14.5px] font-semibold text-tinta">{p.symbol}</span>
+                        <span className={cn("iv-cifra text-[14px] font-medium shrink-0",
+                                            p.pnl > 0 ? "text-sube" : p.pnl < 0 ? "text-baja" : "text-tinta-3")}>
+                          {p.pnl !== null ? fmtEur(p.pnl) : "—"}
                         </span>
                       </div>
-                      <span className={`iv-cifra text-apoyo font-semibold shrink-0 ${
-                        p.pnl > 0 ? "text-sube" : p.pnl < 0 ? "text-baja" : "text-tinta-3"}`}>
-                        {p.pnl !== null ? fmtEur(p.pnl) : "—"}
-                      </span>
-                    </div>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-etiqueta">
-                      <span className="iv-cifra text-tinta-2">
-                        {num(p.precio_actual) !== null ? p.precio_actual.toFixed(2) : "—"}
-                      </span>
-                      <span className={`iv-cifra ${p.hoyPct > 0 ? "text-sube" : p.hoyPct < 0 ? "text-baja" : "text-tinta-3"}`}>
-                        {p.hoyPct !== null ? fmtPct(p.hoyPct) : "—"}
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <Barra pct={peso} ancho="w-10" />
-                        <span className="iv-cifra text-tinta-3">{peso.toFixed(0)} %</span>
-                      </span>
-                      <span className={`iv-etiqueta ${RIESGO_TONO[p.riesgo] || "text-tinta-3"}`}>{p.riesgo || "—"}</span>
-                      <span className={`ml-auto ${p.estado.tono}`} title={p.estado.ayuda || undefined}>{p.estado.txt}</span>
+                      <div className="flex items-baseline justify-between gap-3 mt-0.5">
+                        <span className="text-[12.5px] text-tinta-3 truncate">
+                          {[p.nombre, p.mercado].filter(Boolean).join(" · ")}
+                        </span>
+                        <span className="iv-cifra text-[12.5px] shrink-0">
+                          <span className="text-tinta-2">{num(p.precio_actual) !== null ? p.precio_actual.toFixed(2) : "—"}</span>{" "}
+                          <span className={p.hoyPct > 0 ? "text-sube" : p.hoyPct < 0 ? "text-baja" : "text-tinta-3"}>
+                            {p.hoyPct !== null ? fmtPct(p.hoyPct) : "—"}
+                          </span>
+                        </span>
+                      </div>
+                      <div className="mt-2.5 flex items-center gap-3 text-[12px]">
+                        <span className="flex items-center gap-1.5">
+                          <Barra pct={peso} ancho="w-12" />
+                          <span className="iv-cifra text-tinta-3">{peso.toFixed(0)} %</span>
+                        </span>
+                        <span className={cn("font-medium", RIESGO_TONO[p.riesgo] || "text-tinta-3")}>{RIESGO_TXT[p.riesgo] || p.riesgo || "—"}</span>
+                        <span className="ml-auto min-w-0"><EstadoTxt estado={p.estado} /></span>
+                      </div>
                     </div>
                   </Link>
                 </li>
@@ -540,14 +629,14 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
 
           {/* ESCRITORIO · tabla */}
           <div className="hidden md:block iv-panel overflow-x-auto">
-            <table className="w-full text-apoyo" style={{ minWidth: 760 }}>
+            <table className="w-full text-[13px]" style={{ minWidth: 820 }}>
               <thead>
-                <tr>
+                <tr className="text-left">
                   {["Activo", "Precio", "Hoy", "P&L", "Peso", "Riesgo", "Estado"].map((h, i) => (
-                    <th key={h} scope="col" className={`px-4 py-2.5 iv-etiqueta font-normal border-b border-linea whitespace-nowrap ${
-                      i >= 1 && i <= 3 ? "text-right" : "text-left"}`}>{h}</th>
+                    <th key={h} scope="col" className={cn("px-4 first:pl-5 h-11 text-[12px] font-medium text-tinta-3 border-b border-suave whitespace-nowrap",
+                                                         i >= 1 && i <= 3 ? "text-right" : "text-left")}>{h}</th>
                   ))}
-                  <th className="border-b border-linea w-8"><span className="sr-only">Abrir</span></th>
+                  <th className="border-b border-suave w-10"><span className="sr-only">Abrir</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -556,43 +645,47 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
                   return (
                     <tr key={p.symbol}
                         onClick={() => navegar(`/accion/${p.symbol}`)}
-                        className={`group border-b border-linea last:border-b-0 hover:bg-superficie-alt cursor-pointer ${TRANS}`}>
-                      <td className="px-4 py-2.5">
-                        {/* El símbolo es un enlace real: la fila entera se pulsa con el
-                            ratón, y con el teclado se llega aquí con Tab. */}
-                        <Link to={`/accion/${p.symbol}`} onClick={(ev) => ev.stopPropagation()}
-                              className={`iv-cifra font-semibold text-tinta group-hover:text-marca ${TRANS}`}>
-                          {p.symbol}
-                        </Link>
-                        <div className="text-etiqueta text-tinta-3 truncate max-w-[200px]">
-                          {[p.nombre, p.mercado].filter(Boolean).join(" · ")}
+                        className={cn("group border-b border-suave last:border-b-0 hover:bg-tinta/[0.025] cursor-pointer", TRANS)}>
+                      <td className="pl-5 pr-4 py-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <Monograma symbol={p.symbol} tamano="sm" />
+                          <div className="min-w-0">
+                            {/* El símbolo es un enlace real: la fila entera se pulsa con el
+                                ratón, y con el teclado se llega aquí con Tab. */}
+                            <Link to={`/accion/${p.symbol}`} onClick={(ev) => ev.stopPropagation()}
+                                  className={cn("text-[13.5px] font-semibold text-tinta group-hover:text-marca leading-tight", TRANS)}>
+                              {p.symbol}
+                            </Link>
+                            <div className="text-[12px] text-tinta-3 truncate max-w-[220px]">
+                              {[p.nombre, p.mercado].filter(Boolean).join(" · ")}
+                            </div>
+                          </div>
                         </div>
                       </td>
-                      <td className="px-4 py-2.5 text-right iv-cifra text-tinta-2 whitespace-nowrap">
+                      <td className="px-4 py-3 text-right iv-cifra text-tinta-2 whitespace-nowrap">
                         {num(p.precio_actual) !== null ? p.precio_actual.toFixed(2) : "—"}
                       </td>
-                      <td className={`px-4 py-2.5 text-right iv-cifra whitespace-nowrap ${
-                        p.hoyPct > 0 ? "text-sube" : p.hoyPct < 0 ? "text-baja" : "text-tinta-3"}`}>
+                      <td className={cn("px-4 py-3 text-right iv-cifra whitespace-nowrap",
+                                        p.hoyPct > 0 ? "text-sube" : p.hoyPct < 0 ? "text-baja" : "text-tinta-3")}>
                         {p.hoyPct !== null ? fmtPct(p.hoyPct) : "—"}
                       </td>
-                      <td className={`px-4 py-2.5 text-right iv-cifra font-semibold whitespace-nowrap ${
-                        p.pnl > 0 ? "text-sube" : p.pnl < 0 ? "text-baja" : "text-tinta-3"}`}>
+                      <td className={cn("px-4 py-3 text-right iv-cifra font-medium whitespace-nowrap",
+                                        p.pnl > 0 ? "text-sube" : p.pnl < 0 ? "text-baja" : "text-tinta-3")}>
                         {p.pnl !== null ? fmtEur(p.pnl) : "—"}
                       </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">
+                      <td className="px-4 py-3 whitespace-nowrap">
                         <Barra pct={peso} />
-                        <span className="iv-cifra text-tinta-2 ml-2 inline-block w-9 text-right">{peso.toFixed(0)} %</span>
+                        <span className="iv-cifra text-tinta-2 ml-2.5 inline-block w-9 text-right">{peso.toFixed(0)} %</span>
                       </td>
-                      <td className={`px-4 py-2.5 iv-etiqueta ${RIESGO_TONO[p.riesgo] || "text-tinta-3"}`}>
-                        {p.riesgo || "—"}
+                      <td className={cn("px-4 py-3 font-medium", RIESGO_TONO[p.riesgo] || "text-tinta-3")}>
+                        {RIESGO_TXT[p.riesgo] || p.riesgo || "—"}
                       </td>
-                      <td className={`px-4 py-2.5 whitespace-nowrap ${p.estado.tono}`}
-                          title={p.estado.ayuda || undefined}>
-                        {p.estado.txt}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <EstadoTxt estado={p.estado} />
                       </td>
-                      <td className="px-2 py-2.5 text-right">
-                        <CaretRight size={13} aria-hidden="true"
-                                    className={`text-tinta-3 group-hover:text-marca group-hover:translate-x-0.5 transition-[color,transform] duration-150 ease-out motion-reduce:transition-none`} />
+                      <td className="pr-4 py-3 text-right">
+                        <ChevronRight aria-hidden="true" strokeWidth={1.75}
+                                      className="w-4 h-4 inline text-tinta-3 group-hover:text-marca group-hover:translate-x-0.5 transition-[color,transform] duration-150 ease-salida motion-reduce:transition-none" />
                       </td>
                     </tr>
                   );
@@ -602,7 +695,7 @@ export default function CarteraCabecera({ entries = [], onAnalizarCorrelacion, o
           </div>
           </>
         )}
-      </div>
+      </section>
     </>
   );
 }
