@@ -56,10 +56,16 @@ export default function Metrica({
   const claveTono = resolverTono(tono, num);
   const vacio = valor === null || valor === undefined || valor === "" || valor === SIN_DATO;
 
+  // sm/md en Geist Mono (columnas de cifras); lg/xl son cifras protagonistas y van
+  // en Geist con números tabulares, más cerradas: se leen como titular.
+  // Tamaños en valor explícito y no con los nombres de la escala (`text-cifra`):
+  // `cn` usa tailwind-merge sin configurar, que toma `text-cifra` por un COLOR y lo
+  // descarta al ver `text-tinta` detrás. Mismos valores que la escala.
   const tamanos = {
-    sm: "text-apoyo",
-    md: "text-cuerpo",
-    lg: "text-cifra",
+    sm: "iv-cifra text-[13px] leading-[1.5] font-medium",
+    md: "iv-cifra text-[14.5px] leading-[1.5] font-medium",
+    lg: "iv-cifra-hero text-[28px] leading-[1.1]",
+    xl: "iv-cifra-hero text-[44px] leading-none",
   };
 
   return (
@@ -71,8 +77,8 @@ export default function Metrica({
       )}
       <p
         className={cn(
-          "iv-cifra font-semibold mt-0.5",
-          tamanos[tamano],
+          tamano === "lg" || tamano === "xl" ? "mt-1.5" : "mt-1",
+          tamanos[tamano] || tamanos.md,
           // Un dato ausente nunca se tiñe: "—" en rojo parecería un valor malo.
           vacio ? "text-tinta-3" : CLASES_TONO[claveTono] || CLASES_TONO.ninguno
         )}

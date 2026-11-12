@@ -51,6 +51,9 @@ function ratio(a, b) {
 const ROLES_TEXTO = [
   "--iv-tinta", "--iv-tinta-2", "--iv-tinta-3",
   "--iv-sube", "--iv-baja", "--iv-aviso", "--iv-alerta", "--iv-info", "--iv-marca",
+  // El color de intención (índigo) es el que pinta la utilidad `marca` desde el
+  // rediseño v2; `--iv-marca` sigue aquí mientras exista como token heredado.
+  "--iv-intencion",
 ];
 const SUPERFICIES = ["--iv-fondo", "--iv-superficie", "--iv-superficie-2"];
 
@@ -73,6 +76,12 @@ describe.each([["claro", CLARO], ["oscuro", OSCURO]])("tema %s", (nombre, paleta
 
   test("el texto sobre el color de marca es legible", () => {
     const r = ratio(paleta["--iv-marca-tinta"], paleta["--iv-marca"]);
+    expect(r).toBeGreaterThanOrEqual(4.5);
+  });
+
+  test("el texto sobre el color de intención es legible", () => {
+    // `bg-marca text-marca-tinta` pinta sobre `--iv-intencion`, no sobre `--iv-marca`.
+    const r = ratio(paleta["--iv-marca-tinta"], paleta["--iv-intencion"]);
     expect(r).toBeGreaterThanOrEqual(4.5);
   });
 

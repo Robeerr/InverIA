@@ -30,10 +30,10 @@ export function Cargando({ filas = 3, alto = "h-4", className, etiqueta = "Carga
       {Array.from({ length: filas }).map((_, i) => (
         <div
           key={i}
-          className={cn("rounded-iv-sm bg-linea/60 animate-pulse", alto)}
+          className={cn("rounded-md iv-esqueleto", alto)}
           // Anchos decrecientes: un bloque de barras idénticas parece una tabla rota;
-          // así se lee como texto que todavía no ha llegado.
-          style={{ width: `${100 - i * 12}%`, animationDelay: `${i * 90}ms` }}
+          // así se lee como texto que todavía no ha llegado. El barrido va desfasado.
+          style={{ width: `${100 - i * 12}%`, animationDelay: `${i * 120}ms` }}
         />
       ))}
     </div>
@@ -48,8 +48,12 @@ export function Cargando({ filas = 3, alto = "h-4", className, etiqueta = "Carga
  */
 export function Vacio({ titulo, motivo, accion, icono = null, className }) {
   return (
-    <div className={cn("text-center py-8 px-4", className)}>
-      {icono && <div className="mb-2 flex justify-center text-tinta-3">{icono}</div>}
+    <div className={cn("text-center py-10 px-4", className)}>
+      {icono && (
+        <div className="mb-3 mx-auto grid place-items-center h-10 w-10 rounded-[12px] bg-tinta/[0.05] text-tinta-3">
+          {icono}
+        </div>
+      )}
       <p className="text-cuerpo text-tinta font-medium">{titulo}</p>
       {motivo && <p className="text-apoyo text-tinta-3 mt-1 max-w-prose mx-auto">{motivo}</p>}
       {accion && (
@@ -69,7 +73,7 @@ export function Vacio({ titulo, motivo, accion, icono = null, className }) {
 export function Error_({ error, onReintentar, titulo = "No se han podido cargar los datos", className }) {
   return (
     <div
-      className={cn("text-center py-8 px-4 border border-baja/30 bg-baja/5 rounded-iv", className)}
+      className={cn("text-center py-8 px-4 border border-baja/25 bg-baja/[0.06] rounded-iv-lg", className)}
       role="alert"
     >
       <p className="text-cuerpo text-tinta font-medium">{titulo}</p>

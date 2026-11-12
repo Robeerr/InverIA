@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { ChartBar, CircleNotch, Eye, EyeSlash } from "@phosphor-icons/react";
+import { Loader2, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
+import { Sello } from "../components/Rail";
 
 /* Campo de texto de la entrada. Una sola definición para los dos campos, para que no
    se separen con el tiempo.
@@ -12,10 +13,10 @@ import { toast } from "sonner";
      contorno global de :focus-visible se quita solo aquí porque este lo sustituye.
    · Solo se animan borde y sombra, nunca `all`. */
 const CAMPO =
-  "w-full h-12 px-4 rounded-xl border border-linea bg-superficie-alt font-mono text-base sm:text-sm " +
+  "w-full h-12 px-4 rounded-[12px] border border-medio bg-superficie-alt text-base sm:text-[14.5px] " +
   "text-tinta caret-marca placeholder:text-tinta-3 hover:border-linea-fuerte " +
-  "focus:outline-none focus-visible:outline-none focus:border-marca focus:ring-2 focus:ring-marca/30 " +
-  "transition-[border-color,box-shadow] duration-150 ease-out";
+  "focus:outline-none focus-visible:outline-none focus:border-marca focus:ring-[3px] focus:ring-marca/25 " +
+  "transition-[border-color,box-shadow] duration-150 ease-salida";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -37,31 +38,30 @@ export default function LoginPage() {
     }
   };
 
-  // Sin `bg-fondo` en la raíz: el fondo lo pone `body`, que en oscuro lleva los dos
-  // brillos suaves de toda la app. Taparlo aquí dejaría la entrada en negro plano.
+  // Sin `bg-fondo` en la raíz: el fondo lo pone `body` (grafito con la luz índigo).
   // `100dvh` y no `100vh`: en móvil la barra del navegador no empuja la tarjeta.
   return (
-    <main className="min-h-screen min-h-[100dvh] flex items-center justify-center px-5 py-10 selection:bg-marca/30">
-      {/* La única entrada animada de la pantalla: se ve una vez por sesión, así que se
-          permite un fundido corto que sube 8 px. Con `prefers-reduced-motion` no hay
-          desplazamiento (motion-safe) y el resto lo neutraliza App.css. */}
-      <div className="w-full max-w-[380px] motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 motion-safe:ease-out">
-        <header className="flex flex-col items-center text-center mb-8">
-          {/* El icono con su resplandor: el único elemento de la pantalla que brilla
-              además del botón, y por eso es lo primero que se ve. */}
-          <div className="relative mb-5" aria-hidden="true">
-            <div className="absolute inset-1 rounded-[18px] bg-marca blur-2xl opacity-35" />
-            <div className="relative w-14 h-14 rounded-[16px] iv-boton-brillo flex items-center justify-center">
-              <ChartBar size={26} weight="bold" />
-            </div>
-          </div>
-          <h1 className="iv-marca-palabra text-[40px] sm:text-[44px] leading-none pb-1">InverIA</h1>
-          <p className="text-apoyo text-tinta-2 mt-2.5">Análisis bursátil en vivo</p>
+    <main className="relative min-h-screen min-h-[100dvh] flex items-center justify-center px-5 py-10 overflow-hidden">
+      {/* La sala: una retícula muy tenue que se apaga hacia los bordes y una luz
+          índigo detrás del formulario. Decorado puro, fuera del árbol accesible. */}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0
+           [background-image:linear-gradient(rgb(var(--iv-tinta)/0.035)_1px,transparent_1px),linear-gradient(90deg,rgb(var(--iv-tinta)/0.035)_1px,transparent_1px)]
+           [background-size:56px_56px]
+           [mask-image:radial-gradient(ellipse_60%_55%_at_50%_45%,black,transparent)]" />
+      <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-[38%] -translate-x-1/2 -translate-y-1/2
+           w-[560px] h-[360px] rounded-full bg-marca/[0.14] blur-[90px]" />
+
+      {/* La única entrada animada: fundido corto que sube 6 px (240 ms). */}
+      <div className="relative w-full max-w-[380px] motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-300 motion-safe:ease-salida">
+        <header className="flex flex-col items-start mb-7">
+          <Sello className="w-11 h-11 rounded-[13px]" trazo={2.2} />
+          <h1 className="mt-6 text-[30px] leading-[1.1] font-semibold tracking-[-0.04em] text-tinta">
+            Entra en InverIA
+          </h1>
+          <p className="text-cuerpo text-tinta-2 mt-2">Tu cartera y tus señales, en vivo.</p>
         </header>
 
-        <section className="iv-panel p-6 sm:p-8" aria-labelledby="login-titulo">
-          {/* El título queda para lectores de pantalla: la tarjeta no lo necesita para
-              entenderse, y sin él respira como en el diseño. */}
+        <section className="iv-panel p-6 sm:p-7 shadow-flotante" aria-labelledby="login-titulo">
           <h2 id="login-titulo" className="sr-only">Iniciar sesión</h2>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-5" aria-busy={loading}>
@@ -105,7 +105,7 @@ export default function LoginPage() {
                   aria-pressed={showPass}
                   className="absolute right-1.5 top-1/2 -translate-y-1/2 h-9 w-9 grid place-items-center rounded-lg text-tinta-3 hover:text-tinta hover:bg-superficie transition-colors duration-150"
                 >
-                  {showPass ? <EyeSlash size={18} /> : <Eye size={18} />}
+                  {showPass ? <EyeOff size={17} strokeWidth={1.75} /> : <Eye size={17} strokeWidth={1.75} />}
                 </button>
               </div>
             </div>
@@ -115,21 +115,20 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="mt-2 w-full h-12 inline-flex items-center justify-center gap-2 rounded-full iv-boton-brillo font-heading text-cuerpo font-semibold
-                         transition-[filter,transform] duration-150 ease-out
-                         [@media(hover:hover)]:hover:brightness-110 active:scale-[0.98] motion-reduce:active:scale-100
+              className="mt-1 w-full h-12 inline-flex items-center justify-center gap-2 rounded-[12px] iv-boton-brillo text-[15px] font-medium tracking-[-0.01em]
+                         transition-[filter,transform] duration-150 ease-salida
+                         [@media(hover:hover)]:hover:brightness-[1.08] active:scale-[0.98] motion-reduce:active:scale-100
                          disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100"
             >
               {loading && (
-                <CircleNotch size={18} weight="bold" className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                <Loader2 size={18} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
               )}
               {loading ? "Entrando…" : "Entrar a InverIA"}
             </button>
           </form>
         </section>
 
-        {/* Nota de servicio, no un elemento: texto llano, sin la píldora con borde. */}
-        <p className="mt-6 text-center text-etiqueta text-tinta-3 text-balance">
+        <p className="mt-5 text-apoyo text-tinta-3 text-balance">
           Tus datos se sincronizan en todos tus dispositivos
         </p>
       </div>

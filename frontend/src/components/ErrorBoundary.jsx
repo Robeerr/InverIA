@@ -1,5 +1,5 @@
 import React from "react";
-import { Warning } from "@phosphor-icons/react";
+import { AlertTriangle } from "lucide-react";
 
 // Red de seguridad: si cualquier componente lanza una excepción al renderizar, en vez de
 // dejar la PANTALLA EN BLANCO (especialmente en el iPhone), mostramos un mensaje amable con
@@ -27,22 +27,25 @@ export default class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="max-w-md mx-auto mt-20 px-6 text-center">
-          <p className="mb-3 flex justify-center"><Warning size={34} weight="light" className="text-baja" /></p>
-          <h2 className="font-heading font-bold text-lg text-tinta mb-2">Algo se ha roto en esta vista</h2>
-          <p className="text-sm text-tinta-3 mb-5">
+        <div className="max-w-md mx-auto mt-20 mb-10 px-4">
+          <div className="iv-panel p-7 text-center">
+          <p className="mb-4 mx-auto grid place-items-center h-11 w-11 rounded-[12px] bg-baja/10 text-baja">
+            <AlertTriangle size={20} strokeWidth={1.75} aria-hidden="true" />
+          </p>
+          <h2 className="text-titulo font-semibold text-tinta mb-2">Algo se ha roto en esta vista</h2>
+          <p className="text-apoyo text-tinta-2 mb-6">
             No te preocupes, tus datos están a salvo. Prueba a recargar o volver a la pantalla principal.
           </p>
           <div className="flex gap-2 justify-center">
             <button
               onClick={() => window.location.reload()}
-              className="px-4 py-2 rounded-iv bg-marca text-marca-tinta text-sm font-mono hover:bg-marca/90 transition-colors"
+              className="h-10 px-4 rounded-[10px] iv-boton-brillo text-apoyo font-medium hover:brightness-[1.08]"
             >
               Recargar
             </button>
             <button
               onClick={() => { this.handleReset(); window.location.href = "/"; }}
-              className="px-4 py-2 rounded-iv border border-linea text-tinta-3 text-sm font-mono hover:border-marca transition-colors"
+              className="h-10 px-4 rounded-[10px] border border-medio text-tinta-2 text-apoyo font-medium hover:bg-tinta/[0.05] hover:text-tinta"
             >
               Ir al inicio
             </button>
@@ -54,14 +57,15 @@ export default class ErrorBoundary extends React.Component {
               recargar, y seleccionable para poder copiarlo y pegarlo. */}
           {this.state.error && (
             <details className="mt-6 text-left">
-              <summary className="text-etiqueta font-mono text-tinta-3 cursor-pointer select-none">
+              <summary className="text-apoyo text-tinta-3 cursor-pointer select-none">
                 Detalle técnico
               </summary>
-              <pre className="mt-2 p-3 rounded-iv bg-superficie-alt text-tinta text-etiqueta font-mono whitespace-pre-wrap break-words select-all max-h-48 overflow-auto">
+              <pre className="mt-2 p-3 rounded-[10px] bg-superficie-alt text-tinta text-etiqueta font-mono whitespace-pre-wrap break-words select-all max-h-48 overflow-auto">
                 {String(this.state.error?.message || this.state.error)}
               </pre>
             </details>
           )}
+          </div>
         </div>
       );
     }

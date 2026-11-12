@@ -1,5 +1,5 @@
 import React from "react";
-import { MagnifyingGlass, Moon, Sun, TelegramLogo, List, SignOut, User } from "@phosphor-icons/react";
+import { Search, Moon, Sun, Send, Menu, LogOut } from "lucide-react";
 import { RailCajon } from "./Rail";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
@@ -7,13 +7,13 @@ import { useLocation } from "react-router-dom";
 import { api } from "../lib/api";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
+import { tituloDePagina } from "../lib/titulo";
 
-// Botón de icono de la barra: sin caja propia hasta que pasas por encima. Antes cada
-// acción llevaba borde y fondo, y la barra se leía como una fila de cuatro cajas que
-// pesaban lo mismo que el buscador. 40px de lado: es zona táctil cómoda en móvil.
+// Botón de icono de la barra: sin caja hasta que pasas por encima. 44 px en móvil
+// (diana táctil), 36 px con puntero fino.
 const ICONO =
-  "h-10 w-10 shrink-0 text-tinta-2 hover:text-tinta hover:bg-superficie-alt " +
-  "active:scale-[0.96] transition-[color,background-color,transform] duration-150 ease-out " +
+  "h-11 w-11 sm:h-9 sm:w-9 shrink-0 rounded-[9px] text-tinta-2 hover:text-tinta hover:bg-tinta/[0.06] " +
+  "active:scale-[0.96] transition-[color,background-color,transform] duration-150 ease-salida " +
   "motion-reduce:transition-none motion-reduce:active:scale-100";
 
 // La navegación ya no vive aquí: la tiene `Rail.jsx`, que es su dueño único. Esta
@@ -96,42 +96,39 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
     }
   };
 
+  // El nombre de la pantalla, del mismo sitio que el título de la pestaña.
+  const pantalla = tituloDePagina(location.pathname).replace(/\s*·\s*InverIA$/, "");
+  const inicial = (user || "?").toString().trim().charAt(0).toUpperCase() || "?";
+
   return (
     <header
       data-testid="app-header"
-      className="sticky top-0 z-30 bg-fondo/95 backdrop-blur border-b border-linea"
+      className="sticky top-0 z-30 bg-[var(--vidrio)] backdrop-blur-xl backdrop-saturate-150 border-b border-suave"
     >
-      {/* Barra superior. Ya no lleva navegación ni marca: las dos viven en el rail.
-          Se queda con lo único que es suyo —buscar, estado y cuenta— y con la
-          hamburguesa, que en móvil abre el cajón con las MISMAS etiquetas. */}
-      <div className="mx-auto px-3 sm:px-5 py-2.5 flex items-center gap-2 sm:gap-3">
+      {/* Barra superior de vidrio. A la izquierda dónde estás, en el centro buscar, a
+          la derecha estado y cuenta. La navegación vive en el rail (o en su cajón). */}
+      <div className="mx-auto px-3 sm:px-6 h-14 flex items-center gap-2 sm:gap-4">
         <Button
           onClick={() => setMenuOpen(true)}
-          variant="outline"
+          variant="ghost"
           size="icon"
           aria-label="Abrir menú"
-          className={`lg:hidden ${ICONO} border-linea`}
+          className={`lg:hidden ${ICONO} -ml-1`}
         >
-          <List size={16} />
+          <Menu size={19} strokeWidth={1.75} />
         </Button>
 
-        {/* Search + autocompletado.
-            Sin techo, a propósito. Un `max-w` dejaba un hueco muerto entre el
-            campo y las acciones en cuanto sobraba sitio, y ese hueco se ve peor
-            que un buscador holgado. Ahora el campo se queda con lo que sobre, y
-            lo que sobra es poco porque la nav ya no lo acapara.
-            El suelo de 200px es lo que impide el fallo original, cuando `min-w-0`
-            dejaba colapsar el campo hasta que solo se veía la lupa. Pero SOLO a
-            partir de `lg`: en un móvil de 390px quedan ~358px útiles y el suelo,
-            sumado al logo y a las acciones, pedía ~423. El sobrante no recorta el
-            buscador —`min-width` no cede—, sino que desborda la barra y expulsa
-            la hamburguesa fuera de la pantalla, que es justo el único acceso al
-            menú que hay en móvil. Ahí el campo tiene que poder encogerse. */}
+        <p className="hidden lg:block shrink-0 text-[14px] font-semibold tracking-[-0.015em] text-tinta min-w-0 truncate max-w-[22ch]">
+          {pantalla}
+        </p>
+
+        {/* Buscador. Con suelo de 200px solo desde `lg`: en un móvil de 390px el
+            suelo expulsaría la hamburguesa fuera de la pantalla. */}
         {showSearch && (
-          <div ref={searchRef} className="flex-1 relative min-w-0 lg:min-w-[200px]">
+          <div ref={searchRef} className="flex-1 relative min-w-0 lg:min-w-[200px] lg:max-w-[460px] lg:mx-auto">
             <form onSubmit={submit} className="relative" role="search">
               <label htmlFor="busqueda-valor" className="sr-only">Buscar valor por ticker o nombre</label>
-              <MagnifyingGlass size={16} aria-hidden="true"
+              <Search size={16} strokeWidth={1.75} aria-hidden="true"
                 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-tinta-3" />
               <Input
                 id="busqueda-valor"
@@ -139,29 +136,27 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
                 value={query}
                 onChange={(e) => setQuery(e.target.value.toUpperCase())}
                 onFocus={() => { if (suggestions.length) setShowSug(true); }}
-                placeholder="Ticker o nombre (ej: AAPL o Apple)"
-                className="pl-9 h-10 bg-superficie border-linea font-mono text-sm text-tinta
-                           placeholder:text-tinta-3 hover:border-linea-fuerte transition-colors
-                           focus-visible:border-linea-fuerte focus-visible:ring-marca"
+                placeholder="Buscar ticker o empresa"
+                className="pl-9 h-10 sm:h-9 rounded-[10px] bg-tinta/[0.04] border-suave text-[14px] sm:text-[13.5px] text-tinta
+                           placeholder:text-tinta-3 hover:border-medio"
                 autoComplete="off"
               />
             </form>
-            {/* Desplegable: filas compactas, ticker en tinta (el naranja es del rail y
-                del activo, no de cada resultado) y nombre en segundo plano. El ticker
-                ocupa lo que necesite —«BRK.B», «SAN.MC»— y el nombre se recorta. */}
+            {/* Desplegable: filas compactas, ticker en mono, nombre en segundo plano. */}
             {showSug && suggestions.length > 0 && (
-              <div className="absolute z-50 left-0 right-0 mt-1.5 bg-superficie border border-linea-fuerte
-                              rounded-iv-sm shadow-[0_12px_32px_-12px_rgb(0_0_0/0.5)] overflow-hidden
-                              max-h-72 overflow-y-auto overscroll-contain py-1">
+              <div className="absolute z-50 left-0 right-0 mt-2 bg-superficie border border-medio
+                              rounded-[12px] shadow-flotante overflow-hidden
+                              max-h-80 overflow-y-auto overscroll-contain p-1
+                              motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-[0.98] motion-safe:duration-150">
                 {suggestions.map((s) => (
                   <button
                     key={s.symbol}
                     type="button"
                     onClick={() => pick(s.symbol)}
-                    className="w-full flex items-baseline gap-3 px-3 py-2 text-left
-                               hover:bg-superficie-alt focus-visible:bg-superficie-alt transition-colors duration-100"
+                    className="w-full flex items-baseline gap-3 px-2.5 h-10 items-center text-left rounded-[8px]
+                               hover:bg-tinta/[0.06] focus-visible:bg-tinta/[0.06]"
                   >
-                    <span className="font-mono font-semibold text-sm text-tinta shrink-0 min-w-[4.5rem]">{s.symbol}</span>
+                    <span className="font-mono font-medium text-[13px] text-tinta shrink-0 min-w-[4.5rem]">{s.symbol}</span>
                     <span className="text-apoyo text-tinta-2 truncate min-w-0">{s.name}</span>
                   </button>
                 ))}
@@ -170,17 +165,15 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
           </div>
         )}
 
-        {/* Acciones. Una sola fila sin cajas: el estado es un punto con su palabra, las
-            acciones son iconos que solo toman fondo al pasar, y la cuenta se separa con
-            un filete fino. Lo único que puede pedir atención aquí es «Offline», y por
-            eso es lo único que se enseña en rojo y con palabra también en móvil. */}
-        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-auto">
+        {/* Acciones. Lo único que puede pedir atención aquí es «Offline», y por eso es
+            lo único que se enseña en rojo y con palabra también en móvil. */}
+        <div className="flex items-center gap-0.5 sm:gap-1 shrink-0 ml-auto lg:ml-0">
           {/* Status indicator */}
           <div
             role="status"
             title={backendOk === null ? "Comprobando backend..." : backendOk ? "Backend activo ✓" : "Backend no responde"}
-            className={`flex items-center gap-1.5 h-10 px-1.5 sm:px-2 font-mono text-etiqueta tracking-normal ${
-              backendOk === false ? "text-baja" : "text-tinta-3"
+            className={`flex items-center gap-2 h-8 px-2 sm:px-2.5 rounded-full text-[12px] font-medium ${
+              backendOk === false ? "text-baja bg-baja/10" : "text-tinta-3 lg:bg-tinta/[0.04]"
             }`}
           >
             <span aria-hidden="true" className="relative flex w-2 h-2 shrink-0">
@@ -205,7 +198,7 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
             title={darkMode ? "Modo claro" : "Modo oscuro"}
             aria-label={darkMode ? "Modo claro" : "Modo oscuro"}
           >
-            {darkMode ? <Sun size={16} /> : <Moon size={16} />}
+            {darkMode ? <Sun size={17} strokeWidth={1.75} /> : <Moon size={17} strokeWidth={1.75} />}
           </Button>
           <Button
             data-testid="test-telegram-btn"
@@ -216,25 +209,27 @@ export default function Header({ symbol, setSymbol, onSearch, showSearch = true,
             title="Probar Telegram"
             aria-label="Probar Telegram"
           >
-            <TelegramLogo size={16} />
+            <Send size={16} strokeWidth={1.75} />
           </Button>
 
-          {/* User + logout */}
-          <div className="hidden sm:flex items-center gap-1 pl-2 ml-1 border-l border-linea">
-            <span className="flex items-center gap-1.5 px-1.5 font-mono text-etiqueta tracking-normal text-tinta-3 min-w-0">
-              <User size={14} aria-hidden="true" className="shrink-0" />
-              <span className="hidden md:inline truncate max-w-[12ch]" title={user}>{user}</span>
+          {/* Cuenta: avatar con la inicial y salir. */}
+          <div className="hidden sm:flex items-center gap-1 pl-2 ml-1.5 border-l border-suave">
+            <span className="flex items-center gap-2 pl-1 pr-1 min-w-0" title={user}>
+              <span aria-hidden="true"
+                    className="grid place-items-center h-7 w-7 rounded-full bg-marca/15 text-marca text-[12px] font-semibold
+                               ring-1 ring-inset ring-marca/25">
+                {inicial}
+              </span>
+              <span className="hidden md:inline truncate max-w-[12ch] text-[13px] font-medium text-tinta-2">{user}</span>
             </span>
             <button
               onClick={logout}
               title="Cerrar sesión"
               aria-label="Cerrar sesión"
-              className="inline-flex items-center justify-center h-9 w-9 rounded-iv-sm text-tinta-3
-                         hover:text-baja hover:bg-baja/10 active:scale-[0.96]
-                         transition-[color,background-color,transform] duration-150 ease-out
-                         motion-reduce:transition-none motion-reduce:active:scale-100"
+              className="inline-flex items-center justify-center h-9 w-9 rounded-[9px] text-tinta-3
+                         hover:text-baja hover:bg-baja/10"
             >
-              <SignOut size={15} />
+              <LogOut size={16} strokeWidth={1.75} />
             </button>
           </div>
         </div>

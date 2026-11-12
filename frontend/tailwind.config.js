@@ -8,9 +8,7 @@ module.exports = {
   theme: {
     extend: {
       borderRadius: {
-        // `rounded` a secas: estaba en el 0,25rem de Tailwind y hay decenas de botones y
-        // cajas escritos a mano con él. Con el rediseño se lee como esquina viva entre
-        // tarjetas redondeadas, así que pasa al radio pequeño de la casa (8 px).
+        // `rounded` a secas → radio pequeño de la casa (8 px). Escala: 8 · 12 · 16.
         DEFAULT: 'var(--iv-radio-sm)',
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
@@ -20,16 +18,33 @@ module.exports = {
         'iv-sm': 'var(--iv-radio-sm)',
         'iv-lg': 'var(--iv-radio-lg)',
       },
-      // Escala tipográfica cerrada de cinco pasos, con 11px como SUELO ABSOLUTO.
-      // Hoy hay `text-[9px]` en sitios de lectura: por debajo de 11px el texto no
-      // se lee, se adivina. Cinco pasos bastan para toda la app y evitan que cada
-      // pantalla invente su propio tamaño.
+      // Escala tipográfica cerrada (Geist), con 12px como suelo de lectura y 11px
+      // solo para micro-etiquetas. Seis pasos: etiqueta → héroe. Un bloque usa
+      // como mucho tres.
       fontSize: {
-        etiqueta: ['11px', { lineHeight: '1.35', letterSpacing: '0.08em' }],
-        apoyo: ['13px', { lineHeight: '1.45' }],
-        cuerpo: ['15px', { lineHeight: '1.55' }],
-        titulo: ['19px', { lineHeight: '1.3', letterSpacing: '-0.01em' }],
-        cifra: ['26px', { lineHeight: '1.15', letterSpacing: '-0.02em' }],
+        etiqueta: ['12px', { lineHeight: '1.35', letterSpacing: '0' }],
+        apoyo: ['13px', { lineHeight: '1.5', letterSpacing: '-0.003em' }],
+        cuerpo: ['14.5px', { lineHeight: '1.55', letterSpacing: '-0.006em' }],
+        titulo: ['18px', { lineHeight: '1.3', letterSpacing: '-0.02em' }],
+        cifra: ['28px', { lineHeight: '1.1', letterSpacing: '-0.035em' }],
+        heroe: ['44px', { lineHeight: '1', letterSpacing: '-0.045em' }],
+      },
+      fontFamily: {
+        sans: ['Geist', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
+        heading: ['Geist', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['"Geist Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+      },
+      boxShadow: {
+        panel: 'var(--sombra-panel)',
+        flotante: 'var(--sombra-flotante)',
+      },
+      transitionTimingFunction: {
+        salida: 'cubic-bezier(0.23, 1, 0.32, 1)',
+        mover: 'cubic-bezier(0.77, 0, 0.175, 1)',
+      },
+      borderColor: {
+        suave: 'var(--borde-suave)',
+        medio: 'var(--borde-medio)',
       },
       colors: {
         // ── Tokens semánticos de InverIA ─────────────────────────────────────
@@ -55,7 +70,9 @@ module.exports = {
           3: 'rgb(var(--iv-tinta-3) / <alpha-value>)',
         },
         marca: {
-          DEFAULT: 'rgb(var(--iv-marca) / <alpha-value>)',
+          // La utilidad `marca` es la INTENCIÓN (índigo). `--iv-marca` es un token
+          // heredado que ya no pinta el sistema (ver styles/tokens.css).
+          DEFAULT: 'rgb(var(--iv-intencion) / <alpha-value>)',
           tinta: 'rgb(var(--iv-marca-tinta) / <alpha-value>)',
         },
         sube: 'rgb(var(--iv-sube) / <alpha-value>)',

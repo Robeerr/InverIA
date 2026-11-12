@@ -1,394 +1,350 @@
 /* ─────────────────────────────────────────────────────────────────────────────
-   InverIA · Capa de tokens semánticos
+   InverIA · Sistema «Grafito e índigo» (v2)
    ─────────────────────────────────────────────────────────────────────────────
 
-   POR QUÉ EXISTE ESTE FICHERO
+   LA IDEA EN UNA FRASE
 
-   Hasta ahora el modo oscuro eran ~50 reglas `!important` en index.css que
-   remapeaban hex uno a uno: `.dark .text-[#5c6b66] { color: #94a3b8 !important }`.
-   Eso tiene tres consecuencias que se pagan a diario:
+   Una sala de lectura de noche: grafito frío, superficies que suben de luz por
+   capas, un único color de intención —índigo— y el verde y el rojo reservados a lo
+   único que significan: subir y bajar. Se deja atrás la «terminal» naranja con
+   etiquetas monoespaciadas en versalitas.
 
-     1. El color de marca de InverIA NO EXISTE como color. El ámbar #f59e0b es lo
-        que sale cuando la regla `.dark .bg-[#1a3a32]` convierte el verde en ámbar.
-        La identidad de la app era un efecto secundario de un parche.
-     2. Un color nuevo es deuda automática: hay que acordarse de añadir su regla
-        de remapeo, y si no se hace, la pantalla se rompe solo en oscuro.
-     3. Los hex se repiten a mano por todo el JSX (#5c6b66 aparece 366 veces,
-        #1a3a32 197), así que cambiar un tono es imposible sin buscar y sustituir.
-
-   CÓMO CONVIVE CON LO QUE YA HAY
-
-   Esta capa empezó AÑADIÉNDOSE, sin sustituir nada, y hoy manda ya en toda la web:
-   el bloque `!important` de index.css, los tokens de shadcn y la cinta de watchlist
-   —que tenían cada uno su propia paleta— se pintan con estas variables. Sus
-   selectores siguen en pie porque están indexados por valor hex y esos hex viven
-   todavía en BrainView; caerán con su reescritura.
+   REGLAS
+     · El índigo marca INTENCIÓN (acción principal, lugar actual, foco). Nunca dato.
+     · Verde y rojo marcan DIRECCIÓN de una cifra. Nunca decoración ni botones.
+     · Elevación por luminosidad, no por sombra dura: fondo → superficie → superficie-2.
+     · Etiquetas en Geist, minúscula de frase. Geist Mono solo en cifras.
 
    FORMATO: TRIPLETES RGB, NO HEX
-
-   `--iv-sube: 95 208 138` en vez de `#5fd08a` para que Tailwind pueda componer
-   opacidades (`bg-sube/10`, `border-baja/30`), que es un patrón muy usado en este
-   código. En CSS a mano se escribe `rgb(var(--iv-sube))`, y con alfa
-   `rgb(var(--iv-sube) / 0.1)`.
+   `--iv-sube: 79 194 140` para que Tailwind componga opacidades (`bg-sube/10`).
+   En CSS a mano: `rgb(var(--iv-sube))`, con alfa `rgb(var(--iv-sube) / 0.1)`.
 
    CONTRASTE
-
-   Todos los roles de texto llegan a 4.5:1 sobre las tres superficies de su tema
-   (comprobado, no estimado: lo verifica styles/tokens.test.js en cada ejecución).
-   Con la paleta del rediseño el peor caso es 5.35:1 en oscuro (`--iv-tinta-3` sobre
-   la superficie alterna) y 4.59:1 en claro (`--iv-alerta` sobre la superficie
-   alterna): el claro es el que tiene poco margen, porque los colores vivos de la
-   marca hay que oscurecerlos mucho para que se lean sobre papel.
-
-   `--iv-linea-marcada` llega a 3:1 sobre su superficie para cuando un límite tiene
-   que percibirse de verdad (3.90:1 en claro, 3.86:1 en oscuro); `--iv-linea` es
-   deliberadamente sutil, para separar sin dibujar rejas.
+   Todos los roles de texto ≥ 4,5:1 sobre las tres superficies de su tema; lo
+   comprueba styles/tokens.test.js en cada ejecución. Peor caso en oscuro:
+   `--iv-tinta-3` sobre `--iv-superficie-2` (≈4,9:1).
    ───────────────────────────────────────────────────────────────────────────── */
 
-/* ── Tema claro · la versión de día de la misma marca ───────────────────────
-   Deriva del oscuro, pero se define ENTERO y por separado. Un token que solo
-   existe en un tema es justo el fallo que esta capa viene a corregir, así que
-   no hay ni un valor que se herede a medias.
-
-   POR QUÉ EL NARANJA DE DÍA ES MÁS OSCURO
-
-   El naranja de marca (#ff9f1c) brilla sobre negro y sobre blanco no llega ni a
-   2,5:1. En vez de falsear un naranja apagado, el tema claro usa un ámbar tostado
-   (#ac4e08) que sí pasa 4,5:1 y se reconoce como el mismo color de la marca. Lo
-   mismo con el verde, el rojo y el azul: son los mismos tonos, un escalón más
-   profundos para leerse sobre papel. */
+/* ── Tema claro · papel frío ──────────────────────────────────────────────── */
 :root {
     /* Superficies */
+    /* Neutros: los mismos que lib/tokens.js repite como respaldo (un test vigila). */
     --iv-fondo:          246 246 248;   /* #f6f6f8 */
     --iv-superficie:     255 255 255;   /* #ffffff */
     --iv-superficie-2:   241 241 244;   /* #f1f1f4 */
 
     /* Líneas */
-    --iv-linea:          228 228 233;   /* #e4e4e9 · separación sutil */
-    --iv-linea-fuerte:   206 206 214;   /* #ceced6 · borde con presencia */
-    --iv-linea-marcada:  128 128 140;   /* #80808c · límite que significa algo */
+    --iv-linea:          228 228 233;   /* #e4e4e9 */
+    --iv-linea-fuerte:   206 206 214;   /* #ceced6 */
+    --iv-linea-marcada:  128 130 146;   /* #808292 · límite que significa algo (≥3:1) */
 
     /* Tinta */
     --iv-tinta:           17  17  20;   /* #111114 */
     --iv-tinta-2:         63  63  72;   /* #3f3f48 */
     --iv-tinta-3:         92  92 104;   /* #5c5c68 */
 
-    /* Marca */
-    --iv-marca:          172  78   8;   /* #ac4e08 · ámbar tostado, 4,84:1 en el peor caso */
-    --iv-marca-tinta:    255 255 255;   /* texto sobre marca */
-    --iv-acento-2:         2 132 199;   /* #0284c7 · final del degradado de las cifras */
+    /* Intención · índigo profundo de día. Es el color de la marca en todo el
+       sistema: la utilidad `marca` de Tailwind (`bg-marca`, `text-marca`) lo lee. */
+    --iv-intencion:       79  70 229;   /* #4f46e5 */
+    --iv-marca-tinta:    255 255 255;   /* texto sobre índigo (y sobre el ámbar heredado) */
+    /* Heredado. `--iv-marca` ya no pinta el sistema; lo siguen leyendo a mano tres
+       sitios de pantallas aún sin migrar (CarteraCabecera, OpportunitiesView, la
+       línea «taza» de LightweightChart) y `lib/tokens.js` lo repite como respaldo
+       del tema claro, con un test que exige este valor. Se retira cuando esos sitios
+       pasen a `--iv-intencion` y se actualice el respaldo. */
+    --iv-marca:          172  78   8;   /* #ac4e08 */
+    --iv-acento-2:       124  58 237;   /* #7c3aed · violeta, segundo tono del índigo */
 
     /* Semánticos financieros */
     --iv-sube:             4 120  87;   /* #047857 */
     --iv-baja:           190  18  60;   /* #be123c */
     --iv-aviso:          146  92   6;   /* #925c06 */
-    --iv-alerta:         194  65  12;   /* #c2410c · cuarto peldaño del termómetro,
-                                           entre `baja` y `aviso`. Sin él, los tramos
-                                           25-45 y 45-55 salían del mismo color. */
+    --iv-alerta:         194  65  12;   /* #c2410c · entre baja y aviso en el termómetro */
     --iv-info:            29  78 216;   /* #1d4ed8 */
     --iv-neutro:          92  92 104;   /* #5c5c68 */
 
-    /* Foco visible — mismo token en los dos temas para que nunca falte */
-    --iv-foco:           172  78   8;
+    --iv-foco:            79  70 229;
 
-    /* Radio. Tarjetas con cuerpo: el diseño pasa de la terminal plana (2 px) a
-       superficies redondeadas que se leen como piezas. `lg` es el de las tarjetas,
-       el normal el de controles y campos, `sm` el de los detalles pequeños. */
+    /* Radios: 8 controles pequeños · 12 controles y campos · 16 tarjetas */
     --iv-radio:        12px;
     --iv-radio-sm:      8px;
-    --iv-radio-lg:     18px;
+    --iv-radio-lg:     16px;
 
-    /* Sombras y halos. No son tokens de color —no entran en el test de contraste—,
-       así que llevan otro prefijo: el test lee todo lo que empiece por `--iv-`. */
-    --sombra-panel: 0 1px 2px rgb(17 17 20 / 0.04), 0 8px 24px -12px rgb(17 17 20 / 0.12);
+    /* No son tokens de color (no entran en el test de contraste): otro prefijo. */
+    --borde-suave: rgb(17 18 24 / 0.08);
+    --borde-medio: rgb(17 18 24 / 0.14);
+    --sombra-panel: 0 1px 2px rgb(17 18 24 / 0.04), 0 4px 16px -8px rgb(17 18 24 / 0.08);
+    --sombra-flotante: 0 16px 48px -12px rgb(17 18 24 / 0.22), 0 2px 6px rgb(17 18 24 / 0.06);
     --brillo-panel: rgb(255 255 255 / 0);
+    --boton-fondo: 79 70 229;
+    --vidrio: rgb(247 247 250 / 0.78);
+
+    /* Movimiento (Emil Kowalski): salida rápida que frena, nada rebota. */
+    --curva-salida: cubic-bezier(0.23, 1, 0.32, 1);
+    --curva-mover: cubic-bezier(0.77, 0, 0.175, 1);
+    --dur-rapida: 150ms;
+    --dur-media: 220ms;
+
+    --rail-w: 240px;
 }
+html[data-rail="compacto"] { --rail-w: 68px; }
 
-/* ── Tema oscuro · la identidad de InverIA ──────────────────────────────────
-   Este es el tema de referencia: el que define la marca y sobre el que se
-   diseña primero.
-
-   LA DIRECCIÓN: DARK FINTECH CON BRILLO
-
-   Negro casi puro y neutro (#09090b) en vez del verde-negro de la terminal. Las
-   tarjetas SUBEN un escalón de luz (#131316) y llevan un brillo sutil arriba:
-   vuelven a leerse como piezas que flotan sobre el lienzo, con su borde fino. Es
-   lo contrario de la etapa anterior —superficies a ras de fondo separadas por un
-   filete—, y es una decisión deliberada, no una deriva.
-
-   El color hace el trabajo de jerarquía: naranja para la marca y la acción
-   principal, verde neón para lo que sube, rosa-rojo para lo que baja, azul para
-   la información. Los halos (`.iv-halo-*`) tiñen el borde y el entorno de una
-   tarjeta para decir qué es antes de leerla. */
+/* ── Tema oscuro · grafito (el de referencia) ───────────────────────────────
+   No es negro: es un grafito con una pizca de azul, y cada superficie sube un
+   escalón de luz. Los bordes de las piezas son blanco translúcido, así funcionan
+   igual sobre cualquier capa. */
 .dark {
-    --iv-fondo:            9   9  11;   /* #09090b · negro neutro */
-    --iv-superficie:      19  19  22;   /* #131316 · tarjeta */
-    --iv-superficie-2:    26  26  31;   /* #1a1a1f · tarjeta dentro de tarjeta, campos */
+    --iv-fondo:           14  15  20;   /* #0e0f14 · grafito */
+    --iv-superficie:      22  23  30;   /* #16171e · pizarra */
+    --iv-superficie-2:    30  32  41;   /* #1e2029 · capa interior, campos */
 
-    --iv-linea:           39  39  46;   /* #27272e */
-    --iv-linea-fuerte:    52  52  61;   /* #34343d */
-    --iv-linea-marcada:  113 113 128;   /* #717180 */
+    --iv-linea:           38  40  51;   /* #262833 */
+    --iv-linea-fuerte:    52  55  69;   /* #343745 */
+    --iv-linea-marcada:  104 107 128;   /* #686b80 */
 
-    --iv-tinta:          244 244 245;   /* #f4f4f5 */
-    --iv-tinta-2:        180 180 190;   /* #b4b4be */
-    --iv-tinta-3:        142 142 154;   /* #8e8e9a */
+    --iv-tinta:          236 237 243;   /* #ecedf3 */
+    --iv-tinta-2:        176 179 194;   /* #b0b3c2 */
+    --iv-tinta-3:        138 141 160;   /* #8a8da0 */
 
-    --iv-marca:          255 159  28;   /* #ff9f1c · naranja */
-    --iv-marca-tinta:     12  12  14;   /* #0c0c0e · texto sobre naranja */
-    --iv-acento-2:        56 189 248;   /* #38bdf8 · final del degradado de las cifras */
+    --iv-intencion:      141 142 255;   /* #8d8eff · índigo eléctrico frío */
+    --iv-marca-tinta:     14  15  30;   /* #0e0f1e · texto sobre índigo claro */
+    --iv-marca:          141 142 255;   /* heredado: en oscuro ya coincide con la intención */
+    --iv-acento-2:       178 140 255;   /* #b28cff · violeta */
 
-    --iv-sube:            52 211 153;   /* #34d399 · verde neón */
-    --iv-baja:           255  99 132;   /* #ff6384 · rosa-rojo */
-    --iv-aviso:          250 204  21;   /* #facc15 · amarillo */
-    --iv-alerta:         255 138  76;   /* #ff8a4c · coral, entre baja y marca */
-    --iv-info:            96 165 250;   /* #60a5fa */
-    --iv-neutro:         142 142 154;   /* #8e8e9a */
+    --iv-sube:            79 194 140;   /* #4fc28c · verde algo apagado */
+    --iv-baja:           240 112 126;   /* #f0707e · rojo coral */
+    --iv-aviso:          229 189  92;   /* #e5bd5c · ámbar suave */
+    --iv-alerta:         240 150 104;   /* #f09668 */
+    --iv-info:           100 190 235;   /* #64beeb · celeste */
+    --iv-neutro:         138 141 160;   /* #8a8da0 */
 
-    --iv-foco:           255 159  28;
+    --iv-foco:           141 142 255;
 
-    --sombra-panel: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 12px 32px -16px rgb(0 0 0 / 0.75);
-    --brillo-panel: rgb(255 255 255 / 0.025);
+    --borde-suave: rgb(255 255 255 / 0.065);
+    --borde-medio: rgb(255 255 255 / 0.11);
+    --sombra-panel: 0 1px 0 rgb(255 255 255 / 0.035) inset, 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.5);
+    --sombra-flotante: 0 24px 64px -16px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.06);
+    --brillo-panel: rgb(255 255 255 / 0.02);
+    --boton-fondo: 98 99 240;
+    --vidrio: rgb(14 15 20 / 0.72);
 }
 
 /* ── Superficie SIEMPRE oscura ───────────────────────────────────────────────
-   Hay elementos que son oscuros en los dos temas: la barra de señal fija es
-   `#0e1f1a` tanto en claro como en oscuro. Ningún token les sirve tal cual,
-   porque cada token resuelve según el TEMA y no según la superficie sobre la
-   que cae: `text-sube` valdría #2f6b45 en claro, verde oscuro sobre casi negro.
-
-   La solución es un ÁMBITO, no un color nuevo. Esta clase redeclara la paleta
-   oscura para su subárbol, así que dentro de ella `text-sube`, `text-tinta-3` o
-   `border-linea` funcionan igual que en cualquier otro sitio y resuelven a los
-   valores oscuros. Los componentes no tienen que saber nada.
-
-   NO es un parche como el bloque `!important` de index.css: aquel está indexado
-   por VALOR HEX («cuando veas #5c6b66, píntalo así») y este por PAPEL («dentro
-   de esta superficie, la paleta es esta»).
-
-   Los valores están repetidos de `.dark` a propósito. La indirección natural
-   —`--iv-sube: var(--iv-d-sube)`— se descartó por una razón concreta: el test de
-   contraste parsea tripletas literales y descarta lo que no lo sea, así que con
-   `var()` el bloque oscuro DESAPARECERÍA del test sin avisar. La duplicación se
-   vigila con un test que compara los dos bloques.
-   ────────────────────────────────────────────────────────────────────────── */
+   Un ámbito, no un color: redeclara la paleta oscura para su subárbol (la barra de
+   señal fija es oscura en los dos temas). Valores repetidos de `.dark` a propósito:
+   el test de contraste solo lee tripletas literales y vigila que coincidan. */
 .iv-oscuro {
-    --iv-fondo: 9   9  11;
-    --iv-superficie: 19  19  22;
-    --iv-superficie-2: 26  26  31;
-    --iv-linea: 39  39  46;
-    --iv-linea-fuerte: 52  52  61;
-    --iv-linea-marcada: 113 113 128;
-    --iv-tinta: 244 244 245;
-    --iv-tinta-2: 180 180 190;
-    --iv-tinta-3: 142 142 154;
-    --iv-marca: 255 159  28;
-    --iv-marca-tinta: 12  12  14;
-    --iv-acento-2: 56 189 248;
-    --iv-sube: 52 211 153;
-    --iv-baja: 255  99 132;
-    --iv-aviso: 250 204  21;
-    --iv-alerta: 255 138  76;
-    --iv-info: 96 165 250;
-    --iv-neutro: 142 142 154;
-    --iv-foco: 255 159  28;
-    --sombra-panel: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 12px 32px -16px rgb(0 0 0 / 0.75);
-    --brillo-panel: rgb(255 255 255 / 0.025);
+    --iv-fondo: 14  15  20;
+    --iv-superficie: 22  23  30;
+    --iv-superficie-2: 30  32  41;
+    --iv-linea: 38  40  51;
+    --iv-linea-fuerte: 52  55  69;
+    --iv-linea-marcada: 104 107 128;
+    --iv-tinta: 236 237 243;
+    --iv-tinta-2: 176 179 194;
+    --iv-tinta-3: 138 141 160;
+    --iv-intencion: 141 142 255;
+    --iv-marca-tinta: 14  15  30;
+    --iv-marca: 141 142 255;
+    --iv-acento-2: 178 140 255;
+    --iv-sube: 79 194 140;
+    --iv-baja: 240 112 126;
+    --iv-aviso: 229 189  92;
+    --iv-alerta: 240 150 104;
+    --iv-info: 100 190 235;
+    --iv-neutro: 138 141 160;
+    --iv-foco: 141 142 255;
+    --borde-suave: rgb(255 255 255 / 0.065);
+    --borde-medio: rgb(255 255 255 / 0.11);
+    --sombra-panel: 0 1px 0 rgb(255 255 255 / 0.035) inset, 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.5);
+    --brillo-panel: rgb(255 255 255 / 0.02);
 }
 
 
 /* ── Foco visible ───────────────────────────────────────────────────────────
-   Global y desde el principio: un foco que solo se añade al final acaba
-   faltando en la mitad de los sitios. `:focus-visible` y no `:focus` para no
-   dibujar el anillo a quien navega con ratón. */
-:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+   Anillo índigo con un hueco del color del fondo: se ve sobre cualquier capa. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
     outline: 2px solid rgb(var(--iv-foco));
     outline-offset: 2px;
-    border-radius: var(--iv-radio-sm);
 }
 
-/* ── Superficies base ───────────────────────────────────────────────────────
-   Tres densidades, y ahora con cuerpo.
-
-   `.iv-panel`    → la tarjeta: borde fino, un brillo arriba que la despega del
-                    lienzo y una sombra larga y suave debajo.
-   `.iv-destacada` → lo que el usuario tiene que leer sí o sí: la misma tarjeta con
-                    halo naranja.
-   `.iv-fila`     → fila compacta: densidad de tabla sin caja alrededor.
-
-   El brillo es un degradado de `--brillo-panel` a nada, encima del color de la
-   superficie: en oscuro es lo que da la sensación de cristal; en claro vale
-   transparente y la tarjeta es blanca y limpia. */
+/* ── Superficies ────────────────────────────────────────────────────────────
+   `.iv-panel`     → la pieza: pizarra, borde translúcido, sombra corta y suave.
+   `.iv-destacada` → lo que hay que leer sí o sí: la misma pieza con filo índigo.
+   `.iv-fila`      → fila de lista: sin caja, solo un separador tenue. */
 .iv-panel {
     background:
-        linear-gradient(180deg, var(--brillo-panel), transparent 40%),
+        linear-gradient(180deg, var(--brillo-panel), transparent 120px),
         rgb(var(--iv-superficie));
-    border: 1px solid rgb(var(--iv-linea));
+    border: 1px solid var(--borde-suave);
     border-radius: var(--iv-radio-lg);
     box-shadow: var(--sombra-panel);
 }
 
+/* Nada de cajas dentro de cajas: una pieza dentro de otra pierde su borde y su
+   sombra y pasa a ser una zona de luz un escalón más alta. */
+.iv-panel .iv-panel,
+.iv-destacada .iv-panel {
+    background: rgb(var(--iv-superficie-2) / 0.6);
+    border-color: transparent;
+    box-shadow: none;
+    border-radius: var(--iv-radio);
+}
+
 .iv-destacada {
     background:
-        linear-gradient(180deg, rgb(var(--iv-marca) / 0.06), transparent 55%),
+        radial-gradient(120% 80% at 0% 0%, rgb(var(--iv-intencion) / 0.09), transparent 60%),
         rgb(var(--iv-superficie));
-    border: 1px solid rgb(var(--iv-marca) / 0.45);
+    border: 1px solid rgb(var(--iv-intencion) / 0.32);
     border-radius: var(--iv-radio-lg);
-    box-shadow: 0 0 0 1px rgb(var(--iv-marca) / 0.08), 0 0 32px -10px rgb(var(--iv-marca) / 0.45),
-                var(--sombra-panel);
+    box-shadow: var(--sombra-panel);
 }
 
 .iv-fila {
     background: transparent;
-    border-bottom: 1px solid rgb(var(--iv-linea));
+    border-bottom: 1px solid var(--borde-suave);
 }
 
-/* ── Halos ──────────────────────────────────────────────────────────────────
-   Una tarjeta que dice qué es antes de leerla: el borde y el entorno se tiñen del
-   color de lo que contiene. Se combinan con `.iv-panel` («iv-panel iv-halo-sube»)
-   y solo cambian borde, fondo y sombra.
-
-   Con moderación: el halo funciona porque hay pocos. Si todas las tarjetas
-   brillaran, no destacaría ninguna. Cartera en verde, la primera decisión del día
-   en naranja, lo que está en pérdidas en rojo — y poco más. */
+/* ── Halos → tinte ──────────────────────────────────────────────────────────
+   Ya no brillan: la pieza se tiñe apenas por arriba y su borde toma el color.
+   Dice qué es antes de leerla sin encender la pantalla. */
 .iv-halo-sube, .iv-halo-baja, .iv-halo-marca, .iv-halo-info {
-    border-color: rgb(var(--h) / 0.4);
+    border-color: rgb(var(--h) / 0.28);
     background:
-        linear-gradient(180deg, rgb(var(--h) / 0.07), transparent 60%),
+        radial-gradient(120% 70% at 0% 0%, rgb(var(--h) / 0.08), transparent 65%),
         rgb(var(--iv-superficie));
-    box-shadow: 0 0 0 1px rgb(var(--h) / 0.06), 0 0 36px -12px rgb(var(--h) / 0.5),
-                var(--sombra-panel);
+    box-shadow: var(--sombra-panel);
 }
 .iv-halo-sube  { --h: var(--iv-sube); }
 .iv-halo-baja  { --h: var(--iv-baja); }
-.iv-halo-marca { --h: var(--iv-marca); }
+.iv-halo-marca { --h: var(--iv-intencion); }
 .iv-halo-info  { --h: var(--iv-info); }
 
 /* ── La cifra protagonista ──────────────────────────────────────────────────
-   El número que se abre a mirar —el valor de la cartera— en la letra de display y
-   con el degradado de verde a azul. Una por pantalla como mucho: es lo que la hace
-   protagonista. Lleva cifras tabulares para que no baile al actualizarse. */
+   Geist en semibold, cifras tabulares y tracking cerrado; tinta plena, sin
+   degradado. Una por pantalla: es lo que la hace protagonista. */
 .iv-cifra-hero {
-    font-family: 'Archivo', ui-sans-serif, system-ui, sans-serif;
-    font-weight: 800;
-    font-stretch: 108%;
+    font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
-    letter-spacing: -0.035em;
+    font-feature-settings: "tnum" 1, "ss01" 1;
+    letter-spacing: -0.045em;
     line-height: 1;
-    background: linear-gradient(90deg, rgb(var(--iv-sube)), rgb(var(--iv-acento-2)));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    color: rgb(var(--iv-tinta));
 }
 
-/* El nombre de la marca en la barra lateral y en la entrada, con el mismo gesto. */
+/* La palabra de la marca. */
 .iv-marca-palabra {
-    font-family: 'Archivo', ui-sans-serif, system-ui, sans-serif;
-    font-weight: 900;
-    font-stretch: 112%;
-    letter-spacing: -0.04em;
-    background: linear-gradient(90deg, rgb(var(--iv-sube)), rgb(var(--iv-acento-2)));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.035em;
+    color: rgb(var(--iv-tinta));
 }
 
-/* El botón principal: píldora con degradado naranja y un resplandor que la separa
-   del resto. Es el único elemento de la interfaz que brilla por sí mismo. */
-.iv-boton-brillo {
-    background: linear-gradient(180deg, rgb(255 184 77), rgb(var(--iv-marca)) 55%, rgb(245 124 0));
-    color: rgb(var(--iv-marca-tinta));
-    box-shadow: 0 0 0 1px rgb(var(--iv-marca) / 0.35), 0 8px 24px -8px rgb(var(--iv-marca) / 0.6);
+/* El sello: índigo a violeta, con un filo de luz arriba. Es el único sitio donde
+   el índigo se permite un degradado. */
+.iv-sello {
+    background:
+        linear-gradient(180deg, rgb(255 255 255 / 0.22), transparent 55%),
+        linear-gradient(135deg, rgb(124 125 255), rgb(150 108 250));
+    color: #fff;
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08) inset, 0 6px 18px -6px rgb(110 100 255 / 0.65);
 }
-:root:not(.dark) .iv-boton-brillo {
-    background: rgb(var(--iv-marca));
-    box-shadow: 0 6px 16px -8px rgb(var(--iv-marca) / 0.55);
+
+/* El botón principal: índigo sólido con texto blanco (≥5:1), un filo de luz
+   arriba y una sombra corta. Nada de resplandor naranja. */
+.iv-boton-brillo {
+    background:
+        linear-gradient(180deg, rgb(255 255 255 / 0.12), transparent 60%),
+        rgb(var(--boton-fondo));
+    color: #fff;
+    box-shadow: 0 0 0 1px rgb(var(--boton-fondo)) , 0 1px 0 rgb(255 255 255 / 0.18) inset,
+                0 4px 14px -4px rgb(var(--boton-fondo) / 0.55);
 }
 
 /* ── Cabecera de sección ────────────────────────────────────────────────────
-   El gesto que se repite en toda la web y sustituye a los títulos sueltos: una
-   etiqueta en versalitas monoespaciadas y un filete que corre hasta el borde
-   derecho. Estructural, no decorativo — marca dónde empieza cada bloque sin
-   necesidad de meterlo en una caja.
-
-   El filete se dibuja con un pseudoelemento que se come el espacio sobrante, así
-   que la línea siempre llega al final por ancha que sea la columna. */
+   Sin filete: el título y aire debajo. La línea que corría hasta el borde era
+   el gesto de la terminal; ahora separa el espacio, no una raya. */
 .iv-seccion {
     display: flex;
     align-items: center;
-    gap: 14px;
-    margin-bottom: 16px;
+    gap: 10px;
+    margin-bottom: 14px;
 }
-.iv-seccion::after {
+.iv-seccion::after { content: none; }
+/* Variante principal: un punto índigo delante del título. */
+.iv-seccion-acento::before {
     content: "";
-    flex: 1;
-    height: 1px;
-    background: rgb(var(--iv-linea));
-}
-/* Variante con acento: el filete arranca en naranja y se apaga. Se reserva para
-   la sección PRINCIPAL de cada pantalla — si lo llevaran todas, no distinguiría
-   ninguna. */
-.iv-seccion-acento::after {
-    background: linear-gradient(90deg, rgb(var(--iv-marca)), rgb(var(--iv-linea)) 45%);
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: rgb(var(--iv-intencion));
+    box-shadow: 0 0 0 4px rgb(var(--iv-intencion) / 0.14);
+    flex: none;
 }
 
-/* ── Veredicto ──────────────────────────────────────────────────────────────
-   La cabecera que abre cada pantalla: una etiqueta pequeña y, debajo, el titular en
-   la letra de display a tamaño grande. Va a sangre sobre el lienzo, sin caja: es lo
-   primero que se lee.
-
-   La letra pasa de la serif (Fraunces) a Archivo en su peso más grueso y algo más
-   ancha. Es la misma familia que el texto, así que no se carga ninguna fuente nueva:
-   solo se piden sus pesos altos. */
+/* ── Veredicto · el titular que abre cada pantalla ────────────────────────── */
 .iv-veredicto {
-    padding-top: 4px;
+    padding-top: 2px;
 }
 .iv-verbo {
-    font-family: 'Archivo', ui-sans-serif, system-ui, sans-serif;
-    font-weight: 800;
-    font-stretch: 108%;
-    font-size: clamp(30px, 4.2vw, 52px);
-    line-height: 1.02;
-    letter-spacing: -0.035em;
+    font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
+    font-weight: 600;
+    font-size: clamp(28px, 3.3vw, 42px);
+    line-height: 1.05;
+    letter-spacing: -0.04em;
     display: block;
+    text-wrap: balance;
 }
 
-/* ── Avisos flotantes ───────────────────────────────────────────────────────
-   `sonner` pinta los iconos de exito/error con su propia paleta, que no conoce
-   la nuestra. El contenedor ya va con tokens desde `App.js`; esto alcanza a lo
-   que se dibuja DENTRO y que no admite estilos en linea. */
-.iv-aviso-flotante [data-icon] svg { color: rgb(var(--iv-marca)); }
+/* ── Avisos flotantes ─────────────────────────────────────────────────────── */
+.iv-aviso-flotante [data-icon] svg { color: rgb(var(--iv-intencion)); }
 .iv-aviso-flotante[data-type="success"] [data-icon] svg { color: rgb(var(--iv-sube)); }
 .iv-aviso-flotante[data-type="error"] [data-icon] svg { color: rgb(var(--iv-baja)); }
 .iv-aviso-flotante [data-description] { color: rgb(var(--iv-tinta-2)); }
 
-/* Etiqueta de dato: el suelo de 11px es absoluto. Por debajo hay texto que
-   simplemente no se lee, y hoy la app tiene `text-[9px]` en sitios de lectura. */
+/* Etiqueta de dato: Geist, 12 px, minúscula de frase. Las versalitas mono con
+   tracking eran la firma de la terminal; aquí la etiqueta acompaña, no grita.
+   Lo que el JSX escriba en mayúsculas se sigue leyendo en mayúsculas. */
 .iv-etiqueta {
-    font-family: 'IBM Plex Mono', ui-monospace, monospace;
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.35;
+    letter-spacing: 0;
+    text-transform: none;
     color: rgb(var(--iv-tinta-3));
 }
+.iv-etiqueta::first-letter { text-transform: uppercase; }
 
-/* Todo dato numérico va en cifras tabulares: sin esto las columnas de precios
-   bailan al actualizarse en vivo, que es justo cuando más se miran. */
+/* Cifras: Geist Mono tabular. Sin esto las columnas bailan al actualizarse. */
 .iv-cifra {
-    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-family: 'Geist Mono', ui-monospace, monospace;
     font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
 }
 
-/* ── Latido del radar ───────────────────────────────────────────────────────
-   Marca las fuentes que están escuchando AHORA. Es la única animación continua
-   de la aplicación, y por eso lleva dos frenos:
+/* ── Esqueleto con barrido ──────────────────────────────────────────────────
+   Un brillo que cruza despacio en vez de un parpadeo: se lee como «llegando». */
+.iv-esqueleto {
+    background:
+        linear-gradient(90deg, transparent, rgb(var(--iv-tinta) / 0.06), transparent) 0 0 / 200% 100% no-repeat,
+        rgb(var(--iv-linea) / 0.7);
+    animation: iv-barrido 1.6s var(--curva-mover) infinite;
+}
+@keyframes iv-barrido {
+    from { background-position: 150% 0, 0 0; }
+    to   { background-position: -50% 0, 0 0; }
+}
 
-     · solo la llevan las fuentes en ONLINE (lo decide el componente, no el CSS);
-     · desaparece por completo con `prefers-reduced-motion`.
+/* Entrada escalonada sutil: 6 px y 220 ms. La aplica el armazón al contenido. */
+@keyframes iv-entra {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: none; }
+}
+.iv-entra { animation: iv-entra var(--dur-media) var(--curva-salida) both; }
 
-   Lo segundo no es cortesía: el movimiento continuo marea a parte de la gente, y
-   un anillo latiendo sin parar en el centro de la pantalla es justo el caso. Sin
-   animación el radar sigue diciendo lo mismo — el color del punto ya lleva el
-   estado — así que no se pierde información, solo el énfasis. */
+/* ── Latido del radar ─────────────────────────────────────────────────────── */
 @keyframes iv-latido {
     0%   { r: 4.5; opacity: 0.85; }
     70%  { r: 13;  opacity: 0; }
@@ -400,4 +356,6 @@
 }
 @media (prefers-reduced-motion: reduce) {
     .iv-radar-latido { animation: none; opacity: 0.35; }
+    .iv-esqueleto { animation: none; }
+    .iv-entra { animation: none; }
 }

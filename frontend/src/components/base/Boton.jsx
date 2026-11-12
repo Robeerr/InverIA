@@ -21,26 +21,29 @@ import { cn } from "@/lib/utils";
      · Altura mínima de 32px, que es el mínimo cómodo para tocar en móvil. */
 
 const botonVariants = cva(
-  // Píldora en todas las variantes: con tarjetas redondeadas, un botón de esquina
-  // viva parece de otra aplicación. El principal lleva además el degradado naranja
-  // con brillo (`.iv-boton-brillo`): es lo único de la interfaz que brilla solo.
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full font-semibold " +
-    "transition-[colors,filter,box-shadow] disabled:pointer-events-none disabled:opacity-50 " +
-    "[&_svg]:shrink-0",
+  // Radio de control (10 px), no píldora: la píldora naranja era la firma de la
+  // versión anterior. El principal es índigo sólido con un filo de luz arriba; al
+  // pulsar, todos se hunden un 2 % (150 ms, curva de salida).
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] font-medium tracking-[-0.01em] " +
+    "transition-[color,background-color,border-color,box-shadow,filter,transform] duration-150 ease-salida " +
+    "active:scale-[0.98] motion-reduce:active:scale-100 " +
+    "disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0",
   {
     variants: {
       variante: {
-        primario: "iv-boton-brillo hover:brightness-110",
-        secundario: "bg-superficie-alt text-tinta border border-linea-fuerte hover:bg-linea/40",
-        contorno: "bg-transparent text-tinta border border-linea-fuerte hover:bg-superficie-alt",
-        fantasma: "bg-transparent text-tinta-2 hover:bg-superficie-alt hover:text-tinta",
-        peligro: "bg-baja text-marca-tinta hover:bg-baja/90",
-        enlace: "bg-transparent text-marca underline-offset-4 hover:underline p-0 h-auto",
+        primario: "iv-boton-brillo hover:brightness-[1.08]",
+        secundario: "bg-tinta/[0.06] text-tinta border border-suave hover:bg-tinta/[0.1]",
+        contorno: "bg-transparent text-tinta border border-medio hover:bg-tinta/[0.05]",
+        fantasma: "bg-transparent text-tinta-2 hover:bg-tinta/[0.06] hover:text-tinta",
+        peligro: "bg-baja/15 text-baja border border-baja/30 hover:bg-baja/25",
+        enlace: "bg-transparent text-marca underline-offset-4 hover:underline p-0 h-auto active:scale-100",
       },
       tamano: {
-        sm: "h-8 px-3 text-apoyo",
-        md: "h-9 px-4 text-apoyo",
-        lg: "h-11 px-6 text-cuerpo",
+        // Tamaños explícitos: tailwind-merge tomaría `text-apoyo` por un color y se
+        // comería el color de la variante (o al revés).
+        sm: "h-8 px-3 text-[13px]",
+        md: "h-9 px-3.5 text-[13px]",
+        lg: "h-11 px-5 text-[14.5px]",
         icono: "h-9 w-9 p-0",
       },
     },

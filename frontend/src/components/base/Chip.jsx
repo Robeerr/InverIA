@@ -13,12 +13,14 @@ import { cn } from "@/lib/utils";
    Si hace falta un cuarto eje, casi siempre es que ese sitio no quería un chip. */
 
 const chipVariants = cva(
-  "inline-flex items-center gap-1 font-mono font-semibold whitespace-nowrap rounded-full border",
+  // Geist, no mono: el chip es una palabra, no una cifra. Radio de 6 px y borde
+  // apenas insinuado; el color lo lleva el texto y un fondo muy bajo.
+  "inline-flex items-center gap-1 font-medium whitespace-nowrap rounded-md border tracking-[-0.005em]",
   {
     variants: {
       tono: {
         neutro: "[--c:var(--iv-neutro)]",
-        marca: "[--c:var(--iv-marca)]",
+        marca: "[--c:var(--iv-intencion)]",
         sube: "[--c:var(--iv-sube)]",
         baja: "[--c:var(--iv-baja)]",
         aviso: "[--c:var(--iv-aviso)]",
@@ -26,7 +28,7 @@ const chipVariants = cva(
       },
       variante: {
         // Suave es el que se usa el 90% de las veces: legible sin gritar.
-        suave: "bg-[rgb(var(--c)/0.12)] text-[rgb(var(--c))] border-[rgb(var(--c)/0.28)]",
+        suave: "bg-[rgb(var(--c)/0.11)] text-[rgb(var(--c))] border-[rgb(var(--c)/0.16)]",
         // Sólido solo para lo que de verdad tiene que verse desde lejos.
         solido: "bg-[rgb(var(--c))] text-[rgb(var(--iv-marca-tinta))] border-transparent",
         // Contorno para cuando ya hay mucho color alrededor.
@@ -34,8 +36,10 @@ const chipVariants = cva(
       },
       tamano: {
         // 11px es el suelo de la escala. No hay un tamaño menor a propósito.
-        sm: "text-etiqueta px-2 py-0.5",
-        md: "text-apoyo px-2.5 py-1",
+        // Tamaño explícito: tailwind-merge tomaría `text-etiqueta` por un color y
+        // lo quitaría al ver el color del tono.
+        sm: "text-[12px] leading-none h-[22px] px-2",
+        md: "text-[13px] leading-none h-7 px-2.5",
       },
     },
     defaultVariants: { tono: "neutro", variante: "suave", tamano: "sm" },

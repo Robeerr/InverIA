@@ -5,7 +5,7 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams,
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Header from "./components/Header";
-import Rail from "./components/Rail";
+import Rail, { Sello } from "./components/Rail";
 import ErrorBoundary from "./components/ErrorBoundary";
 import LoginPage from "./pages/LoginPage";
 import { tituloDePagina } from "./lib/titulo";
@@ -26,12 +26,20 @@ const DiagnosticoView  = React.lazy(() => import("./pages/DiagnosticoView"));
 const EstilosView      = React.lazy(() => import("./pages/EstilosView"));
 const HoyView          = React.lazy(() => import("./pages/HoyView"));
 
+/* El lienzo de cada pantalla: ancho de lectura cómodo, más aire a los lados en
+   escritorio y una entrada corta (6 px, 220 ms) al cambiar de ruta. */
+const LIENZO = "max-w-[1440px] mx-auto px-4 sm:px-8 py-5 sm:py-8 iv-entra";
+
+/* Mientras llega el código de una pantalla: su forma, no un spinner. */
 const PageLoader = () => (
-  <div className="min-h-[60vh] flex items-center justify-center" role="status" aria-live="polite">
-    <div className="flex items-center gap-3 text-tinta-3">
-      <span className="size-3 rounded-full bg-marca animate-pulse" aria-hidden="true" />
-      <span className="iv-etiqueta">Cargando vista</span>
+  <div className="max-w-[1440px] mx-auto px-4 sm:px-8 py-5 sm:py-8" role="status" aria-live="polite">
+    <span className="sr-only">Cargando vista</span>
+    <div className="iv-esqueleto h-8 w-56 rounded-[10px]" aria-hidden="true" />
+    <div className="iv-esqueleto h-4 w-80 max-w-full rounded-md mt-3" aria-hidden="true" />
+    <div className="grid gap-4 sm:grid-cols-3 mt-8" aria-hidden="true">
+      {[0, 1, 2].map((i) => <div key={i} className="iv-esqueleto h-28 rounded-[16px]" />)}
     </div>
+    <div className="iv-esqueleto h-64 rounded-[16px] mt-4" aria-hidden="true" />
   </div>
 );
 
@@ -147,10 +155,10 @@ function AppInner() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-fondo flex items-center justify-center">
-        <div className="flex items-center gap-3 text-tinta-3" role="status" aria-live="polite">
-          <span className="size-3 rounded-full bg-marca animate-pulse" aria-hidden="true" />
-          <span className="iv-etiqueta">Cargando InverIA</span>
+      <div className="min-h-screen min-h-[100dvh] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4 text-tinta-3" role="status" aria-live="polite">
+          <Sello className="w-10 h-10 rounded-[12px] motion-safe:animate-pulse" />
+          <span className="text-apoyo">Cargando InverIA</span>
         </div>
       </div>
     );
@@ -160,10 +168,11 @@ function AppInner() {
 
   return (
     <div className="App min-h-screen overflow-x-hidden">
-      {/* Navegación persistente. El lienzo se desplaza con `lg:pl-[196px]` en vez de
-          con un grid: así ninguna de las rutas tiene que cambiar su contenedor. */}
+      {/* Navegación persistente. El lienzo se aparta lo que mida el rail
+          (`--rail-w`, que cambia con la versión compacta) en vez de usar un grid:
+          así ninguna de las rutas tiene que cambiar su contenedor. */}
       <Rail />
-      <div className="lg:pl-[196px]">
+      <div className="lg:pl-[var(--rail-w)] transition-[padding] duration-200 ease-salida motion-reduce:transition-none">
       <Header
         symbol={symbol}
         setSymbol={irAAccion}
@@ -184,16 +193,16 @@ function AppInner() {
               model={model} setModel={setModel} />
           } />
 
-          <Route path="/oportunidades" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><OpportunitiesView setSymbol={irAAccion} /></div>} />
-          <Route path="/calendario" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><CalendarView setSymbol={irAAccion} /></div>} />
-          <Route path="/cartera" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><SignalsView setSymbol={irAAccion} /></div>} />
+          <Route path="/oportunidades" element={<div className={LIENZO}><OpportunitiesView setSymbol={irAAccion} /></div>} />
+          <Route path="/calendario" element={<div className={LIENZO}><CalendarView setSymbol={irAAccion} /></div>} />
+          <Route path="/cartera" element={<div className={LIENZO}><SignalsView setSymbol={irAAccion} /></div>} />
           <Route path="/operaciones" element={<VentasView />} />
-          <Route path="/track-record" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><TrackRecordView /></div>} />
-          <Route path="/telegram" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><TelegramConnectView /></div>} />
+          <Route path="/track-record" element={<div className={LIENZO}><TrackRecordView /></div>} />
+          <Route path="/telegram" element={<div className={LIENZO}><TelegramConnectView /></div>} />
           <Route path="/intelligence" element={<IntelligenceView />} />
           <Route path="/laboratorio" element={<LaboratorioView />} />
-          <Route path="/cerebro" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><BrainView /></div>} />
-          <Route path="/diagnostico" element={<div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6"><DiagnosticoView /></div>} />
+          <Route path="/cerebro" element={<div className={LIENZO}><BrainView /></div>} />
+          <Route path="/diagnostico" element={<div className={LIENZO}><DiagnosticoView /></div>} />
           {/* Sin wrapper: EstilosView trae su propio PageShell, que es justamente
               el componente que sustituye a este div copiado ocho veces. */}
           <Route path="/sistema/estilos" element={<EstilosView />} />
@@ -211,13 +220,17 @@ function AppInner() {
       </Suspense>
       </ErrorBoundary>
 
-      <footer className="border-t border-linea mt-12 py-6 text-center flex flex-col gap-1.5">
-        <p className="text-apoyo text-tinta-3">
-          InverIA · Datos en vivo de Yahoo Finance + Finnhub · IA con Groq, OpenAI, Anthropic &amp; Google
-        </p>
-        <p className="text-apoyo text-tinta-3 max-w-2xl mx-auto px-6 opacity-80">
-          Solo con fines educativos. Esta aplicación no constituye asesoramiento financiero, fiscal o legal.
-        </p>
+      {/* Pie: una línea discreta, alineada con el contenido. El aviso legal se
+          mantiene íntegro y legible (tinta-3, nunca rebajado con opacidad). */}
+      <footer className="max-w-[1440px] mx-auto px-4 sm:px-8 mt-10 pb-8">
+        <div className="border-t border-suave pt-5 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-8">
+          <p className="text-[12.5px] text-tinta-3 leading-relaxed">
+            Solo con fines educativos. Esta aplicación no constituye asesoramiento financiero, fiscal o legal.
+          </p>
+          <p className="text-[12.5px] text-tinta-3 leading-relaxed sm:text-right shrink-0">
+            InverIA · Datos en vivo de Yahoo Finance + Finnhub · IA con Groq, OpenAI, Anthropic &amp; Google
+          </p>
+        </div>
       </footer>
       </div>
     </div>
@@ -237,10 +250,11 @@ function App() {
           className: "iv-aviso-flotante",
           style: {
             background: "rgb(var(--iv-superficie))",
-            border: "1px solid rgb(var(--iv-linea-fuerte))",
+            border: "1px solid var(--borde-medio)",
             borderRadius: "var(--iv-radio)",
+            boxShadow: "var(--sombra-flotante)",
             color: "rgb(var(--iv-tinta))",
-            fontFamily: "'Archivo', ui-sans-serif, system-ui, sans-serif",
+            fontFamily: "'Geist', ui-sans-serif, system-ui, sans-serif",
             fontSize: "13px",
           },
         }}

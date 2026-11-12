@@ -1,42 +1,39 @@
 /* App-level styles */
 .App {
     min-height: 100vh;
-    /* Token, no hex. Con `#f5f3ef` fijo, el contenedor de TODA la app se quedaba
-       claro en modo oscuro: el parche `!important` de index.css solo remapea clases
-       de utilidad (`.dark .bg-[#f5f3ef]`), y esta es una clase propia. El resultado
-       era una franja clara del ancho de la pantalla con el texto claro encima —
-       invisible—, entre una cabecera oscura y un body oscuro.
-       No se veía mientras la app arrancaba en claro; al pasar el oscuro a ser el
-       tema por defecto, pasó a ser lo primero que se ve. */
+    /* Token, no hex: el contenedor de toda la app sigue al tema. Transparente en
+       oscuro para que se vea la luz índigo del lienzo (body). */
     background-color: rgb(var(--iv-fondo));
 }
+.dark .App { background-color: transparent; }
 
 .card-flat {
     background: rgb(var(--iv-superficie));
-    border: 1px solid rgb(var(--iv-linea));
-    border-radius: var(--iv-radio);
+    border: 1px solid var(--borde-suave);
+    border-radius: var(--iv-radio-lg);
 }
 
 .card-hover {
-    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    transition: border-color var(--dur-rapida) var(--curva-salida),
+                background-color var(--dur-rapida) var(--curva-salida);
 }
-.card-hover:hover {
-    transform: translateY(-2px);
-    border-color: rgb(var(--iv-linea-fuerte));
-    box-shadow: 0 12px 30px -18px rgb(var(--iv-tinta) / 0.35);
+@media (hover: hover) {
+    .card-hover:hover {
+        border-color: var(--borde-medio);
+        background-color: rgb(var(--iv-superficie-2));
+    }
 }
 
+/* Etiqueta pequeña: ya no en versalitas espaciadas, sino Geist en minúscula. */
 .label-small {
-    text-transform: uppercase;
-    letter-spacing: 0.16em;
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
+    font-weight: 500;
     color: rgb(var(--iv-tinta-3));
-    font-weight: 600;
 }
 
 .divider-soft {
     height: 1px;
-    background: rgb(var(--iv-linea));
+    background: var(--borde-suave);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -46,4 +43,5 @@
         scroll-behavior: auto !important;
         transition-duration: 0.01ms !important;
     }
+    :where(button):active { transform: none !important; }
 }
