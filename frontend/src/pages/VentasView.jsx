@@ -1,5 +1,8 @@
 import React from "react";
-import { CaretDown, Info, Warning, X } from "@phosphor-icons/react";
+import { CaretDown, X } from "@phosphor-icons/react";
+import {
+  ArrowLeftRight, ChevronRight, CircleDollarSign, FileUp, Layers, Plus, Scale, Trash2,
+} from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "../lib/api";
@@ -9,6 +12,14 @@ import ExtractoMargen from "../components/ExtractoMargen";
 import { leerComoBroker, guardarComoBroker } from "../lib/preferencias";
 import { datosPosicion, totalesAbiertas } from "../lib/operaciones";
 import { useSignals } from "../hooks/useSignals";
+import Boton from "../components/base/Boton";
+import BaseChip from "../components/base/Chip";
+import Monograma from "../components/base/Monograma";
+import Segmentado from "../components/base/Segmentado";
+import Cascada from "../components/base/Cascada";
+import CabeceraBloque from "../components/base/CabeceraBloque";
+import Pestanas, { propsPanel } from "../components/base/Pestanas";
+import { Aviso, AvisosPanel } from "../components/base/Aviso";
 
 // Símbolos que están en la Cartera pero todavía SIN ningún nivel definido.
 //
@@ -39,16 +50,86 @@ const tono = (v) => (v == null ? "text-tinta-3" : v >= 0 ? "text-sube" : "text-b
 
 // El botón de guardar de los formularios: mismo aspecto en los cuatro, con respuesta al
 // pasar, al pulsar y desactivado (antes solo cambiaba la opacidad al desactivarse).
-const BOTON_PRINCIPAL = "w-full min-h-[44px] bg-marca text-marca-tinta rounded px-4 py-2 text-sm "
-  + "font-semibold transition-[filter,transform] duration-150 ease-out motion-reduce:transition-none "
-  + "hover:brightness-110 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed "
+// Rediseño v2: el principal del sistema (índigo con filo de luz, radio de control de
+// 10 px), a lo ancho del formulario y con 44 px de alto para el dedo.
+const BOTON_PRINCIPAL = "iv-boton-brillo w-full sm:w-auto sm:min-w-[220px] h-11 rounded-[10px] px-4 text-[14px] font-medium "
+  + "transition-[filter,transform] duration-150 ease-salida motion-reduce:transition-none "
+  + "hover:brightness-[1.08] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed "
   + "disabled:hover:brightness-100 disabled:active:scale-100";
 
 // Acción secundaria en texto: subrayado discreto que se afirma al pasar. Una sola clase
 // para los enlaces-botón sueltos que había, cada uno con su propio estilo.
-const ENLACE = "text-etiqueta text-tinta-3 underline underline-offset-4 decoration-linea-fuerte "
-  + "hover:text-tinta hover:decoration-tinta-3 transition-colors duration-150 "
+const ENLACE = "text-[13px] text-tinta-3 underline underline-offset-4 decoration-tinta/20 "
+  + "hover:text-tinta hover:decoration-tinta/50 transition-colors duration-150 "
   + "motion-reduce:transition-none disabled:opacity-60 disabled:cursor-not-allowed";
+
+// Rótulo de bloque pequeño: Geist en minúscula de frase. Sustituye a las versalitas
+// monoespaciadas de 11 px de la versión anterior.
+const ROTULO = "text-[12.5px] font-medium text-tinta-3";
+
+// Botón de acción destructiva en línea (borrar una venta, un lote): rojo apagado que
+// se afirma al pasar, con 36 px de alto para acertar con el dedo.
+const BOTON_BORRAR = "inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg text-[12.5px] "
+  + "text-baja/90 hover:text-baja hover:bg-baja/10 transition-colors duration-150 "
+  + "motion-reduce:transition-none disabled:opacity-60";
+
+// Campo de los formularios: capa de luz, radio 10, foco índigo.
+const inputCls = "mt-1.5 w-full h-10 rounded-[10px] bg-tinta/[0.04] border border-suave px-3 iv-cifra "
+  + "text-[14px] text-tinta placeholder:text-tinta-3/70 placeholder:font-sans transition-[border-color,box-shadow] duration-150 "
+  + "focus:outline-none focus:border-marca/60 focus:ring-2 focus:ring-marca/20 motion-reduce:transition-none";
+const inputMini = "h-9 rounded-lg bg-tinta/[0.04] border border-suave px-2.5 iv-cifra text-[13px] text-tinta "
+  + "placeholder:text-tinta-3/70 placeholder:font-sans focus:outline-none focus:border-marca/60 focus:ring-2 focus:ring-marca/20 "
+  + "disabled:opacity-40";
+
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+  "septiembre", "octubre", "noviembre", "diciembre"];
+const MESES_CORTOS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sept", "oct", "nov", "dic"];
+// «2026-11-04» → «4 nov». Solo presentación: la fecha completa sigue en aria-label.
+const fechaCorta = (f) => {
+  const [, m, d] = (f || "").split("-");
+  return m && d ? `${Number(d)} ${MESES_CORTOS[Number(m) - 1] || m}` : fecha(f);
+};
+const mesDe = (f) => {
+  const [a, m] = (f || "").split("-");
+  return m ? `${MESES[Number(m) - 1] || m} ${a}` : "Sin fecha";
+};
+
+// Cifra héroe: céntimos y «€» reducidos, como en Cartera.
+function CifraHeroe({ valor }) {
+  const t = eur(valor);
+  const m = t.match(/^(.*?)(,\d+)?(\s€)$/);
+  if (!m) return t;
+  return (
+    <>
+      {m[1]}
+      {m[2] && <span className="text-[0.5em] opacity-80 tracking-[-0.02em]">{m[2]}</span>}
+      <span className="text-[0.42em] font-medium text-tinta-3 ml-[0.18em] tracking-normal align-[0.78em]">€</span>
+    </>
+  );
+}
+
+// Cabecera de un formulario: titular, nota y cierre.
+function CabeceraForm({ titulo, nota, onCerrar, icono: Icono }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start gap-3 min-w-0">
+        {Icono && (
+          <span aria-hidden="true" className="flex items-center justify-center w-9 h-9 rounded-[10px] bg-marca/10 text-marca shrink-0">
+            <Icono className="w-[18px] h-[18px]" strokeWidth={1.75} />
+          </span>
+        )}
+        <div className="min-w-0">
+          <h3 className="text-[16px] font-semibold tracking-[-0.015em] text-tinta">{titulo}</h3>
+          {nota && <p className="text-[13px] text-tinta-3 mt-0.5 leading-snug">{nota}</p>}
+        </div>
+      </div>
+      <button type="button" onClick={onCerrar} aria-label="Cerrar"
+              className="-m-1 w-9 h-9 inline-flex items-center justify-center rounded-lg text-tinta-3 hover:text-tinta hover:bg-tinta/[0.06] transition-colors duration-150 motion-reduce:transition-none">
+        <X size={16} aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
 
 /* Las cifras de una posición abierta, calculadas UNA vez.
    ─────────────────────────────────────────────────────────────────────────────
@@ -88,7 +169,7 @@ function NivelesDeLaFila({ p }) {
   // partían la fila en dos o tres líneas. El nombre completo va en title y aria-label.
   const nombres = niveles.map((n) => NIVEL_ETIQUETA[n] || n);
   return (
-    <span className="inline-flex items-center gap-1 rounded bg-info/10 px-1.5 py-0.5 iv-cifra text-etiqueta text-info whitespace-nowrap"
+    <span className="inline-flex items-center gap-1 h-[22px] rounded-md border border-info/15 bg-info/10 px-1.5 iv-cifra text-[11.5px] leading-none text-info whitespace-nowrap"
           title={`Niveles con posición abierta: ${nombres.join(", ")}`}
           aria-label={`Niveles con posición abierta: ${nombres.join(", ")}`}>
       {niveles.map((n) => (
@@ -107,16 +188,10 @@ const NIVEL_ETIQUETA = {
   nivel3: "Nivel 3", nivel4: "Nivel 4", nivel5: "Nivel 5",
 };
 
+// El chip del sistema (Geist 12, radio 6). «nivel» es informativo: va en `info`.
 function Chip({ children, tono: t = "neutro", title }) {
-  const estilos = {
-    neutro: "bg-superficie-alt text-tinta-3",
-    nivel: "bg-info/12 text-info",
-    aviso: "bg-aviso/15 text-aviso",
-  }[t];
   return (
-    <span title={title} className={`font-mono text-[11px] leading-none uppercase tracking-wider px-1.5 py-1 rounded whitespace-nowrap ${estilos}`}>
-      {children}
-    </span>
+    <BaseChip tono={t === "nivel" ? "info" : t} title={title}>{children}</BaseChip>
   );
 }
 
@@ -130,95 +205,6 @@ function Flecha({ abierta, className = "" }) {
   return (
     <CaretDown size={12} weight="bold" aria-hidden="true"
                className={`shrink-0 text-tinta-3 transition-transform duration-200 ease-out motion-reduce:transition-none ${abierta ? "rotate-180" : ""} ${className}`} />
-  );
-}
-
-function Kpi({ etiqueta, significa, valor, sub, acento = false, ayuda }) {
-  const [abierta, setAbierta] = React.useState(false);
-  /* Filete superior de color. Va por el SIGNO del número, no por el concepto: un
-     latente de −1.630 € es rojo aunque «latente» no sea nada malo, y unos costes de
-     −476 € también. Es la misma lectura que ya hace el color de la cifra, subida al
-     borde para que la fila entera se lea de un vistazo sin leer un solo número.
-
-     La excepción es el KPI marcado con `acento`, que va en champán. Hoy es REALIZADO,
-     y no por casualidad: es la única cifra de esta fila que responde a «cuánto ha
-     entrado de verdad en mi cuenta al cerrar posiciones». Las demás son contexto —lo
-     latente aún puede evaporarse— así que la que manda se distingue por color en vez
-     de por estar la primera, que no lo dice.
-
-     Si algún día el acento se mueve a otro KPI, este comentario se mueve con él.
-
-     Rediseño: ya no es una tarjeta suelta sino una celda dentro de UN panel (como la
-     cinta de mercado de Hoy). El filete de color por signo se quita: repetía lo que ya
-     dice el color de la cifra. El acento se queda, como un punto naranja en el rótulo. */
-  return (
-    <div className="flex-[1_1_220px] min-w-0 border-l border-t border-linea px-4 py-3.5">
-      <p className="iv-etiqueta flex items-center gap-1.5">
-        {acento && <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-marca shrink-0" />}
-        <span className={acento ? "text-tinta-2" : undefined}>{etiqueta}</span>
-        {ayuda && (
-          <button type="button" onClick={() => setAbierta((a) => !a)}
-                  aria-expanded={abierta}
-                  aria-label={`Qué significa ${etiqueta}`}
-                  className={`-m-1.5 p-1.5 rounded transition-colors duration-150 motion-reduce:transition-none hover:text-tinta ${abierta ? "text-marca" : "text-tinta-3"}`}>
-            <Info size={13} weight={abierta ? "fill" : "regular"} aria-hidden="true" />
-          </button>
-        )}
-      </p>
-      {/* Qué es, en cristiano, entre el nombre y la cifra. La etiqueta de arriba es el
-          nombre técnico —REALIZADO, LATENTE— y no dice nada a quien no lo sepa ya; el pie
-          de debajo es el detalle (cuántas ventas, qué método). Faltaba lo del medio: la
-          frase que contesta "¿esto qué es?" sin tener que abrir la ayuda. */}
-      {significa && (
-        <p className="text-etiqueta tracking-normal text-tinta-2 mt-1 leading-snug">{significa}</p>
-      )}
-      {/* text-xl en mono: «−1.234.567,89 €» son 15 caracteres ≈ 180 px, y la celda más
-          estrecha (minmax 220 px menos el relleno) deja 188. Si aun así no cupiera, la
-          cifra puede partir antes que salirse de la celda. */}
-      <p className={`iv-cifra font-bold text-xl leading-tight mt-2 [overflow-wrap:anywhere] ${tono(valor)}`}>
-        {eur(valor)}
-      </p>
-      {sub && <p className="text-etiqueta tracking-normal text-tinta-3 mt-1 leading-snug">{sub}</p>}
-      {abierta && ayuda && (
-        <p className="text-etiqueta tracking-normal text-tinta-2 mt-2.5 pt-2.5 border-t border-linea leading-relaxed">
-          {ayuda}
-        </p>
-      )}
-    </div>
-  );
-}
-
-// El Total, a lo ancho del panel y debajo de los sumandos: se lee como el resultado de
-// una suma — realizado + latente + dividendos + costes = total — que es lo que es.
-// Antes quedaba sola en una segunda fila, con el mismo peso que las demás.
-function KpiTotal({ valor, sub, ayuda }) {
-  const [abierta, setAbierta] = React.useState(false);
-  return (
-    <div className="px-4 py-4 bg-superficie-alt/40">
-      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
-        <div className="min-w-0">
-          <p className="iv-etiqueta flex items-center gap-1.5 text-tinta-2">
-            Total
-            <button type="button" onClick={() => setAbierta((a) => !a)}
-                    aria-expanded={abierta}
-                    aria-label="Qué significa Total"
-                    className={`-m-1.5 p-1.5 rounded transition-colors duration-150 motion-reduce:transition-none hover:text-tinta ${abierta ? "text-marca" : "text-tinta-3"}`}>
-              <Info size={13} weight={abierta ? "fill" : "regular"} aria-hidden="true" />
-            </button>
-          </p>
-          <p className="text-apoyo text-tinta-2 mt-1">Todo junto: tu resultado en esta cuenta</p>
-          {sub && <p className="text-etiqueta tracking-normal text-tinta-3 mt-0.5">{sub}</p>}
-        </div>
-        <p className={`iv-cifra font-bold text-[clamp(26px,5vw,34px)] leading-none tracking-tight ml-auto text-right [overflow-wrap:anywhere] ${tono(valor)}`}>
-          {eur(valor)}
-        </p>
-      </div>
-      {abierta && (
-        <p className="text-etiqueta tracking-normal text-tinta-2 mt-3 pt-3 border-t border-linea leading-relaxed max-w-[80ch]">
-          {ayuda}
-        </p>
-      )}
-    </div>
   );
 }
 
@@ -239,7 +225,7 @@ function haceCuanto(segundos) {
 function DetalleLotes({ lotes, divisa }) {
   if (!lotes?.length) return null;
   return (
-    <div className="bg-superficie-alt px-4 py-3 border-t border-linea">
+    <div className="min-w-0">
       {/* Tú compras y vendes POR NIVELES, pero el método de cálculo empareja por FECHA.
           Leer qué niveles se han consumido obligaba a recorrer la lista lote a lote; esto
           lo dice en una frase, en el idioma en el que operas. */}
@@ -253,31 +239,34 @@ function DetalleLotes({ lotes, divisa }) {
           .sort((a, b) => (a[0] === "sin" ? 1 : b[0] === "sin" ? -1 : a[0].localeCompare(b[0])))
           .map(([k, n]) => `${n} ${k === "sin" ? "sin nivel" : NIVEL_ETIQUETA[k] || k}`);
         return partes.length ? (
-          <p className="text-apoyo text-tinta-2 mb-2">
-            Has vendido <b className="text-tinta">{partes.join(" y ")}</b>.
+          <p className="text-[14px] text-tinta-2 mb-4 leading-snug">
+            Has vendido <b className="font-semibold text-tinta">{partes.join(" y ")}</b>.
           </p>
         ) : null;
       })()}
-      <p className="text-[11px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-2">
-        Estas acciones salieron de
-      </p>
-      <div className="space-y-1.5">
+      <p className={`${ROTULO} mb-2`}>Estas acciones salieron de</p>
+      {/* Una línea de tiempo: cada compra es un punto en el carril, con su fecha, lo
+          que se tomó de ella y su coste a la derecha. */}
+      <ol className="relative ml-1 border-l border-medio">
         {lotes.map((l, i) => (
-          <div key={i} className="flex items-center gap-3 flex-wrap text-xs">
-            <span className="font-mono text-tinta-3 w-20">{fecha(l.fecha_compra)}</span>
-            <span className="font-mono font-semibold">{l.acciones} × {usd(l.precio_compra, divisa)}</span>
-            {l.nivel && <Chip tono="nivel">{NIVEL_ETIQUETA[l.nivel] || l.nivel}</Chip>}
-            {l.comision_parte > 0 && (
-              <span className="text-[11px] text-tinta-3">
-                +{usd(l.comision_parte, divisa)} comisión
+          <li key={i} className="relative pl-4 py-2">
+            <span aria-hidden="true" className="absolute -left-[4.5px] top-[15px] w-2 h-2 rounded-full bg-superficie border border-tinta/40" />
+            <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-[13px]">
+              <span className="iv-cifra text-tinta-3 w-[78px] shrink-0">{fecha(l.fecha_compra)}</span>
+              <span className="iv-cifra font-medium text-tinta">{l.acciones} × {usd(l.precio_compra, divisa)}</span>
+              {l.nivel && <Chip tono="nivel">{NIVEL_ETIQUETA[l.nivel] || l.nivel}</Chip>}
+              {l.comision_parte > 0 && (
+                <span className="text-[12px] text-tinta-3">
+                  +{usd(l.comision_parte, divisa)} comisión
+                </span>
+              )}
+              <span className="ml-auto iv-cifra text-tinta-3 whitespace-nowrap">
+                coste {usd(l.coste_divisa, divisa)}
               </span>
-            )}
-            <span className="ml-auto font-mono text-tinta-3">
-              coste {usd(l.coste_divisa, divisa)}
-            </span>
-          </div>
+            </div>
+          </li>
         ))}
-      </div>
+      </ol>
     </div>
   );
 }
@@ -298,49 +287,53 @@ function FilaVenta({ v, metodo, comoBroker, onBorrar }) {
   const difiere = Math.abs((m.ganancia_divisa ?? 0) - (otro?.ganancia_divisa ?? 0)) > 0.005;
 
   return (
-    <div className="border-b border-linea last:border-0">
-      <div className={`px-4 py-1.5 flex items-center gap-x-3 gap-y-0 flex-wrap transition-colors duration-150 motion-reduce:transition-none hover:bg-superficie-alt/60 ${abierto ? "bg-superficie-alt/60" : ""}`}>
+    <div className="border-t border-suave first:border-t-0">
+      <div className={`group px-4 sm:px-5 flex items-center gap-3 transition-colors duration-150 motion-reduce:transition-none hover:bg-tinta/[0.025] ${abierto ? "bg-tinta/[0.03]" : ""}`}>
         {/* aria-label descriptivo, no fijo: un lector de pantalla leía 146 botones
             idénticos. min-h para que el dedo acierte en el móvil. */}
         <button onClick={() => setAbierto((o) => !o)}
                 aria-expanded={abierto}
                 aria-label={`${abierto ? "Ocultar" : "Ver"} el detalle de la venta de ${v.acciones} ${v.symbol} del ${fecha(v.fecha)}`}
-                className="flex items-center gap-x-3 gap-y-0.5 flex-wrap flex-1 min-w-0 text-left min-h-[44px] rounded">
-          <span className="iv-cifra text-etiqueta text-tinta-3 w-[74px] shrink-0">{fecha(v.fecha)}</span>
-          <span className="iv-cifra font-bold text-apoyo text-tinta w-14 shrink-0">{v.symbol}</span>
-          <span className="iv-cifra text-etiqueta text-tinta-3 shrink-0">
-            {v.acciones} × {usd(v.precio_venta, v.divisa)}
+                className="flex items-center gap-3 flex-1 min-w-0 text-left min-h-[60px] py-2.5 rounded-lg">
+          <Monograma symbol={v.symbol} tamano="sm" />
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-2 min-w-0">
+              <span className="text-[14px] font-semibold text-tinta tracking-[-0.01em]">{v.symbol}</span>
+              {v.sin_cubrir > 0 && (
+                <Chip tono="aviso" title="Se han vendido más acciones de las que constan compradas. Añade la compra que falte.">
+                  faltan {v.sin_cubrir}
+                </Chip>
+              )}
+            </span>
+            <span className="block iv-cifra text-[12px] text-tinta-3 mt-0.5 truncate">
+              {fechaCorta(v.fecha)} · {v.acciones} × {usd(v.precio_venta, v.divisa)}
+            </span>
           </span>
-          {v.sin_cubrir > 0 && (
-            <Chip tono="aviso" title="Se han vendido más acciones de las que constan compradas. Añade la compra que falte.">
-              faltan {v.sin_cubrir}
-            </Chip>
-          )}
         </button>
 
-        <div className="text-right shrink-0 ml-auto">
-          <p className={`iv-cifra font-bold text-apoyo leading-tight whitespace-nowrap ${tono(m.ganancia_eur ?? m.ganancia_divisa)}`}>
+        <div className="text-right shrink-0">
+          <p className={`iv-cifra font-medium text-[14.5px] leading-tight whitespace-nowrap ${tono(m.ganancia_eur ?? m.ganancia_divisa)}`}>
             {m.ganancia_eur != null ? eur(m.ganancia_eur) : usd(m.ganancia_divisa, v.divisa)}
           </p>
-          <p className={`iv-cifra text-etiqueta whitespace-nowrap ${tono(m.pct_eur ?? m.pct)}`}>
-            {pct(m.pct_eur ?? m.pct)}
+          <p className="iv-cifra text-[12px] whitespace-nowrap mt-0.5">
+            <span className={tono(m.pct_eur ?? m.pct)}>{pct(m.pct_eur ?? m.pct)}</span>
             {m.ganancia_eur != null && (
-              <span className="text-tinta-3"> · {usd(m.ganancia_divisa, v.divisa)}</span>
+              <span className="text-tinta-3 hidden sm:inline"> · {usd(m.ganancia_divisa, v.divisa)}</span>
             )}
           </p>
         </div>
 
         <button onClick={() => setAbierto((o) => !o)}
-                className="w-8 h-8 -mr-2 inline-flex items-center justify-center rounded shrink-0 hover:bg-superficie-alt"
+                className="w-9 h-9 -mr-2 inline-flex items-center justify-center rounded-lg shrink-0 hover:bg-tinta/[0.06]"
                 aria-label="Ver detalle" aria-expanded={abierto}>
           <Flecha abierta={abierto} />
         </button>
       </div>
 
       {abierto && (
-        <div>
-          <DetalleLotes lotes={m.lotes} divisa={v.divisa} />
-          <div className="px-4 py-3 bg-superficie-alt border-t border-linea text-xs space-y-1">
+        <div className="px-4 sm:px-5 pt-4 pb-5 bg-tinta/[0.03] border-t border-suave grid gap-x-10 gap-y-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] iv-entra">
+          {m.lotes?.length ? <DetalleLotes lotes={m.lotes} divisa={v.divisa} /> : null}
+          <div className={`min-w-0 text-[13px] space-y-1 ${m.lotes?.length ? "" : "lg:col-span-2"}`}>
             {/* Las DOS columnas, divisa y euros, en cada paso. Antes solo salían los
                 dólares y luego aparecía la ganancia en euros: el salto de "259 $" a "209 €"
                 había que creérselo. Con los dos lados y el tipo de cambio, la cuenta se
@@ -349,45 +342,45 @@ function FilaVenta({ v, metodo, comoBroker, onBorrar }) {
                 DEGIRO y nada lo decía: la MISMA venta salía a −56,39 € y a +282,04 € en dos
                 pantallas por lo demás idénticas, sin forma de saber cuál era cuál. Un
                 número que cambia sin decir por qué se lee como un fallo, y con razón. */}
-            <p className="text-[11px] uppercase tracking-[0.15em] text-tinta-3 font-mono pb-1">
-              Calculado por <b className="text-tinta-2">{nombreMetodo}</b>
+            <p className={`${ROTULO} pb-2`}>
+              Calculado por <b className="font-semibold text-tinta-2">{nombreMetodo}</b>
               {nombreMetodo === "media ponderada" && " · el método de DEGIRO"}
               {nombreMetodo === "FIFO" && " · el que va a tu declaración"}
               {nombreMetodo === "LIFO" && " · como vendes tú"}
             </p>
-            <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 gap-y-1 items-baseline">
-              <span className="text-[11px] uppercase tracking-wider text-tinta-3 font-mono">Concepto</span>
-              <span className="text-[11px] uppercase tracking-wider text-tinta-3 font-mono text-right">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-5 items-baseline [&>span]:py-1.5 [&>span:nth-child(n+4)]:border-t [&>span:nth-child(n+4)]:border-suave">
+              <span className="text-[12px] text-tinta-3">Concepto</span>
+              <span className="text-[12px] text-tinta-3 text-right">
                 {v.divisa === "USD" ? "Dólares" : v.divisa}
               </span>
-              <span className="text-[11px] uppercase tracking-wider text-tinta-3 font-mono text-right">Euros</span>
+              <span className="text-[12px] text-tinta-3 text-right">Euros</span>
 
-              <span className="text-tinta-3">Ingresado (menos comisión)</span>
-              <span className="font-mono text-right">{usd(m.ingreso_divisa, v.divisa)}</span>
-              <span className="font-mono text-right">{eur(m.ingreso_eur)}</span>
+              <span className="text-tinta-2">Ingresado (menos comisión)</span>
+              <span className="iv-cifra text-right">{usd(m.ingreso_divisa, v.divisa)}</span>
+              <span className="iv-cifra text-right">{eur(m.ingreso_eur)}</span>
 
-              <span className="text-tinta-3">Coste de esas acciones</span>
-              <span className="font-mono text-right">{usd(m.coste_divisa, v.divisa)}</span>
-              <span className="font-mono text-right">{eur(m.coste_eur)}</span>
+              <span className="text-tinta-2">Coste de esas acciones</span>
+              <span className="iv-cifra text-right">{usd(m.coste_divisa, v.divisa)}</span>
+              <span className="iv-cifra text-right">{eur(m.coste_eur)}</span>
 
-              <span className="font-semibold">Ganancia</span>
-              <span className={`font-mono text-right font-semibold ${tono(m.ganancia_divisa)}`}>
+              <span className="font-medium text-tinta">Ganancia</span>
+              <span className={`iv-cifra text-right font-semibold ${tono(m.ganancia_divisa)}`}>
                 {usd(m.ganancia_divisa, v.divisa)}
               </span>
-              <span className={`font-mono text-right font-semibold ${tono(m.ganancia_eur)}`}>
+              <span className={`iv-cifra text-right font-semibold ${tono(m.ganancia_eur)}`}>
                 {eur(m.ganancia_eur)}
               </span>
 
               {/* Los DOS porcentajes, etiquetados. Antes se enseñaba solo el de euros junto
                   a las cifras en dólares, donde el porcentaje es otro: en esta misma venta,
                   +16,96% en euros y +18,41% en dólares. Parecía el de los dólares. */}
-              <span className="text-tinta-3">Porcentaje</span>
-              <span className={`font-mono text-right ${tono(m.pct)}`}>{pct(m.pct)}</span>
-              <span className={`font-mono text-right ${tono(m.pct_eur)}`}>{pct(m.pct_eur)}</span>
+              <span className="text-tinta-2">Porcentaje</span>
+              <span className={`iv-cifra text-right ${tono(m.pct)}`}>{pct(m.pct)}</span>
+              <span className={`iv-cifra text-right ${tono(m.pct_eur)}`}>{pct(m.pct_eur)}</span>
             </div>
 
             {v.tasa_venta && (
-              <p className="text-[11px] text-tinta-3 pt-1">
+              <p className="text-[12px] text-tinta-3 pt-2 leading-snug">
                 Cambio del día de la venta: 1 € = {v.tasa_venta} {v.divisa}. El coste va al
                 cambio del día de CADA compra, que es el que ves en cada línea de arriba.
               </p>
@@ -395,11 +388,11 @@ function FilaVenta({ v, metodo, comoBroker, onBorrar }) {
 
             {m.efecto_divisa_eur != null && (
               // Aparece sola en cuanto ves que ganaste en dólares y menos en euros.
-              <div className="flex justify-between pt-1">
+              <div className="flex justify-between gap-4 pt-1">
                 <span className="text-tinta-3" title="Parte del resultado que se debe al movimiento del euro frente a la divisa, y no a la acción. Si es negativo, el euro se comió parte de tu ganancia.">
                   De la ganancia en euros, por el movimiento del euro ⓘ
                 </span>
-                <span className={`font-mono ${tono(m.efecto_divisa_eur)}`}>{eur(m.efecto_divisa_eur)}</span>
+                <span className={`iv-cifra ${tono(m.efecto_divisa_eur)}`}>{eur(m.efecto_divisa_eur)}</span>
               </div>
             )}
             {/* Cuando el SIGNO cambia entre las dos monedas, decirlo. Es el momento en que
@@ -410,8 +403,8 @@ function FilaVenta({ v, metodo, comoBroker, onBorrar }) {
             {m.ganancia_eur != null && m.ganancia_divisa != null
               && (m.ganancia_divisa > 0) !== (m.ganancia_eur > 0)
               && Math.abs(m.ganancia_divisa) > 0.005 && Math.abs(m.ganancia_eur) > 0.005 && (
-              <p className="text-apoyo text-tinta-2 mt-1.5 leading-snug">
-                <b>{m.ganancia_divisa > 0 ? "Ganaste" : "Perdiste"} en {v.divisa} y{" "}
+              <p className="text-[13px] text-tinta-2 mt-2 leading-snug rounded-iv bg-info/[0.07] px-3 py-2.5">
+                <b className="font-semibold text-tinta">{m.ganancia_divisa > 0 ? "Ganaste" : "Perdiste"} en {v.divisa} y{" "}
                 {m.ganancia_eur > 0 ? "ganaste" : "perdiste"} en euros.</b>{" "}
                 No es un error: el euro se movió entre tus compras y esta venta, así que
                 cada {v.divisa === "USD" ? "dólar" : v.divisa} que recuperaste vale{" "}
@@ -420,42 +413,42 @@ function FilaVenta({ v, metodo, comoBroker, onBorrar }) {
               </p>
             )}
             {!m.exacto && (
-              <p className="text-[11px] text-aviso pt-1">
+              <p className="text-[12px] text-aviso pt-1">
                 Falta el tipo de cambio de alguna compra: la ganancia en euros de esta venta
                 no se puede calcular y no entra en los totales.
               </p>
             )}
             {/* Los otros dos métodos, siempre. Es la misma venta contada de tres formas y
                 cada una sirve para algo distinto; enseñar solo una invita a usarla para todo. */}
-            <div className="pt-2 border-t border-linea mt-1 space-y-0.5">
+            <div className="pt-3 mt-2 border-t border-suave space-y-1.5">
               {difiere && (
-                <div className="flex justify-between">
+                <div className="flex justify-between gap-4">
                   <span className="text-tinta-3">
-                    Por <b>{nombreOtro}</b>
+                    Por <b className="font-medium text-tinta-2">{nombreOtro}</b>
                     {nombreOtro === "FIFO"
                       ? " (lo que va a tu declaración)"
                       : " (como vendes tú)"}
                   </span>
-                  <span className="font-mono text-tinta-3">
+                  <span className="iv-cifra text-tinta-2 text-right whitespace-nowrap">
                     {otro.ganancia_eur != null ? eur(otro.ganancia_eur) : usd(otro.ganancia_divisa, v.divisa)}
                     {" · "}{pct(otro.pct_eur ?? otro.pct)}
                   </span>
                 </div>
               )}
               {v.ponderada && !usaPmp && (
-                <div className="flex justify-between">
+                <div className="flex justify-between gap-4">
                   <span className="text-tinta-3"
                         title="Media ponderada: el método que usa tu bróker para su pantalla. Todas tus acciones cuestan lo mismo (la media), así que no distingue niveles. Sirve para cuadrar con DEGIRO, no para la declaración.">
-                    Por <b>media ponderada</b> (como tu bróker) ⓘ
+                    Por <b className="font-medium text-tinta-2">media ponderada</b> (como tu bróker) ⓘ
                   </span>
                   {/* En EUROS lo primero: es la cifra que enseña DEGIRO y con la que se
                       compara. En dólares al lado, para cuadrar con la línea de arriba. */}
-                  <span className="font-mono text-tinta-3 text-right">
+                  <span className="iv-cifra text-tinta-3 text-right whitespace-nowrap">
                     {v.ponderada.ganancia_eur != null && (
-                      <b className="text-tinta">{eur(v.ponderada.ganancia_eur)}</b>
+                      <b className="font-medium text-tinta">{eur(v.ponderada.ganancia_eur)}</b>
                     )}
                     {v.ponderada.pct_eur != null && ` · ${pct(v.ponderada.pct_eur)}`}
-                    <span className="block text-[11px]">
+                    <span className="block text-[12px]">
                       {usd(v.ponderada.ganancia_divisa, v.divisa)}
                       {v.ponderada.pct != null && ` · ${pct(v.ponderada.pct)}`}
                     </span>
@@ -465,7 +458,7 @@ function FilaVenta({ v, metodo, comoBroker, onBorrar }) {
               {/* Por qué unas ventas cuadran con el bróker y otras no. Sin esto, la
                   diferencia se lee como un fallo de cálculo, y no lo es. */}
               {v.ponderada && (difiere || v.ponderada.ganancia_eur != null) && (
-                <p className="text-[11px] text-tinta-3 pt-1 leading-snug">
+                <p className="text-[12px] text-tinta-3 pt-1 leading-relaxed">
                   {v.metodos_incoherentes
                     ? "Esta venta debería haber cerrado la posición, y entonces los tres "
                       + "métodos darían por fuerza el mismo número — pero no coinciden. Eso "
@@ -493,10 +486,11 @@ function FilaVenta({ v, metodo, comoBroker, onBorrar }) {
                 </p>
               )}
             </div>
-            <div className="pt-2">
+            <div className="pt-3">
               <button onClick={() => onBorrar(v)}
                       aria-label={`Borrar la venta de ${v.acciones} ${v.symbol} del ${fecha(v.fecha)}`}
-                      className="text-[11px] text-baja hover:underline min-h-[44px] px-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 rounded">
+                      className={`${BOTON_BORRAR} -ml-2.5`}>
+                <Trash2 className="w-3.5 h-3.5" strokeWidth={1.9} aria-hidden="true" />
                 Borrar esta venta
               </button>
             </div>
@@ -631,13 +625,11 @@ function ImportarDegiro({ onCerrar }) {
   const ignorados = (previo?.productos || []).filter((p) => mapeo[p.isin] === IGNORAR);
 
   return (
-    <div className="iv-panel p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="font-heading font-bold text-sm">Importar el CSV de DEGIRO</h3>
-        <button type="button" onClick={onCerrar} aria-label="Cerrar" className="-m-2 p-2 rounded text-tinta-3 hover:text-tinta hover:bg-superficie-alt transition-colors duration-150 motion-reduce:transition-none"><X size={16} aria-hidden="true" /></button>
-      </div>
+    <div className="iv-panel iv-entra p-5 sm:p-6 space-y-4">
+      <CabeceraForm titulo="Importar el CSV de DEGIRO" icono={FileUp} onCerrar={onCerrar}
+                    nota="Fecha, precio, comisión y tipo de cambio reales: dejan de hacer falta estimaciones." />
 
-      <p className="text-[11px] text-tinta-3 leading-relaxed">
+      <p className="text-[13px] text-tinta-2 leading-relaxed max-w-[90ch]">
         En DEGIRO: <b>Actividad → Transacciones</b> → elige el periodo → <b>Exportar → CSV</b>.
         Trae la fecha, el precio, la comisión y el tipo de cambio <b>reales</b>, así que deja
         de hacer falta estimarlos.
@@ -649,7 +641,7 @@ function ImportarDegiro({ onCerrar }) {
 
       <input type="file" accept=".csv,text/csv"
              onChange={(e) => { setArchivo(e.target.files?.[0] || null); setPrevio(null); }}
-             className="text-xs w-full" />
+             className="block w-full text-[13px] text-tinta-2 rounded-iv border border-dashed border-medio bg-tinta/[0.02] p-3 file:mr-3 file:h-9 file:px-3.5 file:rounded-[10px] file:border file:border-suave file:bg-tinta/[0.06] file:text-tinta file:text-[13px] file:font-medium hover:file:bg-tinta/[0.1] file:cursor-pointer" />
 
       {archivo && !previo && (
         <button onClick={() => leer.mutate()} disabled={leer.isPending}
@@ -667,7 +659,7 @@ function ImportarDegiro({ onCerrar }) {
               porque el resumen de dividendos no tiene esos campos. Parecía un fichero de
               transacciones raro y era otro fichero. */}
           {previo.tipo === "dividendos" ? (
-            <div className="text-[11px] text-tinta-3 border-t border-linea pt-2">
+            <div className="text-[12.5px] text-tinta-3 border-t border-suave pt-2">
               Este es el fichero de <b>Cuenta</b> (Account.csv), el de los dividendos — no
               el de Transacciones. <b>{previo.resumen?.total}</b> apunte(s) de{" "}
               {fecha(previo.resumen?.desde)} a {fecha(previo.resumen?.hasta)}:{" "}
@@ -676,7 +668,7 @@ function ImportarDegiro({ onCerrar }) {
               <b>Actividad → Transacciones</b>.
             </div>
           ) : (
-            <div className="text-[11px] text-tinta-3 border-t border-linea pt-2">
+            <div className="text-[12.5px] text-tinta-3 border-t border-suave pt-2">
               <b>{previo.resumen?.total}</b> operaciones ·{" "}
               {previo.resumen?.compras} compras · {previo.resumen?.ventas} ventas ·{" "}
               de {fecha(previo.resumen?.desde)} a {fecha(previo.resumen?.hasta)} ·{" "}
@@ -685,7 +677,7 @@ function ImportarDegiro({ onCerrar }) {
           )}
 
           {!!previo.errores?.length && (
-            <div className="text-[11px] text-aviso">
+            <div className="text-[12.5px] text-aviso">
               {previo.errores.length} línea(s) no se han entendido y quedan fuera:
               <ul className="list-disc ml-4">
                 {previo.errores.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
@@ -696,14 +688,14 @@ function ImportarDegiro({ onCerrar }) {
           {/* El emparejamiento. Solo se pregunta una vez por producto: el ISIN se guarda en
               la Cartera y la próxima importación ya no lo pide. */}
           <div>
-            <p className="text-[11px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-2">
+            <p className="text-[12.5px] font-medium text-tinta-3 mb-2">
               ¿A qué acción corresponde cada producto?
             </p>
             <div className="space-y-1.5">
               {(previo.productos || []).map((p) => (
-                <div key={p.isin} className="flex items-center gap-2 flex-wrap text-xs">
+                <div key={p.isin} className="flex items-center gap-2 flex-wrap text-[13px]">
                   <span className="flex-1 min-w-0 truncate" title={p.isin}>{p.producto}</span>
-                  <span className="text-[11px] text-tinta-3 font-mono">{p.operaciones} ops</span>
+                  <span className="text-[12.5px] text-tinta-3 iv-cifra">{p.operaciones} ops</span>
                   {/* Campo LIBRE con la Cartera como sugerencias, no un desplegable cerrado.
                       Un CSV con años de historial trae posiciones ya cerradas y valores que
                       se dejaron de seguir, y sus ventas son parte de lo ganado: exigir que
@@ -714,8 +706,8 @@ function ImportarDegiro({ onCerrar }) {
                     disabled={mapeo[p.isin] === IGNORAR}
                     onChange={(e) => setMapeo((m) => ({ ...m, [p.isin]: e.target.value.toUpperCase() }))}
                     placeholder="ticker"
-                    className="border border-linea rounded px-2 py-1 font-mono text-xs w-28 bg-transparent disabled:opacity-40" />
-                  <label className="flex items-center gap-1 text-[11px] text-tinta-3 cursor-pointer"
+                    className={`w-28 ${inputMini}`} />
+                  <label className="flex items-center gap-1 text-[12.5px] text-tinta-3 cursor-pointer"
                          title="Deja este producto fuera de la importación. Útil para ETFs o valores que no quieres seguir.">
                     <input type="checkbox"
                            checked={mapeo[p.isin] === IGNORAR}
@@ -734,7 +726,7 @@ function ImportarDegiro({ onCerrar }) {
             <datalist id="tickers-cartera">
               {(previo.simbolos_conocidos || []).map((sy) => <option key={sy} value={sy} />)}
             </datalist>
-            <p className="text-[11px] text-tinta-3 mt-2">
+            <p className="text-[12.5px] text-tinta-3 mt-2">
               Escribe el ticker. Los de tu Cartera salen como sugerencia al empezar a
               teclear, pero puedes poner cualquiera: si es una posición que ya cerraste, su
               ganancia entra igual en el historial aunque no la sigas.
@@ -745,7 +737,7 @@ function ImportarDegiro({ onCerrar }) {
               entrará. Si dudas de alguno, ignóralo y sigue.
             </p>
             {!!pendientes.length && (
-              <p className="text-[11px] text-aviso mt-1">
+              <p className="text-[12.5px] text-aviso mt-1">
                 Faltan <b>{pendientes.length}</b> por decidir: ponles ticker o márcalos como
                 ignorar.
               </p>
@@ -851,7 +843,13 @@ function LotesAbiertos({ symbol, metodo }) {
     onError: () => toast.error("No se pudo asignar el nivel"),
   });
 
-  if (isPending) return <p className="px-4 py-3 text-xs text-tinta-3">Cargando…</p>;
+  if (isPending) {
+    return (
+      <div role="status" aria-label={`Cargando las compras de ${symbol}`} className="px-4 sm:px-5 py-4 border-t border-suave space-y-2.5">
+        {[0, 1].map((i) => <span key={i} className="block h-3 w-2/3 rounded iv-esqueleto" />)}
+      </div>
+    );
+  }
 
   const est = data?.[metodo];
   const abiertos = est?.abiertos || [];
@@ -860,8 +858,8 @@ function LotesAbiertos({ symbol, metodo }) {
   const vendidas = compradas - (est?.acciones_abiertas || 0);
 
   return (
-    <div className="bg-superficie-alt px-4 py-3 border-t border-linea">
-      <p className="text-[11px] uppercase tracking-[0.15em] text-tinta-3 font-mono mb-2">
+    <div className="bg-tinta/[0.03] px-4 sm:px-5 pt-4 pb-3 border-t border-suave iv-entra">
+      <p className="text-[13px] font-medium text-tinta-2 mb-2">
         Lo que te queda, por compra · {metodo.toUpperCase()}
         {vendidas > 0.0001 && (
           <span className="normal-case tracking-normal ml-2">
@@ -881,20 +879,20 @@ function LotesAbiertos({ symbol, metodo }) {
           aquí coincide con el cierre anterior, es que la sesión no ha abierto o el dato se
           quedó atrás; si el del bróker coincide con él, el que va con retraso es el suyo. */}
       {!!abiertos.length && data?.precio_actual != null && (
-        <p className="text-[11px] text-tinta-3 mb-1 leading-snug">
-          Valorado a <b className="font-mono">{usd(data.precio_actual, divisa)}</b>
+        <p className="text-[12.5px] text-tinta-3 mb-1 leading-snug">
+          Valorado a <b className="iv-cifra">{usd(data.precio_actual, divisa)}</b>
           {data.cierre_anterior != null && (
-            <> · cierre anterior <span className="font-mono">{usd(data.cierre_anterior, divisa)}</span></>
+            <> · cierre anterior <span className="iv-cifra">{usd(data.cierre_anterior, divisa)}</span></>
           )}
           {data.estado_mercado && <> · {data.estado_mercado.toLowerCase()}</>}
         </p>
       )}
 
       {!!abiertos.length && data?.cambio_medio_compras && divisa !== "EUR" && (
-        <p className="text-[11px] text-tinta-3 mb-2 leading-snug">
-          Tu coste se pasó a euros a <b className="font-mono">{data.cambio_medio_compras}</b>{" "}
+        <p className="text-[12.5px] text-tinta-3 mb-2 leading-snug">
+          Tu coste se pasó a euros a <b className="iv-cifra">{data.cambio_medio_compras}</b>{" "}
           {divisa}/€ de media
-          {data.cambio_hoy && <> (hoy: <span className="font-mono">{data.cambio_hoy}</span>)</>}.
+          {data.cambio_hoy && <> (hoy: <span className="iv-cifra">{data.cambio_hoy}</span>)</>}.
           {!!data.acciones_sin_csv && (
             <> De las {data.acciones_abiertas_total} acciones abiertas,{" "}
               <b>{data.acciones_sin_csv} no vienen del CSV</b>: llevan la fecha en que se
@@ -906,25 +904,25 @@ function LotesAbiertos({ symbol, metodo }) {
       )}
 
       {!abiertos.length ? (
-        <p className="text-xs text-tinta-3">
+        <p className="text-[13px] text-tinta-3">
           No queda nada abierto de {symbol}: se ha vendido la posición entera.
         </p>
       ) : (
-        <div className="space-y-1.5">
+        <div className="mt-1 divide-y divide-suave">
           {abiertos.map((l) => (
-            <div key={l.id} className="flex items-center gap-3 flex-wrap text-xs">
-              <span className="font-mono text-tinta-3 w-20 shrink-0">{fecha(l.fecha)}</span>
+            <div key={l.id} className="flex items-center gap-x-3 gap-y-1.5 flex-wrap text-[13px] py-2">
+              <span className="iv-cifra text-tinta-3 w-20 shrink-0">{fecha(l.fecha)}</span>
               {!!l.tasa && divisa !== "EUR" && (
-                <span className="font-mono text-[11px] text-tinta-3"
+                <span className="iv-cifra text-[12.5px] text-tinta-3"
                       title={`Cambio con el que el coste de esta compra se pasó a euros. Es el del día de la fecha que tiene el lote; si esa fecha no es la de tu compra real, esta cifra tampoco lo es.`}>
                   @{Math.round(l.tasa * 1e4) / 1e4}
                 </span>
               )}
-              <span className="font-mono font-semibold">
+              <span className="iv-cifra font-medium text-tinta">
                 {l.acciones_abiertas} × {usd(l.precio, divisa)}
               </span>
               {l.acciones_abiertas !== l.acciones && (
-                <span className="text-[11px] text-tinta-3">(de {l.acciones})</span>
+                <span className="text-[12.5px] text-tinta-3">(de {l.acciones})</span>
               )}
               {/* El selector está SIEMPRE, no solo en los lotes sin nivel: equivocarse al
                   asignar es un clic, y sin poder reasignar la única salida era borrar la
@@ -936,7 +934,7 @@ function LotesAbiertos({ symbol, metodo }) {
                 <select value={l.nivel || ""} disabled={asignar.isPending}
                         onChange={(e) => asignar.mutate({ id: l.id, nivel: e.target.value || null })}
                         title="Cambiar el nivel de esta compra. El precio del nivel en la Cartera se actualizará al precio real de la compra, y las campanitas se recalcularán."
-                        className="text-[11px] bg-transparent border border-linea rounded px-1 py-0.5 text-tinta-3">
+                        className="h-8 rounded-lg bg-tinta/[0.04] border border-suave px-2 text-[12.5px] text-tinta-2">
                   <option value="">{l.nivel ? "sin nivel" : "asignar nivel…"}</option>
                   {/* Los cinco, con precio o sin él: en una acción sin niveles esta
                       lista salía vacía y "asignar nivel…" no ofrecía nada que asignar. */}
@@ -962,12 +960,14 @@ function LotesAbiertos({ symbol, metodo }) {
                   sin tipo de cambio
                 </Chip>
               )}
-              <span className="ml-auto font-mono text-tinta-3">
+              <span className="ml-auto iv-cifra text-tinta-3">
                 {l.coste_eur != null ? eur(l.coste_eur) : usd(l.coste_divisa, divisa)}
               </span>
               <button
                 onClick={() => window.confirm(`¿Borrar la compra de ${l.acciones} ${symbol} del ${fecha(l.fecha)}?`) && borrar.mutate({ id: l.id })}
-                className="text-[11px] text-baja hover:underline shrink-0 min-h-[44px] px-2 -my-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 rounded">
+                aria-label={`Borrar la compra de ${l.acciones} ${symbol} del ${fecha(l.fecha)}`}
+                className={`${BOTON_BORRAR} shrink-0`}>
+                <Trash2 className="w-3.5 h-3.5" strokeWidth={1.9} aria-hidden="true" />
                 borrar
               </button>
             </div>
@@ -977,7 +977,7 @@ function LotesAbiertos({ symbol, metodo }) {
 
       {/* El orden de consumo es la respuesta a "de qué nivel será la próxima venta". */}
       {abiertos.length > 1 && (
-        <p className="text-[11px] text-tinta-3 mt-2 pt-2 border-t border-linea">
+        <p className="text-[12.5px] text-tinta-3 mt-2 pt-2 border-t border-suave">
           Si vendes ahora, {metodo === "fifo" ? "FIFO" : "LIFO"} consumirá primero la compra
           del <b>{fecha(abiertos[0].fecha)}</b>
           {abiertos[0].nivel && <> ({NIVEL_ETIQUETA[abiertos[0].nivel] || abiertos[0].nivel})</>}
@@ -992,7 +992,7 @@ function LotesAbiertos({ symbol, metodo }) {
 function Campo({ label, ayuda, children }) {
   return (
     <label className="block">
-      <span className="text-[11px] uppercase tracking-wider text-tinta-3 font-mono flex items-center gap-1">
+      <span className="text-[12.5px] font-medium text-tinta-2 flex items-center gap-1">
         {label}{ayuda && <span title={ayuda} className="cursor-help opacity-60">ⓘ</span>}
       </span>
       {children}
@@ -1000,7 +1000,6 @@ function Campo({ label, ayuda, children }) {
   );
 }
 
-const inputCls = "mt-1 w-full border border-linea rounded px-2 py-1.5 font-mono text-sm bg-transparent";
 
 // Qué lotes se van a consumir ANTES de guardar la venta. El método decide de qué compra
 // —y por tanto de qué nivel— sale lo que vendes, y eso no es evidente: con FIFO, vender
@@ -1035,7 +1034,7 @@ function VistaPreviaVenta({ symbol, acciones }) {
   const disponibles = data.fifo?.acciones_abiertas ?? 0;
   if (!disponibles) {
     return (
-      <p className="text-[11px] text-aviso">
+      <p className="text-[12.5px] text-aviso">
         No consta ninguna compra abierta de {sym}. Puedes registrar la venta igualmente, pero
         saldrá marcada como descuadrada hasta que metas la compra que falta.
       </p>
@@ -1058,14 +1057,14 @@ function VistaPreviaVenta({ symbol, acciones }) {
   };
 
   return (
-    <div className="rounded border border-linea px-3 py-2 space-y-1.5">
-      <p className="text-[11px] uppercase tracking-[0.15em] text-tinta-3 font-mono">
-        Tienes {disponibles} acciones de {sym}
+    <div className="rounded-iv bg-tinta/[0.035] border border-suave px-4 py-3 space-y-1.5">
+      <p className="text-[13px] font-medium text-tinta-2">
+        Tienes <span className="iv-cifra text-tinta">{disponibles}</span> acciones de {sym}
       </p>
       {n > 0 && (
         <>
           {n > disponibles + 1e-9 && (
-            <p className="text-[11px] text-aviso">
+            <p className="text-[12.5px] text-aviso">
               Estás vendiendo más de las que constan compradas ({disponibles}). Se registrará
               igual y quedará marcada, por si lo que falta es meter una compra antigua.
             </p>
@@ -1074,7 +1073,7 @@ function VistaPreviaVenta({ symbol, acciones }) {
             const sim = simular(k);
             if (!sim.length) return null;
             return (
-              <p key={k} className="text-[11px] text-tinta-3 leading-snug">
+              <p key={k} className="text-[12.5px] text-tinta-3 leading-snug">
                 <b>{label}</b> <span className="opacity-70">({nota})</span> venderá{" "}
                 {sim.map((l, i) => (
                   <span key={i}>
@@ -1193,11 +1192,9 @@ function FormularioPorNiveles({ onCerrar }) {
   };
 
   return (
-    <div className="iv-panel p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="font-heading font-bold text-sm">Dar de alta las compras por niveles</h3>
-        <button type="button" onClick={onCerrar} aria-label="Cerrar" className="-m-2 p-2 rounded text-tinta-3 hover:text-tinta hover:bg-superficie-alt transition-colors duration-150 motion-reduce:transition-none"><X size={16} aria-hidden="true" /></button>
-      </div>
+    <div className="iv-panel iv-entra p-5 sm:p-6 space-y-4">
+      <CabeceraForm titulo="Dar de alta las compras por niveles" icono={Layers} onCerrar={onCerrar}
+                    nota="Una compra por nivel, cada una con su fecha y su comisión." />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <Campo label="Ticker">
@@ -1221,40 +1218,40 @@ function FormularioPorNiveles({ onCerrar }) {
         <div className="flex items-center gap-2 flex-wrap">
           <button type="button" onClick={() => estimarFechas.mutate()}
                   disabled={estimarFechas.isPending}
-                  className="border border-linea rounded px-3 py-1 text-[11px] font-semibold disabled:opacity-60">
+                  className="h-9 rounded-[10px] px-3.5 text-[13px] font-medium bg-tinta/[0.06] text-tinta border border-suave hover:bg-tinta/[0.1] transition-colors duration-150 motion-reduce:transition-none disabled:opacity-60">
             {estimarFechas.isPending ? "Buscando…" : "Estimar las fechas por el precio"}
           </button>
-          <span className="text-[11px] text-tinta-3">
+          <span className="text-[12.5px] text-tinta-3">
             Busca el día en que el precio pasó por cada nivel. Útil si no las recuerdas.
           </span>
         </div>
       )}
 
       {!sym ? (
-        <p className="text-[11px] text-tinta-3">Escribe un ticker para ver sus niveles.</p>
+        <p className="text-[12.5px] text-tinta-3">Escribe un ticker para ver sus niveles.</p>
       ) : !niveles.length ? (
-        <p className="text-[11px] text-aviso">
+        <p className="text-[12.5px] text-aviso">
           {sym} no tiene niveles puestos en la Cartera. Ponlos allí primero, o registra las
           compras una a una con su precio.
         </p>
       ) : (
         <div className="space-y-1.5">
           {niveles.map((n) => (
-            <div key={n.nivel} className="flex items-center gap-3 text-xs">
+            <div key={n.nivel} className="flex items-center gap-3 text-[13px]">
               <Chip tono="nivel">{n.etiqueta}</Chip>
-              <span className="font-mono text-tinta-3 w-24">{usd(n.precio, data?.divisa)}</span>
-              {n.comprado && <span className="text-[11px] text-tinta-3">campanita apagada</span>}
+              <span className="iv-cifra text-tinta-3 w-24">{usd(n.precio, data?.divisa)}</span>
+              {n.comprado && <span className="text-[12.5px] text-tinta-3">campanita apagada</span>}
               <input
                 value={porNivel[n.nivel] ?? ""}
                 onChange={(e) => setPorNivel((p) => ({ ...p, [n.nivel]: e.target.value }))}
                 inputMode="decimal" placeholder="acciones"
-                className="ml-auto border border-linea rounded px-2 py-1 font-mono text-xs w-24 bg-transparent" />
+                className={`ml-auto w-24 ${inputMini}`} />
               <input
                 type="date"
                 value={fechaPorNivel[n.nivel] || fechaBase}
                 onChange={(e) => setFechaPorNivel((p) => ({ ...p, [n.nivel]: e.target.value }))}
                 title="Cuándo compraste ESTE nivel. Determina el tipo de cambio de esa compra."
-                className="border border-linea rounded px-2 py-1 font-mono text-xs bg-transparent" />
+                className={inputMini} />
               {/* Con varios toques la estimación es ambigua. Decirlo es la diferencia entre
                   una sugerencia y un dato inventado. */}
               {estimadas?.[n.nivel] && (
@@ -1272,7 +1269,7 @@ function FormularioPorNiveles({ onCerrar }) {
       )}
 
       {!!filas.length && (
-        <p className="text-[11px] text-tinta-3 border-t border-linea pt-2">
+        <p className="text-[12.5px] text-tinta-3 border-t border-suave pt-2">
           Se crearán <b>{filas.length}</b> compras · <b>{totalAcciones}</b> acciones ·
           coste <b>{usd(totalCoste, data?.divisa)}</b> · precio medio{" "}
           <b>{usd(totalCoste / totalAcciones, data?.divisa)}</b>.
@@ -1319,14 +1316,14 @@ function AvisoComision({ comision, acciones, precio }) {
   });
   if (comision !== "" && comision != null) {
     return aNumero(comision) === 0
-      ? <p className="text-[11px] text-tinta-3">Sin comisión: se registrará tal cual.</p>
+      ? <p className="text-[12.5px] text-tinta-3">Sin comisión: se registrará tal cual.</p>
       : null;
   }
   const bruto = (aNumero(acciones) || 0) * (aNumero(precio) || 0);
   const tasa = tasas?.tasas?.USD;
   if (!bruto || !tasa) {
     return (
-      <p className="text-[11px] text-tinta-3">
+      <p className="text-[12.5px] text-tinta-3">
         La comisión se estimará con la tarifa de DEGIRO: 2 € por operación + 0,25% de
         conversión de divisa. Pon un 0 si esta operación no te costó nada.
       </p>
@@ -1334,49 +1331,12 @@ function AvisoComision({ comision, acciones, precio }) {
   }
   const est = COMISION_FIJA_EUR * tasa + bruto * FX_AUTO_PCT;
   return (
-    <p className="text-[11px] text-tinta-3">
+    <p className="text-[12.5px] text-tinta-3">
       Se aplicará una comisión estimada de <b>{usd(est)}</b> ={" "}
       {usd(COMISION_FIJA_EUR * tasa)} (2 € de comisión y tramitación) +{" "}
       {usd(bruto * FX_AUTO_PCT)} (0,25% de conversión de divisa).
       {" "}Si tienes la real en tu extracto, escríbela y manda la tuya.
     </p>
-  );
-}
-
-// Sección plegable con memoria: con 146 ventas la página era un scroll interminable para
-// llegar a "Lo que tienes abierto". El estado se guarda por sección en localStorage para
-// que cada uno deje abierto lo que mira a diario y cerrado lo que no.
-function Plegable({ id, titulo, cabeceraExtra, abierta: porDefecto = true, children }) {
-  const clave = `ventas.seccion.${id}`;
-  const [abierta, setAbierta] = React.useState(() => {
-    try {
-      const v = window.localStorage.getItem(clave);
-      return v === null ? porDefecto : v === "1";
-    } catch { return porDefecto; }
-  });
-  const alternar = () => {
-    setAbierta((a) => {
-      try { window.localStorage.setItem(clave, a ? "0" : "1"); } catch { /* privado */ }
-      return !a;
-    });
-  };
-  return (
-    <div className="iv-panel overflow-hidden">
-      {/* El titulo va en la etiqueta monoespaciada de seccion, no en la serif: dentro
-          de un panel plegable es un CONTROL, y la serif esta reservada a los titulares
-          de pantalla. El triangulo se queda porque dice si esta abierto o cerrado. */}
-      {/* Sin filete inferior cuando está cerrada: un panel plegado era una caja con
-          una raya debajo de nada. */}
-      <div className={`px-4 py-1 flex items-center justify-between flex-wrap gap-x-4 gap-y-1 ${abierta ? "border-b border-linea" : ""}`}>
-        <button onClick={alternar} aria-expanded={abierta}
-                className="flex items-center gap-2.5 text-left group min-h-[44px] rounded">
-          <Flecha abierta={abierta} className="group-hover:text-marca" />
-          <h2 className="iv-etiqueta tracking-[0.16em] text-tinta-2 group-hover:text-tinta transition-colors duration-150 motion-reduce:transition-none">{titulo}</h2>
-        </button>
-        {cabeceraExtra}
-      </div>
-      {abierta && children}
-    </div>
   );
 }
 
@@ -1402,10 +1362,10 @@ function CeldaValorHoy({ p }) {
       <span className="inline-flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
         <input value={precio} onChange={(e) => setPrecio(e.target.value)} inputMode="decimal"
                placeholder={`precio en ${p.divisa === "EUR" ? "€" : "$"}`}
-               className="w-24 text-[11px] bg-transparent border border-linea rounded px-1.5 py-0.5 text-right font-mono" />
+               className={`w-28 text-right ${inputMini}`} />
         <button disabled={mut.isPending || !(aNumero(precio) > 0)}
                 onClick={() => mut.mutate({ symbol: p.symbol, valor: aNumero(precio) })}
-                className="text-[11px] underline text-tinta-3 disabled:opacity-50">
+                className="text-[12.5px] underline text-tinta-3 disabled:opacity-50">
           poner
         </button>
       </span>
@@ -1415,7 +1375,7 @@ function CeldaValorHoy({ p }) {
     <>
       {eur(p.valor_eur)}
       {p.precio_manual && (
-        <div className="text-[11px] text-aviso cursor-pointer"
+        <div className="text-[12.5px] text-aviso cursor-pointer"
              title="Este valor sale de un precio que pusiste tú a mano, no de una cotización en vivo. Pincha para cambiarlo o quitarlo."
              onClick={(e) => {
                e.stopPropagation();
@@ -1540,13 +1500,12 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
   };
 
   return (
-    <form onSubmit={enviar} className="iv-panel p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="font-heading font-bold text-sm">
-          {tipo === "compra" ? "Registrar una compra" : "Registrar una venta"}
-        </h3>
-        <button type="button" onClick={onCerrar} aria-label="Cerrar" className="-m-2 p-2 rounded text-tinta-3 hover:text-tinta hover:bg-superficie-alt transition-colors duration-150 motion-reduce:transition-none"><X size={16} aria-hidden="true" /></button>
-      </div>
+    <form onSubmit={enviar} className="iv-panel iv-entra p-5 sm:p-6 space-y-4">
+      <CabeceraForm titulo={tipo === "compra" ? "Registrar una compra" : "Registrar una venta"}
+                    icono={tipo === "compra" ? Plus : CircleDollarSign} onCerrar={onCerrar}
+                    nota={tipo === "compra"
+                      ? "Deja la comisión vacía y se estima con la tarifa de DEGIRO."
+                      : "Antes de guardar verás de qué compras sale y cuánto margen libera."} />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <Campo label="Ticker">
@@ -1601,16 +1560,17 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
                           title={puesto
                             ? `Ahora vale ${puesto.precio} ${moneda}${puesto.comprado ? " · ya comprado" : ""}`
                             : "Sin precio todavía: quedará fijado con tu compra"}
-                          className={`text-[11px] rounded px-2 py-1 border transition-colors ${marcado
-                            ? "bg-marca text-marca-tinta border-marca font-semibold"
-                            : "border-linea text-tinta-3 hover:text-tinta"}`}>
+                          aria-pressed={marcado}
+                          className={`iv-cifra h-10 min-w-[44px] text-[13px] rounded-lg px-2.5 border transition-colors duration-150 motion-reduce:transition-none ${marcado
+                            ? "bg-marca/15 text-marca border-marca/50 font-semibold"
+                            : "bg-tinta/[0.03] border-suave text-tinta-3 hover:text-tinta hover:bg-tinta/[0.06]"}`}>
                     N{i}
                   </button>
                 );
               })}
               {(f.niveles || []).length > 0 && (
                 <button type="button" onClick={() => setF((p) => ({ ...p, niveles: [] }))}
-                        className="text-[11px] text-tinta-3 underline px-1">
+                        className="text-[12.5px] text-tinta-3 underline px-1">
                   quitar
                 </button>
               )}
@@ -1623,27 +1583,27 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
           porque es el caso normal, pero se puede corregir: entrar 8 en uno y 4 en otro es
           tan legítimo como 6 y 6, y adivinarlo mal sería peor que preguntarlo. */}
       {tipo === "compra" && (f.niveles || []).length > 1 && (
-        <div className="rounded border border-linea px-3 py-2 space-y-1.5">
-          <p className="text-[11px] uppercase tracking-[0.15em] text-tinta-3 font-mono">
+        <div className="rounded-iv bg-tinta/[0.035] border border-suave px-4 py-3 space-y-2">
+          <p className="text-[12.5px] font-medium text-tinta-3">
             ¿Cuántas acciones en cada nivel?
           </p>
           <div className="flex flex-wrap gap-2">
             {f.niveles.map((clave) => (
               <label key={clave} className="flex items-center gap-1.5">
-                <span className="text-[11px] text-tinta-2 font-mono">
+                <span className="text-[12.5px] text-tinta-2 iv-cifra">
                   {NIVEL_ETIQUETA[clave] || clave}
                 </span>
                 <input value={(f.reparto || {})[clave] ?? ""}
                        onChange={(e) => setF((p) => ({
                          ...p, reparto: { ...(p.reparto || {}), [clave]: e.target.value } }))}
                        inputMode="decimal" placeholder={repartoSugerido[clave] ?? ""}
-                       className="w-16 bg-fondo border border-linea rounded px-2 py-1 font-mono text-[11px]" />
+                       className={`w-20 ${inputMini}`} />
               </label>
             ))}
           </div>
           {sumaReparto != null && aNumero(f.acciones) > 0
             && Math.abs(sumaReparto - aNumero(f.acciones)) > 1e-6 && (
-            <p className="text-[11px] text-aviso">
+            <p className="text-[12.5px] text-aviso">
               Los niveles suman {sumaReparto} y la compra son {aNumero(f.acciones)}.
               Tienen que cuadrar.
             </p>
@@ -1652,7 +1612,7 @@ function FormularioOperacion({ tipo, onHecho, onCerrar }) {
       )}
 
       {tipo === "compra" && (
-        <p className="text-[11px] text-tinta-3">
+        <p className="text-[12.5px] text-tinta-3">
           {(f.niveles || []).length > 1
             ? `Se guardarán ${f.niveles.length} lotes, uno por nivel, y cada uno de esos niveles pasará a valer tu precio real de compra${f.precio ? ` (${f.precio})` : ""}. Se cobra UNA sola comisión y se reparte entre ellos, porque es una sola orden. Si en realidad fueron compras de días distintos, usa «+ Compras por niveles»: allí cada una lleva su fecha y su comisión.`
             : (f.niveles || []).length === 1
@@ -1888,41 +1848,86 @@ export default function VentasView() {
   const total = (realizado != null || latente != null || dividendos != null)
     ? (realizado || 0) + (latente || 0) + (dividendos || 0) + (costes || 0) : null;
 
+  // ── Rediseño v2 ────────────────────────────────────────────────────────────
+  // Las tres listas (ventas, lo abierto, por acción) compiten por el mismo hueco: en
+  // pestañas en vez de apiladas, porque con 190 ventas la tabla de posiciones quedaba a
+  // varias pantallas. La pestaña elegida se recuerda, como antes cada plegable.
+  const [pestana, setPestanaEstado] = React.useState(() => {
+    try { return window.localStorage.getItem("ventas.pestana") || "ventas"; } catch { return "ventas"; }
+  });
+  const setPestana = (v) => {
+    setPestanaEstado(v);
+    try { window.localStorage.setItem("ventas.pestana", v); } catch { /* privado */ }
+  };
+  const [verAyudaTotal, setVerAyudaTotal] = React.useState(false);
+  const [verAyudaEuro, setVerAyudaEuro] = React.useState(false);
+
+  const hayAbierto = !!resumen?.posiciones?.length;
+  const hayPorAccion = !!hist?.por_symbol?.length;
+  const pestanas = [
+    { valor: "ventas", cuenta: ventas.length,
+      etiqueta: <><span className="sm:hidden">Ventas</span><span className="hidden sm:inline">Historial de ventas</span></> },
+    hayAbierto && { valor: "abierto", cuenta: resumen.posiciones.length,
+      etiqueta: <><span className="sm:hidden">Abierto</span><span className="hidden sm:inline">Lo que tienes abierto</span></> },
+    hayPorAccion && { valor: "accion", cuenta: hist.por_symbol.length, etiqueta: "Por acción" },
+  ].filter(Boolean);
+  const vista = pestanas.some((p) => p.valor === pestana) ? pestana : "ventas";
+
+  // Las ventas visibles, agrupadas por mes: el ojo encuentra «lo de octubre» sin leer
+  // fechas. Solo agrupa; no suma nada nuevo.
+  const visibles = verTodas ? ventas : ventas.slice(0, 15);
+  const meses = [];
+  for (const v of visibles) {
+    const k = mesDe(v.fecha);
+    if (!meses.length || meses[meses.length - 1].k !== k) meses.push({ k, items: [] });
+    meses[meses.length - 1].items.push(v);
+  }
+
+  const sospechosas = (resumen?.posiciones || [])
+    .filter((p) => p.acciones_sin_csv > 0)
+    .sort((a, b) => (b.coste_eur || 0) - (a.coste_eur || 0));
+  // Barra de «Por acción»: la escala es la mayor ganancia o pérdida en euros.
+  const maxPorAccion = Math.max(1, ...(hist?.por_symbol || []).map((s) => Math.abs(s.ganancia_eur ?? 0)));
+
+  const metodoRealizado = comoBroker && hist?.resumen?.ponderada?.ganancia_eur != null
+    ? "media ponderada" : metodo.toUpperCase();
+
   return (
-    <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-5">
-      <div className="iv-veredicto flex items-end justify-between gap-6 flex-wrap">
+    // El mismo lienzo que el resto de pantallas (App.js no envuelve esta ruta).
+    <div className="max-w-[1440px] mx-auto px-4 sm:px-8 py-5 sm:py-8 iv-entra space-y-6 sm:space-y-8">
+      {/* ── Titular ─────────────────────────────────────────────────────────── */}
+      <header className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-x-8 gap-y-5">
         <div className="min-w-0">
-          <p className="iv-etiqueta tracking-[0.16em] text-tinta-3 mb-1">Operaciones</p>
-          <h1 className="iv-verbo text-tinta">Ventas y ganancias</h1>
-          <p className="text-cuerpo text-tinta-2 mt-3 max-w-[58ch]">
+          <p className="text-[13px] text-tinta-3 flex items-center gap-1.5">
+            Gestionar <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden="true" /> Operaciones
+          </p>
+          <h1 className="iv-verbo text-tinta mt-2">Ventas y ganancias</h1>
+          <p className="text-[14.5px] text-tinta-2 mt-2.5 max-w-[58ch] leading-relaxed">
             Lo que llevas ganado de verdad, en euros, con el tipo de cambio de cada operación.
           </p>
         </div>
-        {/* Píldoras, como el resto de botones de la app. Solo UNA brilla: «+ Venta», la
-            operación que mueve dinero y por la que se viene a esta pantalla. Con dos
-            botones naranjas iguales ninguno era el principal. Importar va en contorno
-            con el texto en naranja: sigue siendo la vía buena para meter operaciones,
-            pero se usa de vez en cuando. En el móvil los cuatro bajan de línea en vez de
-            salirse de la pantalla, y el que está abierto se marca. */}
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Registrar operaciones">
+        {/* Solo UNA acción brilla: registrar una venta, la que mueve dinero y por la que
+            se viene a esta pantalla. Las otras tres son secundarias; la que está abierta
+            se marca. En el móvil, la principal ocupa la primera fila entera. */}
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 shrink-0" role="group" aria-label="Registrar operaciones">
           {[
-            ["degiro", "Importar CSV de DEGIRO", "text-marca"],
-            ["niveles", "+ Compras por niveles", ""],
-            ["compra", "+ Compra suelta", ""],
-          ].map(([id, texto, extra]) => (
-            <button key={id} onClick={() => setForm(id)} aria-pressed={form === id}
-                    className={`min-h-[36px] rounded-full px-4 py-1.5 text-sm font-semibold border transition-colors duration-150 motion-reduce:transition-none ${extra} ${form === id
-                      ? "border-marca/60 bg-marca/10"
-                      : "border-linea-fuerte hover:bg-superficie-alt hover:border-linea-marcada"}`}>
-              {texto}
-            </button>
+            ["degiro", "Importar CSV", FileUp],
+            ["niveles", "Compras por niveles", Layers],
+            ["compra", "Compra suelta", Plus],
+          ].map(([id, texto, Icono]) => (
+            <Boton key={id} variante="secundario" onClick={() => setForm(id)} aria-pressed={form === id}
+                   className={`h-10 sm:h-9 ${id === "degiro" ? "col-span-2 sm:col-span-1" : ""} ${form === id ? "bg-marca/10 border-marca/40 text-marca hover:bg-marca/15" : ""}`}>
+              <Icono className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" />
+              <span>{texto}{id === "degiro" && " de DEGIRO"}</span>
+            </Boton>
           ))}
-          <button onClick={() => setForm("venta")} aria-pressed={form === "venta"}
-                  className="iv-boton-brillo min-h-[36px] rounded-full px-4 py-1.5 text-sm font-semibold transition-[filter,transform] duration-150 ease-out motion-reduce:transition-none hover:brightness-110 active:scale-[0.97]">
-            + Venta
-          </button>
+          <Boton onClick={() => setForm("venta")} aria-pressed={form === "venta"}
+                 className="h-11 sm:h-9 col-span-2 order-first sm:order-none">
+            <CircleDollarSign className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" />
+            Registrar venta
+          </Boton>
         </div>
-      </div>
+      </header>
 
       {form === "degiro"
         ? <ImportarDegiro onCerrar={() => setForm(null)} />
@@ -1930,115 +1935,258 @@ export default function VentasView() {
           ? <FormularioPorNiveles onCerrar={() => setForm(null)} />
           : form && <FormularioOperacion tipo={form} onCerrar={() => setForm(null)} />}
 
-      {/* Cifras de cabecera. Realizado y latente van SEPARADOS: uno está en tu cuenta y el
-          otro puede evaporarse mañana. Sumarlos sin distinguirlos da una sensación de
-          riqueza que el mercado no ha confirmado. */}
-      {/* Un solo panel con filetes internos, en vez de cinco cajas sueltas. Cada celda
-          pinta su filete izquierdo y superior; el margen de −1 px los esconde en la
-          primera columna y la primera fila. Celdas de 220 px como mínimo —el ancho que
-          necesita un importe de siete cifras— y la última fila se estira, sin huecos. */}
-      <section aria-label="Resultado en euros" className="iv-panel overflow-hidden">
-      <div className="flex flex-wrap -ml-px -mt-px">
-        <Kpi etiqueta="Realizado" significa="Lo que ya cobraste al vender" valor={realizado} acento
-             // n_ventas cuelga del resumen, no del método: el número de ventas es el
-             // mismo se mire con FIFO o con LIFO. Leerlo de dentro del método daba
-             // siempre 0, o sea "no has vendido nada" con 148 ventas en la lista.
-             // El descuadre va EN el KPI y no en una fila perdida: si hay acciones vendidas
-             // sin compra registrada, salen con coste CERO y esta cifra está hinchada en
-             // hasta esos euros. Sin el aviso, el número gordo se lee como bueno.
-             sub={[
-               `${hist?.resumen?.n_ventas ?? 0} venta(s) · ${
-                 comoBroker && hist?.resumen?.ponderada?.ganancia_eur != null
-                   ? "media ponderada" : metodo.toUpperCase()}`,
-               hist?.resumen?.sin_cubrir_acciones
-                 ? `${hist.resumen.sin_cubrir_acciones} acción(es) vendidas sin compra registrada`
-                   + ` (${(hist.resumen.sin_cubrir_por_symbol || []).map((s) => s.symbol).join(", ")})`
-                   + ` — hasta ${eur(hist.resumen.sin_cubrir_eur_aprox)} de esta cifra pueden sobrar`
-                   + (hist.resumen.sin_cubrir_sin_tasa
-                       ? `, y ${hist.resumen.sin_cubrir_sin_tasa} más sin tipo de cambio, sin contar`
-                       : "")
-                 : null,
-             ].filter(Boolean).join(" · ")}
-             ayuda="Ganancia de las ventas ya hechas, con el tipo de cambio del día de cada compra y de cada venta. Es dinero que ya está en tu cuenta. Cambia según el método: mira la etiqueta de debajo." />
-        {/* Va en la MISMA base que el realizado, y por eso obedece al interruptor: lo que
-            un método se apunta de más arriba, el otro se lo guarda aquí. La cifra del otro
-            método sigue debajo, que es lo que hace falta para comparar pantallas. */}
-        <Kpi etiqueta="Latente" significa="Lo que aún está en juego" valor={latente}
-             // Una posición sin cotización NO entra en el latente, y hasta ahora eso no se
-             // decía: el número parecía completo cuando le faltaba una posición entera. Es
-             // lo primero que hay que mirar cuando el total no cuadra con el bróker.
-             sub={[
-               resumen?.posiciones?.length
-                 ? `${resumen.posiciones.length} posición(es) abiertas` : "sin posiciones",
-               // "sin precio" y "sin tipo de cambio" son averías DISTINTAS y se arreglan
-               // distinto: decir siempre "sin precio" mandaba a buscar el problema donde
-               // no estaba (el precio estaba; lo que faltaba era el cambio).
-               resumen?.posiciones_sin_precio
-                 ? `${resumen.posiciones_sin_precio} sin precio, fuera del total` : null,
-               resumen?.posiciones_sin_tipo_de_cambio
-                 ? `${resumen.posiciones_sin_tipo_de_cambio} sin tipo de cambio, fuera del total` : null,
-               // Con el interruptor puesto, el de al lado ya ES el del bróker: lo que
-               // hace falta enseñar entonces es el otro, no repetir el mismo.
-               (usaPmp ? resumen?.latente_eur : latenteBroker) != null
-                 && Math.abs((usaPmp ? resumen.latente_eur : latenteBroker) - (latente ?? 0)) > 0.5
-                 ? (usaPmp
-                     ? `por ${metodo.toUpperCase()} son ${eur(resumen.latente_eur)}`
-                     : `en DEGIRO verás ${eur(latenteBroker)}`) : null,
-             ].filter(Boolean).join(" · ")}
-             ayuda="Lo que llevas ganado en lo que AÚN NO has vendido, al precio y al cambio de hoy. Puede cambiar mañana. Tu bróker enseña otra cifra porque valora TODAS las acciones al precio medio ponderado, mientras que FIFO/LIFO dejan vivos unos lotes concretos: lo que aquí falta, ya está contado en el Realizado. Sumados, los dos métodos dan el mismo total." />
-        {/* SIEMPRE visible, aunque esté vacía. Escondiéndola hasta que hubiera dividendos,
-            la única forma de enterarse de que existe era leer el texto del importador — y
-            una función que no se ve no existe. Vacía dice qué falta para llenarla. */}
-        <Kpi etiqueta="Dividendos" significa="Lo que te han pagado por tener las acciones" valor={dividendos}
-             sub={dividendos == null
-               ? "sube tu Account.csv de DEGIRO"
-               : [
-                   `${divs?.n_cobros ?? 0} cobros`,
-                   divs?.retenido_eur ? `${eur(divs.retenido_eur)} retenidos` : null,
-                   // Los que no se pudieron pasar a euros quedan FUERA del total. Callarlo
-                   // haria que el numero pareciera completo cuando no lo es.
-                   divs?.sin_convertir ? `${divs.sin_convertir} sin convertir` : null,
-                 ].filter(Boolean).join(" · ")}
-             ayuda="Cobrado por dividendos, ya descontada la retención en origen. Los dividendos NO están en el Transactions.csv: hay que subir además el Account.csv (Actividad → Cuenta). Se cuentan aparte porque fiscalmente no son ganancias patrimoniales sino rendimientos del capital mobiliario, y van a otra casilla de la declaración. La retención de EE.UU. es recuperable en parte con el convenio de doble imposición." />
-        {costes != null && (
-          <Kpi etiqueta="Costes" significa="Lo que te cobra DEGIRO por el saldo y los datos" valor={costes}
-               sub={`${divs?.n_costes ?? 0} apunte(s) · intereses y conectividad`}
-               ayuda="Intereses por operar con el saldo en negativo y conectividad con mercados, sacados del Account.csv. No incluye las comisiones de compraventa, que ya están descontadas en cada operación. Es lo que separa tu total del Total P/L de DEGIRO." />
-        )}
-        {/* La cifra que contesta "¿cuánto llevo ganado en DEGIRO en total?". Y la única de
-            la pantalla que NO depende del método: como el realizado y el latente van en la
-            misma base, lo que un método se apunta de más en uno se lo guarda en el otro y
-            la suma sale igual. Por eso no hay que activar nada para leerla. */}
-        {tot?.efecto_divisa_eur != null && Math.abs(tot.efecto_divisa_eur) >= 0.01 && (
-          <Kpi etiqueta="Efecto del euro" significa="Cuánto de tu resultado es el euro y no la acción" valor={tot.efecto_divisa_eur}
-               sub="incluido en el realizado"
-               ayuda="Cuánto de tu ganancia realizada viene del movimiento del euro frente al dólar, y no de que la acción subiera." />
-        )}
-      </div>
-      <div className="border-t border-linea-fuerte">
-        <KpiTotal valor={total}
-             ayuda="Todo lo que llevas ganado o perdido en esta cuenta: lo realizado en ventas, lo latente de lo que sigue abierto, los dividendos cobrados y los costes. NO cambia con el método ni con el interruptor de DEGIRO: FIFO, LIFO y media ponderada reparten lo mismo de otra forma entre realizado y latente, pero suman igual. Si alguna vez cambia, es un fallo."
-             sub={[
-               "realizado + latente",
-               dividendos != null ? "+ dividendos" : null,
-               costes != null ? "+ costes" : null,
-             ].filter(Boolean).join(" ")} />
-      </div>
+      {/* ── Héroe · el resultado, y de dónde sale ─────────────────────────────
+          Realizado y latente van SEPARADOS: uno está en tu cuenta y el otro puede
+          evaporarse mañana. La cascada lo dice sin palabras: cada sumando es un tramo de
+          barra que empieza donde acabó el anterior, y el último acaba en el Total.
+          A la derecha, el método: es lo que reparte el resultado entre realizado y
+          latente, así que vive junto a las cifras que mueve. */}
+      <section className="iv-panel relative overflow-hidden" aria-labelledby="ops-resultado">
+        <span aria-hidden="true"
+              className="pointer-events-none absolute -top-36 -left-28 w-[560px] h-[320px] rounded-full bg-marca/[0.08] blur-3xl" />
+        <div className="relative grid lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="p-5 sm:p-7 min-w-0">
+            <CabeceraBloque icono={Scale} como="h2" id="ops-resultado"
+                            derecha={
+                              <button type="button" onClick={() => setVerAyudaTotal((a) => !a)}
+                                      aria-expanded={verAyudaTotal} aria-label="Qué significa Total"
+                                      className={`inline-flex items-center gap-1.5 h-8 px-2.5 -mr-2.5 rounded-lg text-[12.5px] transition-colors duration-150 motion-reduce:transition-none hover:bg-tinta/[0.06] ${verAyudaTotal ? "text-marca" : "text-tinta-3 hover:text-tinta"}`}>
+                                <span className="hidden sm:inline">¿Qué incluye?</span>
+                                <CaretDown size={12} weight="bold" aria-hidden="true"
+                                           className={`transition-transform duration-200 ease-salida motion-reduce:transition-none ${verAyudaTotal ? "rotate-180" : ""}`} />
+                              </button>
+                            }>
+              Total · tu resultado en esta cuenta
+            </CabeceraBloque>
+            {/* El tamaño se ajusta al ancho para que siete cifras quepan sin desbordar. */}
+            <p className={`iv-cifra-hero text-[clamp(40px,11vw,64px)] lg:text-[clamp(44px,4.4vw,64px)] mt-4 break-words ${tono(total)}`}>
+              <CifraHeroe valor={total} />
+            </p>
+            <p className="mt-3 text-[13px] text-tinta-3">
+              Todo junto ·{" "}
+              {[
+                "realizado + latente",
+                dividendos != null ? "+ dividendos" : null,
+                costes != null ? "+ costes" : null,
+              ].filter(Boolean).join(" ")}
+            </p>
+            {verAyudaTotal && (
+              <p className="mt-3 text-[13px] text-tinta-2 leading-relaxed max-w-[80ch] rounded-iv bg-tinta/[0.035] px-3.5 py-3">
+                Todo lo que llevas ganado o perdido en esta cuenta: lo realizado en ventas, lo
+                latente de lo que sigue abierto, los dividendos cobrados y los costes. NO cambia
+                con el método ni con el interruptor de DEGIRO: FIFO, LIFO y media ponderada
+                reparten lo mismo de otra forma entre realizado y latente, pero suman igual. Si
+                alguna vez cambia, es un fallo.
+              </p>
+            )}
+
+            <Cascada className="mt-6" formato={eur} pasos={[
+              {
+                id: "realizado", etiqueta: "Realizado", significa: "Lo que ya cobraste al vender",
+                valor: realizado, marca: true,
+                // n_ventas cuelga del resumen, no del método: el número de ventas es el
+                // mismo se mire con FIFO o con LIFO. Leerlo de dentro del método daba
+                // siempre 0, o sea "no has vendido nada" con 148 ventas en la lista.
+                // El descuadre va EN la fila: si hay acciones vendidas sin compra
+                // registrada, salen con coste CERO y esta cifra está hinchada en hasta esos
+                // euros. Sin el aviso, el número gordo se lee como bueno.
+                sub: [
+                  `${hist?.resumen?.n_ventas ?? 0} venta(s) · ${metodoRealizado}`,
+                  hist?.resumen?.sin_cubrir_acciones
+                    ? `${hist.resumen.sin_cubrir_acciones} acción(es) vendidas sin compra registrada`
+                      + ` (${(hist.resumen.sin_cubrir_por_symbol || []).map((s) => s.symbol).join(", ")})`
+                      + ` — hasta ${eur(hist.resumen.sin_cubrir_eur_aprox)} de esta cifra pueden sobrar`
+                      + (hist.resumen.sin_cubrir_sin_tasa
+                          ? `, y ${hist.resumen.sin_cubrir_sin_tasa} más sin tipo de cambio, sin contar`
+                          : "")
+                    : null,
+                ].filter(Boolean).join(" · "),
+                ayuda: "Ganancia de las ventas ya hechas, con el tipo de cambio del día de cada compra y de cada venta. Es dinero que ya está en tu cuenta. Cambia según el método: mira la etiqueta de debajo.",
+                // El efecto del euro está DENTRO del realizado: no es un sumando más, así
+                // que no lleva barra propia. Va colgando de su fila.
+                extra: tot?.efecto_divisa_eur != null && Math.abs(tot.efecto_divisa_eur) >= 0.01 ? (
+                  <div className="ml-3 pl-3 border-l border-medio">
+                    <p className="flex items-center gap-2 flex-wrap text-[12.5px]">
+                      <span className="text-tinta-2">Efecto del euro</span>
+                      <span className={`iv-cifra font-medium ${tono(tot.efecto_divisa_eur)}`}>{eur(tot.efecto_divisa_eur)}</span>
+                      <span className="text-tinta-3">· incluido en el realizado</span>
+                      <button type="button" onClick={() => setVerAyudaEuro((a) => !a)} aria-expanded={verAyudaEuro}
+                              aria-label="Qué significa Efecto del euro"
+                              className={`${ENLACE} text-[12.5px]`}>
+                        {verAyudaEuro ? "ocultar" : "qué es"}
+                      </button>
+                    </p>
+                    {verAyudaEuro && (
+                      <p className="text-[12.5px] text-tinta-2 mt-1.5 leading-relaxed max-w-[70ch]">
+                        Cuánto de tu resultado es el euro y no la acción: cuánto de tu ganancia
+                        realizada viene del movimiento del euro frente al dólar, y no de que la
+                        acción subiera.
+                      </p>
+                    )}
+                  </div>
+                ) : null,
+              },
+              {
+                // Va en la MISMA base que el realizado, y por eso obedece al interruptor:
+                // lo que un método se apunta de más arriba, el otro se lo guarda aquí. La
+                // cifra del otro método sigue debajo, que es lo que hace falta para
+                // comparar pantallas.
+                id: "latente", etiqueta: "Latente", significa: "Lo que aún está en juego", valor: latente,
+                sub: [
+                  resumen?.posiciones?.length
+                    ? `${resumen.posiciones.length} posición(es) abiertas` : "sin posiciones",
+                  // "sin precio" y "sin tipo de cambio" son averías DISTINTAS y se arreglan
+                  // distinto.
+                  resumen?.posiciones_sin_precio
+                    ? `${resumen.posiciones_sin_precio} sin precio, fuera del total` : null,
+                  resumen?.posiciones_sin_tipo_de_cambio
+                    ? `${resumen.posiciones_sin_tipo_de_cambio} sin tipo de cambio, fuera del total` : null,
+                  (usaPmp ? resumen?.latente_eur : latenteBroker) != null
+                    && Math.abs((usaPmp ? resumen.latente_eur : latenteBroker) - (latente ?? 0)) > 0.5
+                    ? (usaPmp
+                        ? `por ${metodo.toUpperCase()} son ${eur(resumen.latente_eur)}`
+                        : `en DEGIRO verás ${eur(latenteBroker)}`) : null,
+                ].filter(Boolean).join(" · "),
+                ayuda: "Lo que llevas ganado en lo que AÚN NO has vendido, al precio y al cambio de hoy. Puede cambiar mañana. Tu bróker enseña otra cifra porque valora TODAS las acciones al precio medio ponderado, mientras que FIFO/LIFO dejan vivos unos lotes concretos: lo que aquí falta, ya está contado en el Realizado. Sumados, los dos métodos dan el mismo total.",
+              },
+              {
+                // SIEMPRE visible, aunque esté vacía: una función que no se ve no existe.
+                // Vacía dice qué falta para llenarla.
+                id: "dividendos", etiqueta: "Dividendos", significa: "Lo que te han pagado por tener las acciones",
+                valor: dividendos,
+                sub: dividendos == null
+                  ? "sube tu Account.csv de DEGIRO"
+                  : [
+                      `${divs?.n_cobros ?? 0} cobros`,
+                      divs?.retenido_eur ? `${eur(divs.retenido_eur)} retenidos` : null,
+                      // Los que no se pudieron pasar a euros quedan FUERA del total.
+                      divs?.sin_convertir ? `${divs.sin_convertir} sin convertir` : null,
+                    ].filter(Boolean).join(" · "),
+                ayuda: "Cobrado por dividendos, ya descontada la retención en origen. Los dividendos NO están en el Transactions.csv: hay que subir además el Account.csv (Actividad → Cuenta). Se cuentan aparte porque fiscalmente no son ganancias patrimoniales sino rendimientos del capital mobiliario, y van a otra casilla de la declaración. La retención de EE.UU. es recuperable en parte con el convenio de doble imposición.",
+              },
+              costes != null && {
+                id: "costes", etiqueta: "Costes", significa: "Lo que te cobra DEGIRO por el saldo y los datos",
+                valor: costes, sub: `${divs?.n_costes ?? 0} apunte(s) · intereses y conectividad`,
+                ayuda: "Intereses por operar con el saldo en negativo y conectividad con mercados, sacados del Account.csv. No incluye las comisiones de compraventa, que ya están descontadas en cada operación. Es lo que separa tu total del Total P/L de DEGIRO.",
+              },
+            ].filter(Boolean)} />
+          </div>
+
+          {/* ── Método ────────────────────────────────────────────────────────
+              Va acompañado SIEMPRE de la explicación fiscal: enseñar dos cifras
+              distintas para la misma venta sin decir cuál vale para Hacienda sería peor
+              que enseñar una sola. El interruptor del bróker vive AQUÍ, junto al método,
+              porque manda en toda la pantalla. Va aparte de FIFO/LIFO y no como un
+              tercer botón: esos dos deciden CÓMO SE EMPAREJAN tus ventas y se guardan en
+              el servidor; este solo cambia lo que estás mirando, y vive en tu navegador. */}
+          <aside className="relative p-5 sm:p-7 border-t lg:border-t-0 lg:border-l border-suave bg-tinta/[0.015] flex flex-col"
+                 aria-labelledby="metodo-calculo">
+            <CabeceraBloque icono={ArrowLeftRight} como="h2" id="metodo-calculo"
+                            derecha={cambiarMetodo.isPending
+                              ? <span className="text-[12.5px] text-tinta-3" role="status">Recalculando…</span>
+                              : null}>
+              Método de cálculo
+            </CabeceraBloque>
+            <Segmentado opciones={[{ valor: "fifo", etiqueta: "FIFO" }, { valor: "lifo", etiqueta: "LIFO" }]}
+                        valor={metodo} onCambio={setMetodo} etiqueta="Método de cálculo" mono
+                        className="mt-4 w-full [&>button]:flex-1" />
+            {/* Texto explicativo en tinta normal: el verde se reserva para subidas. */}
+            <p className="text-[13px] text-tinta-2 mt-3 leading-relaxed">
+              {metodo === "lifo"
+                ? "Vende lo más reciente · tu precio medio SUBE al vender"
+                : "Vende lo más antiguo · tu precio medio BAJA al vender · es el de Hacienda"}
+            </p>
+
+            <button type="button" onClick={alternarBroker} aria-pressed={comoBroker}
+                    title="Tu bróker valora TODAS las acciones al precio medio ponderado, que no baja al vender. FIFO/LIFO dejan vivos unos lotes concretos —los caros o los baratos— y por eso dan otro número. Ninguna está mal: lo que una se apunta de más aquí, la otra ya se lo apuntó en lo realizado. Cambia el historial, el realizado y la tabla de posiciones."
+                    className={`group mt-5 w-full flex items-center justify-between gap-4 text-left rounded-iv border px-4 py-3 min-h-[56px] transition-colors duration-150 motion-reduce:transition-none ${comoBroker
+                      ? "border-marca/40 bg-marca/[0.08]"
+                      : "border-suave bg-tinta/[0.03] hover:bg-tinta/[0.06]"}`}>
+              <span className="min-w-0">
+                <span className={`block text-[14px] font-medium ${comoBroker ? "text-tinta" : "text-tinta-2 group-hover:text-tinta"}`}>
+                  {comoBroker ? "Como en DEGIRO (media ponderada)" : "Ver como en DEGIRO"}
+                </span>
+                <span className="block text-[12.5px] text-tinta-3 mt-0.5">
+                  Cambia el historial, el realizado y lo abierto
+                </span>
+              </span>
+              {/* Interruptor: la pista se llena de índigo y el pomo se desliza. */}
+              <span aria-hidden="true"
+                    className={`relative w-10 h-6 rounded-full shrink-0 transition-colors duration-200 ease-salida motion-reduce:transition-none ${comoBroker ? "bg-marca" : "bg-tinta/15"}`}>
+                <span className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.3)] transition-transform duration-200 ease-salida motion-reduce:transition-none ${comoBroker ? "translate-x-4" : ""}`} />
+              </span>
+            </button>
+
+            <div className="mt-5 pt-4 border-t border-suave lg:mt-auto">
+              <button onClick={() => setVerExplicacion((v) => !v)} aria-expanded={verExplicacion}
+                      className={ENLACE}>
+                {verExplicacion ? "ocultar" : "¿cómo funciona?"}
+              </button>
+              {verExplicacion && (
+                <p className="text-[13px] text-tinta-2 mt-3 leading-relaxed">
+                  Esto no cambia solo lo que ves: gobierna qué lotes te quedan vivos, tu precio medio
+                  y qué campanitas se encienden. Cambiarlo recalcula todo, pero <b className="text-tinta">no altera ninguna
+                  operación</b> — tus compras y ventas son las que son.
+                  <br /><br />
+                  <b className="text-tinta">Para saber cuál usar, mira tu bróker tras una venta parcial:</b> si tu precio
+                  medio <b className="text-tinta">baja</b>, está quitando las compras más antiguas (FIFO); si <b className="text-tinta">sube</b>,
+                  las más recientes (LIFO). Como entras por niveles según cae el precio, lo más
+                  antiguo es lo más caro — por eso quitar lo antiguo hace bajar la media.
+                  <br /><br />
+                  FIFO es además el obligatorio en España para acciones cotizadas (art. 37.2 de la
+                  Ley del IRPF): es la cifra de tu declaración, la mires con el método que la mires.
+                  {tot && hist?.resumen?.fifo && hist?.resumen?.lifo
+                    && hist.resumen.fifo.ganancia_divisa !== hist.resumen.lifo.ganancia_divisa && (
+                    <> En tu caso la diferencia entre ambos es de{" "}
+                      <b className="iv-cifra text-tinta">{usd(Math.abs(hist.resumen.fifo.ganancia_divisa - hist.resumen.lifo.ganancia_divisa))}</b>.</>
+                  )}
+                </p>
+              )}
+            </div>
+          </aside>
+        </div>
       </section>
 
-      {/* Ventas de la contabilidad VIEJA (el diálogo Vender de la Cartera antes de que
-          escribiera en el libro). Si quedan, ni sus acciones ni su ganancia están en
-          ninguna cifra de esta pantalla, y hay que meterlas como ventas normales. */}
-      {/* Una venta sin comisión infla la ganancia entre 6 y 10 €, y esa cifra acaba en
-          una declaración. Con cien ventas deja de ser calderilla, así que se dice cuánto
-          falta en total en vez de dejarlo a que alguien sume. */}
-      {!!hist?.ventas_sin_comision && (
-        <div className="iv-panel px-4 py-2.5 border border-aviso/40 bg-aviso/[0.06]">
-          <p className="text-apoyo text-aviso leading-snug">
-            <Warning size={12} weight="fill" className="inline mb-px mr-1" /><b>{hist.ventas_sin_comision} venta(s) registradas sin comisión.</b> DEGIRO
-            cobra 2 € por operación más el 0,25% de AutoFX, así que tu ganancia realizada
+      {/* ── Para cuadrar con DEGIRO ────────────────────────────────────────────
+          Los avisos sobre tus datos, juntos y como filas de un solo panel en vez de
+          cajas ámbar sueltas. Ninguno se ha quitado: cada uno conserva su texto y sus
+          botones. */}
+      <AvisosPanel titulo="Para cuadrar con DEGIRO" nota="Datos que hinchan o descuadran tus cifras">
+        {/* Una venta sin comisión infla la ganancia entre 6 y 10 €, y esa cifra acaba en
+            una declaración. Con cien ventas deja de ser calderilla, así que se dice cuánto
+            falta en total en vez de dejarlo a que alguien sume. */}
+        {!!hist?.ventas_sin_comision && (
+          <Aviso titulo={<>{hist.ventas_sin_comision} venta(s) registradas sin comisión.</>}
+                 acciones={(!!hist.ventas_sin_comision_manuales
+                   || hist.ventas_sin_comision > hist.ventas_sin_comision_manuales) && (
+                   <>
+                     {/* El botón para repararlas. Los apuntes tecleados se quedaron a cero
+                         por un fallo del formulario: son huecos. Se rellenan con la tarifa
+                         publicada y quedan marcados como estimados. */}
+                     {!!hist.ventas_sin_comision_manuales && (
+                       <Boton variante="secundario" tamano="sm" onClick={() => repararComisiones.mutate(false)}
+                              ocupado={repararComisiones.isPending}>
+                         {repararComisiones.isPending
+                           ? "Calculando…"
+                           : "Poner la comisión estimada a las que tecleaste a mano"}
+                       </Boton>
+                     )}
+                     {/* Las del CSV no tenían salida si ya no conservas aquel fichero. Va
+                         aparte y con su propia advertencia porque ahí el cero SÍ llegó con
+                         huella, y estimarlo puede estar inventando un coste que no existió. */}
+                     {hist.ventas_sin_comision > hist.ventas_sin_comision_manuales && (
+                       <Boton variante="fantasma" tamano="sm" onClick={() => repararComisiones.mutate(true)}
+                              disabled={repararComisiones.isPending} className="whitespace-normal text-left h-auto min-h-8 py-1.5">
+                         Estimar también las{" "}
+                         {hist.ventas_sin_comision - hist.ventas_sin_comision_manuales} que vinieron
+                         del CSV
+                       </Boton>
+                     )}
+                   </>
+                 )}>
+            DEGIRO cobra 2 € por operación más el 0,25% de AutoFX, así que tu ganancia realizada
             está inflada en unos{" "}
-            <b className="font-mono">{eur(hist.comision_no_contada_eur)}</b>.
+            <b className="iv-cifra font-medium text-aviso">{eur(hist.comision_no_contada_eur)}</b>.
             {hist.ventas_sin_comision_manuales === hist.ventas_sin_comision
               ? " Todas están tecleadas a mano, así que reimportar el CSV no las toca:"
                 + " no tienen huella que emparejar, y encima tapan la fila del fichero,"
@@ -2049,342 +2197,262 @@ export default function VentasView() {
                 + " real; si ya no conservas aquel fichero, aquí abajo puedes estimarlas."
                 + " Las tecleadas a mano hay que borrarlas y reimportar, porque no tienen"
                 + " huella que emparejar."}
-          </p>
-          {/* CUÁLES. Sin el símbolo y la fecha delante, «10 ventas» es un dato que no se
-              puede accionar: hay que rebuscarlas una a una entre cientos de filas. */}
-          {!!hist.ventas_sin_comision_detalle?.length && (
-            <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-etiqueta text-tinta-3">
-              {hist.ventas_sin_comision_detalle.map((v) => (
-                <li key={v.id} className="font-mono">
-                  {v.symbol} · {v.fecha} · {v.acciones} acc.
-                  {v.manual ? " · a mano" : " · del CSV"}
-                </li>
-              ))}
-            </ul>
-          )}
-          {/* El botón para repararlas. Los apuntes tecleados se quedaron a cero por un
-              fallo del formulario —enviaba 0 donde debía enviar "vacío"—, así que no son
-              ceros que nadie afirmara: son huecos. Se rellenan con la tarifa publicada y
-              quedan marcados como estimados, para poder distinguirlos luego de una cifra
-              sacada del extracto. Lo que vino del CSV no se toca: ahí un cero es un dato. */}
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-            {!!hist.ventas_sin_comision_manuales && (
-              <button onClick={() => repararComisiones.mutate(false)}
-                      disabled={repararComisiones.isPending}
-                      className="text-[11px] underline text-aviso disabled:opacity-60">
-                {repararComisiones.isPending
-                  ? "Calculando…"
-                  : "Poner la comisión estimada a las que tecleaste a mano"}
-              </button>
+            {/* CUÁLES. Sin el símbolo y la fecha delante, «10 ventas» es un dato que no se
+                puede accionar. */}
+            {!!hist.ventas_sin_comision_detalle?.length && (
+              <ul className="mt-2.5 flex flex-wrap gap-1.5">
+                {hist.ventas_sin_comision_detalle.map((v) => (
+                  <li key={v.id} className="iv-cifra text-[12px] text-tinta-2 rounded-md bg-tinta/[0.05] px-2 py-1">
+                    {v.symbol} · {v.fecha} · {v.acciones} acc.
+                    {v.manual ? " · a mano" : " · del CSV"}
+                  </li>
+                ))}
+              </ul>
             )}
-            {/* Las del CSV no tenían salida. El aviso decía «reimpórtalo con la casilla
-                marcada», y eso solo funciona si conservas aquel fichero: si no lo
-                tienes, la venta se queda a cero para siempre y el aviso no se va nunca.
-                Va aparte y con su propia advertencia porque ahí el cero SÍ llegó con
-                huella, y estimarlo puede estar inventando un coste que no existió. */}
-            {hist.ventas_sin_comision > hist.ventas_sin_comision_manuales && (
-              <button onClick={() => repararComisiones.mutate(true)}
-                      disabled={repararComisiones.isPending}
-                      className="text-[11px] underline text-tinta-3 hover:text-aviso
-                                 disabled:opacity-60">
-                Estimar también las{" "}
-                {hist.ventas_sin_comision - hist.ventas_sin_comision_manuales} que vinieron
-                del CSV
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+          </Aviso>
+        )}
 
-      {!!hist?.ventas_antiguas && (
-        <div className="iv-panel px-4 py-3 border-aviso/40 bg-aviso/[0.06]">
-          <p className="text-apoyo font-semibold text-aviso mb-1">
-            <Warning size={12} weight="fill" className="inline mb-px mr-1" />{hist.ventas_antiguas} venta(s) del sistema antiguo, fuera de estas cifras
-          </p>
-          <p className="text-xs text-tinta-3">
+        {/* Ventas de la contabilidad VIEJA (el diálogo Vender de la Cartera antes de que
+            escribiera en el libro). Ni sus acciones ni su ganancia están en ninguna cifra
+            de esta pantalla. */}
+        {!!hist?.ventas_antiguas && (
+          <Aviso titulo={<>{hist.ventas_antiguas} venta(s) del sistema antiguo, fuera de estas cifras</>}>
             Se registraron con el botón «Vender» de la Cartera cuando ese botón llevaba su
             propia contabilidad aparte. No cuentan en el Realizado ni descuentan acciones del
-            libro. Vuelve a meterlas aquí con <b>+ Venta</b> (o impórtalas con el CSV de
+            libro. Vuelve a meterlas aquí con <b className="text-tinta">Registrar venta</b> (o impórtalas con el CSV de
             DEGIRO, que las trae) y quedarán contadas de verdad.
-          </p>
-        </div>
-      )}
+          </Aviso>
+        )}
 
-      {/* La misma venta metida a mano Y venida del CSV solo se detecta como duplicada si
-          coincide al céntimo; tecleada de memoria, rara vez lo hace. En una posición ya
-          cerrada no se nota en las acciones — solo en que el Realizado se dispara. */}
-      {!!hist?.posibles_duplicadas?.length && (
-        <div className="iv-panel px-4 py-3 border-aviso/40 bg-aviso/[0.06]">
-          <p className="text-apoyo font-semibold text-aviso mb-1">
-            <Warning size={12} weight="fill" className="inline mb-px mr-1" />{hist.posibles_duplicadas.length} venta(s) posiblemente contadas dos veces
-          </p>
-          <p className="text-xs text-tinta-3 mb-2">
+        {/* La misma venta metida a mano Y venida del CSV solo se detecta como duplicada si
+            coincide al céntimo. En una posición ya cerrada no se nota en las acciones —
+            solo en que el Realizado se dispara. */}
+        {!!hist?.posibles_duplicadas?.length && (
+          <Aviso titulo={<>{hist.posibles_duplicadas.length} venta(s) posiblemente contadas dos veces</>}>
             Estas ventas están una vez metidas a mano y otra vez traídas del CSV de DEGIRO
             (misma acción, misma fecha, mismas acciones). Cada pareja suma su ganancia dos
             veces. Busca la copia manual en la lista de abajo (la que NO pone «DEGIRO» en
             las notas) y bórrala con su botón.
-          </p>
-          {hist.posibles_duplicadas.map((d, i) => (
-            <p key={i} className="text-xs font-mono">
-              {d.symbol} · {d.fecha} · {d.acciones} acciones
-            </p>
-          ))}
-        </div>
-      )}
+            <ul className="mt-2.5 flex flex-wrap gap-1.5">
+              {hist.posibles_duplicadas.map((d, i) => (
+                <li key={i} className="iv-cifra text-[12px] text-tinta-2 rounded-md bg-tinta/[0.05] px-2 py-1">
+                  {d.symbol} · {d.fecha} · {d.acciones} acciones
+                </li>
+              ))}
+            </ul>
+          </Aviso>
+        )}
 
-      {/* Compras duplicadas. Al contrario que una venta repetida, una compra repetida no
-          descuadra nada contable —no deja ventas sin cubrir, no rompe ningún total— así que
-          nadie la busca: solo infla la posición y con ella el latente. En NFLX eran 30
-          acciones tecleadas a 76,00 $ y la misma compra del CSV a 76,01: 80 acciones en
-          pantalla donde el broker tenía 50, y unos +140 € de ganancia inexistente. Las otras
-          quince posiciones cuadraban al detalle, que es lo que hace que no se sospeche. */}
-      {!!hist?.posibles_compras_duplicadas?.length && (
-        <div className="iv-panel px-4 py-3 border-aviso/40 bg-aviso/[0.06]">
-          <p className="text-apoyo font-semibold text-aviso mb-1">
-            <Warning size={12} weight="fill" className="inline mb-px mr-1" />{hist.posibles_compras_duplicadas.length} compra(s) posiblemente contadas dos veces
-          </p>
-          <p className="text-xs text-tinta-3 mb-2">
+        {/* Compras duplicadas. Una compra repetida no descuadra nada contable, así que
+            nadie la busca: solo infla la posición y con ella el latente. En NFLX eran 30
+            acciones tecleadas a 76,00 $ y la misma compra del CSV a 76,01. */}
+        {!!hist?.posibles_compras_duplicadas?.length && (
+          <Aviso titulo={<>{hist.posibles_compras_duplicadas.length} compra(s) posiblemente contadas dos veces</>}>
             Cada una está metida a mano y además traída del CSV de DEGIRO: misma acción,
             misma fecha y mismas acciones, con los precios a un céntimo. Eso infla tu
             posición y tu ganancia latente sin descuadrar ningún total, así que no salta
             ningún otro aviso. Borra la copia manual — la del precio redondeado.
-          </p>
-          {hist.posibles_compras_duplicadas.map((d, i) => (
-            <div key={i} className="flex items-center gap-3 flex-wrap text-xs font-mono py-0.5">
-              <span className="font-semibold">{d.symbol}</span>
-              <span className="text-tinta-3">{fecha(d.fecha)}</span>
-              <span>{d.acciones} acciones</span>
-              <span className="text-tinta-3">
-                a {d.precios.map((x) => x.toFixed(2)).join(" y ")}
-              </span>
-              <span className="text-aviso">+{d.acciones_de_mas} de más</span>
-              <button onClick={() => window.confirm(
-                        `Se borra la copia MANUAL de ${d.acciones} ${d.symbol} del `
-                        + `${fecha(d.fecha)}. La que vino del CSV se queda, con su precio y `
-                        + "su comisión reales.\n\n¿Continuar?")
-                        && d.ids_manuales.forEach((id) => borrarDuplicada.mutate(id))}
-                      disabled={borrarDuplicada.isPending}
-                      className="text-baja underline disabled:opacity-60">
-                borrar la copia manual
-              </button>
+            <div className="mt-2.5 divide-y divide-suave rounded-iv border border-suave">
+              {hist.posibles_compras_duplicadas.map((d, i) => (
+                <div key={i} className="flex items-center gap-x-3 gap-y-1 flex-wrap text-[13px] iv-cifra px-3 py-2">
+                  <span className="font-semibold text-tinta">{d.symbol}</span>
+                  <span className="text-tinta-3">{fecha(d.fecha)}</span>
+                  <span>{d.acciones} acciones</span>
+                  <span className="text-tinta-3">
+                    a {d.precios.map((x) => x.toFixed(2)).join(" y ")}
+                  </span>
+                  <span className="text-aviso">+{d.acciones_de_mas} de más</span>
+                  <button onClick={() => window.confirm(
+                            `Se borra la copia MANUAL de ${d.acciones} ${d.symbol} del `
+                            + `${fecha(d.fecha)}. La que vino del CSV se queda, con su precio y `
+                            + "su comisión reales.\n\n¿Continuar?")
+                            && d.ids_manuales.forEach((id) => borrarDuplicada.mutate(id))}
+                          disabled={borrarDuplicada.isPending}
+                          className={`${BOTON_BORRAR} ml-auto font-sans`}>
+                    <Trash2 className="w-3.5 h-3.5" strokeWidth={1.9} aria-hidden="true" />
+                    borrar la copia manual
+                  </button>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
-
-      {/* Selector de método. Va acompañado SIEMPRE de la explicación fiscal: enseñar dos
-          cifras distintas para la misma venta sin decir cuál vale para Hacienda sería peor
-          que enseñar una sola. */}
-      <div className="iv-panel px-4 py-3">
-        <div className="flex items-center gap-x-3 gap-y-2 flex-wrap">
-          <span id="metodo-calculo" className="iv-etiqueta">Método de cálculo</span>
-          {/* El interruptor del bróker vive AQUÍ, junto al método, porque manda en toda la
-              pantalla: el historial, el realizado y la tabla de posiciones. Estaba metido
-              en la cabecera de esa tabla y desde ahí parecía cambiar solo esa tabla —que
-              es lo que hacía antes—, así que el resto de la pantalla se quedaba en el otro
-              método sin decirlo.
-              Va aparte de FIFO/LIFO y no como un tercer botón porque no es lo mismo: esos
-              dos deciden CÓMO SE EMPAREJAN tus ventas y se guardan en el servidor; este
-              solo cambia lo que estás mirando ahora, y vive en tu navegador. */}
-          {/* Control segmentado: la opción activa es una pastilla dentro de una vía, no
-              un bloque naranja pegado a uno gris. El naranja macizo se reserva para el
-              botón de DEGIRO cuando está puesto, que es lo que cambia toda la pantalla. */}
-          <div role="group" aria-labelledby="metodo-calculo"
-               className="inline-flex rounded p-0.5 bg-fondo/60 border border-linea">
-            {[["fifo", "FIFO"], ["lifo", "LIFO"]].map(([k, label]) => (
-              <button key={k} onClick={() => setMetodo(k)} aria-pressed={metodo === k}
-                      className={`min-w-[52px] px-3 py-1 rounded-[6px] text-xs font-mono font-semibold transition-colors duration-150 motion-reduce:transition-none ${metodo === k
-                        ? "bg-superficie-alt text-tinta shadow-[0_1px_2px_rgb(0_0_0/0.35)] ring-1 ring-inset ring-marca/50"
-                        : "text-tinta-3 hover:text-tinta"}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <button onClick={alternarBroker} aria-pressed={comoBroker}
-                  title="Tu bróker valora TODAS las acciones al precio medio ponderado, que no baja al vender. FIFO/LIFO dejan vivos unos lotes concretos —los caros o los baratos— y por eso dan otro número. Ninguna está mal: lo que una se apunta de más aquí, la otra ya se lo apuntó en lo realizado. Cambia el historial, el realizado y la tabla de posiciones."
-                  className={`text-etiqueta rounded px-2.5 py-1.5 border transition-colors duration-150 motion-reduce:transition-none ${comoBroker
-                    ? "bg-marca text-marca-tinta border-marca font-semibold hover:brightness-110"
-                    : "border-linea-fuerte text-tinta-2 hover:text-tinta hover:border-linea-marcada"}`}>
-            {comoBroker ? "Como en DEGIRO (media ponderada)" : "Ver como en DEGIRO"}
-          </button>
-          {cambiarMetodo.isPending && (
-            <span className="text-etiqueta text-tinta-3" role="status">Recalculando…</span>
-          )}
-          {/* Texto explicativo en tinta normal: el verde se reserva para subidas. */}
-          {metodo === "lifo" ? (
-            <span className="text-etiqueta text-tinta-2 basis-full sm:basis-auto">Vende lo más reciente · tu precio medio SUBE al vender</span>
-          ) : (
-            <span className="text-etiqueta text-tinta-2 basis-full sm:basis-auto">Vende lo más antiguo · tu precio medio BAJA al vender · es el de Hacienda</span>
-          )}
-          <button onClick={() => setVerExplicacion((v) => !v)} aria-expanded={verExplicacion}
-                  className={`${ENLACE} ml-auto`}>
-            {verExplicacion ? "ocultar" : "¿cómo funciona?"}
-          </button>
-        </div>
-        {verExplicacion && (
-        <p className="text-apoyo text-tinta-2 mt-3 pt-3 border-t border-linea leading-relaxed max-w-[90ch]">
-          Esto no cambia solo lo que ves: gobierna qué lotes te quedan vivos, tu precio medio
-          y qué campanitas se encienden. Cambiarlo recalcula todo, pero <b>no altera ninguna
-          operación</b> — tus compras y ventas son las que son.
-          <br />
-          <b>Para saber cuál usar, mira tu bróker tras una venta parcial:</b> si tu precio
-          medio <b>baja</b>, está quitando las compras más antiguas (FIFO); si <b>sube</b>,
-          las más recientes (LIFO). Como entras por niveles según cae el precio, lo más
-          antiguo es lo más caro — por eso quitar lo antiguo hace bajar la media.
-          <br />
-          FIFO es además el obligatorio en España para acciones cotizadas (art. 37.2 de la
-          Ley del IRPF): es la cifra de tu declaración, la mires con el método que la mires.
-          {tot && hist?.resumen?.fifo && hist?.resumen?.lifo
-            && hist.resumen.fifo.ganancia_divisa !== hist.resumen.lifo.ganancia_divisa && (
-            <> En tu caso la diferencia entre ambos es de{" "}
-              <b>{usd(Math.abs(hist.resumen.fifo.ganancia_divisa - hist.resumen.lifo.ganancia_divisa))}</b>.</>
-          )}
-        </p>
+          </Aviso>
         )}
-      </div>
 
-      {hist?.resumen?.aviso && (
-        <div className="iv-panel px-4 py-2.5 border border-aviso/40 bg-aviso/[0.06] flex items-start gap-2">
-          <Warning size={14} weight="fill" aria-hidden="true" className="text-aviso shrink-0 mt-px" />
-          <span className="text-[11px] text-aviso leading-snug">{hist.resumen.aviso}</span>
-        </div>
-      )}
-
-      {/* Historial */}
-      <Plegable id="historial" titulo={`Historial de ventas (${ventas.length})`}
-                cabeceraExtra={<span className="text-etiqueta text-tinta-3">Toca una para ver de qué compra salió</span>}>
-        {cargandoHist ? (
-          // Esqueleto con la forma de las filas de verdad, para que la lista no salte al
-          // llegar. Sin pulso si el sistema pide menos movimiento.
-          <div role="status" aria-label="Cargando el historial de ventas" className="divide-y divide-linea">
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="px-4 py-4 flex items-center gap-3 animate-pulse motion-reduce:animate-none">
-                <span className="h-2.5 w-16 rounded bg-superficie-alt" />
-                <span className="h-3 w-12 rounded bg-superficie-alt" />
-                <span className="h-2.5 w-24 rounded bg-superficie-alt hidden sm:block" />
-                <span className="h-3 w-20 rounded bg-superficie-alt ml-auto" />
-              </div>
-            ))}
-          </div>
-        ) : errorHist ? (
-          <div role="alert" className="px-4 py-6 flex items-center gap-3 flex-wrap">
-            <Warning size={14} weight="fill" aria-hidden="true" className="text-baja shrink-0" />
-            <p className="text-apoyo text-tinta-2">No se ha podido cargar el historial de ventas.</p>
-            <button onClick={() => reintentarHist()} className={`${ENLACE} ml-auto`}>Reintentar</button>
-          </div>
-        ) : !ventas.length ? (
-          <div className="px-4 py-10 text-center space-y-3">
-            <p className="text-cuerpo text-tinta-2">Aún no has registrado ninguna venta.</p>
-            <p className="text-apoyo text-tinta-3 max-w-[60ch] mx-auto leading-relaxed">
-              Si ya tenías posiciones en la Cartera, impórtalas para no empezar de cero. Se
-              reconstruye <b>un lote por cada nivel que tengas con la campanita apagada</b>,
-              que es como marcas los niveles ya comprados. Con uno o dos niveles el reparto
-              de acciones sale exacto a partir de tu precio medio; con tres o más es una
-              estimación y te lo aviso para que la corrijas.
-            </p>
-            <button onClick={() => importar.mutate(false)} disabled={importar.isPending}
-                    className="border border-linea-fuerte rounded px-3 py-2 text-xs font-semibold transition-colors duration-150 motion-reduce:transition-none hover:bg-superficie-alt hover:border-linea-marcada disabled:opacity-60">
-              {importar.isPending ? "Importando…" : "Importar mis posiciones actuales"}
-            </button>
-          </div>
-        ) : (
-          <>
-            {/* Las últimas 15 a la vista; el resto bajo demanda. Con 146 ventas la lista
-                entera convertía llegar al final de la página en una expedición. */}
-            {(verTodas ? ventas : ventas.slice(0, 15)).map((v) => (
-              <FilaVenta key={v.id} v={v} metodo={metodo} comoBroker={comoBroker}
-                         onBorrar={(x) => window.confirm(`¿Borrar la venta de ${x.acciones} ${x.symbol} del ${fecha(x.fecha)}?`) && borrar.mutate(x)} />
-            ))}
-            {ventas.length > 15 && (
-              <button onClick={() => setVerTodas((v) => !v)}
-                      aria-expanded={verTodas}
-                      className="w-full min-h-[44px] py-2.5 text-etiqueta text-tinta-2 border-t border-linea transition-colors duration-150 motion-reduce:transition-none hover:bg-superficie-alt/60 hover:text-tinta">
-                {verTodas ? "Enseñar solo las últimas 15" : `Enseñar las ${ventas.length - 15} restantes`}
-              </button>
-            )}
-          </>
+        {hist?.resumen?.aviso && (
+          <Aviso>{hist.resumen.aviso}</Aviso>
         )}
-      </Plegable>
 
-      {/* Por acción */}
-      {!!hist?.por_symbol?.length && (
-        <Plegable id="por-accion" titulo={`Por acción (${hist.por_symbol.length})`} abierta={false}>
-          {hist.por_symbol.map((s) => (
-            <div key={s.symbol} className="px-4 py-2.5 flex items-center gap-3 border-b border-linea last:border-0">
-              <span className="iv-cifra font-bold text-apoyo w-16 shrink-0">{s.symbol}</span>
-              <span className="text-etiqueta text-tinta-3">{s.n_ventas} venta(s)</span>
-              <span className={`ml-auto iv-cifra font-semibold text-apoyo whitespace-nowrap ${tono(s.ganancia_eur ?? s.ganancia_divisa)}`}>
-                {s.ganancia_eur != null ? eur(s.ganancia_eur) : usd(s.ganancia_divisa, s.divisa)}
-              </span>
-            </div>
-          ))}
-        </Plegable>
-      )}
-
-      {/* Qué posiciones arrastran lotes que no vinieron del CSV. Son las que pueden no
-          cuadrar con el bróker: su fecha es la del alta, no la de la compra, así que el
-          coste se pasó a euros al cambio de un día que no es el tuyo. El precio y las
-          acciones sí están bien; lo que baila es la conversión. Se ordenan por dinero
-          afectado, que es el orden en que compensa arreglarlas. */}
-      {(() => {
-        const sospechosas = (resumen?.posiciones || [])
-          .filter((p) => p.acciones_sin_csv > 0)
-          .sort((a, b) => (b.coste_eur || 0) - (a.coste_eur || 0));
-        if (!sospechosas.length) return null;
-        return (
-          <div className="iv-panel px-4 py-3 border border-aviso/40 bg-aviso/[0.06]">
-            <p className="text-apoyo text-aviso leading-snug mb-2">
-            <Warning size={12} weight="fill" aria-hidden="true" className="inline mb-px mr-1" /><b>{sospechosas.length} posición(es) con lotes que no vienen del CSV.</b>{" "}
+        {/* Qué posiciones arrastran lotes que no vinieron del CSV. Son las que pueden no
+            cuadrar con el bróker: su fecha es la del alta, no la de la compra, así que el
+            coste se pasó a euros al cambio de un día que no es el tuyo. Se ordenan por
+            dinero afectado, que es el orden en que compensa arreglarlas. */}
+        {!!sospechosas.length && (
+          <Aviso titulo={<>{sospechosas.length} posición(es) con lotes que no vienen del CSV.</>}>
             Esos lotes llevan la fecha en que se dieron de alta, no la de tu compra, así
             que su coste se pasó a euros al cambio de ese día. Por eso el latente puede
             no cuadrar con DEGIRO teniendo el mismo precio y las mismas acciones. Se
             arreglan borrando esos lotes y volviendo a importar el CSV.
-            </p>
-            <div className="overflow-x-auto">
-            <table className="w-full text-etiqueta iv-cifra whitespace-nowrap">
-              <thead className="text-tinta-3">
-                <tr className="text-left">
-                  <th className="pr-3 font-normal">Acción</th>
-                  <th className="pr-3 font-normal text-right">Sin CSV</th>
-                  <th className="pr-3 font-normal text-right">De</th>
-                  <th className="pr-3 font-normal text-right">Invertido</th>
-                  <th className="pr-3 font-normal text-right">Cambio usado</th>
-                  <th className="font-normal text-right">Hoy</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sospechosas.map((p) => (
-                  <tr key={p.symbol} className="border-t border-linea/60">
-                  <td className="pr-3 py-1 font-bold">{p.symbol}</td>
-                  <td className="pr-3 text-right">{p.acciones_sin_csv}</td>
-                  <td className="pr-3 text-right text-tinta-3">
-                    {p.acciones_abiertas_total}
-                  </td>
-                  <td className="pr-3 text-right">{eur(p.coste_eur)}</td>
-                  <td className="pr-3 text-right">{p.cambio_medio_compras ?? "—"}</td>
-                  <td className="text-right text-tinta-3">{p.cambio_hoy ?? "—"}</td>
+            <div className="mt-2.5 overflow-x-auto rounded-iv border border-suave">
+              <table className="w-full text-[12.5px] iv-cifra whitespace-nowrap">
+                <thead className="text-tinta-3 font-sans">
+                  <tr className="text-left [&>th]:font-medium [&>th]:px-3 [&>th]:py-2">
+                    <th>Acción</th>
+                    <th className="text-right">Sin CSV</th>
+                    <th className="text-right">De</th>
+                    <th className="text-right">Invertido</th>
+                    <th className="text-right">Cambio usado</th>
+                    <th className="text-right">Hoy</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {sospechosas.map((p) => (
+                    <tr key={p.symbol} className="border-t border-suave [&>td]:px-3 [&>td]:py-1.5">
+                      <td className="font-semibold text-tinta">{p.symbol}</td>
+                      <td className="text-right">{p.acciones_sin_csv}</td>
+                      <td className="text-right text-tinta-3">{p.acciones_abiertas_total}</td>
+                      <td className="text-right">{eur(p.coste_eur)}</td>
+                      <td className="text-right">{p.cambio_medio_compras ?? "—"}</td>
+                      <td className="text-right text-tinta-3">{p.cambio_hoy ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <p className="text-[11px] text-tinta-3 mt-2 leading-snug">
-            Un «cambio usado» pegado al de hoy en una compra antigua es la señal: ese
-            lote se convirtió al cambio de hoy y no al del día en que compraste.
+            <p className="text-[12.5px] text-tinta-3 mt-2 leading-snug">
+              Un «cambio usado» pegado al de hoy en una compra antigua es la señal: ese
+              lote se convirtió al cambio de hoy y no al del día en que compraste.
             </p>
+          </Aviso>
+        )}
+      </AvisosPanel>
+
+      {/* ── Las tres listas ─────────────────────────────────────────────────── */}
+      <section aria-label="Ventas y posiciones" className="space-y-4">
+        <Pestanas id="ops" etiqueta="Ventas y posiciones" pestanas={pestanas} valor={vista} onCambio={setPestana} />
+
+        {vista === "ventas" && (
+          <div {...propsPanel("ops", "ventas")} className="iv-panel overflow-clip">
+            <div className="px-4 sm:px-5 py-3 flex items-center justify-between gap-3 flex-wrap border-b border-suave">
+              <p className="text-[13px] text-tinta-3">Toca una para ver de qué compra salió</p>
+              <p className="text-[12.5px] text-tinta-3">Cifras por <span className="text-tinta-2">{metodoRealizado}</span></p>
+            </div>
+            {cargandoHist ? (
+              // Esqueleto con la forma de las filas de verdad, para que la lista no salte
+              // al llegar. El barrido se apaga si el sistema pide menos movimiento.
+              <div role="status" aria-label="Cargando el historial de ventas" className="divide-y divide-suave">
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <div key={i} className="px-4 sm:px-5 py-4 flex items-center gap-3">
+                    <span className="w-8 h-8 rounded-[9px] iv-esqueleto" />
+                    <span className="space-y-1.5">
+                      <span className="block h-3 w-16 rounded iv-esqueleto" />
+                      <span className="block h-2.5 w-28 rounded iv-esqueleto" />
+                    </span>
+                    <span className="h-3 w-20 rounded iv-esqueleto ml-auto" />
+                  </div>
+                ))}
+              </div>
+            ) : errorHist ? (
+              <div role="alert" className="px-5 py-8 flex items-center gap-3 flex-wrap">
+                <span aria-hidden="true" className="flex items-center justify-center w-8 h-8 rounded-[9px] bg-baja/10 text-baja">!</span>
+                <p className="text-[14px] text-tinta-2">No se ha podido cargar el historial de ventas.</p>
+                <Boton variante="secundario" tamano="sm" className="ml-auto" onClick={() => reintentarHist()}>Reintentar</Boton>
+              </div>
+            ) : !ventas.length ? (
+              <div className="px-5 py-12 text-center">
+                <span aria-hidden="true" className="mx-auto flex items-center justify-center w-11 h-11 rounded-[12px] bg-marca/10 text-marca">
+                  <CircleDollarSign className="w-5 h-5" strokeWidth={1.75} />
+                </span>
+                <p className="text-[16px] font-semibold text-tinta mt-4">Aún no has registrado ninguna venta.</p>
+                <p className="text-[13px] text-tinta-3 max-w-[60ch] mx-auto leading-relaxed mt-2">
+                  Si ya tenías posiciones en la Cartera, impórtalas para no empezar de cero. Se
+                  reconstruye <b className="text-tinta-2">un lote por cada nivel que tengas con la campanita apagada</b>,
+                  que es como marcas los niveles ya comprados. Con uno o dos niveles el reparto
+                  de acciones sale exacto a partir de tu precio medio; con tres o más es una
+                  estimación y te lo aviso para que la corrijas.
+                </p>
+                <Boton variante="secundario" className="mt-5" onClick={() => importar.mutate(false)} ocupado={importar.isPending}>
+                  {importar.isPending ? "Importando…" : "Importar mis posiciones actuales"}
+                </Boton>
+              </div>
+            ) : (
+              <>
+                {/* Las últimas 15 a la vista; el resto bajo demanda. */}
+                {meses.map((g) => (
+                  <div key={g.k}>
+                    <p className="sticky top-14 z-[2] px-4 sm:px-5 h-9 flex items-center gap-2 text-[12.5px] font-medium text-tinta-2 bg-superficie/90 backdrop-blur-md border-b border-suave">
+                      {g.k.charAt(0).toUpperCase() + g.k.slice(1)}
+                      <span className="iv-cifra text-tinta-3 font-normal">· {g.items.length}</span>
+                    </p>
+                    {g.items.map((v) => (
+                      <FilaVenta key={v.id} v={v} metodo={metodo} comoBroker={comoBroker}
+                                 onBorrar={(x) => window.confirm(`¿Borrar la venta de ${x.acciones} ${x.symbol} del ${fecha(x.fecha)}?`) && borrar.mutate(x)} />
+                    ))}
+                  </div>
+                ))}
+                {ventas.length > 15 && (
+                  <button onClick={() => setVerTodas((v) => !v)}
+                          aria-expanded={verTodas}
+                          className="w-full min-h-[48px] py-3 text-[13px] font-medium text-tinta-2 border-t border-suave inline-flex items-center justify-center gap-2 transition-colors duration-150 motion-reduce:transition-none hover:bg-tinta/[0.025] hover:text-tinta">
+                    {verTodas ? "Enseñar solo las últimas 15" : `Enseñar las ${ventas.length - 15} restantes`}
+                    <Flecha abierta={verTodas} />
+                  </button>
+                )}
+              </>
+            )}
           </div>
-        );
-      })()}
+        )}
 
+        {vista === "accion" && hayPorAccion && (
+          <div {...propsPanel("ops", "accion")} className="iv-panel overflow-hidden">
+            <div className="px-4 sm:px-5 py-3 border-b border-suave">
+              <p className="text-[13px] text-tinta-3">Lo ganado o perdido en las ventas de cada acción · cifras por {metodoRealizado}</p>
+            </div>
+            {/* Dos columnas en escritorio: 97 filas en una sola eran una tira interminable. */}
+            <ul className="grid md:grid-cols-2 md:divide-x divide-suave">
+              {[0, 1].map((col) => (
+                <li key={col} className="divide-y divide-suave">
+                  {hist.por_symbol
+                    .filter((_, i) => (i < Math.ceil(hist.por_symbol.length / 2)) === (col === 0))
+                    .map((s) => {
+                      const g = s.ganancia_eur;
+                      return (
+                        <div key={s.symbol} className="px-4 sm:px-5 py-2.5 flex items-center gap-3 transition-colors duration-150 motion-reduce:transition-none hover:bg-tinta/[0.025]">
+                          <Monograma symbol={s.symbol} tamano="sm" />
+                          <div className="min-w-0 w-24 shrink-0">
+                            <p className="text-[14px] font-semibold text-tinta tracking-[-0.01em]">{s.symbol}</p>
+                            <p className="text-[12px] text-tinta-3">{s.n_ventas} venta(s)</p>
+                          </div>
+                          <div className="flex-1 min-w-0 h-1.5 rounded-full bg-tinta/[0.045]" aria-hidden="true">
+                            {g != null && (
+                              <div className={`h-full rounded-full min-w-[2px] ${g >= 0 ? "bg-sube/60" : "bg-baja/60"}`}
+                                   style={{ width: `${(Math.abs(g) / maxPorAccion) * 100}%` }} />
+                            )}
+                          </div>
+                          <span className={`iv-cifra font-medium text-[14px] whitespace-nowrap text-right min-w-[96px] ${tono(s.ganancia_eur ?? s.ganancia_divisa)}`}>
+                            {s.ganancia_eur != null ? eur(s.ganancia_eur) : usd(s.ganancia_divisa, s.divisa)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
-      {/* Posiciones abiertas, en euros */}
-      {!!resumen?.posiciones?.length && (
-        <Plegable id="abierto" titulo={`Lo que tienes abierto (${resumen.posiciones.length})`}
-                  cabeceraExtra={
-            <div className="flex items-center gap-x-4 gap-y-1 flex-wrap sm:ml-auto pb-2 sm:pb-0">
-              {/* El interruptor que hace que esta tabla se pueda comparar fila a fila con la
-                  pantalla del bróker. Sin él, las posiciones donde se vendió parte enseñaban
-                  otro precio medio y otra ganancia, y parecía un error de cálculo. */}
+        {vista === "abierto" && hayAbierto && (
+          <div {...propsPanel("ops", "abierto")} className="iv-panel overflow-hidden">
+            <div className="px-4 sm:px-5 py-3 flex items-center gap-x-5 gap-y-2 flex-wrap border-b border-suave">
+              {resumen.tasas && (
+                <span className="text-[12.5px] text-tinta-3 iv-cifra mr-auto"
+                      title="El tipo de cambio se consulta como mucho una vez por hora, y esta pantalla no se refresca sola: para ver el más reciente, recarga.">
+                  {Object.entries(resumen.tasas).filter(([d]) => d !== "EUR")
+                    .map(([d, t]) => {
+                      const edad = haceCuanto(resumen.tasas_edad_s?.[d]);
+                      return `1 € = ${t} ${d}${edad ? ` (${edad})` : ""}`;
+                    }).join(" · ")}
+                </span>
+              )}
               {/* Rehacer la importación: si la primera salió con los lotes mal repartidos,
                   borrarlos uno a uno serían decenas de clics. No toca las acciones que ya
                   tengan ventas registradas — ahí borrar compras falsearía la ganancia. */}
@@ -2408,335 +2476,305 @@ export default function VentasView() {
                       className={ENLACE}>
                 {quitarDup.isPending ? "Quitando…" : "Quitar duplicados del CSV"}
               </button>
-              {resumen.tasas && (
-                <span className="text-etiqueta text-tinta-3 iv-cifra"
-                      title="El tipo de cambio se consulta como mucho una vez por hora, y esta pantalla no se refresca sola: para ver el más reciente, recarga.">
-                  {Object.entries(resumen.tasas).filter(([d]) => d !== "EUR")
-                    .map(([d, t]) => {
-                      const edad = haceCuanto(resumen.tasas_edad_s?.[d]);
-                      return `1 € = ${t} ${d}${edad ? ` (${edad})` : ""}`;
-                    }).join(" · ")}
-                </span>
-              )}
             </div>
-                  }>
-          {/* ── Móvil: una tarjeta por posición ──────────────────────────────────
-              Seis columnas no caben en 390px. Con la tabla había que arrastrar la
-              pantalla de lado para llegar a la ganancia, que es el dato por el que
-              se abre esta sección: quedaba justo en la columna más escondida.
 
-              Apilado en vez de tabla estrecha: encoger las columnas solo cambia el
-              arrastre por cifras cortadas. Cada dato lleva su rótulo al lado, que
-              es lo que en la tabla hace la cabecera y aquí no existe.
-
-              El interruptor de bróker, el método y el resto del comportamiento son
-              los mismos: esto es la MISMA fila, con otra disposición. */}
-          <ul className="md:hidden divide-y divide-linea">
-            {resumen.posiciones.map((p) => {
-              const { g, precioMedio, invertido, hayOtroMedio, sinPmp } = datosPosicion(p, comoBroker);
-              const abiertaEsta = abierta === p.symbol;
-              return (
-                <li key={p.symbol}>
-                  {/* La tarjeta entera es pulsable, como la fila de la tabla, pero el
-                      botón de verdad es el del símbolo: así se despliega también con
-                      teclado y un lector de pantalla dice qué hace y si está abierto.
-                      La tarjeta NO puede ser un <button> envolvente: «Valor hoy» trae
-                      un campo y un botón cuando falta cotización, y un control dentro
-                      de otro control es HTML inválido y deja de responder. */}
-                  <div onClick={() => setAbierta(abiertaEsta ? null : p.symbol)}
-                       className={`px-4 py-3 cursor-pointer transition-colors duration-150 motion-reduce:transition-none active:bg-superficie-alt/60 ${abiertaEsta ? "bg-superficie-alt/40" : ""}`}>
-                    {/* Primera línea: quién es y cuánto gana. Las dos cosas que se
-                        miran de un vistazo van juntas y arriba. */}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                        <button type="button"
-                                onClick={(e) => { e.stopPropagation();
-                                                  setAbierta(abiertaEsta ? null : p.symbol); }}
-                                aria-expanded={abiertaEsta}
-                                aria-label={`${abiertaEsta ? "Ocultar" : "Ver"} las compras de ${p.symbol}`}
-                                className="inline-flex items-center gap-1.5 min-h-[44px] -my-2 pr-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 rounded">
-                          <Flecha abierta={abiertaEsta} />
-                          <span className="iv-cifra font-bold text-sm">{p.symbol}</span>
-                        </button>
-                        {!!p.divisas_mezcladas && (
-                          <Chip tono="aviso"
-                                title={`Esta posición tiene lotes en ${p.divisas_mezcladas.join(" y ")}. El precio medio y el invertido EN DIVISA suman monedas distintas y no significan nada; las cifras en euros sí son correctas, porque cada lote se convierte con su propia tasa. Revisa la divisa de cada compra.`}>
-                            {p.divisas_mezcladas.join("+")}
-                          </Chip>
-                        )}
-                        {/* La operación dice una moneda y el mercado otra: una de las dos es una
-                            errata. Las cifras en euros ya salen bien —el valor se convierte con el
-                            cambio del mercado donde cotiza— pero el precio medio "en divisa" mezcla
-                            monedas mientras la ficha siga mal. */}
-                        {p.divisa_incoherente && (
-                          <Chip tono="aviso"
-                                title={`Tus operaciones de ${p.symbol} están en ${p.divisa}, pero cotiza en ${p.divisa_cotizacion}. Las cifras en euros son correctas; revisa la divisa de la ficha o la de las compras.`}>
-                            {p.divisa}≠{p.divisa_cotizacion}
-                          </Chip>
-                        )}
-                        {sinPmp && (
-                          <Chip tono="aviso"
-                                title="Esta fila NO está en media ponderada aunque el interruptor lo esté: falta el tipo de cambio de alguna compra de su historial y sin él no hay coste en euros que ponderar. Se enseña por tu método (FIFO/LIFO), que da otro número. No la compares con DEGIRO.">
-                            sin ponderada
-                          </Chip>
-                        )}
-                        <NivelesDeLaFila p={p} />
-                        {sinNiveles.has(p.symbol) && (
-                          <Chip title="Esta acción está en la Cartera pero todavía no tiene niveles. Se creó sola al registrar la compra, para que coja precio de mercado; el precio al que compraste NO es un nivel. Ponle los niveles en la Cartera cuando los tengas.">
-                            niveles pendientes
-                          </Chip>
-                        )}
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className={`iv-cifra font-semibold text-sm whitespace-nowrap ${tono(g.pnl_eur)}`}>{eur(g.pnl_eur)}</div>
-                        <div className={`iv-cifra text-etiqueta whitespace-nowrap ${tono(g.pct_eur)}`}>{pct(g.pct_eur)}</div>
-                      </div>
-                    </div>
-
-                    {/* Los cuatro datos restantes, cada uno con su rótulo. Dos columnas
-                        y no una lista larga: así la tarjeta sigue cabiendo de un vistazo. */}
-                    <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-2.5 text-[11px]">
-                      <div className="flex flex-wrap items-baseline justify-between gap-x-2 min-w-0">
-                        <dt className="text-tinta-3">Acciones</dt>
-                        <dd className="font-mono">{p.acciones}</dd>
-                      </div>
-                      <div className="flex flex-wrap items-baseline justify-between gap-x-2 min-w-0">
-                        <dt className="text-tinta-3">Invertido <span className="opacity-60">(€)</span></dt>
-                        <dd className="iv-cifra ml-auto text-right whitespace-nowrap">{eur(invertido)}</dd>
-                      </div>
-                      <div className="flex flex-wrap items-baseline justify-between gap-x-2 min-w-0">
-                        <dt className="text-tinta-3">Precio medio <span className="opacity-60">({p.divisa === "EUR" ? "€" : p.divisa})</span></dt>
-                        <dd className="iv-cifra ml-auto text-right whitespace-nowrap">
-                          {usd(precioMedio, p.divisa)}
-                          {hayOtroMedio && (
-                            <div className="text-[11px] text-tinta-3">
-                              {comoBroker
-                                ? `${metodo.toUpperCase()} = ${usd(p.precio_medio, p.divisa)}`
-                                : `bróker ≈ ${usd(p.precio_medio_degiro ?? p.precio_medio_ponderado, p.divisa)}`}
+            {/* ── Móvil: una ficha por posición ─────────────────────────────────
+                Seis columnas no caben en 390px. Apilado en vez de tabla estrecha: cada
+                dato lleva su rótulo al lado. Es la MISMA fila, con otra disposición. */}
+            <ul className="md:hidden divide-y divide-suave">
+              {resumen.posiciones.map((p) => {
+                const { g, precioMedio, invertido, hayOtroMedio, sinPmp } = datosPosicion(p, comoBroker);
+                const abiertaEsta = abierta === p.symbol;
+                return (
+                  <li key={p.symbol}>
+                    {/* La ficha entera es pulsable, pero el botón de verdad es el del
+                        símbolo. La ficha NO puede ser un <button> envolvente: «Valor hoy»
+                        trae un campo y un botón cuando falta cotización. */}
+                    <div onClick={() => setAbierta(abiertaEsta ? null : p.symbol)}
+                         className={`px-4 py-3.5 cursor-pointer transition-colors duration-150 motion-reduce:transition-none active:bg-tinta/[0.04] ${abiertaEsta ? "bg-tinta/[0.03]" : ""}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <Monograma symbol={p.symbol} tamano="md" />
+                          <div className="min-w-0">
+                            <button type="button"
+                                    onClick={(e) => { e.stopPropagation();
+                                                      setAbierta(abiertaEsta ? null : p.symbol); }}
+                                    aria-expanded={abiertaEsta}
+                                    aria-label={`${abiertaEsta ? "Ocultar" : "Ver"} las compras de ${p.symbol}`}
+                                    className="inline-flex items-center gap-1.5 min-h-[28px] rounded">
+                              <span className="text-[15px] font-semibold text-tinta tracking-[-0.01em]">{p.symbol}</span>
+                              <Flecha abierta={abiertaEsta} />
+                            </button>
+                            <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                              {!!p.divisas_mezcladas && (
+                                <Chip tono="aviso"
+                                      title={`Esta posición tiene lotes en ${p.divisas_mezcladas.join(" y ")}. El precio medio y el invertido EN DIVISA suman monedas distintas y no significan nada; las cifras en euros sí son correctas, porque cada lote se convierte con su propia tasa. Revisa la divisa de cada compra.`}>
+                                  {p.divisas_mezcladas.join("+")}
+                                </Chip>
+                              )}
+                              {p.divisa_incoherente && (
+                                <Chip tono="aviso"
+                                      title={`Tus operaciones de ${p.symbol} están en ${p.divisa}, pero cotiza en ${p.divisa_cotizacion}. Las cifras en euros son correctas; revisa la divisa de la ficha o la de las compras.`}>
+                                  {p.divisa}≠{p.divisa_cotizacion}
+                                </Chip>
+                              )}
+                              {sinPmp && (
+                                <Chip tono="aviso"
+                                      title="Esta fila NO está en media ponderada aunque el interruptor lo esté: falta el tipo de cambio de alguna compra de su historial y sin él no hay coste en euros que ponderar. Se enseña por tu método (FIFO/LIFO), que da otro número. No la compares con DEGIRO.">
+                                  sin ponderada
+                                </Chip>
+                              )}
+                              <NivelesDeLaFila p={p} />
+                              {sinNiveles.has(p.symbol) && (
+                                <Chip title="Esta acción está en la Cartera pero todavía no tiene niveles. Se creó sola al registrar la compra, para que coja precio de mercado; el precio al que compraste NO es un nivel. Ponle los niveles en la Cartera cuando los tengas.">
+                                  niveles pendientes
+                                </Chip>
+                              )}
                             </div>
-                          )}
-                        </dd>
-                      </div>
-                      <div className="flex flex-wrap items-baseline justify-between gap-x-2 min-w-0">
-                        <dt className="text-tinta-3">Valor hoy <span className="opacity-60">(€)</span></dt>
-                        {/* El div frena la propagación por dentro: cuando falta cotización
-                            esta celda trae un campo y un botón, y al escribir en él no se
-                            puede plegar la tarjeta que lo contiene. */}
-                        <dd className="iv-cifra ml-auto text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                          <CeldaValorHoy p={p} />
-                        </dd>
-                      </div>
-                    </dl>
-                  </div>
-                  {abiertaEsta && <LotesAbiertos symbol={p.symbol} metodo={metodo} />}
-                </li>
-              );
-            })}
-            {/* El total, con la misma forma de tarjeta para que se lea como una más. */}
-            <li className="px-4 py-3 border-t border-linea-fuerte bg-superficie-alt/40">
-              <div className="flex items-start justify-between gap-3">
-                <span className="iv-etiqueta text-tinta-2 pt-0.5">Total</span>
-                <div className="text-right shrink-0">
-                  <div className={`iv-cifra font-bold text-sm whitespace-nowrap ${tono(totales.ganancia)}`}>{eur(totales.ganancia)}</div>
-                  {totales.pct != null ? (
-                    <div className={`iv-cifra text-[11px] whitespace-nowrap ${tono(totales.ganancia)}`}>{pct(totales.pct)}</div>
-                  ) : null}
-                  {totales.sinValorar > 0 && (
-                    <div className="text-[11px] text-tinta-3">{totales.sinValorar} sin valorar, fuera del total</div>
-                  )}
-                </div>
-              </div>
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-2.5 text-[11px]">
-                <div className="flex flex-wrap items-baseline justify-between gap-x-2 min-w-0">
-                  <dt className="text-tinta-3">Posiciones</dt>
-                  <dd className="font-mono">{resumen.posiciones.length}</dd>
-                </div>
-                <div className="flex flex-wrap items-baseline justify-between gap-x-2 min-w-0">
-                  <dt className="text-tinta-3">Invertido <span className="opacity-60">(€)</span></dt>
-                  <dd className="iv-cifra ml-auto text-right whitespace-nowrap">{eur(totales.invertido)}</dd>
-                </div>
-                <div className="flex flex-wrap items-baseline justify-between gap-x-2 col-span-2">
-                  <dt className="text-tinta-3">Valor hoy <span className="opacity-60">(€)</span></dt>
-                  <dd className="iv-cifra ml-auto text-right whitespace-nowrap">{eur(totales.valor)}</dd>
-                </div>
-              </dl>
-            </li>
-          </ul>
-
-          {/* Escritorio: la tabla de siempre, intacta. Aquí las seis columnas caben
-              y comparar posiciones en vertical es más rápido que en tarjetas. */}
-          <div className="hidden md:block overflow-x-auto">
-            {/* Cifras en dígitos tabulares y sin partir: «24.252,52 €» se partía en dos
-                líneas en la fila del Total. Cada columna numérica lleva su propio relleno
-                lateral para que las cifras no se toquen entre sí. */}
-            <table className="w-full text-xs [&_td]:align-top">
-              <thead>
-                <tr className="text-left border-b border-linea [&>th]:font-mono [&>th]:text-etiqueta [&>th]:uppercase [&>th]:text-tinta-3 [&>th]:whitespace-nowrap">
-                  {/* Las unidades EN LA CABECERA: el precio medio va en la divisa del
-                      valor y el resto en euros, y sin decirlo la tabla parecía mezclar. */}
-                  <th scope="col" className="px-4 py-2.5 font-normal">Acción</th>
-                  <th scope="col" className="px-3 py-2.5 font-normal text-right">Acciones</th>
-                  <th scope="col" className="px-3 py-2.5 font-normal text-right">
-                    Precio medio <span className="opacity-60 normal-case">(divisa)</span>
-                  </th>
-                  <th scope="col" className="px-3 py-2.5 font-normal text-right">
-                    Invertido <span className="opacity-60">(€)</span>
-                  </th>
-                  <th scope="col" className="px-3 py-2.5 font-normal text-right">
-                    Valor hoy <span className="opacity-60">(€)</span>
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 font-normal text-right">
-                    Ganancia <span className="opacity-60">(€)</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {resumen.posiciones.map((p) => {
-                  const { g, precioMedio, invertido, hayOtroMedio, sinPmp } = datosPosicion(p, comoBroker);
-                  return (
-                  <React.Fragment key={p.symbol}>
-                  <tr className={`border-b border-linea cursor-pointer transition-colors duration-150 motion-reduce:transition-none hover:bg-superficie-alt/60 [&>td]:py-2.5 ${abierta === p.symbol ? "bg-superficie-alt/40" : ""}`}
-                      onClick={() => setAbierta(abierta === p.symbol ? null : p.symbol)}>
-                    <td className="px-4">
-                      <div className="flex items-center gap-x-2 gap-y-1 flex-wrap">
-                      {/* Un botón de verdad, no un <tr onClick>: así se despliega también
-                          con teclado y un lector de pantalla dice qué hace y si está
-                          abierto. min-h/min-w para que el dedo acierte en el móvil. */}
-                      <button type="button"
-                              onClick={(e) => { e.stopPropagation();
-                                                setAbierta(abierta === p.symbol ? null : p.symbol); }}
-                              aria-expanded={abierta === p.symbol}
-                              aria-label={`${abierta === p.symbol ? "Ocultar" : "Ver"} las compras de ${p.symbol}`}
-                              className="inline-flex items-center gap-1.5 min-h-[36px] -my-2 pr-1 rounded">
-                        <Flecha abierta={abierta === p.symbol} />
-                        <span className="iv-cifra font-bold text-apoyo">{p.symbol}</span>
-                      </button>
-                      {!!p.divisas_mezcladas && (
-                        <Chip tono="aviso"
-                              title={`Esta posición tiene lotes en ${p.divisas_mezcladas.join(" y ")}. El precio medio y el invertido EN DIVISA suman monedas distintas y no significan nada; las cifras en euros sí son correctas, porque cada lote se convierte con su propia tasa. Revisa la divisa de cada compra.`}>
-                          {p.divisas_mezcladas.join("+")}
-                        </Chip>
-                      )}
-                      {/* La operación dice una moneda y el mercado otra: una de las dos es una
-                          errata. Las cifras en euros ya salen bien —el valor se convierte con el
-                          cambio del mercado donde cotiza— pero el precio medio "en divisa" mezcla
-                          monedas mientras la ficha siga mal. */}
-                      {p.divisa_incoherente && (
-                        <Chip tono="aviso"
-                              title={`Tus operaciones de ${p.symbol} están en ${p.divisa}, pero cotiza en ${p.divisa_cotizacion}. Las cifras en euros son correctas; revisa la divisa de la ficha o la de las compras.`}>
-                          {p.divisa}≠{p.divisa_cotizacion}
-                        </Chip>
-                      )}
-                      {sinPmp && (
-                        <Chip tono="aviso"
-                              title="Esta fila NO está en media ponderada aunque el interruptor lo esté: falta el tipo de cambio de alguna compra de su historial y sin él no hay coste en euros que ponderar. Se enseña por tu método (FIFO/LIFO), que da otro número. No la compares con DEGIRO.">
-                          sin ponderada
-                        </Chip>
-                      )}
-                      <NivelesDeLaFila p={p} />
-                      {sinNiveles.has(p.symbol) && (
-                        <Chip title="Esta acción está en la Cartera pero todavía no tiene niveles. Se creó sola al registrar la compra, para que coja precio de mercado; el precio al que compraste NO es un nivel. Ponle los niveles en la Cartera cuando los tengas.">
-                          niveles pendientes
-                        </Chip>
-                      )}
-                      </div>
-                    </td>
-                    <td className="px-3 text-right iv-cifra">{p.acciones}</td>
-                    <td className="px-3 text-right iv-cifra whitespace-nowrap">
-                      {/* Con el interruptor puesto manda la ponderada, que es la del bróker;
-                          la otra baja debajo etiquetada. Ninguna es una corrección de la
-                          otra: miden cosas distintas y las dos son correctas. */}
-                      {usd(precioMedio, p.divisa)}
-                      {hayOtroMedio && (
-                        <div className="text-[11px] text-tinta-3"
-                             title={comoBroker
-                               ? `Arriba, la media ponderada (la de tu bróker). Debajo, el coste real de las ${p.acciones} acciones que te quedan por ${metodo.toUpperCase()}.`
-                               : "Precio medio ponderado: el que suele enseñar tu bróker. No cambia al vender, porque promedia TODO lo que has comprado. El de arriba es el coste de las acciones que te quedan de verdad."}>
-                          {comoBroker
-                            ? `${metodo.toUpperCase()} = ${usd(p.precio_medio, p.divisa)}`
-                            : `bróker ≈ ${usd(p.precio_medio_degiro ?? p.precio_medio_ponderado, p.divisa)}`}
+                          </div>
                         </div>
-                      )}
-                    </td>
-                    <td className="px-3 text-right iv-cifra whitespace-nowrap">{eur(invertido)}</td>
-                    <td className="px-3 text-right iv-cifra whitespace-nowrap"><CeldaValorHoy p={p} /></td>
-                    {/* Importe y % apilados en la misma columna derecha: en línea, el %
-                        se caía a la línea siguiente en unas filas sí y en otras no. */}
-                    <td className="px-4 text-right whitespace-nowrap">
-                      <div className={`iv-cifra font-semibold ${tono(g.pnl_eur)}`}>{eur(g.pnl_eur)}</div>
-                      <div className={`iv-cifra text-[11px] ${tono(g.pct_eur)}`}>{pct(g.pct_eur)}</div>
-                    </td>
-                  </tr>
-                  {abierta === p.symbol && (
-                    <tr>
-                      <td colSpan={6} className="p-0">
-                        <LotesAbiertos symbol={p.symbol} metodo={metodo} />
-                      </td>
-                    </tr>
-                  )}
-                  </React.Fragment>
-                  );
-                })}
-              </tbody>
-              {/* Totales: hasta ahora había que sumar las filas a mano para saber cuánto
-                  llevas metido y cuánto vale hoy. El % agregado es sobre lo invertido. */}
-              <tfoot>
-                <tr className="border-t border-linea-fuerte bg-superficie-alt/40 font-semibold [&>td]:py-3">
-                  <td className="px-4 iv-etiqueta text-tinta-2">Total</td>
-                  <td className="px-3 text-right iv-cifra text-tinta-3 font-normal whitespace-nowrap">
-                    {resumen.posiciones.length} pos.
-                  </td>
-                  <td />
-                  {/* El Total suma las MISMAS cifras que enseñan las filas: invertido y
-                      ganancia en el mismo método, así valor − invertido = ganancia. */}
-                  <td className="px-3 text-right iv-cifra whitespace-nowrap">{eur(totales.invertido)}</td>
-                  <td className="px-3 text-right iv-cifra whitespace-nowrap">{eur(totales.valor)}</td>
-                  <td className="px-4 text-right whitespace-nowrap">
-                    <div className={`iv-cifra font-bold ${tono(totales.ganancia)}`}>{eur(totales.ganancia)}</div>
-                    {totales.pct != null ? (
-                      <div className={`iv-cifra text-[11px] ${tono(totales.ganancia)}`}>
-                        {pct(totales.pct)}
+                        <div className="text-right shrink-0">
+                          <div className={`iv-cifra font-medium text-[15px] whitespace-nowrap ${tono(g.pnl_eur)}`}>{eur(g.pnl_eur)}</div>
+                          <div className={`iv-cifra text-[12px] whitespace-nowrap ${tono(g.pct_eur)}`}>{pct(g.pct_eur)}</div>
+                        </div>
                       </div>
+
+                      {/* Los cuatro datos restantes, cada uno con su rótulo, en una franja
+                          de luz de dos columnas. */}
+                      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 mt-3 rounded-iv bg-tinta/[0.03] px-3 py-2.5 text-[12.5px]">
+                        <div className="min-w-0">
+                          <dt className="text-tinta-3">Acciones</dt>
+                          <dd className="iv-cifra text-tinta mt-0.5">{p.acciones}</dd>
+                        </div>
+                        <div className="min-w-0">
+                          <dt className="text-tinta-3">Invertido <span className="opacity-70">(€)</span></dt>
+                          <dd className="iv-cifra whitespace-nowrap mt-0.5 text-tinta">{eur(invertido)}</dd>
+                        </div>
+                        <div className="min-w-0">
+                          <dt className="text-tinta-3">Precio medio <span className="opacity-70">({p.divisa === "EUR" ? "€" : p.divisa})</span></dt>
+                          <dd className="iv-cifra whitespace-nowrap mt-0.5 text-tinta">
+                            {usd(precioMedio, p.divisa)}
+                            {hayOtroMedio && (
+                              <div className="text-[11.5px] text-tinta-3">
+                                {comoBroker
+                                  ? `${metodo.toUpperCase()} = ${usd(p.precio_medio, p.divisa)}`
+                                  : `bróker ≈ ${usd(p.precio_medio_degiro ?? p.precio_medio_ponderado, p.divisa)}`}
+                              </div>
+                            )}
+                          </dd>
+                        </div>
+                        <div className="min-w-0">
+                          <dt className="text-tinta-3">Valor hoy <span className="opacity-70">(€)</span></dt>
+                          {/* Frena la propagación: con un campo dentro, escribir no pliega la ficha. */}
+                          <dd className="iv-cifra whitespace-nowrap mt-0.5 text-tinta" onClick={(e) => e.stopPropagation()}>
+                            <CeldaValorHoy p={p} />
+                          </dd>
+                        </div>
+                      </dl>
+                    </div>
+                    {abiertaEsta && <LotesAbiertos symbol={p.symbol} metodo={metodo} />}
+                  </li>
+                );
+              })}
+              {/* El total, con la misma forma de ficha para que se lea como una más. */}
+              <li className="px-4 py-4 border-t border-medio bg-tinta/[0.03]">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-[14px] font-semibold text-tinta pt-0.5">Total</span>
+                  <div className="text-right shrink-0">
+                    <div className={`iv-cifra font-semibold text-[16px] whitespace-nowrap ${tono(totales.ganancia)}`}>{eur(totales.ganancia)}</div>
+                    {totales.pct != null ? (
+                      <div className={`iv-cifra text-[12px] whitespace-nowrap ${tono(totales.ganancia)}`}>{pct(totales.pct)}</div>
                     ) : null}
                     {totales.sinValorar > 0 && (
-                      <div className="text-[11px] text-tinta-3">{totales.sinValorar} sin valorar, fuera del total</div>
+                      <div className="text-[12px] text-tinta-3">{totales.sinValorar} sin valorar, fuera del total</div>
                     )}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+                  </div>
+                </div>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-2 mt-3 text-[12.5px]">
+                  <div className="min-w-0">
+                    <dt className="text-tinta-3">Posiciones</dt>
+                    <dd className="iv-cifra mt-0.5">{resumen.posiciones.length}</dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-tinta-3">Invertido <span className="opacity-70">(€)</span></dt>
+                    <dd className="iv-cifra whitespace-nowrap mt-0.5">{eur(totales.invertido)}</dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-tinta-3">Valor hoy <span className="opacity-70">(€)</span></dt>
+                    <dd className="iv-cifra whitespace-nowrap mt-0.5">{eur(totales.valor)}</dd>
+                  </div>
+                </dl>
+              </li>
+            </ul>
+
+            {/* ── Escritorio: tabla ─────────────────────────────────────────────
+                Aquí las seis columnas caben y comparar posiciones en vertical es más
+                rápido que en fichas. Cifras tabulares y sin partir. */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-[13px] [&_td]:align-middle">
+                <thead>
+                  {/* Las unidades EN LA CABECERA: el precio medio va en la divisa del
+                      valor y el resto en euros. */}
+                  <tr className="text-left border-b border-suave [&>th]:text-[12px] [&>th]:font-medium [&>th]:text-tinta-3 [&>th]:whitespace-nowrap [&>th]:py-3">
+                    <th scope="col" className="px-5">Acción</th>
+                    <th scope="col" className="px-3 text-right">Acciones</th>
+                    <th scope="col" className="px-3 text-right">
+                      Precio medio <span className="opacity-70">(divisa)</span>
+                    </th>
+                    <th scope="col" className="px-3 text-right">
+                      Invertido <span className="opacity-70">(€)</span>
+                    </th>
+                    <th scope="col" className="px-3 text-right">
+                      Valor hoy <span className="opacity-70">(€)</span>
+                    </th>
+                    <th scope="col" className="px-5 text-right">
+                      Ganancia <span className="opacity-70">(€)</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {resumen.posiciones.map((p) => {
+                    const { g, precioMedio, invertido, hayOtroMedio, sinPmp } = datosPosicion(p, comoBroker);
+                    return (
+                    <React.Fragment key={p.symbol}>
+                    <tr className={`border-b border-suave cursor-pointer transition-colors duration-150 motion-reduce:transition-none hover:bg-tinta/[0.025] [&>td]:py-3 ${abierta === p.symbol ? "bg-tinta/[0.03]" : ""}`}
+                        onClick={() => setAbierta(abierta === p.symbol ? null : p.symbol)}>
+                      <td className="px-5">
+                        <div className="flex items-center gap-3">
+                          <Monograma symbol={p.symbol} tamano="sm" />
+                          <div className="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0">
+                          {/* Un botón de verdad, no un <tr onClick>: así se despliega también
+                              con teclado y un lector de pantalla dice qué hace. */}
+                          <button type="button"
+                                  onClick={(e) => { e.stopPropagation();
+                                                    setAbierta(abierta === p.symbol ? null : p.symbol); }}
+                                  aria-expanded={abierta === p.symbol}
+                                  aria-label={`${abierta === p.symbol ? "Ocultar" : "Ver"} las compras de ${p.symbol}`}
+                                  className="inline-flex items-center gap-1.5 min-h-[32px] pr-1 rounded">
+                            <span className="text-[14px] font-semibold text-tinta tracking-[-0.01em]">{p.symbol}</span>
+                            <Flecha abierta={abierta === p.symbol} />
+                          </button>
+                          {!!p.divisas_mezcladas && (
+                            <Chip tono="aviso"
+                                  title={`Esta posición tiene lotes en ${p.divisas_mezcladas.join(" y ")}. El precio medio y el invertido EN DIVISA suman monedas distintas y no significan nada; las cifras en euros sí son correctas, porque cada lote se convierte con su propia tasa. Revisa la divisa de cada compra.`}>
+                              {p.divisas_mezcladas.join("+")}
+                            </Chip>
+                          )}
+                          {/* La operación dice una moneda y el mercado otra: una de las dos es
+                              una errata. Las cifras en euros ya salen bien. */}
+                          {p.divisa_incoherente && (
+                            <Chip tono="aviso"
+                                  title={`Tus operaciones de ${p.symbol} están en ${p.divisa}, pero cotiza en ${p.divisa_cotizacion}. Las cifras en euros son correctas; revisa la divisa de la ficha o la de las compras.`}>
+                              {p.divisa}≠{p.divisa_cotizacion}
+                            </Chip>
+                          )}
+                          {sinPmp && (
+                            <Chip tono="aviso"
+                                  title="Esta fila NO está en media ponderada aunque el interruptor lo esté: falta el tipo de cambio de alguna compra de su historial y sin él no hay coste en euros que ponderar. Se enseña por tu método (FIFO/LIFO), que da otro número. No la compares con DEGIRO.">
+                              sin ponderada
+                            </Chip>
+                          )}
+                          <NivelesDeLaFila p={p} />
+                          {sinNiveles.has(p.symbol) && (
+                            <Chip title="Esta acción está en la Cartera pero todavía no tiene niveles. Se creó sola al registrar la compra, para que coja precio de mercado; el precio al que compraste NO es un nivel. Ponle los niveles en la Cartera cuando los tengas.">
+                              niveles pendientes
+                            </Chip>
+                          )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 text-right iv-cifra">{p.acciones}</td>
+                      <td className="px-3 text-right iv-cifra whitespace-nowrap">
+                        {/* Con el interruptor puesto manda la ponderada, que es la del
+                            bróker; la otra baja debajo etiquetada. Las dos son correctas. */}
+                        {usd(precioMedio, p.divisa)}
+                        {hayOtroMedio && (
+                          <div className="text-[11.5px] text-tinta-3"
+                               title={comoBroker
+                                 ? `Arriba, la media ponderada (la de tu bróker). Debajo, el coste real de las ${p.acciones} acciones que te quedan por ${metodo.toUpperCase()}.`
+                                 : "Precio medio ponderado: el que suele enseñar tu bróker. No cambia al vender, porque promedia TODO lo que has comprado. El de arriba es el coste de las acciones que te quedan de verdad."}>
+                            {comoBroker
+                              ? `${metodo.toUpperCase()} = ${usd(p.precio_medio, p.divisa)}`
+                              : `bróker ≈ ${usd(p.precio_medio_degiro ?? p.precio_medio_ponderado, p.divisa)}`}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 text-right iv-cifra whitespace-nowrap">{eur(invertido)}</td>
+                      <td className="px-3 text-right iv-cifra whitespace-nowrap"><CeldaValorHoy p={p} /></td>
+                      {/* Importe y % apilados en la misma columna derecha. */}
+                      <td className="px-5 text-right whitespace-nowrap">
+                        <div className={`iv-cifra font-medium text-[14px] ${tono(g.pnl_eur)}`}>{eur(g.pnl_eur)}</div>
+                        <div className={`iv-cifra text-[12px] ${tono(g.pct_eur)}`}>{pct(g.pct_eur)}</div>
+                      </td>
+                    </tr>
+                    {abierta === p.symbol && (
+                      <tr>
+                        <td colSpan={6} className="p-0">
+                          <LotesAbiertos symbol={p.symbol} metodo={metodo} />
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
+                    );
+                  })}
+                </tbody>
+                {/* Totales: el % agregado es sobre lo invertido. El Total suma las MISMAS
+                    cifras que enseñan las filas: valor − invertido = ganancia. */}
+                <tfoot>
+                  <tr className="border-t border-medio bg-tinta/[0.03] [&>td]:py-3.5">
+                    <td className="px-5 text-[14px] font-semibold text-tinta">Total</td>
+                    <td className="px-3 text-right iv-cifra text-tinta-3 whitespace-nowrap">
+                      {resumen.posiciones.length} pos.
+                    </td>
+                    <td />
+                    <td className="px-3 text-right iv-cifra font-medium whitespace-nowrap">{eur(totales.invertido)}</td>
+                    <td className="px-3 text-right iv-cifra font-medium whitespace-nowrap">{eur(totales.valor)}</td>
+                    <td className="px-5 text-right whitespace-nowrap">
+                      <div className={`iv-cifra font-semibold text-[15px] ${tono(totales.ganancia)}`}>{eur(totales.ganancia)}</div>
+                      {totales.pct != null ? (
+                        <div className={`iv-cifra text-[12px] ${tono(totales.ganancia)}`}>
+                          {pct(totales.pct)}
+                        </div>
+                      ) : null}
+                      {totales.sinValorar > 0 && (
+                        <div className="text-[12px] text-tinta-3">{totales.sinValorar} sin valorar, fuera del total</div>
+                      )}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            {/* La explicación se lee una vez y luego estorba: plegada por defecto. */}
+            <details className="group border-t border-suave">
+              <summary className="px-4 sm:px-5 min-h-[44px] text-[13px] text-tinta-3 cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center gap-2 hover:text-tinta transition-colors duration-150 motion-reduce:transition-none">
+                <CaretDown size={11} weight="bold" aria-hidden="true"
+                           className="-rotate-90 group-open:rotate-0 transition-transform duration-200 ease-salida motion-reduce:transition-none" />
+                Cómo leer esta tabla
+              </summary>
+              <p className="px-4 sm:px-5 pb-4 text-[13px] text-tinta-2 leading-relaxed max-w-[90ch]">
+                El precio medio es el de las acciones que te QUEDAN, por <b className="text-tinta">{metodo.toUpperCase()}</b>.
+                Tras vender parte, FIFO y LIFO dejan lotes distintos abiertos y el medio no
+                coincide: si no cuadra con tu bróker, prueba el otro método arriba.
+                <br />
+                Las campanitas de la Cartera se mueven solas: se apagan al comprar en un nivel y
+                vuelven a encenderse en cuanto vendes la última acción de ese nivel. Los niveles
+                que no tengan compras registradas no se tocan.
+                <br />
+                <b className="text-tinta">bróker ≈</b> es el precio medio de DEGIRO, y no se calcula como el de arriba:
+                al vender, DEGIRO resta del coste de la posición <b className="text-tinta">el dinero que ingresas</b>, no
+                lo que costaron las acciones vendidas. Por eso su medio SE MUEVE cuando vendes —
+                sube si vendes por debajo de tu media y baja si vendes por encima—. El de arriba
+                es el coste real de las acciones que te quedan. Los dos son correctos y miden
+                cosas distintas: el suyo sirve para cuadrar pantallas, no para saber lo que
+                ganaste en cada nivel.
+              </p>
+            </details>
           </div>
-          {/* La explicación se lee una vez y luego estorba: plegada por defecto. */}
-          <details className="group border-t border-linea">
-            <summary className="px-4 py-2.5 text-etiqueta text-tinta-3 cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center gap-2 hover:text-tinta transition-colors duration-150 motion-reduce:transition-none">
-              <CaretDown size={11} weight="bold" aria-hidden="true"
-                         className="-rotate-90 group-open:rotate-0 transition-transform duration-200 ease-out motion-reduce:transition-none" />
-              Cómo leer esta tabla
-            </summary>
-          <p className="px-4 pb-3 text-apoyo text-tinta-2 leading-relaxed max-w-[90ch]">
-            El precio medio es el de las acciones que te QUEDAN, por <b>{metodo.toUpperCase()}</b>.
-            Tras vender parte, FIFO y LIFO dejan lotes distintos abiertos y el medio no
-            coincide: si no cuadra con tu bróker, prueba el otro método arriba.
-            <br />
-            Las campanitas de la Cartera se mueven solas: se apagan al comprar en un nivel y
-            vuelven a encenderse en cuanto vendes la última acción de ese nivel. Los niveles
-            que no tengan compras registradas no se tocan.
-            <br />
-            <b>bróker ≈</b> es el precio medio de DEGIRO, y no se calcula como el de arriba:
-            al vender, DEGIRO resta del coste de la posición <b>el dinero que ingresas</b>, no
-            lo que costaron las acciones vendidas. Por eso su medio SE MUEVE cuando vendes —
-            sube si vendes por debajo de tu media y baja si vendes por encima—. El de arriba
-            es el coste real de las acciones que te quedan. Los dos son correctos y miden
-            cosas distintas: el suyo sirve para cuadrar pantallas, no para saber lo que
-            ganaste en cada nivel.
-          </p>
-          </details>
-        </Plegable>
-      )}
+        )}
+      </section>
 
       {/* Al final, no en medio. Es lo que autoriza a estimar el margen de una venta, pero
-          se teclea una vez al mes: partía la página en dos entre el historial y la tabla
-          de posiciones, que es lo que se viene a mirar. Su sitio no cambia lo que hace. */}
+          se teclea una vez al mes. Su sitio no cambia lo que hace. */}
       <ExtractoMargen />
     </div>
   );

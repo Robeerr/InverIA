@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import { aNumero } from "../lib/format";
+import { ChevronRight, Gauge } from "lucide-react";
+import Boton from "./base/Boton";
 
 /**
  * El «Margin statement» de DEGIRO, copiado a mano. Es lo que autoriza a dar cifras.
@@ -129,7 +131,9 @@ export default function ExtractoMargen() {
     ["riesgo_sector_eur", "Largest sector risk", "13951,13"],
   ];
   const cls =
-    "w-full bg-fondo border border-linea rounded px-2 py-1.5 font-mono text-apoyo";
+    "w-full h-10 rounded-[10px] bg-tinta/[0.04] border border-suave px-3 iv-cifra text-[14px] text-tinta "
+    + "placeholder:text-tinta-3/70 placeholder:font-sans focus:outline-none focus:border-marca/60 focus:ring-2 focus:ring-marca/20 "
+    + "transition-[border-color,box-shadow] duration-150 motion-reduce:transition-none";
 
   // Con el extracto ya guardado esto es un dato de mantenimiento: se teclea una vez al mes
   // y el resto del tiempo solo estorba. Entonces se encoge a una línea y la explicación se
@@ -148,59 +152,71 @@ export default function ExtractoMargen() {
   );
 
   return (
-    <section className="iv-panel p-4">
+    <section className="iv-panel p-5 sm:p-6" aria-labelledby="extracto-margen">
       {guardado ? (
-        <div className="flex items-baseline gap-3 flex-wrap">
-          <h3 className="font-heading font-semibold text-cuerpo text-tinta-2">
-            Extracto de margen
-          </h3>
-          <span className="iv-cifra text-cuerpo text-tinta">
-            {Math.round(data.riesgo_eur).toLocaleString("es-ES")} € de riesgo
+        <div className="flex items-center gap-x-4 gap-y-3 flex-wrap">
+          <span aria-hidden="true" className="flex items-center justify-center w-10 h-10 rounded-[11px] bg-tinta/[0.05] border border-suave text-tinta-2 shrink-0">
+            <Gauge className="w-[18px] h-[18px]" strokeWidth={1.75} />
           </span>
-          {data.fecha && (
-            <span className="text-apoyo text-tinta-3">del {data.fecha}</span>
-          )}
-          <button
-            type="button"
-            onClick={() => agrupar.mutate()}
-            disabled={agrupar.isPending}
-            title="Calcula qué posiciones hay que meter en el mismo sector para reproducir el agrupamiento de DEGIRO, usando la cifra de su propio extracto. No toca tu columna Sector."
-            className="text-apoyo text-tinta-3 underline ml-auto disabled:opacity-60"
-          >
-            {agrupar.isPending ? "Calculando…" : "Agrupar como DEGIRO"}
-          </button>
-          <button
-            type="button"
-            onClick={() => setF({})}
-            className="text-apoyo text-tinta-3 underline"
-          >
-            Actualizar
-          </button>
+          <div className="min-w-0">
+            <h3 id="extracto-margen" className="text-[13px] font-medium text-tinta-2">
+              Extracto de margen
+            </h3>
+            <p className="flex items-baseline gap-2 flex-wrap mt-0.5">
+              <span className="text-[18px] font-medium text-tinta">
+                <span className="iv-cifra">{Math.round(data.riesgo_eur).toLocaleString("es-ES")} €</span>{" "}
+                <span className="text-[14px] text-tinta-2 font-normal">de riesgo</span>
+              </span>
+              {data.fecha && (
+                <span className="text-[12.5px] text-tinta-3">del {data.fecha}</span>
+              )}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 ml-auto flex-wrap">
+            <Boton
+              variante="fantasma"
+              tamano="sm"
+              onClick={() => agrupar.mutate()}
+              disabled={agrupar.isPending}
+              title="Calcula qué posiciones hay que meter en el mismo sector para reproducir el agrupamiento de DEGIRO, usando la cifra de su propio extracto. No toca tu columna Sector."
+            >
+              {agrupar.isPending ? "Calculando…" : "Agrupar como DEGIRO"}
+            </Boton>
+            <Boton variante="secundario" tamano="sm" onClick={() => setF({})}>
+              Actualizar
+            </Boton>
+          </div>
         </div>
       ) : (
-        <>
-          <h3 className="font-heading font-semibold text-titulo text-tinta">
-            Extracto de margen de DEGIRO
-          </h3>
-          <p className="text-apoyo text-tinta-3 mt-1 leading-snug">{explicacion}</p>
-        </>
+        <div className="flex items-start gap-3.5">
+          <span aria-hidden="true" className="flex items-center justify-center w-10 h-10 rounded-[11px] bg-marca/10 text-marca shrink-0">
+            <Gauge className="w-[18px] h-[18px]" strokeWidth={1.75} />
+          </span>
+          <div className="min-w-0">
+            <h3 id="extracto-margen" className="text-[16px] font-semibold tracking-[-0.015em] text-tinta">
+              Extracto de margen de DEGIRO
+            </h3>
+            <p className="text-[13px] text-tinta-2 mt-1 leading-relaxed max-w-[90ch]">{explicacion}</p>
+          </div>
+        </div>
       )}
 
       {guardado && (
-        <details className="mt-1">
-          <summary className="text-etiqueta text-tinta-3 cursor-pointer">
+        <details className="group mt-3 pl-[56px]">
+          <summary className="inline-flex items-center gap-1.5 min-h-[32px] text-[12.5px] text-tinta-3 cursor-pointer list-none [&::-webkit-details-marker]:hidden hover:text-tinta transition-colors duration-150 motion-reduce:transition-none">
+            <ChevronRight className="w-3.5 h-3.5 transition-transform duration-200 ease-salida group-open:rotate-90 motion-reduce:transition-none" strokeWidth={2} aria-hidden="true" />
             Para qué sirve
           </summary>
-          <p className="text-apoyo text-tinta-3 mt-1 leading-snug">{explicacion}</p>
+          <p className="text-[13px] text-tinta-2 mt-1 leading-relaxed max-w-[90ch]">{explicacion}</p>
         </details>
       )}
 
       {(!data?.riesgo_eur || f) && (
-        <form onSubmit={enviar} className="mt-3 space-y-2">
-          <div className="grid grid-cols-2 gap-2">
+        <form onSubmit={enviar} className="mt-5 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
             {campos.map(([k, etiqueta, ejemplo]) => (
               <label key={k} className="block">
-                <span className="iv-etiqueta block mb-0.5">{etiqueta}</span>
+                <span className="block text-[12.5px] font-medium text-tinta-2 mb-1.5">{etiqueta}</span>
                 <input
                   value={f?.[k] || ""}
                   onChange={set(k)}
@@ -213,28 +229,20 @@ export default function ExtractoMargen() {
           </div>
           {/* Dónde salen las tres últimas, que es lo que nadie adivina: hay que TOCAR la
               flecha de «Portfolio Risk» para que se abra el desglose. */}
-          <p className="text-etiqueta text-tinta-3 leading-snug">
-            Las tres últimas salen de desplegar <b>Portfolio Risk</b> en el extracto (la
+          <p className="text-[12.5px] text-tinta-3 leading-relaxed max-w-[90ch]">
+            Las tres últimas salen de desplegar <b className="text-tinta-2">Portfolio Risk</b> en el extracto (la
             flechita a su derecha). Son opcionales, pero con ellas InverIA puede decirte
             cuántos euros de tu cartera están en categoría D y cuánto agrupa DEGIRO en su
             mayor sector — que es lo que hace falta para que el modelo cuadre.
           </p>
-          <div className="flex gap-2 pt-1">
-            <button
-              type="submit"
-              disabled={guardar.isPending}
-              className="bg-marca text-marca-tinta rounded px-4 py-1.5 text-apoyo font-semibold disabled:opacity-60"
-            >
+          <div className="flex gap-2">
+            <Boton type="submit" ocupado={guardar.isPending} className="min-w-[120px]">
               {guardar.isPending ? "Guardando…" : "Guardar"}
-            </button>
+            </Boton>
             {data?.riesgo_eur && (
-              <button
-                type="button"
-                onClick={() => setF(null)}
-                className="text-apoyo text-tinta-3 underline"
-              >
+              <Boton variante="fantasma" onClick={() => setF(null)}>
                 Cancelar
-              </button>
+              </Boton>
             )}
           </div>
         </form>

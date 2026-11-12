@@ -88,5 +88,17 @@ Dos columnas: principal (cartera como métrica héroe de 40–60 px con «€» 
 6. `BottomSignalBar` tiene dos formas: `como="panel"` (escritorio, columna derecha) y la barra fija con vidrio (solo `< lg`).
 7. IA, analistas, fuentes, noticias y detalle: cabeceras de bloque Geist 13–15, iconos en cuadrado de luz, botones `Boton` secundarios (adiós al contorno mono índigo); fuentes con recuento héroe y barra partida a favor/en contra; consenso y fuerza relativa en dos columnas.
 
+## Piezas nuevas (fase 2 · Operaciones)
+- **Cascada** (`base/Cascada`): una suma que se lee como suma. Cada sumando es una fila (rótulo + significado · barra · importe) y su barra empieza donde acabó la anterior; línea de cero si hay negativos. Verde/rojo por el signo de cada paso. Ayuda por fila como botón que despliega (no `title`), `extra` para lo que cuelga de una fila (p. ej. «de ello, efecto del euro»). No calcula nada de negocio: solo acumula lo que recibe; `null` se escribe «—» y no mueve la barra.
+- **Pestanas** (`base/Pestanas` + `propsPanel`): vistas alternativas de un mismo hueco. Geist 14/500 con recuento en mono; activa en tinta con filo índigo de 2 px debajo; flechas ←/→ (patrón ARIA tablist).
+- **Aviso / AvisosPanel** (`base/Aviso`): los avisos de datos como filas de UN panel con rótulo y recuento, icono en cuadrado ámbar de 32 px, titular de una frase y detalle en tinta-2; botones al pie. Sustituye a las cajas ámbar sueltas.
+
+## Pantalla «Operaciones» (fase 2)
+1. Titular con miga «Gestionar › Operaciones»; acciones a la derecha con `Boton` (una sola principal, «Registrar venta»; la abierta se marca en índigo suave). En móvil la principal ocupa la primera fila.
+2. **Héroe** a lo ancho: Total como cifra héroe 44–64 px teñida por signo (céntimos y «€» reducidos) y debajo la `Cascada` realizado → latente → dividendos → costes. Columna derecha de 340 px con el método (`Segmentado` FIFO/LIFO), el interruptor «Ver como en DEGIRO» como conmutador y «¿cómo funciona?».
+3. Avisos agrupados en `AvisosPanel` «Para cuadrar con DEGIRO» (solo si hay alguno).
+4. `Pestanas`: Historial de ventas · Lo que tienes abierto · Por acción (se recuerda en `localStorage` `ventas.pestana`). Ventas agrupadas por mes con cabecera fija bajo la barra superior, filas ancladas con `Monograma` y detalle desplegado en dos columnas (línea de tiempo de lotes · la cuenta en divisa y euros). Lo abierto: tabla con monogramas en escritorio, fichas con franja de datos en móvil. Por acción: dos columnas con barra proporcional a la ganancia en euros.
+5. Formularios como panel con `CabeceraForm` (icono en cuadrado índigo), campos de 40 px con foco índigo; `RiesgoVenta` como caja de luz baja (no panel dentro de panel) con la cifra en héroe 32 px. `ExtractoMargen` en una línea con icono, cifra y botones.
+
 ## Pendiente (fases siguientes)
 Cada pantalla hereda el sistema pero conserva maquetación propia: la tabla de niveles de Cartera aún necesita desplazamiento horizontal por debajo de ~1400 px de lienzo, fichas con cajas anidadas y cifras de tabla en mono negrita que conviene aligerar. En la ficha, `LightweightChart` (fuera de esta fase) mantiene sus botones de escala con relleno índigo y su leyenda; y el interior de `TradingLevels`/`ChartistPanel` (zonas, stops, plan) solo se ha aligerado, no recompuesto.

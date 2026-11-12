@@ -37,6 +37,13 @@ import { api } from "../lib/api";
 const EUR = (v) =>
   v == null ? "—" : `${Math.round(v).toLocaleString("es-ES")} €`;
 
+// Rediseño v2: una caja de luz baja dentro del formulario (no un panel dentro de otro
+// panel), con el filo verde solo cuando hay cifra que libera margen.
+const CAJA = "rounded-iv border border-suave bg-tinta/[0.03] px-4 py-3.5";
+const ENLACE = "mt-2.5 min-h-[32px] text-[12.5px] text-tinta-3 underline underline-offset-4 "
+  + "decoration-tinta/20 hover:text-tinta hover:decoration-tinta/50 transition-colors duration-150 "
+  + "motion-reduce:transition-none";
+
 const ORDEN = ["evento", "neto", "sector", "bruto"];
 const ETIQUETA = {
   evento: "Mayor posición",
@@ -49,23 +56,23 @@ function Desglose({ datos }) {
   const antes = datos.componentes_antes || {};
   const despues = datos.componentes_despues || {};
   return (
-    <div className="mt-2 pt-2 border-t border-linea">
-      <table className="w-full text-etiqueta">
+    <div className="mt-3 pt-3 border-t border-suave">
+      <table className="w-full text-[12.5px]">
         <thead>
           <tr className="text-tinta-3">
-            <th className="text-left font-normal py-0.5">Componente</th>
-            <th className="text-right font-normal">Ahora</th>
-            <th className="text-right font-normal">Después</th>
+            <th className="text-left font-medium py-1">Componente</th>
+            <th className="text-right font-medium">Ahora</th>
+            <th className="text-right font-medium">Después</th>
           </tr>
         </thead>
-        <tbody className="font-mono tabular-nums">
+        <tbody className="iv-cifra">
           {ORDEN.map((k) => {
             const manda = datos.dominante_antes === k;
             return (
-              <tr key={k} className={manda ? "text-tinta font-semibold" : "text-tinta-3"}>
-                <td className="py-0.5">
+              <tr key={k} className={`border-t border-suave ${manda ? "text-tinta font-medium" : "text-tinta-3"}`}>
+                <td className="py-1.5 font-sans">
                   {ETIQUETA[k]}
-                  {manda && <span className="ml-1 text-marca">← manda</span>}
+                  {manda && <span className="ml-1.5 text-marca">← manda</span>}
                 </td>
                 <td className="text-right">{EUR(antes[k])}</td>
                 <td className="text-right">{EUR(despues[k])}</td>
@@ -74,16 +81,16 @@ function Desglose({ datos }) {
           })}
         </tbody>
       </table>
-      <p className="text-etiqueta text-tinta-3 mt-2 leading-snug">
+      <p className="text-[12.5px] text-tinta-3 mt-2.5 leading-relaxed">
         Tu riesgo es el <b>mayor</b> de los cuatro, no su suma. Por eso vender algo que no
         marca el máximo no mueve el margen, por mucho dinero que sea.
       </p>
       {datos.calibracion?.error != null && (
-        <p className="text-etiqueta text-tinta-3 mt-1.5 leading-snug">
+        <p className="text-[12.5px] text-tinta-3 mt-1.5 leading-relaxed">
           Calibrado con tu extracto de DEGIRO
           {datos.calibracion.fecha ? ` del ${datos.calibracion.fecha}` : ""}: el modelo
           reproduce tu riesgo real con un{" "}
-          <b className="font-mono">{(datos.calibracion.error * 100).toFixed(1)}%</b> de
+          <b className="iv-cifra font-medium text-tinta-2">{(datos.calibracion.error * 100).toFixed(1)}%</b> de
           desviación.
         </p>
       )}
@@ -105,8 +112,9 @@ export default function RiesgoVenta({ symbol, acciones }) {
   if (!sym) return null;
   if (isPending) {
     return (
-      <div className="iv-panel p-3">
-        <p className="text-apoyo text-tinta-3">Calculando el impacto en tu margen…</p>
+      <div className={CAJA} role="status">
+        <p className="text-[13px] text-tinta-3">Calculando el impacto en tu margen…</p>
+        <span className="block mt-2.5 h-6 w-32 rounded iv-esqueleto" aria-hidden="true" />
       </div>
     );
   }
@@ -115,9 +123,9 @@ export default function RiesgoVenta({ symbol, acciones }) {
   // Sin cifra: se dice por qué. Nunca un número a medias.
   if (data.estado !== "OK") {
     return (
-      <div className="iv-panel p-3 border-l-[3px] border-l-linea-fuerte">
-        <p className="iv-etiqueta mb-1">Impacto en tu margen libre</p>
-        <p className="text-apoyo text-tinta-2 leading-snug">{data.motivo}</p>
+      <div className={CAJA}>
+        <p className="text-[12.5px] font-medium text-tinta-3 mb-1.5">Impacto en tu margen libre</p>
+        <p className="text-[13px] text-tinta-2 leading-relaxed">{data.motivo}</p>
       </div>
     );
   }
@@ -127,14 +135,14 @@ export default function RiesgoVenta({ symbol, acciones }) {
   // Por debajo del ruido no se pinta un número: se dice que no se distingue de cero.
   if (data.distinguible === false) {
     return (
-      <div className="iv-panel p-3 border-l-[3px] border-l-linea-fuerte">
-        <p className="iv-etiqueta mb-1">Si vendes esto, tu margen libre</p>
-        <p className="text-cuerpo text-tinta">Apenas se moverá.</p>
-        <p className="text-apoyo text-tinta-2 mt-2 leading-snug">{data.motivo}</p>
+      <div className={CAJA}>
+        <p className="text-[12.5px] font-medium text-tinta-3 mb-1.5">Si vendes esto, tu margen libre</p>
+        <p className="text-[18px] font-semibold tracking-[-0.015em] text-tinta">Apenas se moverá.</p>
+        <p className="text-[13px] text-tinta-2 mt-2 leading-relaxed">{data.motivo}</p>
         <button
           type="button"
           onClick={() => setAbierto((v) => !v)}
-          className="text-etiqueta text-tinta-3 underline mt-1.5"
+          className={ENLACE}
         >
           {abierto ? "Ocultar el cálculo" : "Ver el cálculo"}
         </button>
@@ -144,23 +152,23 @@ export default function RiesgoVenta({ symbol, acciones }) {
   }
 
   return (
-    <div className="iv-panel p-3 border-l-[3px] border-l-marca">
-      <p className="iv-etiqueta mb-1">Si vendes esto, tu margen libre</p>
-      <p className="iv-cifra text-cifra text-sube leading-none">
+    <div className={`${CAJA} border-sube/25 bg-sube/[0.04]`}>
+      <p className="text-[12.5px] font-medium text-tinta-3 mb-1.5">Si vendes esto, tu margen libre</p>
+      <p className="iv-cifra-hero text-[32px] text-sube leading-none">
         +{EUR(data.margen_eur)}
         {data.incertidumbre_eur ? (
-          <span className="text-cuerpo text-tinta-3"> ± {EUR(data.incertidumbre_eur)}</span>
+          <span className="iv-cifra text-[15px] font-medium text-tinta-3 tracking-normal"> ± {EUR(data.incertidumbre_eur)}</span>
         ) : null}
       </p>
-      <p className="text-apoyo text-tinta-3 mt-1">
+      <p className="text-[13px] text-tinta-3 mt-2">
         sobre <span className="iv-cifra">{EUR(data.importe_eur)}</span> vendidos ·{" "}
         <span className="iv-cifra">{pct.toFixed(0)}%</span> del importe
       </p>
-      <p className="text-apoyo text-tinta-2 mt-2 leading-snug">{data.motivo}</p>
+      <p className="text-[13px] text-tinta-2 mt-2 leading-relaxed">{data.motivo}</p>
 
       {/* El aviso no es letra pequeña de descargo: DEGIRO enseña su propio número en la
           pantalla de la orden y a veces discrepa muchísimo. Que no sorprenda. */}
-      <p className="text-etiqueta text-tinta-3 mt-2 leading-snug">
+      <p className="text-[12.5px] text-tinta-3 mt-2.5 leading-relaxed">
         Estimación de InverIA con el modelo de riesgo de DEGIRO, contrastada contra tu
         extracto. Medida contra dos ventas reales, falló por 3 € y por 41 € — de ahí la
         banda. El «Margin impact» del propio bróker puede decir algo muy distinto: el
@@ -170,7 +178,7 @@ export default function RiesgoVenta({ symbol, acciones }) {
       <button
         type="button"
         onClick={() => setAbierto((v) => !v)}
-        className="text-etiqueta text-tinta-3 underline mt-1.5"
+        className={ENLACE}
       >
         {abierto ? "Ocultar el cálculo" : "Ver el cálculo"}
       </button>
