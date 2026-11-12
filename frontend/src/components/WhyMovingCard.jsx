@@ -3,6 +3,7 @@ import { Lightning, Sparkle, Newspaper } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import { fmtPct } from "../lib/format";
+import { botonVariants } from "./base/Boton";
 
 const VERDICT = {
   SUBE: { text: "text-sube", bg: "bg-sube/10", label: "Sube hoy" },
@@ -62,8 +63,10 @@ export default function WhyMovingCard({ symbol, model, runSignal }) {
   return (
     <section data-testid="why-moving" className="iv-panel p-5" aria-busy={loading}>
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h3 className="font-heading text-cuerpo font-semibold text-tinta flex items-center gap-2">
-          <Lightning size={16} weight="bold" className="text-marca" aria-hidden="true" />
+        <h3 className="text-[15px] font-semibold tracking-[-0.015em] text-tinta flex items-center gap-2.5">
+          <span className="w-8 h-8 rounded-[9px] bg-marca/10 text-marca inline-flex items-center justify-center shrink-0">
+            <Lightning size={16} weight="bold" aria-hidden="true" />
+          </span>
           ¿Por qué se mueve hoy?
         </h3>
         {/* Botón secundario de contorno, igual que el del Chartista: en esta sección el
@@ -73,18 +76,16 @@ export default function WhyMovingCard({ symbol, model, runSignal }) {
           data-testid="why-moving-btn"
           onClick={run}
           disabled={loading || !symbol}
-          className="inline-flex items-center gap-1.5 text-etiqueta font-mono font-semibold px-3 py-1.5 rounded-iv
-                     border border-marca/50 text-marca hover:bg-marca/10 active:scale-[0.97] disabled:opacity-50
-                     transition-[background-color,transform] duration-150 motion-reduce:transition-none"
+          className={botonVariants({ variante: "secundario", tamano: "sm" })}
         >
-          <Sparkle size={14} weight="bold" aria-hidden="true" />
+          <Sparkle size={14} weight="bold" className="text-marca" aria-hidden="true" />
           {loading ? "Analizando…" : data ? "Actualizar" : "Explicar movimiento"}
         </button>
       </div>
 
       {!data && !loading && (
-        <p className="text-apoyo text-tinta-2 mt-2 max-w-[68ch]">
-          La IA conecta el movimiento de hoy de <span className="font-mono font-semibold text-tinta">{symbol}</span> con las
+        <p className="text-[13.5px] text-tinta-3 mt-3 max-w-[68ch] leading-relaxed">
+          La IA conecta el movimiento de hoy de <span className="font-semibold text-tinta">{symbol}</span> con las
           noticias recientes y te dice, en segundos, qué hay detrás de la subida o caída.
         </p>
       )}
@@ -108,7 +109,7 @@ export default function WhyMovingCard({ symbol, model, runSignal }) {
           </div>
 
           {exp.titular && (
-            <p className="font-heading font-semibold text-base text-tinta leading-snug">{exp.titular}</p>
+            <p className="font-semibold text-[17px] tracking-[-0.015em] text-tinta leading-snug">{exp.titular}</p>
           )}
 
           {exp.resumen && (

@@ -43,31 +43,28 @@ export function FuerzaRelativa({ rs }) {
   // Panel como los demás de la sección, sin fondo teñido: el veredicto ya lleva el
   // color, y una franja rosa entera gritaba más que el propio consenso de analistas.
   return (
-    <div data-testid="fuerza-relativa" className="iv-panel p-5">
-      <div className="flex items-start justify-between flex-wrap gap-x-6 gap-y-3">
-        <div className="min-w-0">
-          <h3 className="iv-etiqueta">Fuerza relativa vs S&amp;P 500</h3>
-          <p className={`font-mono text-cuerpo font-bold mt-1 flex items-center gap-1.5 ${tono.c}`}>
-            {tono.i && <span aria-hidden="true" className="text-apoyo">{tono.i}</span>}
-            {rs.veredicto}
-          </p>
-        </div>
-        <dl className="flex items-start gap-5">
-          {orden.filter((k) => rs.ventanas[k]).map((k) => {
-            const v = rs.ventanas[k];
-            const col = v.diferencia_pp >= 0 ? "text-sube" : "text-baja";
-            return (
-              <div key={k} className="text-right">
-                <dt className="iv-etiqueta">{k}</dt>
-                <dd className={`iv-cifra text-apoyo font-semibold mt-0.5 whitespace-nowrap ${col}`}>
-                  {v.diferencia_pp >= 0 ? "+" : ""}{v.diferencia_pp} pp
-                </dd>
-              </div>
-            );
-          })}
-        </dl>
-      </div>
-      <p className="text-etiqueta text-tinta-3 mt-3 leading-snug max-w-[80ch]">
+    <div data-testid="fuerza-relativa" className="iv-panel p-5 sm:p-6">
+      <h3 className="text-[13px] font-medium text-tinta-2">Fuerza relativa vs S&amp;P 500</h3>
+      <p className={`text-[26px] font-semibold tracking-[-0.03em] leading-none mt-3 flex items-center gap-2 ${tono.c}`}>
+        {tono.i && <span aria-hidden="true" className="text-[16px]">{tono.i}</span>}
+        {String(rs.veredicto || "").charAt(0) + String(rs.veredicto || "").slice(1).toLowerCase()}
+      </p>
+      {/* Las tres ventanas en columnas tabulares, de la más corta a la más larga. */}
+      <dl className="mt-5 grid grid-cols-3 border-t border-suave">
+        {orden.filter((k) => rs.ventanas[k]).map((k) => {
+          const v = rs.ventanas[k];
+          const col = v.diferencia_pp >= 0 ? "text-sube" : "text-baja";
+          return (
+            <div key={k} className="pt-3 pr-2 min-w-0">
+              <dt className="iv-etiqueta">{k}</dt>
+              <dd className={`iv-cifra text-[14.5px] mt-1 whitespace-nowrap ${col}`}>
+                {v.diferencia_pp >= 0 ? "+" : ""}{v.diferencia_pp} pp
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+      <p className="text-[12px] text-tinta-3 mt-4 leading-snug max-w-[80ch]">
         Diferencia de rentabilidad frente al índice. Positivo = la acción va por delante del
         mercado. Es una medida de calidad de la candidata, no una señal de entrada.
       </p>
@@ -81,13 +78,16 @@ export default function IndicatorsPanel({ indicators, analysis }) {
 
   return (
     <section data-testid="indicators-panel" className="iv-panel p-5">
-      <h3 className="font-heading text-cuerpo font-semibold text-tinta flex items-center gap-2 mb-3">
+      <h3 className="text-[13px] font-medium text-tinta-2 flex items-center gap-2 mb-4">
         <ChartBar size={16} weight="bold" className="text-tinta-3" aria-hidden="true" />
-        Indicadores Técnicos
+        Indicadores técnicos
       </h3>
 
       <Tabs defaultValue="momentum">
-        <TabsList className="bg-fondo border border-linea grid grid-cols-4 mb-3 w-full">
+        <TabsList className="bg-tinta/[0.05] border border-suave rounded-[10px] p-[3px] h-auto grid grid-cols-4 mb-4 w-full
+                             [&>button]:h-8 [&>button]:rounded-[7px] [&>button]:text-[13px]
+                             [&>button[data-state=active]]:bg-superficie [&>button[data-state=active]]:text-tinta
+                             [&>button[data-state=active]]:shadow-[0_1px_2px_rgb(0_0_0/0.25),0_0_0_1px_var(--borde-medio)]">
           <TabsTrigger value="momentum" data-testid="tab-momentum">Momentum</TabsTrigger>
           <TabsTrigger value="trend" data-testid="tab-trend">Tendencia</TabsTrigger>
           <TabsTrigger value="levels" data-testid="tab-levels">Niveles</TabsTrigger>
@@ -127,7 +127,7 @@ export default function IndicatorsPanel({ indicators, analysis }) {
             <Row key={`s-${i}`} label={`S${i + 1}`} value={<span className="font-mono text-sube">${fmtPrice(s)}</span>} />
           ))}
           {(support_resistance?.supports || []).length === 0 && (
-            <p className="text-apoyo text-tinta-3">Sinsoportes detectados.</p>
+            <p className="text-apoyo text-tinta-3">Sin soportes detectados.</p>
           )}
           <div className="divider-soft my-2" />
           <h4 className="iv-etiqueta flex items-center gap-1.5 pt-1">Resistencias <InfoDot term="Resistencia" /></h4>
@@ -135,7 +135,7 @@ export default function IndicatorsPanel({ indicators, analysis }) {
             <Row key={`r-${i}`} label={`R${i + 1}`} value={<span className="font-mono text-baja">${fmtPrice(s)}</span>} />
           ))}
           {(support_resistance?.resistances || []).length === 0 && (
-            <p className="text-apoyo text-tinta-3">Sinresistencias detectadas.</p>
+            <p className="text-apoyo text-tinta-3">Sin resistencias detectadas.</p>
           )}
           <div className="divider-soft my-2" />
           <h4 className="iv-etiqueta flex items-center gap-1.5 pt-1">Fibonacci (52sem) <InfoDot term="Fibonacci" /></h4>

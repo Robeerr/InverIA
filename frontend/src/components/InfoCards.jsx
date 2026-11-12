@@ -38,7 +38,7 @@ export function PricePredictionCard({ analysis, quote }) {
     <section data-testid="price-prediction" className="iv-panel p-5">
       <div className="flex items-center gap-2 mb-3">
         <Crosshair size={18} weight="bold" className="text-marca" />
-        <h3 className="font-heading text-cuerpo font-semibold text-tinta">Predicciones IA</h3>
+        <h3 className="text-[13px] font-medium text-tinta-2">Predicciones IA</h3>
       </div>
 
       {hasPP && (
@@ -82,7 +82,7 @@ export function NewsFeed({ news }) {
   if (!news || news.length === 0) {
     return (
       <section data-testid="news-feed" className="iv-panel p-5">
-        <h3 className="font-heading text-cuerpo font-semibold text-tinta flex items-center gap-2">
+        <h3 className="text-[13px] font-medium text-tinta-2 flex items-center gap-2">
           <Newspaper size={16} weight="bold" className="text-tinta-3" aria-hidden="true" />
           Noticias
         </h3>
@@ -95,11 +95,12 @@ export function NewsFeed({ news }) {
   // iluminaban en naranja convertían la lectura de titulares en una rejilla de botones.
   return (
     <section data-testid="news-feed" className="iv-panel p-5">
-      <h3 className="font-heading text-cuerpo font-semibold text-tinta flex items-center gap-2 mb-2">
+      <h3 className="text-[13px] font-medium text-tinta-2 flex items-center gap-2 mb-2">
         <Newspaper size={16} weight="bold" className="text-tinta-3" aria-hidden="true" />
-        Noticias Recientes
+        Noticias recientes
+        <span className="iv-cifra text-[12px] text-tinta-3 font-normal">· {news.length}</span>
       </h3>
-      <ul className="divide-y divide-linea max-h-[360px] overflow-y-auto -mx-2 px-2" tabIndex={0} aria-label="Noticias recientes">
+      <ul className="divide-y divide-suave max-h-[420px] overflow-y-auto -mx-2 px-2" tabIndex={0} aria-label="Noticias recientes">
         {news.map((n, i) => (
           <li key={i}>
             <a
@@ -107,15 +108,15 @@ export function NewsFeed({ news }) {
               href={n.url}
               target="_blank"
               rel="noreferrer"
-              className="group flex items-start justify-between gap-3 py-2.5 -mx-2 px-2 rounded-iv-sm
-                         hover:bg-superficie-alt transition-colors duration-150 motion-reduce:transition-none"
+              className="group flex items-start justify-between gap-3 py-3 -mx-2 px-2 rounded-iv-sm
+                         hover:bg-tinta/[0.04] transition-colors duration-150 motion-reduce:transition-none"
             >
               <span className="min-w-0">
-                <span className="block text-apoyo text-tinta leading-snug group-hover:text-marca line-clamp-2
+                <span className="block text-[14px] font-medium text-tinta leading-snug group-hover:text-marca line-clamp-2
                                  transition-colors duration-150 motion-reduce:transition-none">
                   {n.title}
                 </span>
-                <span className="block iv-etiqueta mt-1">
+                <span className="block text-[12px] text-tinta-3 mt-1">
                   {n.publisher || "—"}
                 </span>
               </span>
@@ -133,13 +134,13 @@ export function FundamentalsCard({ quote, analysis }) {
   if (!quote) return null;
   return (
     <section data-testid="fundamentals" className="iv-panel p-5">
-      <h3 className="font-heading text-cuerpo font-semibold text-tinta mb-2">
+      <h3 className="text-[13px] font-medium text-tinta-2 mb-2">
         Fundamentales
       </h3>
       {/* Diez datos como tabla de dos columnas con filetes: rótulo a la izquierda y cifra
           tabular a la derecha. Antes eran diez cajas con borde, y la cifra arrancaba en un
           sitio distinto en cada una. */}
-      <dl className="grid sm:grid-cols-2 gap-x-8">
+      <dl className="grid sm:grid-cols-2 gap-x-10">
         {[
           ["P/E", quote.pe_ratio ?? "—"],
           ["P/E Fwd", quote.forward_pe ?? "—"],
@@ -152,9 +153,9 @@ export function FundamentalsCard({ quote, analysis }) {
           ["52W Bajo", `$${fmtPrice(quote.low_52w)}`],
           ["Vol. Prom.", fmtNum(quote.avg_volume)],
         ].map(([label, val]) => (
-          <div key={label} className="flex flex-wrap items-baseline justify-between gap-x-3 py-2 border-b border-linea">
-            <dt className="iv-etiqueta">{label}</dt>
-            <dd className="iv-cifra text-apoyo text-tinta ml-auto text-right break-all">{val}</dd>
+          <div key={label} className="flex flex-wrap items-baseline justify-between gap-x-3 py-2.5 border-b border-suave">
+            <dt className="text-[13px] text-tinta-3">{label}</dt>
+            <dd className="iv-cifra text-[13.5px] text-tinta ml-auto text-right break-all">{val}</dd>
           </div>
         ))}
       </dl>
@@ -188,7 +189,7 @@ export function MarketSignalsCard({ insider, earningsHistory }) {
   const isBuy = insider && insider.net_shares > 0;
   return (
     <section data-testid="market-signals" className="iv-panel p-5">
-      <h3 className="font-heading text-cuerpo font-semibold text-tinta mb-3">
+      <h3 className="text-[13px] font-medium text-tinta-2 mb-3">
         Señales de Mercado
       </h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -259,7 +260,7 @@ export function RisksCatalystsCard({ analysis }) {
   if (!analysis) return null;
   return (
     <section data-testid="risks-catalysts" className="iv-panel p-5">
-      <h3 className="font-heading text-cuerpo font-semibold text-tinta mb-3">
+      <h3 className="text-[13px] font-medium text-tinta-2 mb-3">
         Riesgos y Catalizadores
       </h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

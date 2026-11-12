@@ -79,5 +79,14 @@ Contraste: todos los roles de texto ≥ 4,5:1 sobre las tres superficies (lo ver
 ## Pantalla «Hoy» (fase 2)
 Dos columnas: principal (cartera como métrica héroe de 40–60 px con «€» reducido, luego la lista de decisiones) y contexto de 336–364 px (mercado: régimen + futuros + miedo/codicia en un panel con filetes; calendario + cerebro; sectores como barras divergentes de ±3 %). En móvil, el contexto baja entero detrás de las decisiones.
 
+## Pantalla «Ficha de acción» (fase 2)
+1. **Watchlist en cinta** (`WatchlistStrip`): una línea con desplazamiento lateral (flechas en escritorio, máscara de fundido en los bordes), la acción abierta levantada y centrada. Sustituye a la columna lateral de 60 tarjetas.
+2. **Cabecera héroe** (`QuoteHeader`): `Monograma lg` (48 px, nuevo tamaño) + ticker + nombre; corazón y alerta como botones de 36/44 px; precio a 44–64 px con «$» y céntimos reducidos y variación en píldora tintada; a la derecha, `base/Rango` (nuevo: pista con tramo recorrido y punto) para el día y las 52 semanas; franja inferior con apertura, anterior, volumen y capitalización. La alerta se abre como franja dentro de la pieza (con `Segmentado`).
+3. **Dos columnas** (`1fr` + 352–368 px): gráfico justo bajo el precio y, a la derecha, «tu dinero»: lectura rápida (régimen, señal IA, 10 semanas, entrada/stop/TP1), tu posición (latente como cifra héroe de 32 px, desglose en filas, niveles en celdas de luz) y el simulador de margen (`Segmentado` + campo con la unidad dentro). En móvil esa columna cae entre el veredicto y el plan de entrada.
+4. **Secciones** con titular Geist 18/600 y nota en tinta-3; 40–48 px entre secciones. La tesis es la pieza `iv-destacada` (titular 22 px, a favor/en contra con marcas cuadradas, pie con «Ampliar con IA»). El estado técnico es una ficha de celdas con filetes de 1 px.
+5. El veto «No comprar» es `iv-halo-baja` con sello de 44 px y titular de 24 px; el aviso «Avísame» es botón principal.
+6. `BottomSignalBar` tiene dos formas: `como="panel"` (escritorio, columna derecha) y la barra fija con vidrio (solo `< lg`).
+7. IA, analistas, fuentes, noticias y detalle: cabeceras de bloque Geist 13–15, iconos en cuadrado de luz, botones `Boton` secundarios (adiós al contorno mono índigo); fuentes con recuento héroe y barra partida a favor/en contra; consenso y fuerza relativa en dos columnas.
+
 ## Pendiente (fases siguientes)
-Cada pantalla hereda el sistema pero conserva maquetación propia: la tabla de niveles de Cartera aún necesita desplazamiento horizontal por debajo de ~1400 px de lienzo, fichas con cajas anidadas, cifras de tabla en mono negrita que conviene aligerar, y la barra de señal inferior de la ficha.
+Cada pantalla hereda el sistema pero conserva maquetación propia: la tabla de niveles de Cartera aún necesita desplazamiento horizontal por debajo de ~1400 px de lienzo, fichas con cajas anidadas y cifras de tabla en mono negrita que conviene aligerar. En la ficha, `LightweightChart` (fuera de esta fase) mantiene sus botones de escala con relleno índigo y su leyenda; y el interior de `TradingLevels`/`ChartistPanel` (zonas, stops, plan) solo se ha aligerado, no recompuesto.

@@ -61,18 +61,18 @@ export default function Confluencia({ confluencia, compacto = false, className =
   return (
     <div
       data-testid={`confluencia-${confluencia.estado.toLowerCase()}`}
-      className={`rounded-iv border px-3 py-2 ${estilo.fondo} ${estilo.borde} ${className}`}
+      className={`rounded-iv border px-4 py-3 ${estilo.fondo} ${estilo.borde} ${className}`}
     >
       <div className="flex items-baseline gap-2 flex-wrap">
-        <span className={`text-etiqueta font-mono font-bold uppercase tracking-wider ${estilo.texto}`}>
+        <span className={`text-[13px] font-semibold ${estilo.texto}`}>
           {estilo.etiqueta}
         </span>
-        <span className="text-etiqueta font-mono uppercase tracking-wider text-tinta-3">
+        <span className="text-[12px] text-tinta-3">
           tendencia ↔ fuentes
         </span>
       </div>
       {confluencia.texto && (
-        <p className="text-apoyo text-tinta leading-snug mt-1">{confluencia.texto}</p>
+        <p className="text-[13.5px] text-tinta leading-snug mt-1">{confluencia.texto}</p>
       )}
     </div>
   );

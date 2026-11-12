@@ -1,23 +1,9 @@
 import React from "react";
-import { Warning } from "@phosphor-icons/react";
+import { TriangleAlert as AlertTriangle, Plus, Minus, Sparkles } from "lucide-react";
 import { fmtHace } from "../lib/format";
 import { titularVivo } from "../lib/tesisVivo";
 import HistorialTesis from "./HistorialTesis";
-
-/* ── Superficie ──────────────────────────────────────────────────────────────
-   Estos bloques usan `iv-panel` y no `iv-panel`, y conviene saber por qué sigue
-   importando aunque las dos ya se pinten igual.
-
-   Cuando se escribió esto, `iv-panel` se remapeaba con `!important` a un pizarra
-   azulado ajeno a la paleta, así que mezclarlas dentro de un componente dejaba
-   texto de un mundo sobre la superficie de otro. Hoy ese bloque legado está
-   repintado con los tokens y las dos resuelven al mismo verde, así que el riesgo
-   ya no es visual: es que `iv-panel` no ADMITE opacidad (`bg-superficie/60`) ni
-   se mueve si mañana cambia la escala de superficies. `iv-panel` sí.
-
-   Las reglas `!important` siguen en pie porque están indexadas por valor hex y
-   esos hex viven todavía en BrainView. Se borrarán con su reescritura.
-   ────────────────────────────────────────────────────────────────────────── */
+import { Boton } from "./base/Boton";
 
 /**
  * La tesis determinista, en frío.
@@ -34,7 +20,30 @@ import HistorialTesis from "./HistorialTesis";
  * El botón de IA vive aquí dentro, como acción secundaria, porque la IA AMPLÍA esta
  * tesis. Antes era una banda a ancho completo en mitad de la página, y con ella
  * apagada media pantalla no existía.
+ *
+ * Es la pieza destacada de la ficha (`iv-destacada`): lo que hay que leer sí o sí.
  */
+function Lista({ titulo, items, tono }) {
+  if (!items?.length) return null;
+  const Icono = tono === "sube" ? Plus : Minus;
+  const color = tono === "sube" ? "text-sube bg-sube/[0.12]" : "text-baja bg-baja/[0.12]";
+  return (
+    <div className="min-w-0">
+      <p className="iv-etiqueta mb-2.5">{titulo} <span className="iv-cifra text-tinta-3">· {items.length}</span></p>
+      <ul className="space-y-2" aria-label={titulo}>
+        {items.map((s, i) => (
+          <li key={i} className="text-[13.5px] text-tinta leading-snug flex gap-2.5">
+            <span className={`w-[18px] h-[18px] rounded-[6px] inline-flex items-center justify-center shrink-0 mt-px ${color}`} aria-hidden="true">
+              <Icono className="w-3 h-3" strokeWidth={2.5} />
+            </span>
+            <span>{s.texto}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function TesisPanel({
   tesis,
   symbol,
@@ -50,94 +59,79 @@ export default function TesisPanel({
   // El precio del titular sale del MISMO quote que la cabecera, no del que venia dentro
   // de la frase: el dashboard se sirve cacheado y ese precio puede tener media hora.
   const titular = titularVivo(tesis, quote);
+  const hayListas = tesis.a_favor?.length > 0 || tesis.en_contra?.length > 0;
 
   return (
-    <section className="iv-panel p-5 sm:p-6" data-testid="tesis">
-      <div className="flex items-baseline gap-3 flex-wrap mb-2.5">
-        <h3 className="iv-etiqueta">
-          Qué está pasando
-        </h3>
-        {generadoEn && (
-          <span
-            className="iv-cifra text-etiqueta text-tinta-3 ml-auto"
-            title="Cuándo se calculó el análisis. La cotización de arriba va en vivo; esto es una foto de ese momento."
-            data-testid="tesis-antiguedad"
-          >
-            calculado {fmtHace(generadoEn)}
-          </span>
-        )}
-      </div>
-
-      <p className="text-[17px] leading-snug font-medium text-tinta text-pretty max-w-[62ch]" data-testid="tesis-titular">
-        {titular}
-      </p>
-
-      {(tesis.parrafos || []).map((p, i) => (
-        <p key={i} className="text-apoyo text-tinta-2 leading-relaxed mt-2 max-w-[70ch]">
-          {p}
-        </p>
-      ))}
-
-      {/* Comprobaciones binarias, cada una con el dato que la sostiene dentro del texto. */}
-      {(tesis.a_favor?.length > 0 || tesis.en_contra?.length > 0) && (
-        <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 mt-4">
-          <ul className="space-y-1" aria-label="A favor">
-            {(tesis.a_favor || []).map((s, i) => (
-              <li key={i} className="text-apoyo text-tinta leading-snug flex gap-2">
-                <span className="iv-cifra text-sube font-bold shrink-0 w-3 text-center" aria-hidden="true">+</span>
-                <span>{s.texto}</span>
-              </li>
-            ))}
-          </ul>
-          <ul className="space-y-1" aria-label="En contra">
-            {(tesis.en_contra || []).map((s, i) => (
-              <li key={i} className="text-apoyo text-tinta leading-snug flex gap-2">
-                <span className="iv-cifra text-baja font-bold shrink-0 w-3 text-center" aria-hidden="true">−</span>
-                <span>{s.texto}</span>
-              </li>
-            ))}
-          </ul>
+    <section className="iv-destacada shadow-panel" data-testid="tesis">
+      <div className="p-5 sm:p-7">
+        <div className="flex items-baseline gap-3 flex-wrap mb-3">
+          <h3 className="text-[13px] font-medium text-marca">Qué está pasando</h3>
+          {generadoEn && (
+            <span
+              className="text-[12px] text-tinta-3 ml-auto"
+              title="Cuándo se calculó el análisis. La cotización de arriba va en vivo; esto es una foto de ese momento."
+              data-testid="tesis-antiguedad"
+            >
+              calculado {fmtHace(generadoEn)}
+            </span>
+          )}
         </div>
-      )}
 
-      {/* Lo que recorta la fiabilidad. Uno solo, el más grave: la precedencia la
-          resuelve el backend. Aquí vive también el aviso de datos degradados, que
-          antes era una barra aparte diciendo lo mismo con otras palabras. */}
-      {limita && (
-        <p
-          className="text-apoyo text-aviso leading-snug mt-4 rounded-iv bg-aviso/[0.07] px-3 py-2 flex gap-2"
-          data-testid="tesis-limita-confianza"
-        >
-          <Warning size={14} weight="fill" className="shrink-0 mt-0.5" aria-hidden="true" />
-          <span>{limita.texto}</span>
+        <p className="text-[19px] sm:text-[22px] leading-[1.3] font-semibold tracking-[-0.02em] text-tinta text-pretty max-w-[34ch] sm:max-w-[46ch]" data-testid="tesis-titular">
+          {titular}
         </p>
-      )}
 
-      {/* El historial va DEBAJO de la tesis de hoy y cerrado: lo que se viene a ver al
-          abrir una acción es qué pasa ahora. Y va aquí dentro, no en un panel aparte,
-          porque es la misma tesis en otro momento — separarlo daría a entender que son
-          dos cosas distintas. */}
-      <HistorialTesis symbol={symbol || tesis.symbol} />
+        {(tesis.parrafos || []).map((p, i) => (
+          <p key={i} className="text-[14.5px] text-tinta-2 leading-relaxed mt-3 max-w-[68ch]">
+            {p}
+          </p>
+        ))}
+
+        {/* Comprobaciones binarias, cada una con el dato que la sostiene dentro del texto. */}
+        {hayListas && (
+          <div className="grid sm:grid-cols-2 gap-x-8 gap-y-5 mt-6 pt-5 border-t border-suave">
+            <Lista titulo="A favor" items={tesis.a_favor} tono="sube" />
+            <Lista titulo="En contra" items={tesis.en_contra} tono="baja" />
+          </div>
+        )}
+
+        {/* Lo que recorta la fiabilidad. Uno solo, el más grave: la precedencia la
+            resuelve el backend. Aquí vive también el aviso de datos degradados, que
+            antes era una barra aparte diciendo lo mismo con otras palabras. */}
+        {limita && (
+          <p
+            className="text-[13px] text-aviso leading-snug mt-5 rounded-iv bg-aviso/[0.08] border border-aviso/15 px-3.5 py-2.5 flex gap-2.5"
+            data-testid="tesis-limita-confianza"
+          >
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-px" strokeWidth={1.75} aria-hidden="true" />
+            <span>{limita.texto}</span>
+          </p>
+        )}
+
+        {/* El historial va DEBAJO de la tesis de hoy y cerrado: lo que se viene a ver al
+            abrir una acción es qué pasa ahora. Y va aquí dentro, no en un panel aparte,
+            porque es la misma tesis en otro momento. */}
+        <HistorialTesis symbol={symbol || tesis.symbol} />
+      </div>
 
       {/* Acción secundaria: la IA amplía lo de arriba, no lo sustituye. */}
       {onAnalizar && (
-        <div className="mt-4 pt-4 border-t border-linea flex items-center gap-x-3 gap-y-2 flex-wrap">
-          <button
+        <div className="px-5 sm:px-7 py-4 border-t border-suave bg-tinta/[0.02] flex items-center gap-x-4 gap-y-3 flex-wrap rounded-b-iv-lg">
+          <Boton
+            variante="secundario"
             onClick={onAnalizar}
-            disabled={loadingAnalysis}
+            ocupado={loadingAnalysis}
             data-testid="btn-analisis-ia"
-            aria-busy={loadingAnalysis}
-            className="shrink-0 text-etiqueta font-mono font-semibold px-3 py-1.5 rounded-iv border border-marca/50 text-marca
-                       hover:bg-marca/10 active:scale-[0.97] disabled:opacity-50
-                       transition-[background-color,transform] duration-150 motion-reduce:transition-none"
+            className="shrink-0"
           >
+            <Sparkles className="w-4 h-4 text-marca" strokeWidth={1.75} aria-hidden="true" />
             {loadingAnalysis
               ? "Analizando…"
               : tieneAnalisis
                 ? "Rehacer análisis IA"
                 : "Ampliar con IA"}
-          </button>
-          <span className="text-etiqueta text-tinta-3 min-w-0">
+          </Boton>
+          <span className="text-[13px] text-tinta-3 min-w-0 flex-1 basis-56">
             Añade juicio, causa del movimiento, chartista y riesgos. Lo de arriba ya está calculado.
           </span>
         </div>

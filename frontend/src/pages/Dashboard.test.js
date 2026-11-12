@@ -15,7 +15,7 @@ const ESTADO = fs.readFileSync(path.join(__dirname, "..", "components", "EstadoT
 const TESIS = fs.readFileSync(path.join(__dirname, "..", "components", "TesisPanel.jsx"), "utf8");
 
 /** El cuerpo del `return (...)` final, que es el árbol que se pinta. */
-const RENDER = DASHBOARD.slice(DASHBOARD.lastIndexOf("  return (\n    <div className=\"max-w-[1480px]"));
+const RENDER = DASHBOARD.slice(DASHBOARD.lastIndexOf("  return (\n    <div className=\"max-w-[1440px]"));
 
 /**
  * El código sin comentarios.
@@ -101,10 +101,16 @@ describe("fuente única de precio", () => {
 
 describe("fuente única de zonas de compra", () => {
   test("solo `buy_levels` alimenta el bloque de niveles", () => {
-    const bloque = RENDER.slice(RENDER.indexOf("<TradingLevels"), RENDER.indexOf("</Suspense>"));
-    expect(bloque).toContain("buyLevels={buyLevels}");
-    expect(bloque).not.toContain("support_resistance");
-    expect(bloque).not.toContain("lines.levels");
+    // El gráfico ya no va pegado debajo de los niveles (sube junto al precio), así que
+    // se comprueban los dos bloques por separado: los niveles y el gráfico.
+    const iNiveles = RENDER.indexOf("<TradingLevels");
+    const niveles = RENDER.slice(iNiveles, RENDER.indexOf("/>", iNiveles));
+    const grafico = RENDER.slice(RENDER.indexOf("<LightweightChart"), RENDER.indexOf("</Suspense>"));
+    for (const bloque of [niveles, grafico]) {
+      expect(bloque).toContain("buyLevels={buyLevels}");
+      expect(bloque).not.toContain("support_resistance");
+      expect(bloque).not.toContain("lines.levels");
+    }
   });
 
   test("la página no lee los otros dos sistemas de niveles", () => {

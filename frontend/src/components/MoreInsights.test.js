@@ -68,8 +68,9 @@ describe("navegar sigue funcionando", () => {
     expect(FILA).toContain("{a.name}");
   });
 
-  test("y el hover del borde se conserva en el contenedor", () => {
-    expect(FILA).toContain("hover:border-aviso");
+  test("y el hover se conserva en el contenedor", () => {
+    // Rediseño v2: la fila ya no es una caja con borde ámbar; el hover es una capa de luz.
+    expect(FILA).toContain("hover:bg-tinta/[0.04]");
   });
 });
 

@@ -33,14 +33,17 @@ const REGIMEN = {
 
 const ADX_CON_FUERZA = 25;   // el mismo umbral que usa indicators.market_regime
 
+// Cada dato es una celda de una ficha técnica: rótulo arriba, lectura debajo. Las
+// celdas se separan con un filete de 1 px a la derecha y abajo (la pieza recorta los
+// del borde exterior), no con cajas.
 function Dato({ etiqueta, children, tono, testId, info }) {
   return (
-    <div className="flex flex-col gap-1 min-w-0" data-testid={testId}>
+    <div className="flex flex-col gap-1.5 min-w-0 border-r border-b border-suave px-4 sm:px-5 py-4" data-testid={testId}>
       <dt className="iv-etiqueta flex items-center gap-1">
         {etiqueta}
         {info && <InfoDot term={info} />}
       </dt>
-      <dd className={`text-apoyo font-medium leading-snug ${tono || "text-tinta"}`}>
+      <dd className={`text-[13.5px] font-medium leading-snug ${tono || "text-tinta"}`}>
         {children}
       </dd>
     </div>
@@ -73,10 +76,10 @@ export default function EstadoTecnico({ indicators, quote, marketRegime }) {
   if (!hayAlgo) return null;
 
   return (
-    <section className="iv-panel px-5 py-4" data-testid="estado-tecnico">
+    <section className="iv-panel overflow-hidden" data-testid="estado-tecnico" aria-label="Estado técnico">
       {/* Rejilla fija en vez de una fila que se reparte como cae: cada dato arranca en
           su columna y la franja se lee como una tabla, no como una nube de etiquetas. */}
-      <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
+      <dl className="grid grid-cols-2 sm:grid-cols-3 -mr-px -mb-px">
         {etiquetaRegimen && (
           <Dato etiqueta="Régimen" testId="et-regimen" info={adx != null ? "ADX" : undefined}>
             {etiquetaRegimen}{conFuerza}{adxTexto}
@@ -117,7 +120,7 @@ export default function EstadoTecnico({ indicators, quote, marketRegime }) {
             tono={salida.por_encima ? "text-sube" : "text-baja"}
           >
             {salida.por_encima ? "Por encima" : "Por debajo"}
-            {salida.sma != null && <span className="iv-cifra">{` · $${fmtPrice(salida.sma)}`}</span>}
+            {salida.sma != null && <>{" · "}<span className="iv-cifra">{`$${fmtPrice(salida.sma)}`}</span></>}
           </Dato>
         )}
 
@@ -143,7 +146,7 @@ export default function EstadoTecnico({ indicators, quote, marketRegime }) {
           de esta franja que pide una decisión hoy, y hasta ahora no existía en pantalla. */}
       {salida?.recien_perdida && (
         <p
-          className="mt-4 rounded-iv bg-baja/[0.08] px-3 py-2 text-apoyo text-baja font-medium flex gap-2"
+          className="m-3 rounded-iv bg-baja/[0.08] border border-baja/15 px-3.5 py-2.5 text-[13px] text-baja font-medium flex gap-2"
           data-testid="et-recien-perdida"
           role="status"
         >

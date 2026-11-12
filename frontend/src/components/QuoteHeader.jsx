@@ -1,9 +1,30 @@
 import React, { useState, useEffect } from "react";
-import { TrendUp, TrendDown, Buildings, Bell, X, Check, Heart } from "@phosphor-icons/react";
+import { Bell, Heart, Check, X, ArrowUpRight, ArrowDownRight, Moon } from "lucide-react";
 import { fmtPrice, fmtPct, fmtNum } from "../lib/format";
 import { api } from "../lib/api";
 import { toast } from "sonner";
+import Monograma from "./base/Monograma";
+import Rango from "./base/Rango";
+import Segmentado from "./base/Segmentado";
+import { Boton } from "./base/Boton";
 
+/** «1,234.56» → ["1,234", ".56"]: los céntimos van a menor tamaño, como en Cartera y Hoy. */
+function partir(precio) {
+  const t = fmtPrice(precio);
+  const i = t.lastIndexOf(".");
+  return i < 0 ? [t, ""] : [t.slice(0, i), t.slice(i)];
+}
+
+/**
+ * Cabecera viva de la ficha: la cara de la acción y su precio como cifra héroe.
+ *
+ * Es lo único de la página que cambia en tiempo real (WebSocket), así que es la pieza
+ * que manda: monograma + ticker + nombre a la izquierda, acciones discretas a la
+ * derecha y, debajo, el precio a 44–64 px con la variación en una píldora de color.
+ * La franja inferior es la sesión: el rango del día como barra (dónde está el precio
+ * entre el mínimo y el máximo) y los datos de apertura, cierre anterior, volumen y
+ * capitalización en columnas tabulares.
+ */
 export default function QuoteHeader({ quote }) {
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertPrice, setAlertPrice] = useState("");
@@ -46,8 +67,8 @@ export default function QuoteHeader({ quote }) {
 
   if (!quote) return null;
   const up = (quote.change ?? 0) >= 0;
-  const Color = up ? "text-sube" : "text-baja";
-  const TrendIcon = up ? TrendUp : TrendDown;
+  const Flecha = up ? ArrowUpRight : ArrowDownRight;
+  const [entero, decimales] = partir(quote.price);
 
   const createAlert = async (e) => {
     e.preventDefault();
@@ -66,135 +87,163 @@ export default function QuoteHeader({ quote }) {
     }
   };
 
+  // Pre-market / after-hours: precio y % fuera de sesión (como en la watchlist).
+  const st = quote.market_state;
+  const extPx = st === "PRE" ? quote.pre_market_price : st === "POST" ? quote.post_market_price : null;
+  const extPct = quote.extended_change_percent;
+  const extUp = (extPct ?? 0) >= 0;
+
+  const hayRango = quote.day_low != null && quote.day_high != null && quote.price != null;
+  const hay52 = quote.low_52w != null && quote.high_52w != null && quote.price != null;
+  // Con barra de rango, el máximo y el mínimo del día ya se leen en sus extremos; sin
+  // ella (falta algún dato) vuelven como columnas para no perderlos.
+  const datos = [
+    ...(hayRango ? [] : [
+      { label: "Máx. Día", value: `$${fmtPrice(quote.day_high)}` },
+      { label: "Mín. Día", value: `$${fmtPrice(quote.day_low)}` },
+    ]),
+    { label: "Apertura", value: `$${fmtPrice(quote.open)}` },
+    { label: "Anterior", value: `$${fmtPrice(quote.previous_close)}` },
+    { label: "Volumen", value: fmtNum(quote.volume) },
+    { label: "Cap. Mercado", value: `$${fmtNum(quote.market_cap)}` },
+  ];
+
   return (
-    /* Masthead editorial, no tarjeta. Es la cabecera de la pagina: va a sangre con
-       el filete champan encima, igual que el veredicto de la portada.
-       Se retira el cuadrado relleno con las tres primeras letras del ticker. Era el
-       mismo gesto generico que se quito del rail —un cuadro de color de marca con
-       algo dentro—, y ademas competia con el ticker que tenia al lado, que es el
-       dato de verdad. El ticker sube a mono grande y manda el solo. */
-    <section data-testid="quote-header" className="iv-veredicto animate-fade-up motion-reduce:animate-none">
-      <div className="flex items-start justify-between gap-x-6 gap-y-4 flex-wrap">
-        <div className="flex items-start gap-4 min-w-0 flex-1 basis-56">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2.5 flex-wrap">
-              {/* `||` a proposito: un quote sin symbol tumbaba la vista ENTERA con un
-                  TypeError, y el usuario solo veia "algo se ha roto". Aunque el Dashboard
-                  ya garantiza que el symbol viene del servidor, un dato raro debe degradar
-                  lo que toca, no llevarse la pantalla por delante. */}
-              <h2 data-testid="quote-symbol" className="font-mono font-semibold text-2xl md:text-[28px] tracking-[0.01em] text-tinta leading-none">
-                {quote.symbol || "—"}
-              </h2>
-              {/* Bolsa y divisa en una sola etiqueta, sin caja: son metadatos, no
-                  controles, y el recuadro los hacía parecer pulsables. */}
-              <span className="iv-etiqueta">
-                {quote.exchange || "NASDAQ"}{quote.currency ? ` · ${quote.currency}` : ""}
-              </span>
-              <button
-                onClick={toggleWatch}
-                disabled={watchBusy}
-                title={inWatch ? "Quitar de la watchlist" : "Añadir a la watchlist (se pre-analiza sola)"}
-                aria-label={inWatch ? "Quitar de la watchlist" : "Añadir a la watchlist"}
-                aria-pressed={inWatch}
-                className={`flex items-center justify-center w-8 h-8 rounded-full border transition-colors duration-150
-                            motion-reduce:transition-none active:scale-95 disabled:opacity-50 ${
-                  inWatch
-                    ? "border-baja/50 text-baja bg-baja/10"
-                    : "border-linea text-tinta-3 hover:border-baja/60 hover:text-baja"
-                }`}
-              >
-                <Heart size={15} weight={inWatch ? "fill" : "regular"} aria-hidden="true" />
-              </button>
-            </div>
-            <p data-testid="quote-name" className="text-apoyo text-tinta-2 mt-1.5 truncate max-w-md">
-              {quote.name}
-            </p>
-            {quote.sector && (
-              <p className="text-etiqueta text-tinta-3 mt-1 flex items-center gap-1.5">
-                <Buildings size={12} aria-hidden="true" className="shrink-0" />
-                <span className="truncate">{quote.sector} · {quote.industry}</span>
+    <section data-testid="quote-header" className="iv-panel overflow-hidden">
+      <div className="p-5 sm:p-7">
+        {/* Identidad */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <Monograma symbol={quote.symbol} tamano="lg" />
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-2.5 flex-wrap">
+                {/* `||` a propósito: un quote sin symbol tumbaba la vista ENTERA con un
+                    TypeError. Un dato raro debe degradar lo que toca, no la pantalla. */}
+                <h1 data-testid="quote-symbol" className="text-[22px] sm:text-[24px] font-semibold tracking-[-0.03em] text-tinta leading-none">
+                  {quote.symbol || "—"}
+                </h1>
+                <span className="text-[12px] text-tinta-3 whitespace-nowrap">
+                  {quote.exchange || "NASDAQ"}{quote.currency ? ` · ${quote.currency}` : ""}
+                </span>
+              </div>
+              <p data-testid="quote-name" className="text-[13px] text-tinta-2 mt-1.5 truncate max-w-[56ch]">
+                {quote.name}
+                {quote.sector && (
+                  <span className="text-tinta-3 hidden sm:inline"> · {quote.sector}{quote.industry ? ` · ${quote.industry}` : ""}</span>
+                )}
               </p>
-            )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={toggleWatch}
+              disabled={watchBusy}
+              title={inWatch ? "Quitar de la watchlist" : "Añadir a la watchlist (se pre-analiza sola)"}
+              aria-label={inWatch ? "Quitar de la watchlist" : "Añadir a la watchlist"}
+              aria-pressed={inWatch}
+              className={`inline-flex items-center justify-center w-11 h-11 sm:w-9 sm:h-9 rounded-[10px] border
+                          transition-[color,background-color,border-color] duration-150 ease-salida motion-reduce:transition-none
+                          disabled:opacity-50 ${
+                inWatch
+                  ? "border-baja/30 text-baja bg-baja/10"
+                  : "border-suave bg-tinta/[0.04] text-tinta-3 hover:text-tinta hover:bg-tinta/[0.08]"
+              }`}
+            >
+              <Heart className="w-4 h-4" strokeWidth={1.75} fill={inWatch ? "currentColor" : "none"} aria-hidden="true" />
+            </button>
+            <Boton
+              variante={alertOpen ? "secundario" : "contorno"}
+              onClick={() => { setAlertOpen((o) => !o); setAlertPrice(fmtPrice(quote.price)); }}
+              aria-expanded={alertOpen}
+              aria-label="Alerta de precio"
+              className="h-11 w-11 px-0 sm:h-9 sm:w-auto sm:px-3.5"
+            >
+              <Bell className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" />
+              <span className="hidden sm:inline">Alerta de precio</span>
+            </Boton>
           </div>
         </div>
 
-        <div className="text-right flex flex-col items-end gap-2 min-w-0 max-w-full">
-          {/* Tamaño fluido y cifras tabulares: con siete dígitos el precio se encoge en
-              vez de salirse por la derecha en el móvil, y no baila al llegar cada tick. */}
-          <p data-testid="quote-price" className="iv-cifra font-semibold text-[clamp(32px,8vw,48px)] text-tinta leading-none tracking-[-0.02em] break-all">
-            ${fmtPrice(quote.price)}
+        {/* Precio: la cifra héroe de la pantalla. Tamaño fluido y cifras tabulares: con
+            siete dígitos se encoge en vez de salirse, y no baila al llegar cada tick. */}
+        <div className="mt-6 sm:mt-8 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-x-10 gap-y-6">
+        <div className="min-w-0">
+        <div className="flex items-end gap-x-4 gap-y-3 flex-wrap">
+          <p data-testid="quote-price" className="iv-cifra-hero text-[clamp(44px,7vw,64px)] leading-[0.95] tracking-[-0.045em] break-all">
+            <span className="text-tinta-3 font-medium mr-[0.06em] text-[0.55em] align-[0.5em]">$</span>
+            {entero}
+            <span className="text-tinta-3 text-[0.55em] tracking-[-0.02em]">{decimales}</span>
           </p>
-          <div className={`iv-cifra text-apoyo font-medium flex items-center justify-end gap-1 ${Color}`}>
-            <TrendIcon size={14} weight="bold" aria-hidden="true" />
-            <span data-testid="quote-change">
+          <div className="flex items-center gap-2 pb-1 flex-wrap">
+            <span
+              data-testid="quote-change"
+              className={`iv-cifra inline-flex items-center gap-1 h-7 px-2.5 rounded-[8px] text-[13px] font-medium ${
+                up ? "bg-sube/[0.12] text-sube" : "bg-baja/[0.12] text-baja"
+              }`}
+            >
+              <Flecha className="w-3.5 h-3.5" strokeWidth={2} aria-hidden="true" />
               {up ? "+" : ""}{fmtPrice(quote.change)} ({fmtPct(quote.change_percent)})
             </span>
+            <span className="text-[13px] text-tinta-3">hoy</span>
           </div>
-          {/* Solo se avisa cuando el precio NO viene de la fuente en directo. En condiciones
-              normales no aparece nada: un sello de "en directo" permanente se vuelve ruido y
-              se deja de mirar, justo hasta el día en que importa. */}
-          {quote.precio_en_directo === false && (
-            <span data-testid="quote-fuente"
-                  title="Finnhub no respondió (cuota) y el precio viene de la fuente de respaldo, que puede ir con retraso. Se corrige solo en unos segundos."
-                  className="font-mono text-[10px] uppercase tracking-wider text-aviso bg-aviso/15 rounded px-1.5 py-0.5">
-              precio de respaldo
-            </span>
-          )}
-          {(() => {
-            // Pre-market / after-hours: precio y % fuera de sesión (como en la watchlist).
-            const st = quote.market_state;
-            const extPx = st === "PRE" ? quote.pre_market_price : st === "POST" ? quote.post_market_price : null;
-            if (extPx == null) return null;
-            const extPct = quote.extended_change_percent;
-            const extUp = (extPct ?? 0) >= 0;
-            return (
-              <div className={`iv-cifra text-etiqueta flex items-center justify-end gap-1.5 ${extUp ? "text-sube" : "text-baja"}`}>
-                <span className="iv-etiqueta">
-                  {st === "PRE" ? "PRE-MARKET" : "AFTER-HOURS"}
-                </span>
-                <span>${fmtPrice(extPx)}{extPct != null ? ` (${fmtPct(extPct)})` : ""}</span>
-              </div>
-            );
-          })()}
-          {/* Quick alert button */}
-          <button
-            onClick={() => { setAlertOpen((o) => !o); setAlertPrice(fmtPrice(quote.price)); }}
-            aria-expanded={alertOpen}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-iv text-etiqueta font-mono border
-                        transition-colors duration-150 motion-reduce:transition-none ${
-              alertOpen
-                ? "bg-marca/10 text-marca border-marca/50"
-                : "border-linea text-tinta-2 hover:border-marca/50 hover:text-tinta"
-            }`}
-          >
-            <Bell size={12} weight={alertOpen ? "fill" : "regular"} aria-hidden="true" />
-            Alerta de precio
-          </button>
+        </div>
+
+        {(extPx != null || quote.precio_en_directo === false) && (
+          <div className="mt-3 flex items-center gap-x-4 gap-y-2 flex-wrap text-[13px]">
+            {extPx != null && (
+              <span className="inline-flex items-center gap-1.5 text-tinta-3">
+                <Moon className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden="true" />
+                {st === "PRE" ? "Antes de la apertura" : "Después del cierre"}
+                <span className="iv-cifra text-tinta ml-1">${fmtPrice(extPx)}</span>
+                {extPct != null && (
+                  <span className={`iv-cifra ${extUp ? "text-sube" : "text-baja"}`}>{fmtPct(extPct)}</span>
+                )}
+              </span>
+            )}
+            {/* Solo se avisa cuando el precio NO viene de la fuente en directo. Un sello de
+                «en directo» permanente se vuelve ruido y se deja de mirar. */}
+            {quote.precio_en_directo === false && (
+              <span data-testid="quote-fuente"
+                    title="Finnhub no respondió (cuota) y el precio viene de la fuente de respaldo, que puede ir con retraso. Se corrige solo en unos segundos."
+                    className="inline-flex items-center h-[22px] px-2 rounded-md text-[12px] font-medium text-aviso bg-aviso/[0.12]">
+                Precio de respaldo
+              </span>
+            )}
+          </div>
+        )}
+        </div>
+
+        {/* Dónde está el precio: en la sesión y en el año. Dos barras gemelas a la
+            derecha del precio, en la misma pieza. */}
+        {(hayRango || hay52) && (
+          <div className="w-full lg:w-[340px] shrink-0 space-y-5">
+            {hayRango && (
+              <Rango etiqueta="Rango del día" min={quote.day_low} max={quote.day_high}
+                     valor={quote.price} formato={(v) => `$${fmtPrice(v)}`} />
+            )}
+            {hay52 && (
+              <Rango etiqueta="Rango 52 semanas" min={quote.low_52w} max={quote.high_52w}
+                     valor={quote.price} formato={(v) => `$${fmtPrice(v)}`} />
+            )}
+          </div>
+        )}
         </div>
       </div>
 
-      {/* Inline alert form */}
+      {/* Alerta en línea: una franja de luz baja dentro de la pieza, no otra caja. */}
       {alertOpen && (
-        <form onSubmit={createAlert} className="mt-4 p-4 bg-superficie rounded-iv border border-linea flex flex-wrap items-end gap-3">
+        <form onSubmit={createAlert}
+              className="px-5 sm:px-7 py-4 bg-tinta/[0.03] border-t border-suave flex flex-wrap items-end gap-x-4 gap-y-3">
           <div>
-            <p className="iv-etiqueta mb-1.5">Dirección</p>
-            <div className="flex gap-1">
-              {[{ v: "below", label: "≤ cae a" }, { v: "above", label: "≥ sube a" }].map(({ v, label }) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setAlertDir(v)}
-                  aria-pressed={alertDir === v}
-                  className={`px-3 py-1.5 text-etiqueta font-mono rounded border transition-colors duration-150 motion-reduce:transition-none ${
-                    alertDir === v
-                      ? "bg-marca/10 text-marca border-marca/50"
-                      : "border-linea text-tinta-2 hover:border-marca/50"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <p className="iv-etiqueta mb-1.5">Avisar cuando</p>
+            <Segmentado
+              etiqueta="Dirección de la alerta"
+              opciones={[{ valor: "below", etiqueta: "≤ cae a" }, { valor: "above", etiqueta: "≥ sube a" }]}
+              valor={alertDir}
+              onCambio={setAlertDir}
+            />
           </div>
           <div>
             <label htmlFor="alerta-precio" className="iv-etiqueta mb-1.5 block">Precio objetivo</label>
@@ -206,51 +255,34 @@ export default function QuoteHeader({ quote }) {
               inputMode="decimal"
               value={alertPrice}
               onChange={(e) => setAlertPrice(e.target.value)}
-              className="w-32 bg-superficie border border-linea rounded-iv px-3 py-1.5 iv-cifra text-base sm:text-apoyo focus:outline-none focus:ring-2 focus:ring-marca"
+              className="w-36 h-[38px] bg-superficie-alt border border-medio rounded-iv px-3 iv-cifra text-base sm:text-[13px] text-tinta
+                         focus:outline-none focus-visible:ring-2 focus-visible:ring-marca"
               placeholder="0.00"
             />
           </div>
           <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex items-center gap-1.5 px-4 py-1.5 bg-marca text-marca-tinta rounded-iv text-etiqueta font-mono font-semibold
-                         hover:brightness-110 active:scale-[0.97] transition-[filter,transform] duration-150
-                         motion-reduce:transition-none disabled:opacity-50"
-            >
-              <Check size={12} aria-hidden="true" />
+            <Boton type="submit" ocupado={saving}>
+              <Check className="w-4 h-4" strokeWidth={2} aria-hidden="true" />
               {saving ? "Guardando…" : "Crear alerta"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setAlertOpen(false)}
-              className="flex items-center gap-1 px-3 py-1.5 border border-linea text-tinta-2 rounded-iv text-etiqueta font-mono
-                         hover:border-linea-marcada hover:text-tinta transition-colors duration-150 motion-reduce:transition-none"
-            >
-              <X size={12} aria-hidden="true" />
+            </Boton>
+            <Boton variante="fantasma" onClick={() => setAlertOpen(false)}>
+              <X className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" />
               Cancelar
-            </button>
+            </Boton>
           </div>
         </form>
       )}
 
-      {/* Los datos del día como una lista de definición: rótulo arriba, cifra tabular
-          debajo, todas a la misma altura de línea para que la fila se lea de un tirón. */}
-      <dl className="mt-6 pt-4 border-t border-linea grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-3">
-        {[
-          { label: "Apertura", value: `$${fmtPrice(quote.open)}` },
-          { label: "Anterior", value: `$${fmtPrice(quote.previous_close)}` },
-          { label: "Máx. Día", value: `$${fmtPrice(quote.day_high)}` },
-          { label: "Mín. Día", value: `$${fmtPrice(quote.day_low)}` },
-          { label: "Volumen", value: fmtNum(quote.volume) },
-          { label: "Cap. Mercado", value: `$${fmtNum(quote.market_cap)}` },
-        ].map((s) => (
-          <div key={s.label} className="min-w-0">
+      {/* La sesión: rango del día como barra y los datos en columnas tabulares. */}
+      <div className={`border-t border-suave px-5 sm:px-7 py-4 sm:py-5 grid grid-cols-2 gap-x-6 gap-y-4 ${
+        datos.length > 4 ? "sm:grid-cols-3 lg:grid-cols-6" : "sm:grid-cols-4"}`}>
+        {datos.map((s) => (
+          <dl key={s.label} className="min-w-0">
             <dt className="iv-etiqueta">{s.label}</dt>
-            <dd data-testid={`stat-${s.label}`} className="iv-cifra text-cuerpo text-tinta mt-0.5 truncate" title={s.value}>{s.value}</dd>
-          </div>
+            <dd data-testid={`stat-${s.label}`} className="iv-cifra text-[14.5px] text-tinta mt-1.5 truncate" title={s.value}>{s.value}</dd>
+          </dl>
         ))}
-      </dl>
+      </div>
     </section>
   );
 }

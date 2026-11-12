@@ -34,20 +34,22 @@ export default function AnalystConsensusCard({ data }) {
     c.score >= 60 ? "text-sube" : c.score >= 45 ? "text-tinta" : "text-baja";
 
   return (
-    <section data-testid="analyst-consensus" className="iv-panel p-5">
-      <div className="flex items-baseline justify-between gap-3 flex-wrap mb-3">
-        <h3 className="font-heading text-cuerpo font-semibold text-tinta flex items-center gap-2">
+    <section data-testid="analyst-consensus" className="iv-panel p-5 sm:p-6">
+      <div className="flex items-baseline justify-between gap-3 flex-wrap">
+        <h3 className="text-[13px] font-medium text-tinta-2 flex items-center gap-2">
           <Users size={16} weight="bold" className="text-tinta-3" aria-hidden="true" />
           Consenso Wall Street
         </h3>
-        <span className="iv-etiqueta">
+        <span className="text-[12px] text-tinta-3">
           {c.period ? new Date(c.period + "T00:00:00").toLocaleDateString("es-ES", { month: "short", year: "numeric" }) : ""} · {total} analistas
         </span>
       </div>
 
-      <div className="flex items-baseline gap-3 flex-wrap mb-4">
-        <p data-testid="consensus-rating" className={`font-heading text-cifra ${tone}`}>{c.consensus}</p>
-        <p className="text-apoyo text-tinta-3">Score: <span className="iv-cifra text-tinta font-semibold">{c.score}/100</span></p>
+      <div className="flex items-baseline gap-3 flex-wrap mt-3 mb-5">
+        <p data-testid="consensus-rating" className={`text-[26px] font-semibold tracking-[-0.03em] leading-none ${tone}`}>
+          {String(c.consensus || "").charAt(0) + String(c.consensus || "").slice(1).toLowerCase()}
+        </p>
+        <p className="text-[13px] text-tinta-3">Score <span className="iv-cifra text-tinta">{c.score}/100</span></p>
       </div>
 
       <div className="space-y-2.5">

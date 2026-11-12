@@ -116,11 +116,11 @@ export default function HistorialTesis({ symbol }) {
   const versiones = datos?.versiones || [];
 
   return (
-    <div className="mt-3 pt-3 border-t border-linea">
-      <button onClick={alternar} aria-expanded={abierto}
+    <div className="mt-5 pt-4 border-t border-suave">
+      <button type="button" onClick={alternar} aria-expanded={abierto}
               data-testid="btn-historial-tesis"
-              className="text-[12px] font-mono text-tinta-3 hover:text-tinta
-                         flex items-center gap-1.5">
+              className="text-[13px] text-tinta-3 hover:text-tinta min-h-[32px] -my-1
+                         flex items-center gap-1.5 transition-colors duration-150 ease-salida">
         <ClockCounterClockwise size={13} aria-hidden="true" />
         {abierto ? "Ocultar el historial" : "Cómo ha cambiado esta tesis"}
       </button>

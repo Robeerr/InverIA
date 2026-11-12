@@ -2,6 +2,9 @@ import React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { aNumero } from "../lib/format";
+import { Scale } from "lucide-react";
+import CabeceraBloque from "./base/CabeceraBloque";
+import Segmentado from "./base/Segmentado";
 
 /**
  * Qué le pasa a tu margen libre si compras o vendes esta acción. ANTES de decidir.
@@ -29,14 +32,14 @@ function Resultado({ d }) {
   const gana = (d.margen_eur || 0) > 0;
   const pct = Math.abs((d.pct_del_importe || 0) * 100);
   return (
-    <div className="mt-3">
-      <p className="iv-etiqueta mb-1">
+    <div className="mt-4 pt-4 border-t border-suave">
+      <p className="iv-etiqueta mb-1.5">
         {gana ? "Tu margen libre subiría" : "Tu margen libre bajaría"}
       </p>
       {d.distinguible === false ? (
         <p className="text-cuerpo text-tinta">Apenas se movería.</p>
       ) : (
-        <p className={`iv-cifra text-cifra leading-none ${gana ? "text-sube" : "text-baja"}`}>
+        <p className={`iv-cifra-hero text-[28px] leading-none tracking-[-0.035em] ${gana ? "text-sube" : "text-baja"}`}>
           {gana ? "+" : "−"}
           {EUR(d.margen_eur)}
           {d.incertidumbre_eur ? (
@@ -57,9 +60,9 @@ function Resultado({ d }) {
 
 function Rango({ d }) {
   return (
-    <div className="mt-3">
-      <p className="iv-etiqueta mb-1">Tu margen libre bajaría</p>
-      <p className="iv-cifra text-cifra text-baja leading-none">
+    <div className="mt-4 pt-4 border-t border-suave">
+      <p className="iv-etiqueta mb-1.5">Tu margen libre bajaría</p>
+      <p className="iv-cifra-hero text-[28px] text-baja leading-none tracking-[-0.035em]">
         −{EUR(d.rango_min_eur)}
         <span className="text-cuerpo text-tinta-3"> a </span>
         −{EUR(d.rango_max_eur)}
@@ -91,50 +94,43 @@ export default function SimuladorMargen({ symbol }) {
   });
 
   if (!sym) return null;
-  const btn = (id, texto) => (
-    <button
-      key={id}
-      type="button"
-      onClick={() => setAccion(id)}
-      className={`px-3 py-1 rounded-iv-sm text-apoyo font-semibold ${
-        accion === id ? "bg-marca text-marca-tinta" : "text-tinta-3 border border-linea"
-      }`}
-    >
-      {texto}
-    </button>
-  );
 
   return (
-    <div className="iv-panel p-4" data-testid="simulador-margen">
-      <h3 className="font-heading font-semibold text-titulo text-tinta">
-        Impacto en tu margen
-      </h3>
-      <p className="text-apoyo text-tinta-3 mt-0.5 leading-snug">
+    <div className="iv-panel p-5" data-testid="simulador-margen">
+      <CabeceraBloque icono={Scale} como="h3">Impacto en tu margen</CabeceraBloque>
+      <p className="text-[13px] text-tinta-3 mt-1.5 leading-snug">
         Cuánto margen libre ganas o pierdes con esta operación, según el modelo de riesgo
         de DEGIRO.
       </p>
 
-      <div className="flex items-center gap-2 mt-3 flex-wrap">
-        {btn("comprar", "Voy a comprar")}
-        {btn("vender", "Voy a vender")}
-        <div className="flex-1 min-w-[150px] flex items-center gap-1">
-          <input
-            value={cantidad}
-            onChange={(e) => setCantidad(e.target.value)}
-            inputMode="decimal"
-            placeholder={unidad === "acciones" ? "nº de acciones" : "importe en €"}
-            aria-label={unidad === "acciones" ? "Número de acciones" : "Importe en euros"}
-            className="flex-1 min-w-0 bg-fondo border border-linea rounded px-2 py-1.5 font-mono text-apoyo"
-          />
-          <button
-            type="button"
-            onClick={() => setUnidad((u) => (u === "acciones" ? "euros" : "acciones"))}
-            title="Cambiar entre acciones y euros"
-            className="px-2 py-1.5 rounded-iv-sm text-apoyo font-mono text-tinta-3 border border-linea shrink-0"
-          >
-            {unidad === "acciones" ? "acc." : "€"}
-          </button>
-        </div>
+      <Segmentado
+        etiqueta="Tipo de operación"
+        opciones={[{ valor: "comprar", etiqueta: "Voy a comprar" }, { valor: "vender", etiqueta: "Voy a vender" }]}
+        valor={accion}
+        onCambio={setAccion}
+        className="mt-4 w-full grid grid-cols-2"
+      />
+      {/* Campo con la unidad dentro: se teclea como en la orden del bróker. */}
+      <div className="mt-2.5 flex items-center h-11 rounded-iv bg-superficie-alt border border-medio
+                      focus-within:ring-2 focus-within:ring-marca transition-shadow duration-150">
+        <input
+          value={cantidad}
+          onChange={(e) => setCantidad(e.target.value)}
+          inputMode="decimal"
+          placeholder={unidad === "acciones" ? "nº de acciones" : "importe en €"}
+          aria-label={unidad === "acciones" ? "Número de acciones" : "Importe en euros"}
+          className="flex-1 min-w-0 h-full bg-transparent px-3.5 iv-cifra text-base sm:text-[14px] text-tinta
+                     placeholder:text-tinta-3 placeholder:font-sans focus:outline-none"
+        />
+        <button
+          type="button"
+          onClick={() => setUnidad((u) => (u === "acciones" ? "euros" : "acciones"))}
+          title="Cambiar entre acciones y euros"
+          className="h-8 mr-1.5 px-2.5 rounded-[8px] text-[12px] font-medium text-tinta-2 bg-tinta/[0.06]
+                     hover:bg-tinta/[0.1] hover:text-tinta shrink-0 transition-colors duration-150"
+        >
+          {unidad === "acciones" ? "acc." : "€"}
+        </button>
       </div>
 
       {/* La otra unidad, derivada. Es la comprobación de que se ha entendido bien lo que
@@ -150,20 +146,9 @@ export default function SimuladorMargen({ symbol }) {
       {/* El selector solo aparece cuando hace falta: si la acción ya está en tu cartera,
           su categoría se sabe y preguntarla otra vez sería ruido. */}
       {accion === "comprar" && data?.estado === "FALTA_CATEGORIA" && (
-        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-          <span className="iv-etiqueta">Categoría en DEGIRO:</span>
-          {CATS.map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => setCat(c)}
-              className={`w-8 py-1 rounded-iv-sm text-apoyo font-mono font-bold ${
-                cat === c ? "bg-marca text-marca-tinta" : "text-tinta-3 border border-linea"
-              }`}
-            >
-              {c}
-            </button>
-          ))}
+        <div className="flex items-center gap-2.5 mt-3 flex-wrap">
+          <span className="iv-etiqueta">Categoría en DEGIRO</span>
+          <Segmentado etiqueta="Categoría en DEGIRO" opciones={CATS} valor={cat} onCambio={setCat} mono tamano="sm" />
         </div>
       )}
 

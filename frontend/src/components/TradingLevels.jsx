@@ -88,7 +88,7 @@ function Nivel({ z, estructural }) {
       <div className={`pl-4 min-w-0 ${estructural ? "py-1.5" : "py-2.5"}`}>
         <div className="flex items-baseline gap-2 flex-wrap">
           <span className="font-mono text-etiqueta font-semibold text-tinta-3 uppercase tracking-wider">{z.label}</span>
-          <span className={`font-mono font-bold text-tinta ${estructural ? "text-[13px]" : "text-[17px]"}`}>
+          <span className={`font-mono font-semibold text-tinta ${estructural ? "text-[13px]" : "text-[17px]"}`}>
             ${fmtPrice(z.price)}
           </span>
           {!estructural && z.zone_low != null && z.zone_high != null && z.zone_low !== z.zone_high && (
@@ -149,10 +149,10 @@ function SmartBuyLevels({ levels }) {
   const profundo = plan.length ? plan[plan.length - 1] : null;
 
   return (
-    <div data-testid="smart-buy-levels" className="mb-5 p-4 bg-sube/[0.04] border border-sube/25 rounded-iv">
+    <div data-testid="smart-buy-levels" className="mb-5 p-4 sm:p-5 bg-tinta/[0.03] border border-suave rounded-iv">
       <div className="flex items-center gap-2 mb-1">
-        <Crosshair size={14} weight="bold" className="text-sube" />
-        <p className="font-mono text-etiqueta uppercase tracking-[0.2em] text-sube">
+        <Crosshair size={14} weight="bold" className="text-tinta-3" />
+        <p className="text-[13px] font-medium text-tinta-2">
           Niveles de compra por confluencia · calculados sobre estructura real
         </p>
         <InfoDot term="Confluencia" />
@@ -160,8 +160,8 @@ function SmartBuyLevels({ levels }) {
 
       <div className="mt-3">
         {hayPlan && (
-          <div className="flex items-baseline gap-2 flex-wrap pb-1.5 mb-1 border-b border-sube/30">
-            <span className="font-mono text-etiqueta font-bold uppercase tracking-[0.1em] text-sube">
+          <div className="flex items-baseline gap-2 flex-wrap pb-2 mb-1 border-b border-suave">
+            <span className="text-[13px] font-semibold text-tinta">
               El plan · {plan.length} {plan.length === 1 ? "escalón" : "escalones"}
             </span>
             <span className="text-[11px] text-tinta-3 ml-auto">donde la compra se reparte</span>
@@ -246,7 +246,7 @@ function LevelCard({ icon, label, primary, sub, tone, testId }) {
         {icon}
         <p className="font-mono text-etiqueta uppercase tracking-[0.2em] font-medium">{label}</p>
       </div>
-      <p className={`font-mono font-bold text-xl ${c.text} mt-2`}>{primary}</p>
+      <p className={`font-mono font-semibold text-xl ${c.text} mt-2`}>{primary}</p>
       {sub && <p className="text-[11px] text-tinta-3 mt-1 font-mono">{sub}</p>}
     </div>
   );
@@ -272,13 +272,13 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
   return (
     <section data-testid="trading-levels" className="iv-panel p-5 sm:p-6">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
-        <div className="min-w-0">
-          <h3 className="font-heading text-titulo text-tinta flex items-center gap-2">
+      <div className="flex items-start justify-between flex-wrap gap-x-6 gap-y-3 mb-5">
+        <div className="min-w-0 flex-1 basis-72">
+          <h3 className="text-[17px] font-semibold tracking-[-0.02em] text-tinta flex items-center gap-2">
             <Crosshair size={18} weight="bold" className="text-marca shrink-0" aria-hidden="true" />
-            Niveles de Compra y Venta
+            Niveles de compra y venta
           </h3>
-          <p className="text-apoyo text-tinta-3 mt-1 max-w-[70ch]">
+          <p className="text-[13px] text-tinta-3 mt-1.5 max-w-[70ch] leading-relaxed">
             {analysis
               ? <>Plan operativo sugerido por IA · Precio actual: <span className="font-mono font-semibold text-tinta">${fmtPrice(current)}</span></>
               : <>Niveles por confluencia (motor, sin IA) · Precio actual: <span className="font-mono font-semibold text-tinta">${fmtPrice(current)}</span> · <span className="text-aviso">genera el análisis IA para el plan completo</span></>}
@@ -286,11 +286,11 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
         </div>
         <div className="flex items-center gap-3">
           {analystConsensus && (
-            <div className="text-right">
-              <p className="font-mono text-etiqueta uppercase tracking-[0.2em] text-tinta-3">
+            <div className="text-right rounded-iv bg-tinta/[0.04] px-3.5 py-2">
+              <p className="text-[12px] text-tinta-3">
                 Consenso analistas ({analystConsensus.total_analysts})
               </p>
-              <p className="font-heading font-semibold text-sm text-tinta">{analystConsensus.consensus}</p>
+              <p className="font-semibold text-[14px] text-tinta mt-0.5">{analystConsensus.consensus}</p>
             </div>
           )}
           {analysis && <RecBig rec={analysis.recommendation} />}
@@ -432,7 +432,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
       {analysis && (analysis.entry_zones?.length || analysis.stop_losses?.length || analysis.take_profits?.length) && (
         <div className="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-4">
           {analysis.entry_zones?.length > 0 && (
-            <div data-testid="entry-zones-list" className="border border-linea rounded-iv p-4">
+            <div data-testid="entry-zones-list" className="rounded-iv bg-tinta/[0.035] p-4">
               <div className="flex items-center gap-2 mb-3">
                 <Target size={14} weight="bold" className="text-marca" />
                 <p className="font-mono text-etiqueta uppercase tracking-[0.2em] text-tinta-3">Zonas de Entrada</p>
@@ -466,7 +466,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
           )}
 
           {analysis.stop_losses?.length > 0 && (
-            <div data-testid="stop-losses-list" className="border border-linea rounded-iv p-4">
+            <div data-testid="stop-losses-list" className="rounded-iv bg-tinta/[0.035] p-4">
               <div className="flex items-center gap-2 mb-3">
                 <Shield size={14} weight="bold" className="text-baja" />
                 <p className="font-mono text-etiqueta uppercase tracking-[0.2em] text-tinta-3">Stop Losses</p>
@@ -492,7 +492,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
           )}
 
           {analysis.take_profits?.length > 0 && (
-            <div data-testid="take-profits-list" className="border border-linea rounded-iv p-4">
+            <div data-testid="take-profits-list" className="rounded-iv bg-tinta/[0.035] p-4">
               <div className="flex items-center gap-2 mb-3">
                 <TrendUp size={14} weight="bold" className="text-sube" />
                 <p className="font-mono text-etiqueta uppercase tracking-[0.2em] text-tinta-3">Take Profits</p>
@@ -522,7 +522,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
       {/* Support / Resistance bands */}
       {analysis?.key_levels && (
         <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div data-testid="key-supports" className="border border-linea rounded-iv p-4">
+          <div data-testid="key-supports" className="rounded-iv bg-tinta/[0.035] p-4">
             <div className="flex items-center gap-2 mb-3">
               <TrendDown size={14} weight="bold" className="text-sube" />
               <p className="font-mono text-etiqueta uppercase tracking-[0.2em] text-tinta-3">Soportes (compra)</p>
@@ -542,7 +542,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
               })}
             </div>
           </div>
-          <div data-testid="key-resistances" className="border border-linea rounded-iv p-4">
+          <div data-testid="key-resistances" className="rounded-iv bg-tinta/[0.035] p-4">
             <div className="flex items-center gap-2 mb-3">
               <TrendUp size={14} weight="bold" className="text-baja" />
               <p className="font-mono text-etiqueta uppercase tracking-[0.2em] text-tinta-3">Resistencias (venta)</p>
@@ -573,7 +573,7 @@ export default function TradingLevels({ quote, analysis, analystConsensus, price
               <p className="font-mono text-etiqueta uppercase tracking-[0.2em] text-tinta-3">
                 Objetivo Wall Street ({priceTarget.analysts_count} analistas)
               </p>
-              <p className="font-mono font-bold text-2xl text-marca mt-1">
+              <p className="font-mono font-semibold text-2xl text-marca mt-1">
                 ${fmtPrice(priceTarget.target_mean)}
                 {distTarget != null && (
                   <span className={`text-sm ml-2 ${distTarget >= 0 ? "text-sube" : "text-baja"}`}>

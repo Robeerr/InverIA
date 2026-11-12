@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo, Suspense } from "react";
-import { Warning } from "@phosphor-icons/react";
+import { TriangleAlert as AlertTriangle, RotateCw } from "lucide-react";
+import { Boton } from "../components/base/Boton";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import QuoteHeader from "../components/QuoteHeader";
@@ -31,9 +32,9 @@ import { useSignals } from "../hooks/useSignals";
 function DataHealthBar({ health }) {
   if (!health || !health.degraded) return null;
   return (
-    <div className="iv-panel px-4 py-2 flex items-center gap-2 border border-aviso/40 bg-aviso/[0.06]">
-      <Warning size={14} weight="fill" />
-      <span className="text-[11px] text-aviso leading-snug">
+    <div className="rounded-iv px-4 py-3 flex items-start gap-2.5 bg-aviso/[0.08] border border-aviso/20" role="status">
+      <AlertTriangle className="w-4 h-4 text-aviso shrink-0 mt-px" strokeWidth={1.75} aria-hidden="true" />
+      <span className="text-[13px] text-aviso leading-snug">
         <b>Datos de respaldo o con retraso</b>{health.note ? ` · ${health.note}` : ""}.
       </span>
     </div>
@@ -57,7 +58,7 @@ const LightweightChart = React.lazy(() => import("../components/LightweightChart
 function HuecoGrafico() {
   return (
     <div className="iv-panel p-3" style={{ height: 516 }} aria-busy="true" aria-label="Cargando el gráfico">
-      <div className="h-full w-full rounded-iv bg-superficie-alt animate-pulse motion-reduce:animate-none" />
+      <div className="h-full w-full rounded-iv iv-esqueleto" />
     </div>
   );
 }
@@ -66,25 +67,28 @@ function HuecoGrafico() {
  *  QuoteHeader (ticker a la izquierda, precio a la derecha, fila de datos del día), así
  *  que al llegar el precio no salta nada de sitio. */
 function CabeceraCargando() {
-  const barra = "rounded-iv-sm bg-superficie-alt animate-pulse motion-reduce:animate-none";
+  const barra = "rounded-iv-sm iv-esqueleto";
   return (
-    <div className="pt-1" aria-busy="true" role="status">
+    <div className="iv-panel overflow-hidden" aria-busy="true" role="status">
       <span className="sr-only">Cargando datos…</span>
-      <div className="flex items-start justify-between gap-6">
-        <div className="space-y-2">
-          <div className={`${barra} h-7 w-24`} />
-          <div className={`${barra} h-4 w-44`} />
+      <div className="p-5 sm:p-7">
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-[14px] iv-esqueleto" />
+          <div className="space-y-2">
+            <div className={`${barra} h-6 w-24`} />
+            <div className={`${barra} h-3.5 w-44`} />
+          </div>
         </div>
-        <div className="space-y-2 flex flex-col items-end">
-          <div className={`${barra} h-10 w-36`} />
-          <div className={`${barra} h-4 w-24`} />
+        <div className="mt-6 sm:mt-8 flex items-end gap-4">
+          <div className={`${barra} h-14 w-48`} />
+          <div className={`${barra} h-7 w-32`} />
         </div>
       </div>
-      <div className="mt-6 pt-4 border-t border-linea grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-        {[0, 1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="space-y-1.5">
+      <div className="border-t border-suave px-5 sm:px-7 py-4 sm:py-5 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-[minmax(0,1.6fr)_repeat(4,minmax(0,1fr))] gap-x-6 gap-y-4">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className={`space-y-2 ${i === 0 ? "col-span-2 sm:col-span-4 lg:col-span-1" : ""}`}>
             <div className={`${barra} h-3 w-16`} />
-            <div className={`${barra} h-4 w-20`} />
+            <div className={`${barra} h-4 ${i === 0 ? "w-full" : "w-20"}`} />
           </div>
         ))}
       </div>
@@ -97,20 +101,28 @@ function CabeceraCargando() {
  * La pagina ya venia ordenada en catorce bloques —lo dicen los comentarios «01 ·
  * Cabecera viva», «05 · Niveles»— pero ese orden NO se veia: por fuera era una pila
  * de paneles iguales, y el lector no tenia forma de saber que la parte de arriba
- * decide y la de abajo solo documenta. Aqui ese orden se hace visible, con el mismo
- * gesto que el resto de la web: etiqueta en versalitas y filete corrido.
+ * decide y la de abajo solo documenta. Aqui ese orden se hace visible: titular de
+ * sección en Geist 18/600 con su nota en tinta-3 debajo, y aire entre secciones.
  *
  * `acento` se reserva al plan de entrada, que es la seccion por la que se entra a
  * esta pagina. Si lo llevaran todas no distinguiria ninguna.
  */
-function Seccion({ titulo, nota, acento = false, children }) {
+function Seccion({ titulo, nota, acento = false, icono: Icono, children, className = "" }) {
   return (
-    <section>
-      <div className={`iv-seccion${acento ? " iv-seccion-acento" : ""}`}>
-        <h2 className="iv-etiqueta tracking-[0.18em] text-tinta-2">{titulo}</h2>
-        {nota && <span className="text-etiqueta text-tinta-3 whitespace-nowrap hidden sm:inline">{nota}</span>}
-      </div>
-      <div className="space-y-4 sm:space-y-6">{children}</div>
+    <section className={className}>
+      <header className="mb-3.5 sm:mb-4 flex items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-2 text-[17px] sm:text-[18px] font-semibold tracking-[-0.02em] text-tinta leading-tight">
+            {acento && (
+              <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-marca shadow-[0_0_0_4px_rgb(var(--iv-intencion)/0.14)] mr-1" />
+            )}
+            {Icono && <Icono className="w-[18px] h-[18px] text-tinta-3" strokeWidth={1.75} aria-hidden="true" />}
+            {titulo}
+          </h2>
+          {nota && <p className="text-[13px] text-tinta-3 mt-1">{nota}</p>}
+        </div>
+      </header>
+      <div className="space-y-3 sm:space-y-4">{children}</div>
     </section>
   );
 }
@@ -434,17 +446,14 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
 
 
   return (
-    <div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-4 sm:py-6 lg:flex lg:gap-5 lg:items-start">
-      {/* Escritorio: watchlist como barra lateral izquierda (sticky). */}
-      <aside className="hidden lg:block w-52 shrink-0 sticky top-4">
-        <WatchlistStrip symbol={symbol} setSymbol={setSymbol} vertical />
-      </aside>
-      <main data-testid="main-dashboard" className="flex-1 min-w-0 space-y-4 sm:space-y-6">
-      {/* Móvil: watchlist como tira horizontal arriba. */}
-      <WatchlistStrip symbol={symbol} setSymbol={setSymbol} className="lg:hidden" />
+    <div className="max-w-[1440px] mx-auto px-4 sm:px-8 py-4 sm:py-6 iv-entra">
+      {/* Tu watchlist como cinta encima de la ficha: antes era una columna de sesenta
+          tarjetas que duplicaba el rail y estrechaba la página. */}
+      <WatchlistStrip symbol={symbol} setSymbol={setSymbol} className="mb-4 sm:mb-5" />
 
+      <main data-testid="main-dashboard" className="space-y-5 sm:space-y-6">
       {/* ══ 01 · Cabecera viva ══
-          Lo único de la página que cambia en tiempo real. Por eso va arriba y va solo:
+          Lo único de la página que cambia en tiempo real. Por eso va arriba y va sola:
           todo lo que hay debajo es una foto del momento en que se ensambló el dashboard. */}
       {loadingQuote && !quote ? (
         <CabeceraCargando />
@@ -453,27 +462,48 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       ) : sym && (consultaDashboard.isError || datos) && !esCancelada(errorDashboard) ? (
         // Sin cotización tras cargar: antes la página se quedaba en blanco debajo del
         // aviso flotante, que desaparece a los pocos segundos. El texto se queda.
-        <div className="iv-panel p-5" role="alert">
-          <p className="text-cuerpo font-medium text-tinta">No se han podido cargar los datos de {sym}.</p>
-          <p className="text-apoyo text-tinta-3 mt-1 max-w-[60ch]">
-            Las fuentes de datos no han respondido a tiempo o el símbolo no existe. Vuelve a
-            intentarlo en unos segundos.
-          </p>
-          <button
-            type="button"
-            onClick={() => consultaDashboard.refetch()}
-            disabled={consultaDashboard.isFetching}
-            className="mt-3 text-apoyo font-medium px-3 py-1.5 rounded-iv border border-linea-fuerte text-tinta
-                       hover:border-marca hover:text-marca disabled:opacity-50
-                       transition-colors duration-150 motion-reduce:transition-none"
-          >
-            {consultaDashboard.isFetching ? "Reintentando…" : "Reintentar"}
-          </button>
+        <div className="iv-panel p-6 sm:p-8 flex items-start gap-4" role="alert">
+          <span className="w-10 h-10 rounded-[11px] bg-baja/10 text-baja inline-flex items-center justify-center shrink-0">
+            <AlertTriangle className="w-[18px] h-[18px]" strokeWidth={1.75} aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[15px] font-semibold text-tinta">No se han podido cargar los datos de {sym}.</p>
+            <p className="text-[13px] text-tinta-3 mt-1 max-w-[60ch]">
+              Las fuentes de datos no han respondido a tiempo o el símbolo no existe. Vuelve a
+              intentarlo en unos segundos.
+            </p>
+            <Boton
+              variante="secundario"
+              className="mt-4"
+              onClick={() => consultaDashboard.refetch()}
+              ocupado={consultaDashboard.isFetching}
+            >
+              <RotateCw className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" />
+              {consultaDashboard.isFetching ? "Reintentando…" : "Reintentar"}
+            </Boton>
+          </div>
         </div>
       ) : null}
 
+      {/* Dos columnas en escritorio: la lectura a la izquierda y, a la derecha, lo que es
+          tuyo (la lectura rápida, tu posición y tu margen). En móvil la columna derecha
+          cae entre el veredicto y el plan de entrada, donde se decide. */}
+      <div className="grid gap-x-6 gap-y-10 lg:grid-cols-[minmax(0,1fr)_minmax(300px,352px)] xl:grid-cols-[minmax(0,1fr)_368px] items-start">
+
+      <div className="min-w-0 space-y-10 lg:col-start-1">
+      {/* ══ 02 · Gráfico ══ Justo debajo del precio: es lo primero que se mira después. */}
+      <Suspense fallback={<HuecoGrafico />}>
+        <LightweightChart
+          candles={candles}
+          buyLevels={buyLevels}
+          lines={chartLines}
+          timeframe={timeframe}
+          setTimeframe={refreshTimeframe}
+        />
+      </Suspense>
+
       <Seccion titulo="Veredicto" nota="Lectura determinista, sin pulsar nada">
-      {/* ══ 02 · Tesis ══
+      {/* ══ 03 · Tesis ══
           Interpretación determinista, disponible al abrir y sin pulsar nada. Lleva
           dentro el aviso de fiabilidad y el botón de IA como acción secundaria. */}
       <TesisPanel
@@ -489,29 +519,32 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       {/* Respaldo: si no hubo tesis que redactar, el aviso de datos no puede perderse. */}
       {quote && !tesis && <DataHealthBar health={dataHealth} />}
 
-      {/* ══ 03 · Estado técnico ══
-          Régimen, ADX, ATR%, OBV, VWAP anclado y media de 10 semanas. Todo ya viajaba
-          en la respuesta y no tenía una sola lectura en el frontend. */}
+      {/* ══ 04 · Estado técnico ══
+          Régimen, ADX, ATR%, OBV, VWAP anclado y media de 10 semanas. */}
       <EstadoTecnico indicators={indicators} quote={quote} marketRegime={marketRegime} />
       </Seccion>
+      </div>
 
-      <Seccion titulo="Tu posición" nota="Un nivel no significa lo mismo con dinero dentro">
-      {/* ══ 04 · Tu posición ══
+      <aside className="min-w-0 space-y-4 lg:col-start-2 lg:row-start-1 lg:row-span-2" aria-label="Tu dinero en esta acción">
+      {/* Lectura rápida: lo esencial de un vistazo. En móvil vive en la barra fija de
+          abajo; en escritorio, aquí, a la altura del gráfico. */}
+      <BottomSignalBar symbol={symbol} quote={quote} indicators={indicators} analysis={analysis} como="panel" className="hidden lg:block" />
+
+      {/* ══ 05 · Tu posición ══
           Antes de los niveles: un nivel al 5% no significa lo mismo con dinero dentro.
           Sale de /signals, que ya estaba cargado y no se cruzaba con el ticker abierto. */}
       <TuPosicion signals={signals} symbol={symbol} quote={quote} />
 
-      {/* ══ 04b · Impacto en el margen ══
-          Comprar y vender mueven el margen libre en sentidos opuestos, y con una
-          cuenta apalancada comprar lo mueve en la dirección peligrosa. Va aquí,
-          pegado a tu posición, porque es la misma conversación: tu dinero en esta
-          acción. El aviso de los formularios de venta llega cuando ya has decidido;
-          esto contesta antes, y también para comprar, que allí no se cubre. */}
+      {/* ══ 05b · Impacto en el margen ══
+          Comprar y vender mueven el margen libre en sentidos opuestos, y con una cuenta
+          apalancada comprar lo mueve en la dirección peligrosa. Va pegado a tu posición
+          porque es la misma conversación: tu dinero en esta acción. */}
       <SimuladorMargen symbol={sym} />
-      </Seccion>
+      </aside>
 
+      <div className="min-w-0 space-y-10 sm:space-y-12 lg:col-start-1">
       <Seccion titulo="Plan de entrada" nota="Dónde comprar, y qué lo invalida" acento>
-      {/* ══ 05 · Niveles ══ buy_levels es la autoridad única de zonas de compra.
+      {/* ══ 06 · Niveles ══ buy_levels es la autoridad única de zonas de compra.
           Sin tendencia alcista no se presentan: en su lugar va el motivo. Es un `o`, no
           un `y` — enseñar las dos cosas sería contradecirse en la misma pantalla. */}
       {zonasOcultas ? (
@@ -531,23 +564,12 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
           buyLevels={buyLevels}
         />
       )}
-
-      {/* ══ 06 · Gráfico ══ Pegado a Niveles porque dibuja lo mismo. */}
-      <Suspense fallback={<HuecoGrafico />}>
-        <LightweightChart
-          candles={candles}
-          buyLevels={buyLevels}
-          lines={chartLines}
-          timeframe={timeframe}
-          setTimeframe={refreshTimeframe}
-        />
-      </Suspense>
       </Seccion>
 
-      <Seccion titulo="Tus fuentes" nota="Tu inteligencia propia, antes que la de terceros">
-      {/* ══ 07 · Tus fuentes ══ Tu inteligencia propia, por encima de la de terceros. */}
+      {/* ══ 07 · Tus fuentes ══ Tu inteligencia propia, por encima de la de terceros.
+          El panel no se pinta si no hay menciones; la sección se pliega con él. */}
+      <Seccion titulo="Tus fuentes" nota="Tu inteligencia propia, antes que la de terceros" className="[&:not(:has(section))]:hidden">
       <SourcesPanel symbol={symbol} />
-
       </Seccion>
 
       <Seccion titulo="Análisis con IA" nota="Solo existe si lo pides">
@@ -576,12 +598,15 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
           earningsHistory={marketSignals.earningsHistory}
         />
       )}
-
       </Seccion>
 
       <Seccion titulo="Analistas y fundamentales" nota="Opinión de terceros y marcha del negocio">
-      <FuerzaRelativa rs={relativeStrength} />
-      <AnalystConsensusCard data={analystData} />
+      <div className="grid gap-3 sm:gap-4 xl:grid-cols-2 items-start">
+        <AnalystConsensusCard data={analystData} />
+        <div className="space-y-3 sm:space-y-4 min-w-0">
+          <FuerzaRelativa rs={relativeStrength} />
+        </div>
+      </div>
       <FundamentalsCard quote={quote} analysis={analysis} />
       </Seccion>
 
@@ -596,9 +621,11 @@ export default function Dashboard({ symbol, setSymbol, model, setModel }) {
       <AlternativePanel symbol={symbol} onPick={setSymbol} />
       {quote && <BacktestCard symbol={symbol} />}
       </Seccion>
+      </div>
+      </div>
 
-      {/* Espacio para que la barra de señal fija no tape el contenido */}
-      {quote && <div className="h-16" />}
+      {/* Espacio para que la barra de señal fija (solo móvil) no tape el contenido */}
+      {quote && <div className="h-20 lg:hidden" />}
       <BottomSignalBar symbol={symbol} quote={quote} indicators={indicators} analysis={analysis} />
       </main>
     </div>

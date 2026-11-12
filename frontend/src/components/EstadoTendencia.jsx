@@ -94,22 +94,24 @@ export default function EstadoTendencia({ estado, motivo, soportes, symbol }) {
   // código fuente: una clase construida por concatenación no existe en ningún fichero, no
   // se emite, y el elemento sale sin color sin que falle nada. Ya nos pasó con otro
   // arbitrario y no se ve hasta que se mira la pantalla.
-  const borde = bloqueada ? "border-baja" : "border-aviso";
-  const texto = bloqueada ? "text-baja" : "text-aviso";
+  const superficie = bloqueada ? "iv-halo-baja border-baja/25" : "iv-panel border-aviso/25";
+  const sello = bloqueada ? "text-baja bg-baja/[0.12]" : "text-aviso bg-aviso/[0.12]";
 
   return (
     <section
       data-testid="estado-tendencia"
-      className={`iv-panel p-5 sm:p-6 border-l-[3px] ${borde}`}
+      className={`${superficie} border rounded-iv-lg shadow-panel overflow-hidden`}
     >
-      <div className="flex items-start gap-3">
-        <Icono size={22} weight="bold" className={`${texto} shrink-0 mt-0.5`} aria-hidden="true" />
-        <div className="min-w-0">
-          <h3 className="font-heading text-titulo text-tinta">
+      <div className="p-5 sm:p-7 flex flex-col sm:flex-row items-start gap-4 sm:gap-5">
+        <span className={`w-11 h-11 rounded-[12px] inline-flex items-center justify-center shrink-0 ${sello}`}>
+          <Icono size={22} weight="bold" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-[22px] sm:text-[24px] font-semibold tracking-[-0.03em] text-tinta leading-tight">
             {bloqueada ? "No comprar" : "En seguimiento"}
           </h3>
-          <p className="text-cuerpo text-tinta mt-1.5 leading-relaxed max-w-[68ch]">{motivo}</p>
-          <p className="text-apoyo text-tinta-3 mt-3 leading-relaxed max-w-[68ch]">
+          <p className="text-[15px] text-tinta mt-2 leading-relaxed max-w-[64ch]">{motivo}</p>
+          <p className="text-[13px] text-tinta-3 mt-3 leading-relaxed max-w-[64ch]">
             No se muestran zonas de compra porque un soporte, por sí solo, no es una
             oportunidad: indica dónde podría pararse el precio, no que convenga comprar
             ahí.
@@ -117,40 +119,41 @@ export default function EstadoTendencia({ estado, motivo, soportes, symbol }) {
 
           {symbol && (
             <button
+              type="button"
               data-testid="vigilar-veto-estado"
               onClick={vigilar}
               disabled={vigilando || vigilada}
               title="Recibirás un aviso en Telegram cuando esta acción vuelva a tendencia alcista"
               aria-live="polite"
-              className={`mt-4 flex items-center gap-1.5 px-3 py-2 rounded-iv text-apoyo font-medium
-                          transition-[color,border-color,background-color,transform] duration-150 motion-reduce:transition-none ${
+              className={`mt-5 inline-flex items-center gap-2 h-10 px-3.5 rounded-[10px] text-[13px] font-medium
+                          transition-[color,border-color,background-color,filter] duration-150 ease-salida motion-reduce:transition-none ${
                 vigilada
-                  ? "border border-sube/40 text-sube bg-sube/10"
-                  : "border border-linea-fuerte text-tinta hover:border-marca/60 hover:text-marca active:scale-[0.97] disabled:opacity-50"
+                  ? "border border-sube/25 text-sube bg-sube/10"
+                  : "iv-boton-brillo hover:brightness-[1.08] disabled:opacity-50"
               }`}
             >
               {vigilada
-                ? <><Check size={14} aria-hidden="true" /> Te avisaré cuando se pueda comprar</>
-                : <><BellSimple size={14} aria-hidden="true" /> Avísame cuando se pueda comprar</>}
+                ? <><Check size={15} aria-hidden="true" /> Te avisaré cuando se pueda comprar</>
+                : <><BellSimple size={15} aria-hidden="true" /> Avísame cuando se pueda comprar</>}
             </button>
-          )}
-
-          {/* Los soportes siguen siendo información técnica válida. Se enseñan como lo
-              que son —estructura— y sin etiqueta de compra, precio ni plan. */}
-          {Array.isArray(soportes) && soportes.length > 0 && (
-            <div className="mt-5 pt-4 border-t border-linea">
-              <p className="iv-etiqueta mb-1.5">Soportes técnicos</p>
-              <ul className="flex flex-wrap gap-x-5 gap-y-1">
-                {soportes.slice(0, 4).map((s) => (
-                  <li key={s} className="iv-cifra text-apoyo text-tinta-2">
-                    ${typeof s === "number" ? s.toFixed(2) : s}
-                  </li>
-                ))}
-              </ul>
-            </div>
           )}
         </div>
       </div>
+
+      {/* Los soportes siguen siendo información técnica válida. Se enseñan como lo
+          que son —estructura— y sin etiqueta de compra, precio ni plan. */}
+      {Array.isArray(soportes) && soportes.length > 0 && (
+        <div className="px-5 sm:px-7 py-4 border-t border-suave flex items-center gap-x-4 gap-y-2 flex-wrap">
+          <p className="iv-etiqueta">Soportes técnicos</p>
+          <ul className="flex flex-wrap gap-1.5">
+            {soportes.slice(0, 4).map((s) => (
+              <li key={s} className="iv-cifra text-[12.5px] text-tinta-2 rounded-md bg-tinta/[0.05] px-2 py-1">
+                ${typeof s === "number" ? s.toFixed(2) : s}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }

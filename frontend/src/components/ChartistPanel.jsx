@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { FolderSimplePlus, Calculator, Check, BellSimple } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
+import { ChartLine } from "lucide-react";
+import { botonVariants } from "./base/Boton";
 
 const SENT_COLOR = {
   alcista: "text-sube bg-sube/10",
@@ -171,8 +173,13 @@ export default function ChartistPanel({ symbol, runSignal }) {
 
   return (
     <div className="iv-panel p-5" aria-busy={loading}>
-      <div className="flex items-center gap-2 mb-2 flex-wrap">
-        <h3 className="font-heading text-cuerpo font-semibold text-tinta">Chartista IA</h3>
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <h3 className="text-[15px] font-semibold tracking-[-0.015em] text-tinta flex items-center gap-2.5">
+          <span className="w-8 h-8 rounded-[9px] bg-marca/10 text-marca inline-flex items-center justify-center shrink-0" aria-hidden="true">
+            <ChartLine className="w-4 h-4" strokeWidth={2} />
+          </span>
+          Chartista IA
+        </h3>
         {data?.sentido && (
           <span className={`px-1.5 py-0.5 rounded text-etiqueta font-mono font-semibold ${SENT_COLOR[data.sentido] || SENT_COLOR.neutro}`}>
             {data.sentido.toUpperCase()}
@@ -185,16 +192,14 @@ export default function ChartistPanel({ symbol, runSignal }) {
         <button
           onClick={() => run(!!data)}
           disabled={loading}
-          className="ml-auto px-3 py-1.5 rounded-iv text-etiqueta font-mono font-semibold border border-marca/50 text-marca
-                     hover:bg-marca/10 active:scale-[0.97] disabled:opacity-50
-                     transition-[background-color,transform] duration-150 motion-reduce:transition-none"
+          className={`ml-auto ${botonVariants({ variante: "secundario", tamano: "sm" })}`}
         >
           {loading ? "Analizando…" : data ? "Recalcular" : "Analizar"}
         </button>
       </div>
 
       {!data && !loading && !err && (
-        <p className="text-apoyo text-tinta-2 max-w-[68ch]">
+        <p className="text-[13.5px] text-tinta-3 max-w-[68ch] leading-relaxed">
           Lee los timeframes 15M → 1S, identifica el patrón y te da un veredicto con plan de
           entrada, invalidación y el porqué — para que aprendas a leerlo tú.
         </p>

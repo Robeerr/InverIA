@@ -1,5 +1,6 @@
 import React from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useSignals } from "../hooks/useSignals";
 import { fmtPrice } from "../lib/format";
 import { api } from "../lib/api";
@@ -30,12 +31,7 @@ function usePrecarga() {
     timer.current = setTimeout(() => {
       yaPrecargados.add(sym);
       // prefetchQuery y no api.dashboard() a secas: la respuesta se guarda en la MISMA
-      // caché de react-query, con la MISMA clave, que luego lee el Dashboard. Llamando a
-      // la api directamente solo se calentaba la caché del servidor —bien, pero el cliente
-      // volvía a pedirlo igual y se pagaba la ida y vuelta por la red.
-      //
-      // El timeframe debe coincidir con TIMEFRAME_BASE del Dashboard: si difieren, la
-      // clave que se calienta no es la que se pide después.
+      // caché de react-query, con la MISMA clave, que luego lee el Dashboard.
       queryClient.prefetchQuery({
         queryKey: ["dashboard", sym, TIMEFRAME_DASHBOARD],
         queryFn: ({ signal }) => api.dashboard(sym, TIMEFRAME_DASHBOARD, signal),
@@ -47,11 +43,22 @@ function usePrecarga() {
   return { precargar, cancelar };
 }
 
-// Tira de watchlist (estilo terminal): tus acciones de Cartera en una fila horizontal
-// scrollable, con precio y cambio del día. Toca una para cargarla al instante. Mobile-first.
-export default function WatchlistStrip({ symbol, setSymbol, vertical = false, className = "" }) {
+const pct = (v) => `${v >= 0 ? "+" : ""}${v}%`;
+
+/**
+ * Tu watchlist como una cinta horizontal encima de la ficha.
+ *
+ * Antes era una columna lateral de 60 tarjetas que duplicaba el rail y empujaba la
+ * ficha a un lado. Ahora es una cinta de una línea, con desplazamiento lateral (flechas
+ * en escritorio, gesto en móvil) y la acción abierta levantada y a la vista. Orden: la
+ * más cerca de su zona de compra primero.
+ */
+export default function WatchlistStrip({ symbol, setSymbol, className = "" }) {
   const { data: signals } = useSignals();
   const { precargar, cancelar } = usePrecarga();
+  const carril = React.useRef(null);
+  const [bordes, setBordes] = React.useState({ izq: false, der: false });
+
   const entries = React.useMemo(() => {
     const arr = Array.isArray(signals) ? signals : (signals?.items || signals?.entries || []);
     // Distancia (%) del precio a su zona de compra más cercana: los niveles de compra están
@@ -62,7 +69,6 @@ export default function WatchlistStrip({ symbol, setSymbol, vertical = false, cl
       const niveles = ["nivel1", "nivel2", "nivel3", "nivel4", "nivel5"]
         .map((k) => Number(e[k])).filter((v) => v > 0);
       if (!niveles.length) return Infinity;
-      // El nivel de compra alcanzable más alto (el primero que tocaría al caer).
       const below = niveles.filter((v) => v <= px);
       if (below.length) return ((px - Math.max(...below)) / px) * 100;   // aún por encima
       return ((px - Math.max(...niveles)) / px) * 100;                    // ya dentro/por debajo (negativo)
@@ -75,84 +81,110 @@ export default function WatchlistStrip({ symbol, setSymbol, vertical = false, cl
       seen.add(s);
       out.push({ ...e, _distBuy: distBuy(e) });
     }
-    // Orden: más cerca de su zona de compra primero (las "en zona" arriba).
     return out.sort((a, b) => a._distBuy - b._distBuy);
   }, [signals]);
 
+  const medir = React.useCallback(() => {
+    const el = carril.current;
+    if (!el) return;
+    setBordes({ izq: el.scrollLeft > 4, der: el.scrollLeft + el.clientWidth < el.scrollWidth - 4 });
+  }, []);
+
+  // La acción abierta, a la vista: si es la 40.ª de la lista no puede quedar fuera.
+  const activo = (symbol || "").toUpperCase();
+  React.useEffect(() => {
+    const el = carril.current;
+    if (!el) return;
+    const btn = el.querySelector('[aria-current="true"]');
+    if (btn) {
+      const izq = btn.offsetLeft - el.clientWidth / 2 + btn.clientWidth / 2;
+      el.scrollTo({ left: Math.max(0, izq) });
+    }
+    medir();
+  }, [activo, entries.length, medir]);
+
   if (!entries.length) return null;
 
-  const wrapCls = vertical
-    ? `flex flex-col gap-1.5 ${className}`
-    : `flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar ${className}`;
+  const desplazar = (dir) => {
+    const el = carril.current;
+    if (!el) return;
+    el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: "smooth" });
+  };
+
+  const mascara = bordes.izq && bordes.der
+    ? "linear-gradient(90deg, transparent, #000 48px, #000 calc(100% - 48px), transparent)"
+    : bordes.der ? "linear-gradient(90deg, #000 calc(100% - 48px), transparent)"
+      : bordes.izq ? "linear-gradient(90deg, transparent, #000 48px)" : undefined;
+
+  const flecha = "hidden sm:inline-flex items-center justify-center w-8 h-8 rounded-[9px] shrink-0 text-tinta-3 " +
+    "hover:text-tinta hover:bg-tinta/[0.06] disabled:opacity-30 disabled:pointer-events-none " +
+    "transition-colors duration-150 ease-salida motion-reduce:transition-none";
 
   return (
-    <div className={wrapCls}>
-      {vertical && <p className="text-etiqueta uppercase tracking-[0.15em] text-tinta-3 font-mono mb-1 px-1">Watchlist</p>}
-      {entries.map((e) => {
-        const s = (e.symbol || "").toUpperCase();
-        const active = s === (symbol || "").toUpperCase();
-        const chg = e.daily_change_percent;
-        // Todos los colores salen de variables CSS (--wl-*, definidas en index.css). Motivo:
-        // la tarjeta INVIERTE sus colores al seleccionarse, así que hay que pintarla en línea
-        // —una clase no puede depender de ese estado—, pero un estilo en línea no lo alcanza
-        // el remapeo de modo oscuro, y por eso las tarjetas se quedaban BLANCAS sobre la
-        // página oscura. Un estilo en línea SÍ puede leer var(), y la variable sí cambia con
-        // la clase .dark: se resuelven las dos cosas a la vez.
-        const v = (nombre) => `var(--wl-${active ? "active-" : ""}${nombre})`;
-        const chgColor = chg == null ? v("muted") : chg >= 0 ? v("up") : v("down");
-        // Pre-market / after-hours. El backend ya lo calcula y lo guarda en cada entrada
-        // (market_state + pre/post_market_price + extended_change_percent); aquí solo faltaba
-        // pintarlo. Fuera de esas franjas market_state viene REGULAR o vacío y no se muestra
-        // nada, que es lo correcto: durante la sesión el precio de arriba YA es el de mercado.
-        const estado = e.market_state;
-        const extPrecio = estado === "PRE" ? e.pre_market_price
-          : estado === "POST" ? e.post_market_price : null;
-        const extChg = e.extended_change_percent;
-        const extCol = extChg == null ? v("muted") : extChg >= 0 ? v("up") : v("down");
-        return (
-          <button
-            key={s}
-            onClick={() => setSymbol?.(s)}
-            onMouseEnter={() => precargar(s)}
-            onMouseLeave={cancelar}
-            onFocus={() => precargar(s)}
-            className={`rounded-iv border px-3 py-1.5 text-left transition-colors ${vertical ? "w-full" : "shrink-0"}`}
-            style={{
-              borderColor: v("border"),
-              background: v("bg"),
-              minWidth: vertical ? undefined : 92,
-            }}
-          >
-            <p className="font-mono font-bold text-xs" style={{ color: v("symbol") }}>{s}</p>
-            <div className="flex items-baseline gap-1.5">
-              <span className="font-mono text-etiqueta" style={{ color: v("muted") }}>
-                {e.last_price != null ? `$${fmtPrice(e.last_price)}` : "—"}
-              </span>
-              {chg != null && (
-                <span className="font-mono text-etiqueta font-semibold" style={{ color: chgColor }}>
-                  {chg >= 0 ? "+" : ""}{chg}%
-                </span>
-              )}
-            </div>
-            {extPrecio != null && (
-              <div className="flex items-baseline gap-1 mt-0.5" title={estado === "PRE" ? "Pre-apertura" : "Después del cierre"}>
-                <span className="font-mono text-etiqueta uppercase tracking-wider px-1 rounded"
-                      style={{ color: v("badge-text"), background: v("badge-bg") }}>
-                  {estado === "PRE" ? "PRE" : "POST"}
-                </span>
-                <span className="font-mono text-etiqueta" style={{ color: v("muted") }}>
-                  ${fmtPrice(extPrecio)}
-                </span>
-                {extChg != null && (
-                  <span className="font-mono text-etiqueta font-semibold" style={{ color: extCol }}>
-                    {extChg >= 0 ? "+" : ""}{extChg}%
-                  </span>
+    <nav aria-label="Tu watchlist" className={`flex items-center gap-1.5 min-w-0 ${className}`}>
+      <span className="iv-etiqueta shrink-0 hidden md:block pr-2">Watchlist</span>
+      <button type="button" className={flecha} onClick={() => desplazar(-1)} disabled={!bordes.izq} aria-label="Ver anteriores">
+        <ChevronLeft className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" />
+      </button>
+      <div
+        ref={carril}
+        onScroll={medir}
+        className="flex gap-1 overflow-x-auto no-scrollbar min-w-0 flex-1 scroll-smooth motion-reduce:scroll-auto py-1 -my-1"
+        style={{ maskImage: mascara, WebkitMaskImage: mascara }}
+      >
+        {entries.map((e) => {
+          const s = (e.symbol || "").toUpperCase();
+          const active = s === activo;
+          const chg = e.daily_change_percent;
+          // Pre-market / after-hours. Fuera de esas franjas market_state viene REGULAR o
+          // vacío y no se muestra nada: durante la sesión el precio YA es el de mercado.
+          const estado = e.market_state;
+          const extPrecio = estado === "PRE" ? e.pre_market_price
+            : estado === "POST" ? e.post_market_price : null;
+          const extChg = e.extended_change_percent;
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setSymbol?.(s)}
+              onMouseEnter={() => precargar(s)}
+              onMouseLeave={cancelar}
+              onFocus={() => precargar(s)}
+              aria-current={active ? "true" : undefined}
+              title={extPrecio != null
+                ? `${estado === "PRE" ? "Pre-apertura" : "Después del cierre"}: $${fmtPrice(extPrecio)}${extChg != null ? ` (${pct(extChg)})` : ""}`
+                : undefined}
+              className={`shrink-0 text-left rounded-[10px] px-3 py-1.5 min-h-[44px] sm:min-h-0 border
+                          transition-[background-color,border-color] duration-150 ease-salida motion-reduce:transition-none ${
+                active
+                  ? "bg-superficie border-medio shadow-panel"
+                  : "border-transparent hover:bg-tinta/[0.05]"
+              }`}
+            >
+              <span className="flex items-baseline gap-2 whitespace-nowrap">
+                <span className={`text-[13px] font-semibold tracking-[-0.01em] ${active ? "text-tinta" : "text-tinta-2"}`}>{s}</span>
+                {chg != null && (
+                  <span className={`iv-cifra text-[12px] ${chg >= 0 ? "text-sube" : "text-baja"}`}>{pct(chg)}</span>
                 )}
-              </div>
-            )}
-          </button>
-        );
-      })}
-    </div>
+              </span>
+              <span className="flex items-baseline gap-1.5 whitespace-nowrap iv-cifra text-[11.5px] text-tinta-3 mt-0.5">
+                {e.last_price != null ? `$${fmtPrice(e.last_price)}` : "—"}
+                {extPrecio != null && (
+                  <>
+                    <span className="font-sans text-[11px]">{estado === "PRE" ? "pre" : "post"}</span>
+                    <span className={extChg == null ? "" : extChg >= 0 ? "text-sube" : "text-baja"}>
+                      {extChg != null ? pct(extChg) : `$${fmtPrice(extPrecio)}`}
+                    </span>
+                  </>
+                )}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <button type="button" className={flecha} onClick={() => desplazar(1)} disabled={!bordes.der} aria-label="Ver siguientes">
+        <ChevronRight className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" />
+      </button>
+    </nav>
   );
 }

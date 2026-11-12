@@ -1,6 +1,6 @@
 import React from "react";
 import { ChartLineUp, ShieldCheck, Spinner, CaretDown } from "@phosphor-icons/react";
-import { Button } from "./ui/button";
+import { Boton } from "./base/Boton";
 import { api } from "../lib/api";
 
 function rateTone(rate) {
@@ -70,37 +70,39 @@ export default function BacktestCard({ symbol }) {
   };
 
   return (
-    <section data-testid="backtest-card" className="iv-panel p-6">
-      <div className="flex items-center justify-between flex-wrap gap-3 mb-2">
-        <div className="flex items-center gap-2">
-          <ShieldCheck size={20} weight="bold" className="text-marca" />
-          <h3 className="font-heading font-bold text-xl text-tinta">Fiabilidad histórica de los niveles</h3>
+    <section data-testid="backtest-card" className="iv-panel p-5 sm:p-6">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+        <div className="flex items-center gap-2.5">
+          <span className="w-8 h-8 rounded-[9px] bg-tinta/[0.06] text-tinta-2 inline-flex items-center justify-center shrink-0">
+            <ShieldCheck size={16} weight="bold" aria-hidden="true" />
+          </span>
+          <h3 className="text-[15px] font-semibold tracking-[-0.015em] text-tinta">Fiabilidad histórica de los niveles</h3>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
+        <div className="flex items-center gap-2 flex-wrap">
+          <Boton
             data-testid="run-backtest"
             onClick={() => run("symbol")}
             disabled={loading || !symbol}
-            variant="outline"
-            className="border-linea font-mono text-xs"
+            variante="secundario"
+            tamano="sm"
           >
             {loading && scope === "symbol" ? <Spinner size={14} weight="bold" className="mr-1 animate-spin" /> : <ChartLineUp size={14} weight="bold" className="mr-1" />}
             {loading && scope === "symbol" ? "Backtesteando…" : `Backtest ${symbol}`}
-          </Button>
-          <Button
+          </Boton>
+          <Boton
             data-testid="run-backtest-universe"
             onClick={() => run("universe")}
             disabled={loading}
-            variant="outline"
-            className="border-marca/30 bg-marca/5 font-mono text-xs"
+            variante="secundario"
+            tamano="sm"
           >
             {loading && scope === "universe" ? <Spinner size={14} weight="bold" className="mr-1 animate-spin" /> : <ChartLineUp size={14} weight="bold" className="mr-1" />}
             {loading && scope === "universe" ? "Agregando…" : "Backtest del universo"}
-          </Button>
+          </Boton>
         </div>
       </div>
 
-      <p className="text-sm text-tinta-3 mb-4">
+      <p className="text-[13.5px] text-tinta-3 mb-4 leading-relaxed max-w-[72ch]">
         Recorre los últimos años calculando los niveles con datos solo del pasado (sin trampa) y mide
         cuántas veces el precio <strong>rebotó</strong> al tocarlos. Así sabes qué fuerza es fiable de verdad.
       </p>
@@ -117,7 +119,7 @@ export default function BacktestCard({ symbol }) {
       {data && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className="iv-cifra text-3xl font-bold text-tinta shrink-0">{data.overall?.hold_rate ?? "—"}%</span>
+            <span className="iv-cifra-hero text-[32px] leading-none tracking-[-0.04em] shrink-0">{data.overall?.hold_rate ?? "—"}%</span>
             <span className="text-sm text-tinta-3">
               de los niveles tocados aguantaron · {data.samples} pruebas
               {data.symbols_tested ? ` · ${data.symbols_tested} acciones` : ""} · ventana {data.forward_window_days} días

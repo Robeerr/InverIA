@@ -23,6 +23,8 @@ const TONOS = {
 const TAMANOS = {
   sm: "w-8 h-8 rounded-[9px] text-[10.5px]",
   md: "w-10 h-10 rounded-[11px] text-[11.5px]",
+  // Cabecera de ficha: la cara de la acción junto al titular.
+  lg: "w-12 h-12 rounded-[14px] text-[13px]",
 };
 
 /** «BRK.B» → «BRK», «SNOW» → «SNOW», «GOOGL» → «GOOG». Cuatro letras caben a 40 px. */
