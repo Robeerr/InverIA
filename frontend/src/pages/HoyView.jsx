@@ -181,7 +181,11 @@ export default function HoyView() {
               además un antetítulo («Lo que importa hoy») que decía lo mismo. */}
           <div className="iv-seccion iv-seccion-acento !mb-1.5">
             <h2 className="font-heading text-titulo font-semibold text-tinta leading-tight min-w-0 text-balance">
-              {titular ? "Decisiones que requieren tu atención" : "Hoy no hay decisiones pendientes"}
+              {/* Mientras carga o si falla NO se sabe si hay decisiones: decir «no hay»
+                  antes de tener los datos es afirmar algo falso. */}
+              {isLoading ? "Revisando qué importa hoy…"
+                : error ? "Lo que importa hoy"
+                : titular ? "Decisiones que requieren tu atención" : "Hoy no hay decisiones pendientes"}
             </h2>
           </div>
           {/* El desglose por tipo y el recuento, en una sola línea de apoyo, sin caja. */}
