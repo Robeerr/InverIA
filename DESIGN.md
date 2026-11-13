@@ -109,5 +109,11 @@ Dos columnas: principal (cartera como métrica héroe de 40–60 px con «€» 
 5. Screener: Top selección en `iv-destacada` con ranking y medidor; tarjetas con monograma, precio de 30 px con «$» reducido, filas etiqueta/valor, banda de crecimiento y aviso de resultados en caja roja suave.
 6. Movers: tres paneles con ranking, monograma y barra de magnitud de la variación; en móvil un `Segmentado` (Subidas · Bajadas · Negociadas) muestra una lista a la vez.
 
+## Pantalla «Calendario» (fase 2)
+- **FranjaDias** (`base/FranjaDias`, nuevo): horizonte de «Hoy» a «+N d» en una pista con marca por día (por semana si N > 31), tramo índigo bajo hasta el último evento y un punto por fecha con los tickers encima (en móvil, solo el punto y el recuento). Tonos `marca` (hay algo en cartera), `neutro`, `pasado` (apagado, pegado a «Hoy»). Es `aria-hidden`: la información está en la lista.
+1. Titular con miga «Gestionar › Calendario»; el periodo es `Segmentado` (7 · 14 · 30 · 60 días) y «Actualizar» un `Boton` secundario (solo icono de 40 px en móvil).
+2. **Héroe**: los días que faltan para el próximo resultado como cifra 44–60 px («Hoy»/«Mañana» en palabra), monograma + ticker + grupo + fecha/trimestre/momento, y la `FranjaDias` debajo. Columna de 340 px con el recuento (resultados y fechas) y el reparto En cartera / Vigilando / Cimientos con barra.
+3. **Agenda**: un panel; cada fecha es una fila con baldosa de día (número 28 px + día/mes, relativa debajo; índigo si es hoy/mañana, atenuada si ya pasó) y sus resultados en rejilla Valor · Trimestre · Momento (icono amanecer/luna/reloj) · EPS est. con cabecera de columnas. En móvil la fila baja a dos líneas sin monograma y la relativa encabeza la fecha.
+
 ## Pendiente (fases siguientes)
 Cada pantalla hereda el sistema pero conserva maquetación propia: la tabla de niveles de Cartera aún necesita desplazamiento horizontal por debajo de ~1400 px de lienzo, fichas con cajas anidadas y cifras de tabla en mono negrita que conviene aligerar. En la ficha, `LightweightChart` (fuera de esta fase) mantiene sus botones de escala con relleno índigo y su leyenda; y el interior de `TradingLevels`/`ChartistPanel` (zonas, stops, plan) solo se ha aligerado, no recompuesto.
